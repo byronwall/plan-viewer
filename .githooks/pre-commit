@@ -1,0 +1,5 @@
+#!/bin/sh
+# The viewer's own commits keep npm test green.
+set -e
+# Tests create their own git repos; the commit's GIT_* variables would point them at this one.
+env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE npm test --silent >/dev/null 2>&1 || { echo "npm test failed; run it to see failures" >&2; exit 1; }

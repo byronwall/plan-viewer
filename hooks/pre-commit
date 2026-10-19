@@ -1,0 +1,10 @@
+#!/bin/sh
+# Pre-commit hook for a planning workspace: staged planning Markdown must lint and links must resolve.
+# Install from the workspace with `git config core.hooksPath node_modules/plan-viewer/hooks`.
+set -e
+cli="$(dirname "$0")/../cli.ts"
+node "$cli" lint --staged
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+if echo "$staged" | grep -qE '^(daily|tasks|plans|reference)/.*\.md$'; then
+  links=$(node "$cli" links) || { echo "$links" | grep -v '^note' >&2; echo "plan-viewer links failed; fix the errors above" >&2; exit 1; }
+fi

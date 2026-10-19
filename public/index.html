@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Plan Viewer</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <!--
+      THESIS: Markdown becomes a review stack, refusing the generic file-tree-plus-preview arrangement.
+      OWN-WORLD: Cool workbench canvas, white reading sheets, ink-blue action, and compact path metadata.
+      STORY: Open today's plan, scan complete milestones, choose one, add a note, and hand it to Codex.
+      FIRST VIEWPORT: A dense document rail at left and today's title plus its first two work cards at right.
+      FORM: A vertical review stack, chosen directly for this precisely scoped local utility; no concept seed.
+    -->
+    <div class="app-shell">
+      <aside class="library" aria-label="Planning documents">
+        <div class="brand">
+          <svg aria-hidden="true" viewBox="0 0 32 32"><path d="M7 5.5h14.5L26 10v16.5H7z"/><path d="M21.5 5.5V10H26M11 15h11M11 19h11M11 23h7"/></svg>
+          <strong>Plan viewer</strong>
+        </div>
+        <div class="sidebar-actions">
+          <button id="open-search" class="search-launcher" type="button" aria-haspopup="dialog" aria-controls="search-dialog"><span>Search…</span><kbd>⌘K</kbd></button>
+          <button id="global-handoff" class="global-handoff" type="button" aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false">
+            <span>Draft</span>
+            <kbd aria-hidden="true">C</kbd>
+          </button>
+        </div>
+        <nav class="view-navigation" aria-label="Viewer pages">
+          <button id="open-tasks" class="view-navigation-link" type="button" aria-current="false">
+            <span>Tasks</span>
+          </button>
+          <button id="open-weeks" class="view-navigation-link" type="button" aria-current="false">
+            <span>Weeks</span>
+          </button>
+          <button id="open-topics" class="view-navigation-link" type="button" aria-current="false">
+            <span>Topics</span>
+          </button>
+          <button id="open-code" class="view-navigation-link" type="button" aria-current="false">
+            <span>Code</span>
+          </button>
+          <button id="open-reference" class="view-navigation-link" type="button" aria-current="false">
+            <span>Reference</span>
+          </button>
+        </nav>
+        <nav id="documents" class="documents" aria-live="polite"></nav>
+      </aside>
+
+      <main class="reading-pane">
+        <div class="document-breadcrumb">
+          <div id="document-meta" class="document-meta">Loading today’s plan…</div>
+          <div id="task-document-path" class="task-document-path" hidden>
+            <button id="copy-task-path" class="copy-task-path" type="button" title="Click to copy path" aria-label="Copy document path" aria-describedby="task-path-value">
+              <code id="task-path-value"></code>
+              <svg aria-hidden="true" viewBox="0 0 20 20"><g class="path-copy-icon"><rect x="7" y="7" width="9" height="10" rx="1.5"/><path d="M12 7V3H3v10h4"/></g><path class="path-copied-icon" d="m4 10 4 4 8-8"/></svg>
+            </button>
+            <span id="task-path-status" class="sr-only" role="status"></span>
+          </div>
+        </div>
+        <header class="document-header">
+          <div>
+            <h1 id="document-title">Daily plan</h1>
+          </div>
+          <div class="document-tools">
+            <div id="chunk-count" class="chunk-count" aria-label="Chunk count"></div>
+          </div>
+        </header>
+        <div class="document-body">
+          <nav id="chunk-nav" class="chunk-nav" aria-label="Document contents" hidden></nav>
+          <section id="chunks" class="chunk-stack" aria-label="Work chunks"></section>
+        </div>
+      </main>
+    </div>
+    <div id="handoff-popover" class="handoff-popover" popover="manual" role="dialog" aria-label="Open a Codex draft"></div>
+    <ol id="toaster" class="toaster" aria-label="Notifications"></ol>
+    <button id="open-history" class="history-button" type="button" aria-controls="history-menu" aria-expanded="false" aria-label="Recently viewed (H)" aria-keyshortcuts="h"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9"/><path d="M2.5 2.5v2.5H5"/><path d="M8 5v3.2l2 1.3"/></svg><kbd class="history-button-key" aria-hidden="true">H</kbd></button>
+    <div id="history-menu" class="history-menu" popover role="menu" aria-label="Recently viewed"></div>
+    <div id="status-menu" class="status-menu" popover role="menu" aria-label="Change task status"></div>
+    <dialog id="image-viewer" class="image-viewer" aria-labelledby="image-viewer-title"></dialog>
+    <dialog id="search-dialog" class="viewer-dialog search-dialog" aria-labelledby="search-title">
+      <h2 id="search-title" class="sr-only">Search documents</h2>
+      <div class="search-field">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg>
+        <label class="sr-only" for="document-search">Search titles, paths, and task details</label>
+        <input id="document-search" type="search" placeholder="Search plans, tasks, topics…" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="search-results">
+        <button type="button" data-dialog-close aria-label="Close search"><kbd>Esc</kbd></button>
+      </div>
+      <div id="search-results" class="search-results" role="listbox" aria-label="Matching pull requests and documents"></div>
+      <footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>⌘↵</kbd> open PR on GitHub</span><span id="search-status" role="status"></span></footer>
+    </dialog>
+    <dialog id="shortcuts-dialog" class="viewer-dialog shortcuts-dialog" aria-labelledby="shortcuts-title">
+      <header class="viewer-dialog-heading"><h2 id="shortcuts-title">Keyboard shortcuts</h2><button type="button" data-dialog-close aria-label="Close keyboard shortcuts">×</button></header>
+      <div id="shortcut-list" class="shortcut-list"></div>
+      <footer class="viewer-dialog-footer">Letter shortcuts pause while typing or while a dialog is open. Esc closes dialogs; Codex drafts with text are kept until you open or cancel them.</footer>
+    </dialog>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "demo", "runtimeExecutable": "sh", "runtimeArgs": ["-c", "PLAN_VIEWER_PORT=4176 npm run demo"], "port": 4176 }
+  ]
+}

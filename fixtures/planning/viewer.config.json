@@ -1,0 +1,10 @@
+{
+  "title": "Plan Viewer",
+  "user": "Alex",
+  "exclude": ["reference/linear"],
+  "github": { "owner": "acme", "defaultRepo": "atlas", "repos": ["Orbit", "orbit-legacy", "orbit-templates"] },
+  "trackers": [
+    { "prefix": "ATL", "service": "linear", "url": "https://linear.app/acme/issue/{id}" },
+    { "prefix": "OPS", "service": "jira", "url": "https://acme.atlassian.net/browse/{id}" }
+  ]
+}
