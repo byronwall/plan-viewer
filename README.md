@@ -2,7 +2,7 @@
 
 A local reading desk for a Markdown planning workspace: daily plans, file-backed tasks with work breakdowns and agent-ready next actions, topic documents, and a Code page for the worktrees, pull requests, and diffs those plans touch. Markdown stays the source of truth; the viewer reads it, links it, and hands work to Codex or Claude Desktop as editable drafts.
 
-It runs on Node.js 24+ with no dependencies. The agent handoffs, Finder, editor, and terminal actions assume macOS.
+It runs on Node.js 22.6+ (type stripping is enabled by the CLI; a `pnpm install` copies `file:` dependencies into `node_modules`, where Node refuses to strip types, so install with `npm`) with no dependencies. The agent handoffs, Finder, editor, and terminal actions assume macOS.
 
 ## Quick start
 

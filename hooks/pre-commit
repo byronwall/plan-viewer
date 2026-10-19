@@ -3,6 +3,7 @@
 # Install from the workspace with `git config core.hooksPath node_modules/plan-viewer/hooks`.
 set -e
 cli="$(dirname "$0")/../cli.ts"
+node() { command node --experimental-strip-types --no-warnings=ExperimentalWarning "$@"; }
 node "$cli" lint --staged
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 if echo "$staged" | grep -qE '^(daily|tasks|plans|reference)/.*\.md$'; then

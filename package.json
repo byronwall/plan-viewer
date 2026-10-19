@@ -5,10 +5,10 @@
   "private": true,
   "type": "module",
   "bin": { "plan-viewer": "cli.ts" },
-  "engines": { "node": ">=24" },
+  "engines": { "node": ">=22.6" },
   "scripts": {
-    "test": "PLANNING_ROOT=fixtures/planning node --test --test-reporter=dot server.test.ts code-dashboard.test.ts search.test.js code-diff.test.js pr-notes.test.ts check-planning.test.ts config.test.js",
-    "demo": "PLANNING_ROOT=fixtures/planning node server.ts",
+    "test": "PLANNING_ROOT=fixtures/planning node --experimental-strip-types --test --test-reporter=dot server.test.ts code-dashboard.test.ts search.test.js code-diff.test.js pr-notes.test.ts check-planning.test.ts config.test.js",
+    "demo": "PLANNING_ROOT=fixtures/planning node --experimental-strip-types server.ts",
     "hooks:install": "git config core.hooksPath .githooks",
     "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true"
   }
