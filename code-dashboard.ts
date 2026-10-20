@@ -28,8 +28,8 @@ const runCommand = (command: string[], values: Record<string, string>) =>
 // Prompts over the user's local PR notes (`code.prNotesDir`); the draft notes follow the prompt as Markdown.
 const postSkill = () => config().code.postNotesSkill ? ` Read and follow ${config().code.postNotesSkill}.` : "";
 const NOTE_PROMPTS = {
-  "notes-post": (path: string) => `Post my draft review notes below as one pending GitHub review on this pull request.${postSkill()} Keep whole-file notes as actual file-level review threads in the same review. Post each comment as written and leave the review pending so I can read it on GitHub and submit it. Then change \`status: draft\` to \`status: posted\` for each verified posted note in ${path}.`,
-  "notes-work": (path: string) => `Work through my draft review notes on this pull request. They are below and in ${path}. For each one, read the code it points at and tell me whether it holds up, what change or reply you'd suggest, and anything nearby I missed. Don't change code, push, or post to GitHub until I say which way to go.`,
+  "notes-post": (url: string, _slug: string, _number: number, where: string, path: string) => `Post my draft review notes below as one pending GitHub review on ${url}.${where}${postSkill()} Keep whole-file notes as actual file-level review threads in the same review. Post each comment as written and leave the review pending so I can read it on GitHub and submit it. Then change \`status: draft\` to \`status: posted\` for each verified posted note in ${path}.`,
+  "notes-work": (url: string, _slug: string, _number: number, where: string, path: string) => `Work through my draft review notes on ${url}.${where} They are below and in ${path}. For each one, read the code it points at and tell me whether it holds up, what change or reply you'd suggest, and anything nearby I missed. Don't change code, push, or post to GitHub until I say which way to go.`,
 };
 
 type HistoryPr = { number: number; branch: string; state: string; title: string; author: string };
@@ -482,27 +482,30 @@ export function createCodeDashboard(root: string) {
   async function launchAgent(app: string, skill: string, prUrl: string, workspace: string) {
     await knownWorktree(workspace);
     if (!prSkills().some((candidate) => candidate.id === skill) && !Object.hasOwn(NOTE_PROMPTS, skill)) throw new Error("Unknown skill.");
-    if (app !== "claude" && app !== "codex") throw new Error("Unknown agent app.");
     const pull = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)$/.exec(prUrl);
     if (!pull) throw new Error("Not a GitHub pull request URL.");
     // Open in the repo root so the app reuses its existing project and permissions; the prompt names the worktree.
     const tree = lastWorktrees.find((candidate) => candidate.path === workspace && !candidate.main);
     const root = tree?.repo || workspace;
-    const context = `- PR: ${prUrl}${tree ? `\n- Worktree: ${tree.path} (branch ${tree.branch})` : ""}`;
-    let draft: string;
+    const where = tree ? ` Work in its worktree at ${tree.path} (branch ${tree.branch}).` : "";
+    const file = skillFile(root, skill);
+    let url: string;
     if (Object.hasOwn(NOTE_PROMPTS, skill)) {
       const notes = await prNotes.drafts(pull[1], Number(pull[2]));
       if (!notes.text) throw new Error("No draft notes on this PR.");
-      draft = `${NOTE_PROMPTS[skill as keyof typeof NOTE_PROMPTS](notes.path)}\n\n${context}\n\n${notes.text}\n`;
+      const draft = `${NOTE_PROMPTS[skill as keyof typeof NOTE_PROMPTS](prUrl, pull[1], Number(pull[2]), where, notes.path)}\n\n${notes.text}\n`;
+      url = app === "claude" ? `claude://code/new?${new URLSearchParams({ q: draft, folder: root })}` : codexNewTaskUrl(draft, root);
     } else if (skill === "discuss") {
-      draft = `${context}\n\nLet's talk through this pull request. Read it first, then `;
-    } else {
-      // Named by file rather than as a slash command, which Claude didn't resolve from a deep link.
-      const file = skillFile(root, skill);
+      const draft = `Let's talk through this pull request: ${prUrl}.${where} Read it first, then `;
+      url = app === "claude" ? `claude://code/new?${new URLSearchParams({ q: draft, folder: root })}` : codexNewTaskUrl(draft, root);
+    } else if (app === "claude") {
+      // Claude turns a leading "/" from a link into a full-width "／" so links can't run commands; name the skill instead.
+      const draft = new URLSearchParams({ q: `Use the ${skill} skill on ${prUrl}.${where}`, folder: root });
+      url = `claude://code/new?${draft}`;
+    } else if (app === "codex") {
       if (!file) throw new Error(`No ${skill} skill under ${root}/.claude/skills.`);
-      draft = `Run the ${skill} skill (${file}) on this pull request.\n\n${context}`;
-    }
-    const url = app === "claude" ? `claude://code/new?${new URLSearchParams({ q: draft, folder: root })}` : codexNewTaskUrl(draft, root);
+      url = codexNewTaskUrl(`Read and follow the ${skill} skill at ${file} for this pull request: ${prUrl}.${where}`, root);
+    } else throw new Error("Unknown agent app.");
     await exec("/usr/bin/open", [url]);
   }
 
