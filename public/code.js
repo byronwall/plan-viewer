@@ -128,10 +128,8 @@ function treeActions(tree) {
     + (url ? `<a class="code-icon-button" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" aria-label="Branch on GitHub">${icon("external")}</a>` : `<span class="code-icon-button is-blank"></span>`);
 }
 
-function skillButtons(pr, workspace, tree, labelled = false) {
-  return (meta().skills || []).map((skill, index) => labelled
-    ? `<button type="button" class="code-skill" data-code-skill="${skill.id}" data-url="${escapeHtml(pr.url)}" data-path="${escapeHtml(workspace)}">${icon(skill.icon || skill.id)}${skill.label}<kbd>${index + 1}</kbd></button>`
-    : iconButton(skill.icon || skill.id, `${skill.label} in ${appName()} · ${tree ? "worktree" : "main checkout"} (${index + 1})`, `data-code-skill="${skill.id}" data-url="${escapeHtml(pr.url)}" data-path="${escapeHtml(workspace)}"`)).join("");
+function skillButtons(pr, workspace, tree) {
+  return (meta().skills || []).map((skill, index) => iconButton(skill.icon || skill.id, `${skill.label} in ${appName()} · ${tree ? "worktree" : "main checkout"} (${index + 1})`, `data-code-skill="${skill.id}" data-url="${escapeHtml(pr.url)}" data-path="${escapeHtml(workspace)}"`)).join("");
 }
 
 function sizeBar(pr) {
@@ -1079,7 +1077,7 @@ function prStatus(pr) {
     { MERGED: sideStatus("merged", "branch", "Merged"), CLOSED: sideStatus("quiet", "fail", "Closed") }[pr.state] || "",
     pr.draft ? sideStatus("quiet", "draft", "Draft") : "",
     ci ? sideStatus(ci[0], ci[0], ci[1]) : "",
-    review && pr.state === "OPEN" ? sideStatus(...review) : "",
+    review && (!pr.state || pr.state === "OPEN") ? sideStatus(...review) : "",
     pr.mergeable === "CONFLICTING" ? sideStatus("fail", "conflict", "Conflicts") : "",
   ].join("");
 }
@@ -1242,6 +1240,20 @@ function stepStack(step) {
   if (stack.length > 1 && next) openPrOverlay(next.slug, next.number);
 }
 
+// The PR facts and action rows, shared by the overview's left column and the Code page inspector.
+function prFacts(pr, tree, wtPath, overlay = false) {
+  const open = pr.url && pr.repo && (!pr.state || pr.state === "OPEN"); // the Code page list holds only open PRs, without a state
+  return sideFacts([
+    ["Status", prStatus(pr)],
+    ["Author", pr.author ? `<span class="code-side-person">${avatar(pr.author)}${escapeHtml(pr.author)}</span>${pr.createdAt ? `<span class="code-muted" data-tip="Opened ${escapeHtml(new Date(pr.createdAt).toLocaleString())}${pr.updatedAt ? ` · updated ${escapeHtml(new Date(pr.updatedAt).toLocaleString())}` : ""}">${ago(pr.updatedAt || pr.createdAt)} ago</span>` : ""}` : ""],
+    ["Branch", pr.branch ? `${branchChip(pr.branch)}${pr.base ? `<span class="code-muted code-side-base" data-tip="Merges into ${escapeHtml(pr.base)}">→ ${escapeHtml(pr.base)}</span>` : ""}` : ""],
+    ["Size", pr.additions !== undefined ? `<span class="code-side-size">${sizeBar(pr)}<span class="code-add">+${pr.additions}</span><span class="code-del">−${pr.deletions}</span></span>${labelDots(pr)}` : ""],
+    ["Reviews", prReviewers(pr)],
+    [appName(), open ? sideSkills(pr, tree?.path || pr.repo, tree) : ""],
+    ["Local", wtPath ? `<span class="code-side-tools">${iconButton("branch", `Worktree overview${overlay ? " (W)" : ""}`, `data-diff-wt="${escapeHtml(wtPath)}"`)}${tree ? treeActions(tree) : ""}</span>` : open && ui.data ? `<span class="code-muted">Not checked out</span>` : ""],
+  ]);
+}
+
 function prColumn() {
   const { slug, number, key } = diff.pr;
   const pr = prInfo(slug, number);
@@ -1251,17 +1263,8 @@ function prColumn() {
   const commits = detail?.commits;
   const allFiles = patches.get(JSON.stringify({ source: "pr", slug, number })); // gh pr view caps its file list at 100
   const wtPath = tree?.path || detail?.worktree;
-  const open = pr.url && pr.state === "OPEN" && pr.repo;
   const stackTip = stack.length > 1 ? `Every PR in the stack, #${stack[0].number}–#${stack[stack.length - 1].number}, against ${stack[0].base}` : "";
-  return sideFacts([
-    ["Status", prStatus(pr)],
-    ["Author", pr.author ? `<span class="code-side-person">${avatar(pr.author)}${escapeHtml(pr.author)}</span>${pr.createdAt ? `<span class="code-muted" data-tip="Opened ${escapeHtml(new Date(pr.createdAt).toLocaleString())}${pr.updatedAt ? ` · updated ${escapeHtml(new Date(pr.updatedAt).toLocaleString())}` : ""}">${ago(pr.updatedAt || pr.createdAt)} ago</span>` : ""}` : ""],
-    ["Branch", pr.branch ? `${branchChip(pr.branch)}${pr.base ? `<span class="code-muted">→ ${escapeHtml(pr.base)}</span>` : ""}` : ""],
-    ["Size", pr.additions !== undefined ? `<span class="code-side-size">${sizeBar(pr)}<span class="code-add">+${pr.additions}</span><span class="code-del">−${pr.deletions}</span></span>${labelDots(pr)}` : ""],
-    ["Reviews", prReviewers(pr)],
-    [appName(), open ? sideSkills(pr, tree?.path || pr.repo, tree) : ""],
-    ["Local", wtPath ? `<span class="code-side-tools">${iconButton("branch", "Worktree overview (W)", `data-diff-wt="${escapeHtml(wtPath)}"`)}${tree ? treeActions(tree) : ""}</span>` : open && ui.data ? `<span class="code-muted">Not checked out</span>` : ""],
-  ])
+  return prFacts(pr, tree, wtPath, true)
     + sideViews(`${detail?.body ? scopeButton("description", "Description") : ""}${scopeButton("all", "Changes", countLabel(allFiles?.length))}${stack.length > 1 ? scopeButton("stack", `<span data-tip="${escapeHtml(stackTip)}">Stack</span>`, countLabel(stack.length)) : ""}`)
     + notesSection(pr, tree?.path || pr.repo || "")
     + `<section>${sideHead("Commits", commits ? String(commits.length) : "")}${!commits ? `<p class="code-muted">${ui.detailErrors.has(`pr:${key}`) ? "Couldn't load commits." : "Loading…"}</p>` : scopeCommits(commits)}</section>`
@@ -1956,7 +1959,6 @@ function selectedItem() {
   return {};
 }
 
-const fact = (label, value) => value ? `<div><dt>${label}</dt><dd>${value}</dd></div>` : "";
 // Porcelain "XY path" entries as tree files; untracked "??" shows as A.
 const statusFiles = (entries) => entries.map((entry) => ({ path: entry.slice(3), status: entry.slice(0, 2).trim().replace("??", "A") || "M" }));
 
@@ -1972,11 +1974,18 @@ const commitTarget = (params, subject, sub) => ({ params: { source: "commit", ..
 function treeDetail(tree) {
   const pr = prFor(tree);
   const extra = ui.detail.get(`tree:${tree.path}`);
-  return `<header class="code-detail-head"><h3>${escapeHtml(tree.branch)}</h3>${copyButton(tree.branch, "Copy branch")}</header>
-    <button type="button" class="code-path code-detail-path" data-code-copy="${escapeHtml(tree.path)}" data-tip="Copy path">${escapeHtml(tree.path)}</button>
-    <div class="code-detail-actions"><button type="button" class="code-bar-button" data-code-wt-overlay>Open worktree overview <kbd>Enter</kbd></button>${treeActions(tree)}</div>
-    <dl class="code-facts">${fact("Last change", `${when(tree.activity)} ago`)}${fact("Created", tree.created ? `${when(tree.created)} ago` : "")}${fact("Last commit", tree.commitTime ? `${when(tree.commitTime)} ago` : "")}${fact("Own commits", tree.ownCommits === undefined ? "" : String(tree.ownCommits))}${fact("Uncommitted", tree.dirty === null ? "checking…" : String(tree.dirty))}${fact("vs main", tree.main ? "" : `${tree.ahead ?? "?"} ahead · ${tree.behind ?? "?"} behind`)}${fact("Pull request", pr ? `${prChip(pr)} ${reviewTag(pr)}` : historyChip(tree))}${fact("Cleanup", tree.cleanup ? `<span class="code-tag code-tag-${cleanupTone(tree.cleanup.reason)}">${escapeHtml(tree.cleanup.reason)}</span>` : "")}</dl>
-    ${pr ? `<section><h4>Review this PR in ${appName()}</h4><div class="code-skill-row">${skillButtons(pr, tree.path, tree, true)}</div></section>` : ""}
+  const ages = [tree.created && `created ${ago(tree.created)} ago`, tree.commitTime && `last commit ${ago(tree.commitTime)} ago`, tree.ownCommits !== undefined && `${tree.ownCommits} own ${tree.ownCommits === 1 ? "commit" : "commits"}`].filter(Boolean).join(" · ");
+  const review = pr && REVIEW[pr.reviewDecision];
+  return `<header class="code-detail-head"><h3>${escapeHtml(tree.branch)}</h3><span class="code-side-tools">${iconButton("expand", "Worktree overview (Enter)", "data-code-wt-overlay")}${copyButton(tree.branch, "Copy branch")}</span></header>
+    ${sideFacts([
+      ["Path", `<button type="button" class="code-path code-side-path" data-code-copy="${escapeHtml(tree.path)}" data-tip="${escapeHtml(tree.path)} · click to copy">${escapeHtml(shortPath(tree.path))}</button>`],
+      ["Status", `${tree.main ? "Main checkout" : `<span data-tip="Commits ahead of and behind origin/main">↑${tree.ahead ?? "?"} ↓${tree.behind ?? "?"} vs main</span>`}<span class="${tree.dirty ? "code-side-pending" : "code-muted"}">${tree.dirty === null ? "checking…" : tree.dirty ? `${tree.dirty} uncommitted` : "clean"}</span><span class="code-muted">changed ${ago(tree.activity)} ago</span>`],
+      ["History", ages && `<span class="code-muted">${ages}</span>`],
+      ["PR", pr ? `<button type="button" class="code-side-pr" data-code-goto-pr="${escapeHtml(`pr:${pr.slug}#${pr.number}`)}" data-tip="Inspect the pull request">${ciBadge(pr)}<b>#${pr.number}</b><span>${escapeHtml(pr.title || "")}</span></button>${review ? `<span class="code-muted">${review[1]}</span>` : ""}` : historyChip(tree)],
+      ["Cleanup", tree.cleanup ? `<span class="code-side-cleanup code-side-${{ safe: "pass", review: "pending", keep: "quiet", pending: "quiet" }[tree.cleanup.level] || "quiet"}">${escapeHtml(tree.cleanup.reason)}</span>` : ""],
+      [appName(), pr ? sideSkills(pr, tree.path, tree) : ""],
+      ["Open", `<span class="code-side-tools">${treeActions(tree)}</span>`],
+    ])}
     <section><h4>Uncommitted files <span>${tree.files?.length || 0}${tree.dirty > 40 ? ` of ${tree.dirty}` : ""}</span></h4>${tree.files?.length ? fileTree(statusFiles(tree.files), diffFileLink) : `<p class="code-muted">${tree.dirty === null ? "Checking…" : "Working tree clean."}</p>`}</section>
     <section><h4>${tree.main ? "Recent commits" : "Commits not on main"}</h4>${commitList(extra?.commits.slice(0, 15), "None. Everything here is on main.", { repo: tree.repo, slug: ui.data.slugs?.[tree.repo] })}</section>
     <section><h4>Ignored local files <span>${extra ? extra.ignoredCount : ""}</span></h4>${!extra ? `<p class="code-muted">Loading…</p>` : extra.ignored.length ? `<ul class="code-files code-files-ignored">${extra.ignored.map((file) => `<li><span class="code-file-code code-file-ign">!!</span><span>${escapeHtml(file.path)}</span><span class="code-ignored-size">${file.path.endsWith("/") ? `${file.files.toLocaleString()} ${file.files === 1 ? "file" : "files"} · ` : ""}${file.truncated ? "≥ " : ""}${bytes(file.bytes)}${file.newest ? ` · ${ago(file.newest)}` : ""}</span></li>`).join("")}</ul><p class="code-muted">Removing the worktree deletes these. Dependency and build caches are not listed.</p>` : `<p class="code-muted">Only dependency and build caches. Nothing hand-made.</p>`}</section>`;
@@ -1985,15 +1994,9 @@ function treeDetail(tree) {
 function prDetail(pr) {
   const tree = worktreeFor(pr);
   const extra = ui.detail.get(`pr:${pr.slug}#${pr.number}`);
-  const reviews = (pr.reviews || []).map((review) => `<span class="code-reviewer">${avatar(review.login)}${escapeHtml(review.login)} <em class="code-review-${review.state.toLowerCase()}">${escapeHtml(review.state.toLowerCase().replace("_", " "))}</em></span>`).join("");
-  const requested = (pr.reviewers || []).map((login) => `<span class="code-reviewer">${avatar(login)}${escapeHtml(login)} <em>requested</em></span>`).join("");
-  return `<header class="code-detail-head">${ciBadge(pr)}<h3><a class="code-pr-link" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">#${pr.number}</a> ${escapeHtml(pr.title)}</h3>${ui.data.previews?.includes(pr.repo) ? previewButton(pr) : ""}${copyButton(pr.url, "Copy PR link")}</header>
-    <div class="code-detail-meta">${avatar(pr.author)}<span>${escapeHtml(pr.author)}</span><span>opened ${ago(pr.createdAt)} ago · updated ${ago(pr.updatedAt)} ago</span>${reviewTag(pr)}${pr.draft ? '<span class="code-tag code-tag-draft">draft</span>' : ""}${pr.mergeable === "CONFLICTING" ? '<span class="code-tag code-tag-dirty">conflicts</span>' : ""}</div>
-    <div class="code-detail-meta">${branchChip(pr.branch)}${sizeBar(pr)}<span class="code-muted">+${pr.additions} −${pr.deletions}</span>${labelDots(pr)}</div>
-    <div class="code-detail-actions"><button type="button" class="code-bar-button" data-code-pr-overlay>Open PR overview <kbd>Enter</kbd></button></div>
-    <section><h4>Send to ${appName()} <span>${tree ? "from the repo root, on its worktree" : "in the main checkout"}</span></h4><div class="code-skill-row">${skillButtons(pr, tree?.path || pr.repo, tree, true)}</div>${tree ? `<div class="code-detail-actions">${treeActions(tree)}</div>` : ""}</section>
+  return `<header class="code-detail-head">${ciBadge(pr)}<h3><a class="code-pr-link" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">#${pr.number}</a> ${escapeHtml(pr.title)}</h3><span class="code-side-tools">${iconButton("expand", "PR overview (Enter)", "data-code-pr-overlay")}${ui.data.previews?.includes(pr.repo) ? previewButton(pr) : ""}${copyButton(pr.url, "Copy PR link")}</span></header>
+    ${prFacts(pr, tree, tree?.path)}
     ${stackSection(pr)}
-    ${reviews || requested ? `<section><h4>Reviewers</h4><div class="code-reviewers">${reviews}${requested}</div></section>` : ""}
     <section><h4>Files <span>${extra?.files?.length ?? ""}</span></h4>${extra ? fileTree(extra.files, diffFileLink) : `<p class="code-muted">Loading…</p>`}</section>
     <section><h4>Commits <span>${extra ? extra.commits.length : ""}</span></h4>${commitList(extra?.commits.slice(-15).reverse(), "No commits.", { repo: pr.repo, slug: pr.slug })}</section>
     ${extra?.body ? descriptionSection(`${pr.slug}#${pr.number}`, extra.body) : ""}`;
@@ -2326,6 +2329,7 @@ async function handleClick(event) {
     if ("codeViewDiff" in dataset) return openDiff();
     if ("codePrOverlay" in dataset) { const { pr } = selectedItem(); return pr && openPrOverlay(pr.slug, pr.number); }
     if ("codeWtOverlay" in dataset) { const { tree } = selectedItem(); return tree && openWorktreeOverlay(tree.path); }
+    if (dataset.diffWt) return openWorktreeOverlay(dataset.diffWt);
     if (dataset.codeGotoPr) { ui.tab = "prs"; ui.prScope = "all"; syncUrl(); render({ animate: true }); return select(dataset.codeGotoPr, true); }
     if (dataset.codeCommitDiff) {
       const params = { repo: dataset.repo, sha: dataset.codeCommitDiff, ...(dataset.slug ? { slug: dataset.slug } : {}) };
