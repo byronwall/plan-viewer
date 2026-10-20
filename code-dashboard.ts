@@ -506,8 +506,8 @@ export function createCodeDashboard(root: string) {
       const draft = `Let's talk through this pull request: ${prUrl}.${where} Read it first, then `;
       url = app === "claude" ? claudeUrl(root, draft) : codexNewTaskUrl(draft, root);
     } else if (app === "claude") {
-      // Claude turns a leading "/" from a link into a full-width "／" so links can't run commands; name the skill instead.
-      url = claudeUrl(root, `Use the ${skill} skill on ${prUrl}.${where}`);
+      // Claude turns a leading "/" from a link into a full-width "／" so links can't run commands, so the command goes mid-sentence.
+      url = claudeUrl(root, `Run /${skill} on ${prUrl}.${where}`);
     } else if (app === "codex") {
       if (!file) throw new Error(`No ${skill} skill under ${root}/.claude/skills.`);
       url = codexNewTaskUrl(`Read and follow the ${skill} skill at ${file} for this pull request: ${prUrl}.${where}`, root);
