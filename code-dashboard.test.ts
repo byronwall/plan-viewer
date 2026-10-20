@@ -31,6 +31,14 @@ test("an expired reflog falls back to comparing the branch tip with the worktree
   assert.equal(classifyWorktree(tree({ created: now - 2 * DAY, commitTime: now - DAY }), true, now).reason, "branch merged into main");
 });
 
+test("parsePatch flags symlinks by their 120000 mode", async () => {
+  const { parsePatch } = await import("./public/code.js");
+  const [link, plain] = parsePatch("diff --git a/s b/s\nnew file mode 120000\nindex 0000000..1111111\n--- /dev/null\n+++ b/s\n@@ -0,0 +1 @@\n+../t\n\\ No newline at end of file\ndiff --git a/n.md b/n.md\nnew file mode 100644\n--- /dev/null\n+++ b/n.md\n@@ -0,0 +1 @@\n+hi\n");
+  assert.equal(link.symlink, true);
+  assert.equal(link.lines.at(-1).text, "../t");
+  assert.equal(plain.symlink, undefined);
+});
+
 test("parsePatch numbers lines and reads file status", async () => {
   const { parsePatch } = await import("./public/code.js");
   const [added, changed] = parsePatch("diff --git a/n.md b/n.md\nnew file mode 100644\n--- /dev/null\n+++ b/n.md\n@@ -0,0 +1 @@\n+hi\ndiff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -3,2 +3,2 @@\n a\n-b\n+c\n");

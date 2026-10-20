@@ -1528,3 +1528,9 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 .code-diff-split.is-map-full .code-diff-files > [data-d="files"] { padding: 0 12px 12px; }
 .code-map-copy { display: inline-flex; flex: none; align-items: center; gap: 5px; padding: 2px 9px; font-size: .74rem; }
 .code-map-copy .code-icon { width: 13px; height: 13px; }
+
+.code-symlink { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 14px; font-size: 13px; }
+.code-symlink .code-icon { width: 16px; height: 16px; color: #0f8a8a; }
+.code-symlink-target { padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+.code-symlink-target.is-add { background: #e9f8ef; }
+.code-symlink-target.is-del { background: #fdeceb; text-decoration: line-through; }

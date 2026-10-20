@@ -45,6 +45,7 @@ const ICONS = {
   refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
   comment: '<path d="M4 5h16v11H9l-5 4z"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.5 1.5M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.5-1.5"/>',
   conflict: '<path d="M12 3 2 20h20zM12 10v4M12 17v.5"/>',
   review: '<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/>',
   pass: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
@@ -569,6 +570,7 @@ export function parsePatch(patch) {
     const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
     if (hunk) { oldLine = Number(hunk[1]); newLine = Number(hunk[2]); file.lines.push({ kind: "hunk", text: line }); continue; }
     if (!file.lines.length) {
+      if (/ 120000$/.test(line)) file.symlink = true; // git's mode for a symbolic link, on the mode or index line
       if (line.startsWith("new file")) file.status = "A";
       else if (line.startsWith("deleted file")) file.status = "D";
       else if (line.startsWith("rename from ")) { file.status = "R"; file.old = line.slice(12); }
@@ -1404,8 +1406,20 @@ const lineHtml = (line) => {
   return (line.marks || ((line.kind === "add" || line.kind === "del") && /^\s|\s$/.test(line.text)) ? decorate(html, lineClasses(line)) : html) || " ";
 };
 
+// A symlink's "content" is its target path, which reads like a one-line text file; show it as a link instead.
+function symlinkBody(file) {
+  const target = (kind) => file.lines.find((line) => line.kind === kind)?.text;
+  const from = target("del");
+  const to = target("add");
+  const path = (text, kind) => `<code class="code-symlink-target is-${kind}">${escapeHtml(text)}</code>`;
+  const what = file.status === "A" ? "New symbolic link" : file.status === "D" ? "Removed symbolic link" : "Symbolic link";
+  const targets = from && to ? `${path(from, "del")} → ${path(to, "add")}` : to ? path(to, "add") : from ? path(from, "del") : "target unchanged";
+  return `<p class="code-symlink">${icon("link")}<b>${what}</b> → ${targets}</p>`;
+}
+
 function diffTable(file) {
   if (file.binary) return `<p class="code-muted">Binary file.</p>`;
+  if (file.symlink) return symlinkBody(file);
   if (!file.lines.length) return `<p class="code-muted">${file.status === "R" ? "Renamed without changes." : "No textual changes."}</p>`;
   highlightFile(file);
   if (!file.marked) { file.marked = true; markWords(file.lines); }
@@ -1443,7 +1457,7 @@ function splitTable(file) {
 
 const diffSegment = (attr, current, options) => `<div class="code-segment">${Object.entries(options).map(([id, label]) => `<button type="button" ${attr}="${id}" aria-pressed="${current === id}">${label}</button>`).join("")}</div>`;
 const viewedBox = (file) => subject() ? `<label class="code-diff-viewed"><input type="checkbox" data-diff-viewed="${diff.files.indexOf(file)}" ${isViewed(file) ? "checked" : ""}> Viewed</label>` : "";
-const fileHeadInner = (file, controls = "") => `<b>${escapeHtml(file.path)}</b>${file.status === "R" ? `<span class="code-muted code-diff-from" title="from ${escapeHtml(file.old)}">from ${escapeHtml(file.old)}</span>` : ""}${copyButton(file.path, "Copy path")}${isGenerated(file) ? '<span class="code-muted">generated</span>' : ""}<span class="code-spacer"></span>${controls}${diff.pr && !file.binary ? iconButton("comment", "Note on the whole file", `data-note-file="${diff.files.indexOf(file)}"`) : ""}<span class="code-ftree-delta"><b class="code-file-add">+${file.additions}</b><b class="code-file-del">−${file.deletions}</b></span>`;
+const fileHeadInner = (file, controls = "") => `<b>${escapeHtml(file.path)}</b>${file.symlink ? '<span class="code-muted">symlink</span>' : ""}${file.status === "R" ? `<span class="code-muted code-diff-from" title="from ${escapeHtml(file.old)}">from ${escapeHtml(file.old)}</span>` : ""}${copyButton(file.path, "Copy path")}${isGenerated(file) ? '<span class="code-muted">generated</span>' : ""}<span class="code-spacer"></span>${controls}${diff.pr && !file.binary ? iconButton("comment", "Note on the whole file", `data-note-file="${diff.files.indexOf(file)}"`) : ""}<span class="code-ftree-delta"><b class="code-file-add">+${file.additions}</b><b class="code-file-del">−${file.deletions}</b></span>`;
 let lastBodyKey = "";
 
 function renderDiffFiles() {
@@ -1892,7 +1906,7 @@ function fileTree(files, attrs, current = null, viewed = null) {
     const delta = file.additions === undefined ? "" : `<span class="code-ftree-delta"><b class="code-file-add">+${file.additions}</b><b class="code-file-del">−${file.deletions}</b></span>`;
     const seen = viewed?.(file);
     const check = viewed ? `<span class="code-ftree-viewed" aria-label="${seen ? "Viewed" : ""}">${seen ? "✓" : ""}</span>` : "";
-    return `<li class="is-link${seen ? " is-viewed" : ""}" ${attrs(file)} aria-current="${file === current}" title="${escapeHtml(file.path)}">${guides}${status}${fileType(file.path)}<span class="code-ftree-name">${escapeHtml(row.name)}</span>${delta}${check}</li>`;
+    return `<li class="is-link${seen ? " is-viewed" : ""}" ${attrs(file)} aria-current="${file === current}" title="${escapeHtml(file.path)}">${guides}${status}${file.symlink ? '<span class="code-ftype" style="--ft:#0f8a8a">link</span>' : fileType(file.path)}<span class="code-ftree-name">${escapeHtml(row.name)}</span>${delta}${check}</li>`;
   });
   return `<ul class="code-ftree">${rows.join("")}</ul>`;
 }
