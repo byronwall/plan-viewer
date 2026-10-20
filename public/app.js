@@ -2,7 +2,7 @@ import { searchDocuments, searchPrs } from "./search.js";
 import { renderActions, renderWorkBreakdown } from "./actions.js";
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock.js";
 import { documentHref, escapeHtml, markdownOutline, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
-import { ago, cachedPrIndex, installCommitCards, loadPrIndex, openPrOverlay, openWorktreeOverlay, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
+import { TABS as CODE_TABS, ago, cachedPrIndex, installCommitCards, loadPrIndex, openPrOverlay, openWorktreeOverlay, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { config, referenceConfig, setConfig } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
 
@@ -1709,7 +1709,7 @@ const shortcuts = [
   { keys: ["T"], description: "Go to today’s plan", run: goToToday },
   { keys: ["C"], description: "Open hovered action or section in Codex; otherwise a global draft", run: openCursorComposer },
   { keys: ["D"], description: "Open a Codex draft for the current file", run: openDocumentComposer },
-  { keys: ["⌘K", "Ctrl+K", "/"], description: "Search plans, tasks, topics, and reference files", run: openSearch },
+  { keys: ["⌘K", "Ctrl+K", "/"], description: "Search pages, plans, tasks, topics, reference files, and PRs", run: openSearch },
   { keys: ["A"], description: "Open Tasks", run: () => showTasks() },
   { keys: ["W"], description: "Open Weeks", run: () => showWeeks() },
   { keys: ["G"], description: "Open Code: worktrees, pull requests, cleanup", run: () => showCode() },
@@ -1833,28 +1833,39 @@ function prResult(pr, terms) {
 }
 const renderPrResult = ({ pr }, index, terms) => resultRow({ ...prResult(pr, terms), attrs: searchAttrs(index) });
 
+// Every top-level page and Code tab, so ⌘K jumps straight to e.g. Pull requests.
+const PAGES = [
+  { title: "Today", detail: "Today’s plan", icon: "plan", run: goToToday },
+  { title: "Tasks", detail: "All tasks", icon: "task", run: () => showTasks() },
+  { title: "Weeks", detail: "Calendar of daily plans", icon: "plan", run: () => showWeeks() },
+  ...Object.entries(LIBRARY_VIEWS).map(([view, { title, intro }]) => ({ title, detail: intro, icon: title === "Topics" ? "topic" : "reference", run: () => showLibrary(view) })),
+  ...Object.entries(CODE_TABS).map(([tab, title]) => ({ title, detail: `Code · ${title}`, icon: tab === "prs" ? "pr" : tab === "commits" ? "branch" : "code", run: () => showCode({ tab: tab === "worktrees" ? "" : tab }) })),
+];
+const searchPages = (query) => { const terms = query.toLowerCase().split(/\s+/).filter(Boolean); return PAGES.filter((page) => terms.every((term) => `${page.title} ${page.detail}`.toLowerCase().includes(term))).map((page) => ({ page })); };
+const renderPageResult = ({ page }, index) => resultRow({ icon: page.icon, title: escapeHtml(page.title), detail: escapeHtml(page.detail), side: "Page", attrs: searchAttrs(index) });
+
 // With no query, PRs waiting on you lead; a query lists matching PRs (number, title, branch, author) above documents.
 function searchGroups(query) {
   const index = cachedPrIndex();
   const prs = index?.prs || [];
   const docs = searchDocuments(state.documents, query);
-  if (query) return [["Pull requests", searchPrs(prs, query)], ["Documents", docs]];
+  if (query) return [["Pages", searchPages(query)], ["Pull requests", searchPrs(prs, query)], ["Documents", docs]];
   const open = prs.filter((pr) => pr.state === "OPEN").sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
-  return [["Needs your review", open.filter((pr) => pr.requestedOfMe).slice(0, 5)], ["Your open PRs", open.filter((pr) => pr.author === index?.me && !pr.requestedOfMe).slice(0, 5)], ["Documents", docs]];
+  return [["Needs your review", open.filter((pr) => pr.requestedOfMe).slice(0, 5)], ["Your open PRs", open.filter((pr) => pr.author === index?.me && !pr.requestedOfMe).slice(0, 5)], ["Pages", searchPages("")], ["Documents", docs]];
 }
 
 function renderSearchResults() {
   const query = elements.searchInput.value.trim();
   const terms = query.toLowerCase().replace(/^#/, "").split(/\s+/).filter(Boolean);
-  const groups = searchGroups(query).map(([label, items]) => [label, items.map((item) => (label === "Documents" ? item : { pr: item }))]).filter(([, items]) => items.length);
+  const groups = searchGroups(query).map(([label, items]) => [label, items.map((item) => (label === "Documents" || item.page ? item : { pr: item }))]).filter(([, items]) => items.length);
   searchMatches = groups.flatMap(([, items]) => items);
   searchIndex = 0;
   const prCount = searchMatches.filter((item) => item.pr).length;
-  const docCount = searchMatches.length - prCount;
+  const docCount = searchMatches.filter((item) => !item.pr && !item.page).length;
   elements.searchStatus.textContent = `${prCount ? `${prCount} ${prCount === 1 ? "PR" : "PRs"} · ` : ""}${docCount} ${docCount === 1 ? "document" : "documents"}`;
   let position = 0;
   elements.searchResults.innerHTML = searchMatches.length
-    ? groups.map(([label, items]) => `<div class="search-section" role="presentation">${label}</div>${items.map((item) => { const index = position++; return item.pr ? renderPrResult(item, index, terms) : renderSearchResult(item, index, terms); }).join("")}`).join("")
+    ? groups.map(([label, items]) => `<div class="search-section" role="presentation">${label}</div>${items.map((item) => { const index = position++; return item.pr ? renderPrResult(item, index, terms) : item.page ? renderPageResult(item, index) : renderSearchResult(item, index, terms); }).join("")}`).join("")
     : '<div class="search-empty"><strong>No matches</strong><span>Try a title, path, task ID, PR number or title, project, or tag.</span></div>';
   elements.searchResults.scrollTop = 0;
   syncSearchSelection();
@@ -1886,7 +1897,8 @@ function openSearchResult(index, external = false) {
   if (!doc) return;
   if (doc.pr && external) return window.open(doc.pr.url, "_blank", "noreferrer");
   elements.searchDialog.close();
-  if (doc.pr) openPrOverlay(doc.pr.slug, doc.pr.number);
+  if (doc.page) { closeOverview(); doc.page.run(); }
+  else if (doc.pr) openPrOverlay(doc.pr.slug, doc.pr.number);
   else { closeOverview(); selectDocument(doc.path); }
 }
 
@@ -2090,7 +2102,6 @@ for (const method of ["pushState", "replaceState"]) {
 }
 window.addEventListener("popstate", recordVisit);
 
-const CODE_TABS = { worktrees: "Worktrees", prs: "Pull requests", commits: "Commits", cleanup: "Cleanup" };
 const prNumberLabel = (slug, number) => `${slug === referenceConfig().defaultSlug ? "" : slug.split("/")[1]}#${number}`;
 const findPr = (slug, number) => cachedPrIndex()?.prs.find((pr) => pr.slug === slug && pr.number === number);
 

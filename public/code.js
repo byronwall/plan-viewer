@@ -4,7 +4,7 @@ import { decorate, lineClasses, markWords } from "./word-diff.js";
 import { mapHtml, mapSvg, moveGroups, svgToPng, tileCard } from "./diff-map.js";
 
 // Code dashboard: tracked repos' worktrees (most recent first), their open PRs, and worktree cleanup.
-const TABS = { worktrees: "Worktrees", prs: "Pull requests", commits: "Commits", cleanup: "Cleanup" };
+export const TABS = { worktrees: "Worktrees", prs: "Pull requests", commits: "Commits", cleanup: "Cleanup" };
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const ui = {
@@ -1987,7 +1987,7 @@ function toolbar() {
   const day = ui.day ? `<button type="button" class="code-day-chip" data-code-day="${ui.day}">${new Date(`${ui.day}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })} ×</button>` : "";
   const apps = segment("data-code-app", agentApp, { codex: "Codex", claude: "Claude" });
   // Sized to its content, with the activity strip spanning both rows; scanning shows as the spinning refresh icon, so nothing shifts.
-  return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-code-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span><span class="code-app-label">Agent</span>${apps}${iconButton("refresh", ui.data.scanning ? "Scanning worktrees, CI, and PR history…" : "Refresh everything", `data-code-refresh class="code-icon-button${ui.data.scanning ? " is-spinning" : ""}"`)}${iconButton("settings", `Tracked repositories (${ui.data.repos.length})`, 'popovertarget="code-settings" data-code-settings')}</div>${controls || day ? `<div class="code-controls">${day}${controls}</div>` : ""}</div>${activityStrip(trees)}</div>`;
+  return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-code-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span><span class="code-app-label">Agent</span>${apps}${iconButton("refresh", ui.data.scanning ? "Scanning worktrees, CI, and PR history…" : "Refresh everything  (R)", `data-code-refresh class="code-icon-button${ui.data.scanning ? " is-spinning" : ""}"`)}${iconButton("settings", `Tracked repositories (${ui.data.repos.length})`, 'popovertarget="code-settings" data-code-settings')}</div>${controls || day ? `<div class="code-controls">${day}${controls}</div>` : ""}</div>${activityStrip(trees)}</div>`;
 }
 
 // Tracked repositories live in a settings popover opened from the toolbar gear.
@@ -2253,6 +2253,7 @@ function handleKey(event) {
   const actions = {
     arrowdown: () => move(1), j: () => move(1), arrowup: () => move(-1), k: () => move(-1),
     f: () => host.querySelector("[data-code-filter]")?.focus(),
+    r: () => { host.querySelector("[data-code-refresh]")?.classList.add("is-spinning"); return load(true); },
     escape: () => { if (!host.querySelector("[data-code-reset]")) return; resetFilters(); render({ animate: true }); },
     b: () => ui.tab === "commits" && host.querySelector("#code-branches")?.showPopover(),
     enter: () => item.commit ? openDiff() : item.pr ? openPrOverlay(item.pr.slug, item.pr.number) : item.tree && openWorktreeOverlay(item.tree.path),
@@ -2263,7 +2264,7 @@ function handleKey(event) {
     d: () => { const pr = item.pr || prFor(item.tree); if (!pr || !ui.data.previews?.includes(pr.repo)) return; notify(`Opening the PR #${pr.number} deployment…`); return post("preview", { repo: pr.repo, number: String(pr.number) }); },
     1: () => skill(0), 2: () => skill(1), 3: () => skill(2), 4: () => skill(3),
   };
-  const always = ["arrowdown", "arrowup", "j", "k", "f", "b", "escape"];
+  const always = ["arrowdown", "arrowup", "j", "k", "f", "r", "b", "escape"];
   if (!actions[key] || (!always.includes(key) && !item.tree && !item.pr && !item.commit)) return;
   event.preventDefault();
   Promise.resolve(actions[key]()).catch((error) => notify(error.message, true));
