@@ -866,6 +866,8 @@ function ensureDiffDialog() {
     renderDiff();
     if (dataset.diffView) scrollToFile();
   });
+  diffDialog.addEventListener("pointerover", (event) => { const target = event.target.closest("[data-tip]"); if (target) showTip(target); else hideTip(); });
+  diffDialog.addEventListener("pointerleave", hideTip);
   diffDialog.addEventListener("keydown", (event) => {
     if (isSummonKey(event)) return; // H and ⌘K open Recently viewed and search above the overlay
     event.stopPropagation(); // keep the page's J/K and other global shortcuts out of the overlay
@@ -887,6 +889,8 @@ function ensureDiffDialog() {
     else if (event.key === "D" && diffDialog.querySelector('nav.code-diff-scopes [data-diff-scope="description"]')) selectScope("description");
     else if (event.key === "d" && subject()) cycleMainView();
     else if (key === "c" && diff.pr && !isDocScope() && diff.files?.[diff.index]) selectedLines() ? openComposer(selectedLines()) : noteOnFile(diff.index); // no selection: a note on the whole current file
+    else if (/^[1-9]$/.test(key) && diffDialog.querySelectorAll(".code-side-skills [data-code-skill]")[key - 1]) diffDialog.querySelectorAll(".code-side-skills [data-code-skill]")[key - 1].click();
+    else if (key === "w" && diffDialog.querySelector(diff.pr ? ".code-side-facts [data-diff-wt]" : ".code-side-facts [data-diff-pr]")) diffDialog.querySelector(diff.pr ? ".code-side-facts [data-diff-wt]" : ".code-side-facts [data-diff-pr]").click();
     else if (key === "v") { diffView = diffView === "all" ? "single" : "all"; storage.set("code-diff-view", diffView); renderDiff(); scrollToFile(); }
     else if (key === "m" && diffView === "single") { diff.mode = diff.mode === "rendered" ? "diff" : "rendered"; renderDiff(); }
     else if (key === "s") { diffLayout = diffLayout === "split" ? "unified" : "split"; storage.set("code-diff-layout", diffLayout); renderDiff(); }
@@ -1056,6 +1060,45 @@ function stepScope(step) {
 
 const CI_LABELS = { SUCCESS: ["pass", "Checks passing"], FAILURE: ["fail", "Checks failing"], ERROR: ["fail", "Checks errored"], PENDING: ["pending", "Checks running"], EXPECTED: ["pending", "Checks expected"] };
 
+// The overlay's left column opens with one label/value grid: facts first, then a row per set of actions.
+const sideFacts = (rows) => `<dl class="code-side-facts">${rows.filter(([, value]) => value).map(([label, value]) => `<dt>${label}</dt><dd>${value}</dd>`).join("")}</dl>`;
+const sideStatus = (kind, glyph, text, tip = "") => `<span class="code-side-status code-side-${kind}"${tip ? ` data-tip="${escapeHtml(tip)}"` : ""}>${icon(glyph)}${text}</span>`;
+const sideHead = (title, meta = "", tools = "") => `<header class="code-side-head"><h4>${title}${meta ? ` <span>${meta}</span>` : ""}</h4>${tools}</header>`;
+const sideViews = (buttons) => `<nav class="code-diff-scopes code-side-views">${buttons}</nav>`;
+const scopeCommits = (commits) => `<ol class="code-diff-scopes code-diff-commits">${commits.map((commit, index) => `<li>${scopeButton(commit.sha, `<b>${index + 1}</b><span>${escapeHtml(commit.subject)}</span>`, `<code>${commit.sha.slice(0, 7)}</code>`)}</li>`).join("")}</ol>`;
+
+function prStatus(pr) {
+  const ci = CI_LABELS[pr.ci];
+  const by = (state) => (pr.reviews || []).filter((review) => review.state === state).map((review) => review.login).join(", ");
+  const review = {
+    APPROVED: ["pass", "approved", "Approved", by("APPROVED") && `Approved by ${by("APPROVED")}`],
+    CHANGES_REQUESTED: ["fail", "diff", "Changes requested", by("CHANGES_REQUESTED") && `Changes requested by ${by("CHANGES_REQUESTED")}`],
+    REVIEW_REQUIRED: ["quiet", "review", "Needs review"],
+  }[pr.reviewDecision];
+  return [
+    { MERGED: sideStatus("merged", "branch", "Merged"), CLOSED: sideStatus("quiet", "fail", "Closed") }[pr.state] || "",
+    pr.draft ? sideStatus("quiet", "draft", "Draft") : "",
+    ci ? sideStatus(ci[0], ci[0], ci[1]) : "",
+    review && pr.state === "OPEN" ? sideStatus(...review) : "",
+    pr.mergeable === "CONFLICTING" ? sideStatus("fail", "conflict", "Conflicts") : "",
+  ].join("");
+}
+
+// The state is a color and a mark, named on hover: requested is quiet, approved green, changes red.
+const REVIEW_MARK = { approved: "pass", "changes requested": "fail" };
+// People by name; bots (Copilot and the like) shrink to their avatar, named on hover.
+function prReviewers(pr) {
+  const seen = new Set();
+  const people = [...(pr.reviews || []).map((review) => [review.login, review.state.toLowerCase().replace("_", " ")]), ...(pr.reviewers || []).map((login) => [login, "requested"])]
+    .filter(([login]) => !seen.has(login) && seen.add(login));
+  return people.map(([login, state]) => /copilot|\[bot\]$/i.test(login)
+    ? `<span class="code-reviewer is-bot" data-tip="${escapeHtml(`${login} ${state}`)}">${avatar(login)}</span>`
+    : `<span class="code-reviewer code-reviewer-${state.replace(" ", "-")}" data-tip="${escapeHtml(`${login} ${state}`)}">${avatar(login)}${escapeHtml(login)}${REVIEW_MARK[state] ? icon(REVIEW_MARK[state]) : ""}</span>`).join("");
+}
+
+// Skills as icons in one row; 1–9 press them from anywhere in the overlay.
+const sideSkills = (pr, workspace, tree) => `<span class="code-side-skills">${skillButtons(pr, workspace, tree)}</span>`;
+
 // ---------- worktree overview ----------
 
 // A worktree browsed like a PR: everything since main as "All changes", plus what only exists on this disk.
@@ -1094,17 +1137,19 @@ function wtColumn() {
   const pr = detail?.pr || (ui.data ? prFor(tree) : null);
   const branchFiles = patches.get(JSON.stringify({ source: "branch", path }));
   const commits = wtCommits();
-  const state = pr && { MERGED: '<span class="code-tag code-tag-merged">merged</span>', CLOSED: '<span class="code-tag code-tag-closed">closed</span>' }[pr.state];
-  const prLine = pr
-    ? `<button type="button" class="code-diff-stack-row code-diff-wt-pr" data-diff-pr="${escapeHtml(prKey(pr.slug, pr.number))}"><span class="code-diff-stack-item">${ciBadge(pr)}#${pr.number}</span><span>${escapeHtml(pr.title || "")}</span></button>${state ? `<div class="code-detail-meta">${state}</div>` : ""}`
-    : `<p class="code-muted">No pull request for this branch.</p>`;
+  const prValue = pr
+    ? `<button type="button" class="code-side-pr" data-diff-pr="${escapeHtml(prKey(pr.slug, pr.number))}" data-tip="Open the pull request (W)">${ciBadge(pr)}<b>#${pr.number}</b><span>${escapeHtml(pr.title || "")}</span></button>${{ MERGED: sideStatus("merged", "branch", "Merged"), CLOSED: sideStatus("quiet", "fail", "Closed") }[pr.state] || ""}`
+    : `<span class="code-muted">None for this branch</span>`;
   const local = detail ? detail.untrackedCount + detail.ignoredCount : null;
-  return `<button type="button" class="code-path code-detail-path" data-code-copy="${escapeHtml(path)}" data-tip="Copy path">${escapeHtml(path)}</button>
-    <div class="code-detail-meta">${tree.main ? "<span>Main checkout</span>" : `<span data-tip="Commits ahead of and behind origin/main">↑${tree.ahead ?? "?"} ↓${tree.behind ?? "?"} vs main</span>`}${tree.activity ? `<span>changed ${when(tree.activity)} ago</span>` : ""}</div>
-    <div class="code-detail-actions">${treeActions(tree)}</div>
-    <section><h4>Pull request</h4>${prLine}${pr?.state === "OPEN" && pr.url ? `<div class="code-skill-row">${skillButtons(pr, tree.path, tree, true)}</div>` : ""}</section>
-    <section><nav class="code-diff-scopes">${scopeButton("local", "Local files", countLabel(local))}${scopeButton("all", tree.main ? "All changes" : `All changes vs ${escapeHtml(detail?.base || "main")}`, countLabel(branchFiles?.length))}${scopeButton("uncommitted", "Uncommitted", countLabel(tree.dirty))}</nav></section>
-    <section><h4>${tree.main ? "Recent commits" : "Commits"} <span>${detail ? `${commits.length}${tree.main ? "" : ` not on ${escapeHtml(detail.base || "main")}`}` : ""}</span></h4>${!detail ? `<p class="code-muted">Loading…</p>` : !commits.length ? `<p class="code-muted">None. Everything committed here is on main.</p>` : `<ol class="code-diff-scopes code-diff-commits">${commits.map((commit, index) => `<li>${scopeButton(commit.sha, `<b>${index + 1}</b><span>${escapeHtml(commit.subject)}</span>`, `<code>${commit.sha.slice(0, 7)}</code>`)}</li>`).join("")}</ol>`}</section>`;
+  return sideFacts([
+    ["Path", `<button type="button" class="code-path code-side-path" data-code-copy="${escapeHtml(path)}" data-tip="${escapeHtml(path)} · click to copy">${escapeHtml(shortPath(path))}</button>`],
+    ["Status", tree.main ? "Main checkout" : `<span data-tip="Commits ahead of and behind origin/main">↑${tree.ahead ?? "?"} ↓${tree.behind ?? "?"} vs main</span>${tree.activity ? `<span class="code-muted">changed ${when(tree.activity)} ago</span>` : ""}`],
+    ["PR", prValue],
+    [appName(), pr?.state === "OPEN" && pr.url ? sideSkills(pr, tree.path, tree) : ""],
+    ["Open", `<span class="code-side-tools">${treeActions(tree)}</span>`],
+  ])
+    + sideViews(`${scopeButton("local", "Local", countLabel(local))}${scopeButton("all", "Changes", countLabel(branchFiles?.length))}${scopeButton("uncommitted", "Uncommitted", countLabel(tree.dirty))}`)
+    + `<section>${sideHead(tree.main ? "Recent commits" : "Commits", detail ? `${commits.length}${tree.main ? "" : ` not on ${escapeHtml(detail.base || "main")}`}` : "")}${!detail ? `<p class="code-muted">Loading…</p>` : !commits.length ? `<p class="code-muted">None. Everything committed here is on main.</p>` : scopeCommits(commits)}</section>`;
 }
 
 // Everything on this disk that no PR or commit would carry: untracked files and folders, and ignored files that look
@@ -1202,25 +1247,25 @@ function prColumn() {
   const pr = prInfo(slug, number);
   const detail = ui.detail.get(`pr:${key}`);
   const tree = ui.data && pr.branch ? worktreeFor(pr) : null;
-  const state = { MERGED: '<span class="code-tag code-tag-merged">merged</span>', CLOSED: '<span class="code-tag code-tag-closed">closed</span>' }[pr.state] || "";
-  const reviews = (pr.reviews || []).map((review) => `<span class="code-reviewer">${avatar(review.login)}${escapeHtml(review.login)} <em class="code-review-${review.state.toLowerCase()}">${escapeHtml(review.state.toLowerCase().replace("_", " "))}</em></span>`).join("");
-  const requested = (pr.reviewers || []).map((login) => `<span class="code-reviewer">${avatar(login)}${escapeHtml(login)} <em>requested</em></span>`).join("");
   const { stack, current } = prStack();
   const commits = detail?.commits;
   const allFiles = patches.get(JSON.stringify({ source: "pr", slug, number })); // gh pr view caps its file list at 100
-  const ci = CI_LABELS[pr.ci];
-  const status = `${ci ? `${ciBadge(pr)}<span class="code-ci-text code-ci-text-${ci[0]}">${ci[1]}</span>` : ""}${state}${reviewTag(pr)}${pr.draft ? '<span class="code-tag code-tag-draft">draft</span>' : ""}${pr.mergeable === "CONFLICTING" ? '<span class="code-tag code-tag-dirty">conflicts</span>' : ""}`;
-  return `${status ? `<div class="code-detail-meta">${status}</div>` : ""}
-    ${pr.author ? `<div class="code-detail-meta">${avatar(pr.author)}<span>${escapeHtml(pr.author)}</span>${pr.createdAt ? `<span>opened ${when(pr.createdAt)} ago${pr.updatedAt ? ` · updated ${when(pr.updatedAt)} ago` : ""}</span>` : ""}</div>` : ""}
-    ${pr.branch ? `<div class="code-detail-meta">${branchChip(pr.branch)}${pr.base ? `<span class="code-muted">→ ${escapeHtml(pr.base)}</span>` : ""}</div>` : ""}
-    ${pr.additions !== undefined ? `<div class="code-detail-meta">${sizeBar(pr)}<span class="code-muted">+${pr.additions} −${pr.deletions}</span>${labelDots(pr)}</div>` : ""}
-    ${pr.url && pr.state === "OPEN" && pr.repo ? `<div class="code-skill-row">${skillButtons(pr, tree?.path || pr.repo, tree, true)}</div>${tree ? `<div class="code-detail-actions">${treeActions(tree)}</div>` : ""}` : ""}
-    ${tree?.path || detail?.worktree ? `<div class="code-detail-actions"><button type="button" class="code-bar-button" data-diff-wt="${escapeHtml(tree?.path || detail.worktree)}">${icon("branch")}Worktree overview</button></div>` : ""}
-    <section><nav class="code-diff-scopes">${detail?.body ? scopeButton("description", "Description") : ""}${scopeButton("all", "All changes", allFiles ? ` <span class="code-muted">${allFiles.length} files</span>` : "")}${stack.length > 1 ? scopeButton("stack", "Whole stack", ` <span class="code-muted">#${stack[0].number}–#${stack[stack.length - 1].number} vs ${escapeHtml(stack[0].base)}</span>`) : ""}</nav></section>
-    ${notesSection(pr, tree?.path || pr.repo || "")}
-    <section><h4>Commits <span>${commits ? commits.length : ""}</span></h4>${!commits ? `<p class="code-muted">${ui.detailErrors.has(`pr:${key}`) ? "Couldn't load commits." : "Loading…"}</p>` : `<ol class="code-diff-scopes code-diff-commits">${commits.map((commit, index) => `<li>${scopeButton(commit.sha, `<b>${index + 1}</b><span>${escapeHtml(commit.subject)}</span>`, `<code>${commit.sha.slice(0, 7)}</code>`)}</li>`).join("")}</ol>`}</section>
-    ${stack.length > 1 ? `<section><h4>Stack <span>${stack.indexOf(current) + 1} of ${stack.length} · on ${escapeHtml(stack[0].base)}</span></h4><ol class="code-stack-list code-diff-stack">${stack.map((item, index) => `<li class="${item === current ? "is-current" : ""}"><button type="button" class="code-diff-stack-row" data-diff-pr="${escapeHtml(prKey(item.slug, item.number))}" ${item === current ? 'aria-current="true"' : ""}><b class="code-stack-n">${index + 1}</b><span class="code-diff-stack-item">${ciBadge(item)}#${item.number}</span><span>${escapeHtml(item.title)}</span></button></li>`).join("")}</ol></section>` : ""}
-    ${reviews || requested ? `<section><h4>Reviewers</h4><div class="code-reviewers">${reviews}${requested}</div></section>` : ""}`;
+  const wtPath = tree?.path || detail?.worktree;
+  const open = pr.url && pr.state === "OPEN" && pr.repo;
+  const stackTip = stack.length > 1 ? `Every PR in the stack, #${stack[0].number}–#${stack[stack.length - 1].number}, against ${stack[0].base}` : "";
+  return sideFacts([
+    ["Status", prStatus(pr)],
+    ["Author", pr.author ? `<span class="code-side-person">${avatar(pr.author)}${escapeHtml(pr.author)}</span>${pr.createdAt ? `<span class="code-muted" data-tip="Opened ${escapeHtml(new Date(pr.createdAt).toLocaleString())}${pr.updatedAt ? ` · updated ${escapeHtml(new Date(pr.updatedAt).toLocaleString())}` : ""}">${ago(pr.updatedAt || pr.createdAt)} ago</span>` : ""}` : ""],
+    ["Branch", pr.branch ? `${branchChip(pr.branch)}${pr.base ? `<span class="code-muted">→ ${escapeHtml(pr.base)}</span>` : ""}` : ""],
+    ["Size", pr.additions !== undefined ? `<span class="code-side-size">${sizeBar(pr)}<span class="code-add">+${pr.additions}</span><span class="code-del">−${pr.deletions}</span></span>${labelDots(pr)}` : ""],
+    ["Reviews", prReviewers(pr)],
+    [appName(), open ? sideSkills(pr, tree?.path || pr.repo, tree) : ""],
+    ["Local", wtPath ? `<span class="code-side-tools">${iconButton("branch", "Worktree overview (W)", `data-diff-wt="${escapeHtml(wtPath)}"`)}${tree ? treeActions(tree) : ""}</span>` : open && ui.data ? `<span class="code-muted">Not checked out</span>` : ""],
+  ])
+    + sideViews(`${detail?.body ? scopeButton("description", "Description") : ""}${scopeButton("all", "Changes", countLabel(allFiles?.length))}${stack.length > 1 ? scopeButton("stack", `<span data-tip="${escapeHtml(stackTip)}">Stack</span>`, countLabel(stack.length)) : ""}`)
+    + notesSection(pr, tree?.path || pr.repo || "")
+    + `<section>${sideHead("Commits", commits ? String(commits.length) : "")}${!commits ? `<p class="code-muted">${ui.detailErrors.has(`pr:${key}`) ? "Couldn't load commits." : "Loading…"}</p>` : scopeCommits(commits)}</section>`
+    + (stack.length > 1 ? `<section>${sideHead("Stack", `${stack.indexOf(current) + 1} of ${stack.length} · on ${escapeHtml(stack[0].base)}`)}<ol class="code-stack-list code-diff-stack">${stack.map((item, index) => `<li class="${item === current ? "is-current" : ""}"><button type="button" class="code-diff-stack-row" data-diff-pr="${escapeHtml(prKey(item.slug, item.number))}" ${item === current ? 'aria-current="true"' : ""}><b class="code-stack-n">${index + 1}</b><span class="code-diff-stack-item">${ciBadge(item)}#${item.number}</span><span>${escapeHtml(item.title)}</span></button></li>`).join("")}</ol></section>` : "");
 }
 
 async function loadFileText(file) {
@@ -1481,9 +1526,11 @@ function notesSection(pr, workspace) {
   const notes = prNotes();
   const drafts = notes.filter((note) => note.status === "draft").length;
   const list = notes.map((note) => `<li><button type="button" class="code-diff-scope" data-note-jump="${note.id}"><b>${note.status === "draft" ? "" : "✓"}</b><span><code>${escapeHtml(note.file.split("/").pop())}${note.line ? `:${note.line}` : ""}</code> ${escapeHtml(note.body.split("\n")[0])}</span></button></li>`).join("");
-  const file = diff.notes?.path && notes.length ? ` · <a href="/?path=${encodeURIComponent(diff.notes.path)}" target="_blank" rel="noreferrer">file</a>` : "";
-  const actions = drafts && pr.url ? `<div class="code-skill-row"><button type="button" class="code-skill" data-code-skill="notes-post" data-url="${escapeHtml(pr.url)}" data-path="${escapeHtml(workspace)}">${icon("comment")}Post as review</button><button type="button" class="code-skill" data-code-skill="notes-work" data-url="${escapeHtml(pr.url)}" data-path="${escapeHtml(workspace)}">${icon("discuss")}Work through</button></div>` : "";
-  return `<section><h4>Notes <span>${notes.length ? `${drafts} draft${drafts === 1 ? "" : "s"}${notes.length > drafts ? `, ${notes.length - drafts} posted` : ""}` : ""}${file}</span></h4>${list ? `<ol class="code-diff-scopes code-notes-list">${list}</ol>` : `<p class="code-muted">Select code and press <kbd>C</kbd> to add a local note.</p>`}${actions}</section>`;
+  const file = diff.notes?.path && notes.length ? `<a class="code-icon-button" href="/?path=${encodeURIComponent(diff.notes.path)}" target="_blank" rel="noreferrer" data-tip="Open the notes file" aria-label="Open the notes file">${icon("external")}</a>` : "";
+  const target = `data-url="${escapeHtml(pr.url || "")}" data-path="${escapeHtml(workspace)}"`;
+  const actions = drafts && pr.url ? iconButton("comment", `Post ${drafts} draft${drafts === 1 ? "" : "s"} as a pending GitHub review in ${appName()}`, `data-code-skill="notes-post" ${target}`) + iconButton("discuss", `Work through the drafts in ${appName()}`, `data-code-skill="notes-work" ${target}`) : "";
+  const meta = notes.length ? `${drafts} draft${drafts === 1 ? "" : "s"}${notes.length > drafts ? `, ${notes.length - drafts} posted` : ""}` : "select code, press <kbd>C</kbd>";
+  return `<section>${sideHead("Notes", meta, `<span class="code-side-tools">${actions}${file}</span>`)}${list ? `<ol class="code-diff-scopes code-notes-list">${list}</ol>` : ""}</section>`;
 }
 
 const lineHtml = (line) => {
@@ -2151,6 +2198,7 @@ async function load(refresh = false) {
     if (!ui.removing) for (const path of ui.removed) if (!paths.has(path)) ui.removed.delete(path);
     if (refresh) { ui.detail.clear(); ui.commits.clear(); }
     render();
+    if (diffDialog?.open) renderDiff(); // an overview opened from the URL learns its worktree here
     // Agents wait on [data-code-state="ready"] instead of polling the table.
     if (host) host.dataset.codeState = data.scanning ? "scanning" : "ready";
     if (data.scanning && host?.isConnected) ui.poll = window.setTimeout(load, 2500);
@@ -2378,7 +2426,9 @@ function handleKey(event) {
 let tip = null;
 let tipHiddenAt = 0;
 function showTip(target) {
-  tip ||= Object.assign(document.body.appendChild(document.createElement("div")), { className: "code-tip", role: "tooltip" });
+  tip ||= Object.assign(document.body.appendChild(document.createElement("div")), { className: "code-tip", role: "tooltip", popover: "manual" });
+  // A popover sits in the top layer; reopening it puts it above any overlay opened since.
+  if (!tip.classList.contains("is-visible")) { if (tip.matches(":popover-open")) tip.hidePopover(); tip.showPopover(); }
   tip.classList.toggle("is-instant", tip.classList.contains("is-visible") || Date.now() - tipHiddenAt < 300);
   tip.textContent = target.dataset.tip;
   tip.classList.add("is-visible");
