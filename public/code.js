@@ -146,13 +146,17 @@ const avatar = (login, name = login) => `<span class="code-avatar" style="--hue:
 const REVIEW = { APPROVED: ["approved", "Approved"], CHANGES_REQUESTED: ["changes", "Changes requested"], REVIEW_REQUIRED: ["required", "Needs review"] };
 const reviewTag = (pr) => { const [kind, label] = REVIEW[pr.reviewDecision] || ["", ""]; return kind ? `<span class="code-tag code-tag-${kind}">${label}</span>` : ""; };
 // One word per row for the states that change what to do next; an ordinary "needs review" stays blank.
-const PR_STATES = { draft: ["draft", "Draft"], CHANGES_REQUESTED: ["fail", "Changes"], APPROVED: ["pass", "Approved"], mine: ["review", "Your review"] };
+const PR_STATES = { draft: ["draft", "Draft"], CHANGES_REQUESTED: ["fail", "Changes"], APPROVED: ["pass", "Approved"], mine: ["review", "Your review"], requested: ["requested", "Requested"] };
+// Bots (Copilot, anything[bot]) are requested automatically, so they don't count as asking someone for a review.
+const humanReviewers = (pr) => (pr.reviewers || []).filter((login) => !/copilot|\[bot\]$/i.test(login));
 const prState = (pr) => {
-  const key = pr.draft ? "draft" : PR_STATES[pr.reviewDecision] ? pr.reviewDecision : pr.requestedOfMe ? "mine" : "";
+  const people = humanReviewers(pr);
+  const key = pr.draft ? "draft" : PR_STATES[pr.reviewDecision] ? pr.reviewDecision : pr.requestedOfMe ? "mine" : people.length ? "requested" : "";
   if (!key) return "";
   const [name, label] = PR_STATES[key];
   const by = (state) => (pr.reviews || []).filter((review) => review.state === state).map((review) => review.login).join(", ");
   const tip = { APPROVED: `Approved${by("APPROVED") ? ` by ${by("APPROVED")}` : ""}`, CHANGES_REQUESTED: `Changes requested${by("CHANGES_REQUESTED") ? ` by ${by("CHANGES_REQUESTED")}` : ""}`, mine: "Your review is requested" }[key];
+  if (key === "requested") return `<span class="code-state code-state-${name}" data-tip="${escapeHtml(`Review requested from ${people.join(", ")}`)}"><i class="code-avatar-stack">${people.slice(0, 3).map((login) => avatar(login)).join("")}</i>${label}</span>`;
   return `<span class="code-state code-state-${name}"${tip ? ` data-tip="${escapeHtml(tip)}"` : ""}>${icon(name)}${label}</span>`;
 };
 const labelDots = (pr) => (pr.labels || []).map((label) => `<span class="code-label" style="--label:#${escapeHtml(label.color.replace(/[^0-9a-f]/gi, ""))}">${escapeHtml(label.name)}</span>`).join("");

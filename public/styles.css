@@ -1147,6 +1147,7 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-state-fail { color: #b4322b; }
 .code-state-draft { color: var(--quiet-text); font-weight: 500; }
 .code-state-review { color: #6c2fb8; }
+.code-state-requested { color: #9a5b00; }
 /* skills and links sit in two headed columns; both stay quiet until the row is hovered or selected */
 .code-col-skills { white-space: nowrap; }
 .code-table thead th.code-col-skills { text-align: left; }
