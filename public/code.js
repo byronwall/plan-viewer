@@ -164,7 +164,7 @@ const prState = (pr) => {
     mine: "Your review is requested",
     requested: `Review requested from ${people.join(", ")}`,
   }[key];
-  return `<span class="code-state code-state-${name}" role="img" aria-label="${escapeHtml(tip)}" data-tip="${escapeHtml(tip)}">${icon(glyph)}</span>`;
+  return `<span class="code-state code-state-${name}" role="img" aria-label="${escapeHtml(tip)}" data-tip="${escapeHtml(tip)}">${icon(glyph)}${key === "requested" ? `<b class="code-state-count">${people.length}</b>` : ""}</span>`;
 };
 const labelDots = (pr) => (pr.labels || []).map((label) => `<span class="code-label" style="--label:#${escapeHtml(label.color.replace(/[^0-9a-f]/gi, ""))}">${escapeHtml(label.name)}</span>`).join("");
 
