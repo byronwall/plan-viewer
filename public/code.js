@@ -50,6 +50,7 @@ const ICONS = {
   conflict: '<path d="M12 3 2 20h20zM12 10v4M12 17v.5"/>',
   review: '<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/>',
   pass: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  approved: '<circle cx="12" cy="12" r="9"/><path d="m8 12.3 2.8 2.8L16.2 9.5"/>',
   fail: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
   pending: '<circle cx="12" cy="12" r="7.5"/><path d="M12 8v4.5l3 1.8"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
@@ -145,19 +146,25 @@ const initialsOf = (name) => name.replace(/^app\//, "").split(/[\s._-]+/).filter
 const avatar = (login, name = login) => `<span class="code-avatar" style="--hue:${branchHue(name || "?")}" aria-hidden="true">${escapeHtml(initialsOf(name || "?"))}${login ? `<img src="https://github.com/${encodeURIComponent(login.replace(/^app\//, ""))}.png?size=40" alt="" loading="lazy" onerror="this.remove()">` : ""}</span>`;
 const REVIEW = { APPROVED: ["approved", "Approved"], CHANGES_REQUESTED: ["changes", "Changes requested"], REVIEW_REQUIRED: ["required", "Needs review"] };
 const reviewTag = (pr) => { const [kind, label] = REVIEW[pr.reviewDecision] || ["", ""]; return kind ? `<span class="code-tag code-tag-${kind}">${label}</span>` : ""; };
-// One word per row for the states that change what to do next; an ordinary "needs review" stays blank.
-const PR_STATES = { draft: ["draft", "Draft"], CHANGES_REQUESTED: ["fail", "Changes"], APPROVED: ["pass", "Approved"], mine: ["review", "Your review"], requested: ["requested", "Requested"] };
+// One icon per row for the states that change what to do next, named on hover; an ordinary "needs review" stays blank.
+// Approval is a ringed check so it never reads as the bare CI check beside the PR number.
+const PR_STATES = { draft: ["draft", "draft"], CHANGES_REQUESTED: ["fail", "diff"], APPROVED: ["pass", "approved"], mine: ["review", "review"], requested: ["requested", "person"] };
 // Bots (Copilot, anything[bot]) are requested automatically, so they don't count as asking someone for a review.
 const humanReviewers = (pr) => (pr.reviewers || []).filter((login) => !/copilot|\[bot\]$/i.test(login));
 const prState = (pr) => {
   const people = humanReviewers(pr);
   const key = pr.draft ? "draft" : PR_STATES[pr.reviewDecision] ? pr.reviewDecision : pr.requestedOfMe ? "mine" : people.length ? "requested" : "";
   if (!key) return "";
-  const [name, label] = PR_STATES[key];
+  const [name, glyph] = PR_STATES[key];
   const by = (state) => (pr.reviews || []).filter((review) => review.state === state).map((review) => review.login).join(", ");
-  const tip = { APPROVED: `Approved${by("APPROVED") ? ` by ${by("APPROVED")}` : ""}`, CHANGES_REQUESTED: `Changes requested${by("CHANGES_REQUESTED") ? ` by ${by("CHANGES_REQUESTED")}` : ""}`, mine: "Your review is requested" }[key];
-  if (key === "requested") return `<span class="code-state code-state-${name}" data-tip="${escapeHtml(`Review requested from ${people.join(", ")}`)}"><i class="code-avatar-stack">${people.slice(0, 3).map((login) => avatar(login)).join("")}</i>${label}</span>`;
-  return `<span class="code-state code-state-${name}"${tip ? ` data-tip="${escapeHtml(tip)}"` : ""}>${icon(name)}${label}</span>`;
+  const tip = {
+    draft: "Draft",
+    APPROVED: `Approved${by("APPROVED") ? ` by ${by("APPROVED")}` : ""}`,
+    CHANGES_REQUESTED: `Changes requested${by("CHANGES_REQUESTED") ? ` by ${by("CHANGES_REQUESTED")}` : ""}`,
+    mine: "Your review is requested",
+    requested: `Review requested from ${people.join(", ")}`,
+  }[key];
+  return `<span class="code-state code-state-${name}" role="img" aria-label="${escapeHtml(tip)}" data-tip="${escapeHtml(tip)}">${icon(glyph)}</span>`;
 };
 const labelDots = (pr) => (pr.labels || []).map((label) => `<span class="code-label" style="--label:#${escapeHtml(label.color.replace(/[^0-9a-f]/gi, ""))}">${escapeHtml(label.name)}</span>`).join("");
 

@@ -1140,12 +1140,13 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-file-add { color: var(--pass); }
 .code-file-del { color: var(--fail); }
 .code-col-main:has(.code-pr-title) { min-width: 260px; }
-.code-col-state { white-space: nowrap; font-size: .76rem; }
-.code-state { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
-.code-state .code-icon { width: 14px; height: 14px; }
+.code-col-state { width: 44px; text-align: center; }
+.code-state { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; cursor: default; transition: background-color 140ms ease; }
+.code-state:hover { background: var(--quiet-field); }
+.code-state .code-icon { width: 16px; height: 16px; }
 .code-state-pass { color: #157a52; }
 .code-state-fail { color: #b4322b; }
-.code-state-draft { color: var(--quiet-text); font-weight: 500; }
+.code-state-draft { color: var(--quiet-text); }
 .code-state-review { color: #6c2fb8; }
 .code-state-requested { color: #9a5b00; }
 /* skills and links sit in two headed columns; both stay quiet until the row is hovered or selected */
