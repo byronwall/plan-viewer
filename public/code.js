@@ -11,6 +11,7 @@ const ui = {
   tab: "worktrees", data: null, filter: "", day: "", treeScope: "all", prScope: "all", prSort: "updated", hideDrafts: false, failingOnly: false,
   showKeep: false, openDescriptions: new Set(), selected: new Set(), removed: new Set(), removing: null, poll: 0, sel: "", detail: new Map(),
   commitScope: "local", commits: new Map(), detailErrors: new Map(), branches: new Set(), prefixes: new Set(), branchQuery: "", branchActive: 0,
+  authors: new Set(), authorQuery: "", authorActive: 0,
 };
 const storage = { get: (key, fallback) => { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }, set: (key, value) => { try { localStorage.setItem(key, value); } catch {} } };
 let agentApp = storage.get("code-agent-app", "codex");
@@ -56,6 +57,7 @@ const ICONS = {
   draft: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
   preview: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.7 5.6 3.7 9s-1.2 6.4-3.7 9c-2.5-2.6-3.7-5.6-3.7-9S9.5 5.6 12 3z"/>',
   diff: '<path d="M8 3v8M4 7h8M5 17h6M14 4h6v16h-6M18 9v6"/>',
+  person: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
   branch: '<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9c0 5-6 4-11 8"/>',
 };
 const icon = (name) => `<svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ICONS.review}</svg>`;
@@ -138,7 +140,9 @@ function sizeBar(pr) {
   return `<span class="code-size" data-tip="+${pr.additions} −${pr.deletions}"><span class="code-size-add" style="width:${add}px"></span><span class="code-size-del" style="width:${width - add}px"></span></span>`;
 }
 
-const avatar = (login) => login ? `<img class="code-avatar" src="https://github.com/${encodeURIComponent(login.replace(/^app\//, ""))}.png?size=40" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "";
+// One mark per person everywhere: the GitHub avatar over initials on a hue of the name, so a missing image still reads.
+const initialsOf = (name) => name.replace(/^app\//, "").split(/[\s._-]+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "?";
+const avatar = (login, name = login) => `<span class="code-avatar" style="--hue:${branchHue(name || "?")}" aria-hidden="true">${escapeHtml(initialsOf(name || "?"))}${login ? `<img src="https://github.com/${encodeURIComponent(login.replace(/^app\//, ""))}.png?size=40" alt="" loading="lazy" onerror="this.remove()">` : ""}</span>`;
 const REVIEW = { APPROVED: ["approved", "Approved"], CHANGES_REQUESTED: ["changes", "Changes requested"], REVIEW_REQUIRED: ["required", "Needs review"] };
 const reviewTag = (pr) => { const [kind, label] = REVIEW[pr.reviewDecision] || ["", ""]; return kind ? `<span class="code-tag code-tag-${kind}">${label}</span>` : ""; };
 // One word per row for the states that change what to do next; an ordinary "needs review" stays blank.
@@ -203,7 +207,7 @@ function treeRow(tree) {
 
 // Names everything narrowing the list and offers one way back to all of it.
 function emptyState(noun) {
-  const scopes = { requested: "review requested", mine: "mine", others: "others", today: "last 24h", week: "this week", dirty: "uncommitted", pr: "with an open PR" };
+  const scopes = { requested: "review requested", today: "last 24h", week: "this week", dirty: "uncommitted", pr: "with an open PR" };
   const narrowing = [
     ui.tab === "prs" && ui.prScope !== "all" && scopes[ui.prScope],
     ui.tab === "prs" && ui.hideDrafts && "no drafts",
@@ -211,6 +215,7 @@ function emptyState(noun) {
     ui.tab === "worktrees" && ui.treeScope !== "all" && scopes[ui.treeScope],
     ui.tab === "worktrees" && ui.day && new Date(`${ui.day}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     ui.tab === "commits" && (ui.branches.size || ui.prefixes.size) && "picked branches",
+    ui.tab !== "worktrees" && ui.authors.size && (ui.authors.size === 1 ? `${authorName([...ui.authors][0])}'s` : "picked authors"),
   ].filter(Boolean);
   if (!ui.filter && !narrowing.length) return `<div class="code-empty"><p>No ${noun} yet.</p></div>`;
   const query = ui.filter ? ` match <b>“${escapeHtml(ui.filter)}”</b>` : "";
@@ -236,14 +241,14 @@ function worktreesBody() {
 // ---------- pull requests ----------
 
 function visiblePrs() {
-  const me = ui.data.me;
   const sorts = {
     updated: (a, b) => b.updatedAt.localeCompare(a.updatedAt),
     created: (a, b) => a.createdAt.localeCompare(b.createdAt),
     size: (a, b) => (b.additions + b.deletions) - (a.additions + a.deletions),
   };
   return ui.data.prs
-    .filter((pr) => ui.prScope === "all" || (ui.prScope === "mine" ? pr.author === me : ui.prScope === "requested" ? pr.requestedOfMe : pr.author !== me))
+    .filter((pr) => ui.prScope === "all" || pr.requestedOfMe)
+    .filter(authorFilter)
     .filter((pr) => !(ui.hideDrafts && pr.draft))
     .filter((pr) => !ui.failingOnly || ["FAILURE", "ERROR"].includes(pr.ci))
     .filter((pr) => matches(`#${pr.number} ${pr.number} ${pr.title} ${pr.author} ${pr.branch} ${(pr.labels || []).map((label) => label.name).join(" ")}`))
@@ -328,7 +333,7 @@ function prRow(pr, rail) {
   return `<tr class="code-row" data-code-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">
     ${railCell(pr, rail)}<td class="code-col-num"><a class="code-pr-link" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">${ciBadge(pr)}#${pr.number}</a></td>
     <td class="code-col-main"><div class="code-pr-title">${escapeHtml(pr.title)}</div>
-      <div class="code-sub"><span class="code-sub-author">${avatar(pr.author)}${pr.author === ui.data.me ? "you" : escapeHtml(pr.author.replace(/^app\//, ""))}</span>${stackNote(pr, rail)}${branchChip(pr.branch)}</div></td>
+      <div class="code-sub">${authorButton(pr.author, pr.author, authorName(pr.author), true)}${stackNote(pr, rail)}${branchChip(pr.branch)}</div></td>
     <td class="code-col-flags">${prFlags(pr, tree)}</td>
     <td class="code-col-labels">${labelDots(pr)}</td>
     <td class="code-col-state">${prState(pr)}</td>
@@ -355,7 +360,7 @@ function prsBody() {
 
 // ---------- commits ----------
 
-const COMMIT_SCOPES = { local: "Not on main", all: "Everything", mine: "Mine" };
+const COMMIT_SCOPES = { local: "Not on main", all: "Everything" };
 const commitsInScope = () => ui.commits.get(ui.commitScope);
 const commitFor = (key) => commitsInScope()?.find((commit) => `commit:${commit.sha}` === key);
 
@@ -380,6 +385,7 @@ async function loadCommits(force = false) {
 function visibleCommits() {
   return (commitsInScope() || [])
     .filter(branchFilter)
+    .filter(authorFilter)
     .filter((commit) => matches(`${commit.sha} ${commit.subject} ${commit.author} ${commit.branch}`));
 }
 
@@ -418,18 +424,85 @@ function branchPill(branch, repeat = false) {
   return `<button type="button" class="code-branch-tag${filtered ? " is-filtered" : ""}${repeat ? " is-repeat" : ""}" data-code-branch-filter="${escapeHtml(branch)}" data-tip="${escapeHtml(branch)} · click to ${filtered ? "stop filtering" : "filter to this branch"}">${branchGlyph(branch)}${prefix ? `<em>${escapeHtml(prefix)}</em>` : ""}<span>${escapeHtml(middleTrim(branch.slice(prefix.length)))}</span></button>`;
 }
 
-// Initials on a hue of the author's name; the tooltip carries the full name and email.
-const authorBadge = (commit) => {
-  const initials = commit.author.split(/[\s._-]+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "?";
-  return `<span class="code-author" data-tip="${escapeHtml(`${commit.author} <${commit.email}>`)}" aria-label="${escapeHtml(commit.author)}">${escapeHtml(initials)}</span>`;
-};
+// ---------- authors ----------
+// The author filter spans both tabs. Its key is a GitHub login, or the git name of a commit whose login is unknown.
+const authorOf = (item) => item.sha ? item.login || item.author : item.author;
+const authorName = (key) => key === ui.data.me ? "you" : key.replace(/^app\//, "");
+const authorFilter = (item) => !ui.authors.size || ui.authors.has(authorOf(item));
+
+// A row's avatar (and name, when `labelled`) filters to that author on click.
+function authorButton(key, login, tip, labelled = false) {
+  const filtered = ui.authors.has(key);
+  return `<button type="button" class="code-author${labelled ? " is-labelled" : ""}${filtered ? " is-filtered" : ""}" data-code-author-filter="${escapeHtml(key)}" data-tip="${escapeHtml(`${tip} · click to ${filtered ? "stop filtering" : "show only theirs"}`)}">${avatar(login, key)}${labelled ? `<span>${escapeHtml(authorName(key))}</span>` : ""}</button>`;
+}
+
+// Authors on the current tab, you first, then by how much they've done; picked authors stay listed even at zero.
+function authorStats() {
+  const stats = new Map();
+  const add = (key, login) => stats.get(key) || stats.set(key, { key, login, names: new Set(), count: 0, latest: 0 }).get(key);
+  for (const item of ui.tab === "prs" ? ui.data.prs : commitsInScope() || []) {
+    const key = authorOf(item);
+    if (!key) continue;
+    const entry = add(key, item.sha ? item.login : item.author);
+    entry.count++;
+    entry.latest = Math.max(entry.latest, item.time || new Date(item.updatedAt).getTime());
+    if (item.sha && item.author !== key) entry.names.add(item.author);
+  }
+  for (const key of ui.authors) add(key, /\s/.test(key) ? "" : key);
+  return [...stats.values()].sort((a, b) => (b.key === ui.data.me) - (a.key === ui.data.me) || b.count - a.count || b.latest - a.latest);
+}
+
+function authorTrigger() {
+  const stats = authorStats();
+  const picked = stats.filter((entry) => ui.authors.has(entry.key));
+  const label = picked.length === 1 ? authorName(picked[0].key) : picked.length ? `${picked.length} authors` : "Authors";
+  const marks = picked.length ? `<i class="code-avatar-stack">${picked.slice(0, 3).map((entry) => avatar(entry.login, entry.key)).join("")}</i>` : icon("person");
+  return `<button type="button" class="code-branch-trigger code-author-trigger${picked.length ? " is-active" : ""}" popovertarget="code-authors" data-code-author-trigger>${marks}<span class="code-trigger-label">${escapeHtml(label)}</span><span class="code-count">${stats.length}</span><kbd>A</kbd></button>`
+    + (picked.length ? `<button type="button" class="code-more" data-code-author-clear>Clear</button>` : "");
+}
+
+function toggleAuthor(key, only = false) {
+  if (only) ui.authors = new Set([key]);
+  else ui.authors.has(key) ? ui.authors.delete(key) : ui.authors.add(key);
+  syncUrl();
+  render({ animate: true });
+  renderAuthorList();
+}
+
+// Like the branch picker: redrawn on its own so typing never replaces the search box.
+function renderAuthorList() {
+  const panel = host?.querySelector("#code-authors");
+  if (!panel?.matches(":popover-open")) return;
+  const words = ui.authorQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  const rows = authorStats().filter((entry) => words.every((word) => `${entry.key} ${[...entry.names].join(" ")} ${authorName(entry.key)}`.toLowerCase().includes(word)));
+  ui.authorActive = Math.max(0, Math.min(rows.length - 1, ui.authorActive));
+  const noun = ui.tab === "prs" ? "open PRs" : "commits";
+  panel.querySelector("[data-author-list]").innerHTML = rows.length ? rows.map((entry, index) => {
+    const aka = [...entry.names].filter((name) => name.toLowerCase() !== entry.key.toLowerCase()).slice(0, 2).join(", ");
+    return `<li data-author-row="${escapeHtml(entry.key)}" aria-selected="${index === ui.authorActive}">
+      <input type="checkbox" tabindex="-1" ${ui.authors.has(entry.key) ? "checked" : ""} aria-label="Show ${escapeHtml(entry.key)}">
+      <span class="code-author-name">${avatar(entry.login, entry.key)}<b>${escapeHtml(authorName(entry.key))}</b>${entry.key === ui.data.me ? `<span class="code-muted">${escapeHtml(entry.key)}</span>` : ""}${aka ? `<span class="code-muted">${escapeHtml(aka)}</span>` : ""}</span>
+      <span class="code-count" data-tip="${entry.count} ${noun}">${entry.count}</span>${entry.latest ? `<span class="code-heat-${heat(entry.latest)}">${when(entry.latest)}</span>` : "<span></span>"}
+      <button type="button" class="code-more" data-author-only="${escapeHtml(entry.key)}">Only</button></li>`;
+  }).join("") : `<li class="code-muted">No author matches.</li>`;
+  panel.querySelector("[data-author-actions]").innerHTML = ui.authors.size ? `<button type="button" class="code-more" data-code-author-clear>Clear ${ui.authors.size} picked</button>` : "";
+  panel.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+}
+
+function authorKeys(event) {
+  const rows = [...host.querySelectorAll("#code-authors [data-author-row]")];
+  const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+  if (step) { ui.authorActive += step; renderAuthorList(); event.preventDefault(); return; }
+  const active = rows[ui.authorActive]?.dataset.authorRow;
+  if (event.key === "Enter" && active) { event.preventDefault(); toggleAuthor(active, event.shiftKey); if (event.shiftKey) host.querySelector("#code-authors").hidePopover(); }
+}
 
 function commitRow(commit, repeat = false) {
   const key = `commit:${commit.sha}`;
   const many = ui.data.repos.length > 1;
   return `<tr class="code-row" data-code-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">
     <td class="code-col-when code-heat-${heat(commit.time)}">${when(commit.time)}</td>
-    <td class="code-col-author">${authorBadge(commit)}</td>
+    <td class="code-col-author">${authorButton(authorOf(commit), commit.login, `${commit.author} <${commit.email}>`)}</td>
     <td class="code-col-branch">${branchPill(commit.branch, repeat)}</td>
     <td class="code-col-main"><div class="code-pr-title" data-tip="${escapeHtml(commit.subject)}">${many ? `<span class="code-muted">${escapeHtml(repoName(commit.repo))}</span> ` : ""}${escapeHtml(commit.subject)}</div></td>
     <td class="code-col-files" data-tip="+${commit.additions} −${commit.deletions}">${commit.files}</td>
@@ -487,6 +560,7 @@ function commitControls() {
   const label = ui.branches.size === 1 ? [...ui.branches][0] : ui.branches.size ? `${ui.branches.size} branches` : "Branches";
   const any = ui.branches.size || ui.prefixes.size;
   return `<div class="code-segment">${Object.entries(COMMIT_SCOPES).map(([id, label]) => `<button type="button" data-code-commit-scope="${id}" aria-pressed="${ui.commitScope === id}">${label}</button>`).join("")}</div>
+    ${authorTrigger()}
     <button type="button" class="code-branch-trigger${ui.branches.size ? " is-active" : ""}" popovertarget="code-branches" data-code-branch-trigger>${icon("branch")}<span>${escapeHtml(label)}</span><span class="code-count">${branchStats().length}</span><kbd>B</kbd></button>
     ${facets ? `<div class="code-facets">${facets}</div>` : ""}${picked}${any ? `<button type="button" class="code-more" data-code-branch-clear>Clear</button>` : ""}`;
 }
@@ -547,7 +621,7 @@ function commitDetailPane(commit) {
   const extra = ui.detail.get(`commit:${commit.sha}`);
   const body = extra?.body.split("\n").slice(1).join("\n").trim();
   return `<header class="code-detail-head"><h3>${escapeHtml(commit.subject)}</h3>${copyButton(commit.sha, "Copy SHA")}</header>
-    <div class="code-detail-meta"><span>${escapeHtml(commit.author)}</span><span>${when(commit.time)} ago</span><code>${commit.sha.slice(0, 10)}</code></div>
+    <div class="code-detail-meta">${avatar(commit.login, authorOf(commit))}<span>${escapeHtml(commit.author)}${commit.login && commit.login !== commit.author ? ` <span class="code-muted">${escapeHtml(commit.login)}</span>` : ""}</span><span>${when(commit.time)} ago</span><code>${commit.sha.slice(0, 10)}</code></div>
     <div class="code-detail-meta">${branchPill(commit.branch)}${sizeBar(commit)}<span class="code-muted">+${commit.additions} −${commit.deletions}</span></div>
     <div class="code-detail-actions"><button type="button" class="code-bar-button" data-code-view-diff>View diff <kbd>Enter</kbd></button>${commit.worktree ? treeActions(ui.data.worktrees.find((tree) => tree.path === commit.worktree) || { path: commit.worktree, branch: commit.branch }) : ""}</div>
     ${commitPrSection(commit)}
@@ -1975,7 +2049,6 @@ function toolbar() {
   const count = (value) => ` <span class="code-count">${value}</span>`;
   const segment = (attr, current, options) => `<div class="code-segment">${Object.entries(options).map(([id, label]) => `<button type="button" ${attr}="${id}" aria-pressed="${current === id}">${label}</button>`).join("")}</div>`;
   const trees = ui.data.worktrees.filter((tree) => !ui.removed.has(tree.path));
-  const me = ui.data.me;
   const counts = { worktrees: trees.length, prs: ui.data.prs.length, commits: commitsInScope()?.length ?? "…", cleanup: trees.filter((tree) => level(tree) === "safe").length };
   const tabs = `<div class="code-segment code-tabs">${Object.entries(TABS).map(([id, label]) => `<button type="button" data-code-tab="${id}" aria-pressed="${ui.tab === id}">${label}${count(counts[id])}</button>`).join("")}</div>`;
   // Scope counts replace the old stat tiles; uncommitted counts wait for the scan.
@@ -1991,9 +2064,8 @@ function toolbar() {
   if (ui.tab === "prs") controls = segment("data-code-scope", ui.prScope, {
     all: `All${count(ui.data.prs.length)}`,
     requested: `Review requested${count(ui.data.prs.filter((pr) => pr.requestedOfMe).length)}`,
-    mine: `Mine${count(ui.data.prs.filter((pr) => pr.author === me).length)}`,
-    others: `Others${count(ui.data.prs.filter((pr) => pr.author !== me).length)}`,
   })
+    + authorTrigger()
     + segment("data-code-sort", ui.prSort, { updated: "Updated", created: "Oldest", size: "Largest" })
     + `<label class="code-check"><input type="checkbox" data-code-drafts ${ui.hideDrafts ? "checked" : ""}> No drafts</label><label class="code-check"><input type="checkbox" data-code-failing ${ui.failingOnly ? "checked" : ""}> Failing CI${count(ui.data.prs.filter((pr) => ["FAILURE", "ERROR"].includes(pr.ci)).length)}</label>`;
   if (ui.tab === "commits") controls = commitControls();
@@ -2033,7 +2105,7 @@ function patch(region, html) {
 function render({ animate = false } = {}) {
   if (!host || !ui.data || !host.querySelector(".code-surface, .code-loading")) return;
   if (!host.querySelector(".code-surface")) {
-    host.innerHTML = `<section class="code-surface" aria-label="Code dashboard"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="code-settings" class="code-settings" popover data-region="repos" aria-label="Code dashboard settings"></div><div id="code-branches" class="code-settings code-branch-pop" popover aria-label="Filter by branch"><label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-branch-query placeholder="Find a branch" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list" data-branch-list></ul><div class="code-branch-actions" data-branch-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only this · <kbd>Esc</kbd> close</p></div></section>`;
+    host.innerHTML = `<section class="code-surface" aria-label="Code dashboard"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="code-settings" class="code-settings" popover data-region="repos" aria-label="Code dashboard settings"></div><div id="code-branches" class="code-settings code-branch-pop" popover aria-label="Filter by branch"><label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-branch-query placeholder="Find a branch" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list" data-branch-list></ul><div class="code-branch-actions" data-branch-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only this · <kbd>Esc</kbd> close</p></div><div id="code-authors" class="code-settings code-branch-pop code-author-pop" popover aria-label="Filter by author"><label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-author-query placeholder="Find an author" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list code-author-list" data-author-list></ul><div class="code-branch-actions" data-author-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only this · <kbd>Esc</kbd> close</p></div></section>`;
     animate = true;
     // The toolbar stays stuck at the top; table headers and the inspector stick just below its live height.
     new ResizeObserver(([entry]) => host.style.setProperty("--code-bar-h", `${Math.ceil(entry.borderBoxSize[0].blockSize)}px`)).observe(host.querySelector('[data-region="toolbar"]'));
@@ -2078,13 +2150,13 @@ async function load(refresh = false) {
 
 function syncUrl() {
   const url = new URL(location.href);
-  url.search = new URLSearchParams({ view: "code", ...(ui.tab === "worktrees" ? {} : { tab: ui.tab }) });
+  url.search = new URLSearchParams({ view: "code", ...(ui.tab === "worktrees" ? {} : { tab: ui.tab }), ...(ui.authors.size ? { author: [...ui.authors].join(",") } : {}) });
   history.replaceState(null, "", url);
 }
 
 function resetFilters() {
   Object.assign(ui, { filter: "", day: "", treeScope: "all", prScope: "all", hideDrafts: false, failingOnly: false });
-  ui.branches.clear(); ui.prefixes.clear();
+  ui.branches.clear(); ui.prefixes.clear(); ui.authors.clear(); syncUrl();
   const input = host?.querySelector("[data-code-filter]");
   if (input) input.value = "";
 }
@@ -2148,6 +2220,8 @@ async function removeSelected() {
 async function handleClick(event) {
   const branchRow = event.target.closest("[data-branch-row]");
   if (branchRow && !event.target.closest("[data-branch-only]")) { event.preventDefault(); return toggleBranch(branchRow.dataset.branchRow); }
+  const authorRow = event.target.closest("[data-author-row]");
+  if (authorRow && !event.target.closest("[data-author-only]")) { event.preventDefault(); return toggleAuthor(authorRow.dataset.authorRow); }
   const target = event.target.closest("button, input[type=checkbox], a");
   const row = event.target.closest("[data-code-row]");
   const diffFile = event.target.closest("[data-code-diff-file]");
@@ -2179,6 +2253,9 @@ async function handleClick(event) {
     if (dataset.codeTreeScope) { ui.treeScope = dataset.codeTreeScope; return render({ animate: true }); }
     if (dataset.codeCommitScope) { ui.commitScope = dataset.codeCommitScope; return render({ animate: true }); }
     if (dataset.codeBranchFilter) return toggleBranch(dataset.codeBranchFilter);
+    if (dataset.codeAuthorFilter) return toggleAuthor(dataset.codeAuthorFilter);
+    if (dataset.authorOnly) { toggleAuthor(dataset.authorOnly, true); return host.querySelector("#code-authors").hidePopover(); }
+    if ("codeAuthorClear" in dataset) { ui.authors.clear(); syncUrl(); render({ animate: true }); return renderAuthorList(); }
     if (dataset.branchOnly) { toggleBranch(dataset.branchOnly, true); return host.querySelector("#code-branches").hidePopover(); }
     if (dataset.codePrefix) { ui.prefixes.has(dataset.codePrefix) ? ui.prefixes.delete(dataset.codePrefix) : ui.prefixes.add(dataset.codePrefix); return render({ animate: true }); }
     if ("codeBranchClear" in dataset) { ui.branches.clear(); ui.prefixes.clear(); render({ animate: true }); return renderBranchList(); }
@@ -2270,6 +2347,7 @@ function handleKey(event) {
     r: () => { host.querySelector("[data-code-refresh]")?.classList.add("is-spinning"); return load(true); },
     escape: () => { if (!host.querySelector("[data-code-reset]")) return; resetFilters(); render({ animate: true }); },
     b: () => ui.tab === "commits" && host.querySelector("#code-branches")?.showPopover(),
+    a: () => host.querySelector("#code-authors")?.showPopover(),
     enter: () => item.commit ? openDiff() : item.pr ? openPrOverlay(item.pr.slug, item.pr.number) : item.tree && openWorktreeOverlay(item.tree.path),
     e: () => tree && post("open", { kind: "vscode", path: tree.path }),
     x: () => tree && post("open", { kind: "terminal", path: tree.path }),
@@ -2278,7 +2356,8 @@ function handleKey(event) {
     d: () => { const pr = item.pr || prFor(item.tree); if (!pr || !ui.data.previews?.includes(pr.repo)) return; notify(`Opening the PR #${pr.number} deployment…`); return post("preview", { repo: pr.repo, number: String(pr.number) }); },
     1: () => skill(0), 2: () => skill(1), 3: () => skill(2), 4: () => skill(3),
   };
-  const always = ["arrowdown", "arrowup", "j", "k", "f", "r", "b", "escape"];
+  const always = ["arrowdown", "arrowup", "j", "k", "f", "r", "a", "b", "escape"];
+  if (key === "a" && !["prs", "commits"].includes(ui.tab)) return; // elsewhere A stays the global Tasks shortcut
   if (!actions[key] || (!always.includes(key) && !item.tree && !item.pr && !item.commit)) return;
   event.preventDefault();
   Promise.resolve(actions[key]()).catch((error) => notify(error.message, true));
@@ -2387,6 +2466,7 @@ export function renderCodePage(container, { tab, showNotice }) {
   ui.tab = codeTab(tab);
   if (host !== container) {
     host = container;
+    ui.authors = new Set((new URLSearchParams(location.search).get("author") || "").split(",").filter(Boolean));
     container.addEventListener("click", (event) => { if (container.querySelector(".code-surface")) handleClick(event); });
     // Double-click a row to open what Enter opens: the PR or worktree overview, or a commit's diff.
     container.addEventListener("dblclick", (event) => {
@@ -2411,6 +2491,13 @@ export function renderCodePage(container, { tab, showNotice }) {
       renderBranchList();
     });
     container.addEventListener("keydown", (event) => { if (event.target.matches("[data-branch-query]")) branchKeys(event); });
+    container.addEventListener("input", (event) => {
+      if (!event.target.matches("[data-author-query]")) return;
+      ui.authorQuery = event.target.value;
+      ui.authorActive = 0;
+      renderAuthorList();
+    });
+    container.addEventListener("keydown", (event) => { if (event.target.matches("[data-author-query]")) authorKeys(event); });
     container.addEventListener("submit", async (event) => {
       if (!event.target.matches("[data-code-add-repo]")) return;
       event.preventDefault();
@@ -2424,15 +2511,17 @@ export function renderCodePage(container, { tab, showNotice }) {
     });
     window.addEventListener("keydown", handleKey, true);
     container.addEventListener("toggle", (event) => {
-      if (event.newState !== "open" || !["code-settings", "code-branches"].includes(event.target.id)) return;
-      const branches = event.target.id === "code-branches";
-      const anchor = container.querySelector(branches ? "[data-code-branch-trigger]" : "[data-code-settings]").getBoundingClientRect();
+      if (event.newState !== "open" || !["code-settings", "code-branches", "code-authors"].includes(event.target.id)) return;
+      const authors = event.target.id === "code-authors";
+      const branches = authors || event.target.id === "code-branches";
+      const anchor = container.querySelector(authors ? "[data-code-author-trigger]" : branches ? "[data-code-branch-trigger]" : "[data-code-settings]").getBoundingClientRect();
       const panel = event.target;
       panel.style.top = `${anchor.bottom + 6}px`;
       panel.style.left = `${Math.max(8, Math.min(innerWidth - panel.offsetWidth - 8, branches ? anchor.left : anchor.right - panel.offsetWidth))}px`;
       const input = panel.querySelector("input");
       input?.focus();
-      if (branches) { input.select(); ui.branchActive = 0; renderBranchList(); }
+      if (authors) { input.select(); ui.authorActive = 0; renderAuthorList(); }
+      else if (branches) { input.select(); ui.branchActive = 0; renderBranchList(); }
     }, true);
     container.addEventListener("pointerover", (event) => {
       const target = event.target.closest("[data-tip]");

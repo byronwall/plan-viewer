@@ -1011,7 +1011,25 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-size-add { background: var(--pass); }
 .code-size-del { background: var(--fail); }
 .code-col-author { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--body-ink) !important; }
-.code-avatar { width: 18px; height: 18px; margin-right: 6px; border-radius: 50%; vertical-align: -4px; background: var(--quiet-field); }
+/* one author mark everywhere: initials on the name's hue, the GitHub avatar laid over them */
+.code-avatar { position: relative; display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; overflow: hidden; border-radius: 50%; vertical-align: -4px; background: hsl(var(--hue) 42% 88%); color: hsl(var(--hue) 45% 30%); font-size: .52rem; font-weight: 700; letter-spacing: .02em; line-height: 1; }
+.code-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.code-author { display: inline-flex; align-items: center; gap: 5px; flex: none; max-width: 100%; border: 0; border-radius: 10px; background: none; padding: 0; color: var(--body-ink); font: inherit; font-size: .74rem; cursor: pointer; transition: background-color 140ms, color 140ms; }
+.code-author.is-labelled { padding-right: 5px; }
+.code-author:hover { background: var(--hover-field); }
+.code-author.is-filtered { color: var(--action-ink); }
+.code-author.is-filtered .code-avatar { box-shadow: 0 0 0 1.5px var(--action); }
+.code-author span:not(.code-avatar) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-avatar-stack { display: inline-flex; }
+.code-avatar-stack .code-avatar { box-shadow: 0 0 0 1.5px var(--paper); }
+.code-avatar-stack .code-avatar + .code-avatar { margin-left: -5px; }
+.code-branch-trigger.code-author-trigger > span:first-of-type { font-family: inherit; }
+.code-author-trigger svg { width: 14px; height: 14px; }
+.code-author-pop { width: min(440px, calc(100vw - 16px)); }
+.code-author-list li { grid-template-columns: auto minmax(0, 1fr) 2.6em 3em 3em; }
+.code-author-name { display: flex; align-items: center; gap: 7px; min-width: 0; white-space: nowrap; }
+.code-author-name b { font-weight: 600; }
+.code-author-name .code-muted { overflow: hidden; text-overflow: ellipsis; font-size: .72rem; }
 
 /* cleanup */
 .code-bar-button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 5px 10px; color: var(--body-ink); font-size: .78rem; font-weight: 600; white-space: nowrap; transition: background-color 140ms, border-color 140ms, color 140ms; }
@@ -1146,8 +1164,6 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 @container (max-width: 900px) { .code-table .code-col-size { display: none; } }
 .code-group-toggle { display: inline-flex; align-items: center; cursor: pointer; border-radius: 5px; padding: 2px 6px 2px 0; transition: color 140ms ease; }
 .code-group-toggle:hover { color: var(--ink); }
-.code-sub-author { display: inline-flex; align-items: center; flex: none; color: var(--body-ink); font-size: .74rem; }
-.code-sub-author .code-avatar { width: 15px; height: 15px; margin-right: 4px; vertical-align: 0; }
 .code-col-flags .code-comments { display: inline-flex; width: 34px; margin-left: 4px; vertical-align: middle; }
 /* sticky context bar: zero-height in the flow, so appearing never moves content */
 /* column headers stick just under the context bar */
@@ -1251,7 +1267,7 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-branch-trigger { display: inline-flex; align-items: center; gap: 6px; max-width: 280px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 3px 8px; color: var(--ink); font-size: .78rem; }
 .code-branch-trigger:hover { border-color: var(--line-strong); }
 .code-branch-trigger.is-active { border-color: var(--action); background: var(--selected); color: var(--action-ink); }
-.code-branch-trigger span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; }
+.code-branch-trigger > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; }
 .code-branch-trigger kbd, .code-branch-pop kbd { border: 1px solid var(--line); border-radius: 4px; background: var(--hover-field); padding: 0 4px; font: .66rem ui-monospace, Menlo, monospace; color: var(--muted); }
 .code-facets { display: inline-flex; gap: 4px; }
 .code-facet { border: 1px solid var(--line); border-radius: 999px; background: var(--paper); padding: 2px 9px; color: var(--muted); font: .74rem ui-monospace, Menlo, monospace; }
@@ -1292,7 +1308,6 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-branch-name .code-branch-glyph { display: inline-block; margin-right: 6px; vertical-align: 0; }
 .code-branch-name i { display: inline-block; margin-right: 6px; vertical-align: 1px; }
 .code-commit-table .code-col-author { width: 26px; padding-right: 0; }
-.code-author { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--quiet-field); color: var(--muted); font-size: .58rem; font-weight: 700; letter-spacing: .02em; }
 .code-commit-pr { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
 .code-commit-pr .code-pr-link { flex: none; display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
 .code-commit-pr-title { color: var(--ink); font-weight: 600; }

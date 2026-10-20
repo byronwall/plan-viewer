@@ -15,6 +15,7 @@ const EXTRAS_TTL_MS = 2 * 60_000;
 const PR_TTL_MS = 60_000; // `gh pr list` for open PRs takes ~5s; a cached list answers at once and refreshes behind the response
 const BACKGROUND_MS = 10 * 60_000; // keeps PRs current for ⌘K without the Code page open
 const STALE_MS = 14 * 24 * 60 * 60_000;
+const LOGIN_RETRY_MS = 60 * 60_000; // an email GitHub could not name yet; its commits may since have been pushed
 
 // The review skills run against PRs (viewer.config.json `code.prSkills`), each under the tracked repo's
 // `.claude/skills/<id>/`, then an open "Discuss" prompt about the PR for the user to finish.
@@ -543,14 +544,16 @@ export function createCodeDashboard(root: string) {
 
   // Newest-first commits across every tracked repo. "local" is work on local branches not yet on origin/main;
   // "all" adds origin/main itself (logged separately so main's commits aren't attributed to whichever feature branch
-  // the walk reached first); "mine" is "all" limited to this repo's git user.email.
+  // the walk reached first). Each commit gets `login`, its author's GitHub login (see below), for avatars and the author filter.
   async function commits(scope: string) {
     const LIMIT = 400;
     const repos = await readRepos();
+    if (!login) login = (await exec("gh", ["api", "user", "--jq", ".login"]).catch(() => ({ stdout: "" }))).stdout.trim();
+    const myEmails = new Set<string>();
     const lists = await Promise.all(repos.map(async (repo) => {
-      const email = scope === "mine" ? (await git(repo, ["config", "user.email"]).catch(() => "")).trim() : "";
-      const author = email ? [`--author=${email}`] : [];
-      const format = ["--format=%x1e%H%x1f%ct%x1f%an%x1f%ae%x1f%s%x1f%S", "--shortstat", "--diff-merges=first-parent", `-n${LIMIT}`, ...author];
+      myEmails.add((await git(repo, ["config", "user.email"]).catch(() => "")).trim().toLowerCase());
+      const slug = await githubSlug(repo).catch(() => "");
+      const format = ["--format=%x1e%H%x1f%ct%x1f%an%x1f%ae%x1f%s%x1f%S", "--shortstat", "--diff-merges=first-parent", `-n${LIMIT}`];
       const logs = [git(repo, ["log", "--branches", "--not", "origin/main", "--source", ...format]).catch(() => "")];
       if (scope !== "local") logs.push(git(repo, ["log", "origin/main", ...format]).then((out) => out.replace(/\x1f(?=\n|$)/g, "\x1forigin/main"), () => ""));
       const seen = new Set<string>();
@@ -563,10 +566,36 @@ export function createCodeDashboard(root: string) {
         const num = (pattern: RegExp) => Number(stat.match(pattern)?.[1] || 0);
         const branch = (ref || "").replace(/^refs\/heads\//, "");
         const tree = lastWorktrees.find((candidate) => candidate.repo === repo && candidate.branch === branch);
-        return [{ repo, sha, time: Number(time) * 1000, author, email, subject, branch, worktree: tree?.path || "", files: num(/(\d+) files? changed/), additions: num(/(\d+) insertion/), deletions: num(/(\d+) deletion/) }];
+        return [{ repo, slug, sha, time: Number(time) * 1000, author, email, subject, branch, worktree: tree?.path || "", files: num(/(\d+) files? changed/), additions: num(/(\d+) insertion/), deletions: num(/(\d+) deletion/) }];
       });
     }));
-    return { commits: lists.flat().sort((a, b) => b.time - a.time).slice(0, LIMIT * 2) };
+    const all = lists.flat().sort((a, b) => b.time - a.time).slice(0, LIMIT * 2);
+    await resolveLogins(all, myEmails);
+    return { commits: all.map(({ slug: _slug, ...commit }) => ({ ...commit, login: emailLogins.get(commit.email.toLowerCase())?.login || "" })) };
+  }
+
+  // Git knows emails, GitHub knows logins. A noreply address names the login and this checkout's user.email is the
+  // gh user; any other email asks GitHub who authored one of its commits (main's first, since branch tips may be
+  // unpushed). Misses retry after an hour, once their commits may have been pushed.
+  const emailLogins = new Map<string, { login: string; at: number }>();
+  async function resolveLogins(list: { slug: string; sha: string; email: string; branch: string }[], myEmails: Set<string>) {
+    const pending = new Map<string, { slug: string; sha: string }[]>();
+    for (const commit of [...list].sort((a, b) => Number(b.branch === "origin/main") - Number(a.branch === "origin/main"))) {
+      const email = commit.email.toLowerCase();
+      const known = emailLogins.get(email);
+      if (known && (known.login || Date.now() - known.at < LOGIN_RETRY_MS)) continue;
+      const noreply = email.match(/^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$/)?.[1];
+      if (noreply || (login && email && myEmails.has(email))) { emailLogins.set(email, { login: noreply || login, at: Date.now() }); continue; }
+      if (commit.slug) (pending.get(email) || pending.set(email, []).get(email)!).push({ slug: commit.slug, sha: commit.sha });
+    }
+    await Promise.all([...pending].map(async ([email, tries]) => {
+      let who = "";
+      for (const { slug, sha } of tries.slice(0, 2)) {
+        who = (await exec("gh", ["api", `repos/${slug}/commits/${sha}`, "--jq", ".author.login // empty"]).catch(() => ({ stdout: "" }))).stdout.trim();
+        if (who) break;
+      }
+      emailLogins.set(email, { login: who, at: Date.now() });
+    }));
   }
 
   const checkSha = (sha: string) => { if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error("Not a commit SHA."); return sha; };
