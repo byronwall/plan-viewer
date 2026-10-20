@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { codexNewTaskUrl } from "./codex-desktop.ts";
 import { createPrNotes } from "./pr-notes.ts";
@@ -20,6 +20,13 @@ const LOGIN_RETRY_MS = 60 * 60_000; // an email GitHub could not name yet; its c
 // The review skills run against PRs (viewer.config.json `code.prSkills`), each under the tracked repo's
 // `.claude/skills/<id>/`, then an open "Discuss" prompt about the PR for the user to finish.
 export const prSkills = () => [...config().code.prSkills, { id: "discuss", label: "Discuss" }];
+
+// A Claude Desktop draft in a tracked repo opens in the environment named for it (`code.claudeEnvironments`), which
+// carries its own folder and permissions; anywhere else it opens on this computer at the folder.
+const claudeUrl = (folder: string, q = "") => {
+  const environment = config().code.claudeEnvironments[basename(folder)];
+  return `claude://code/new?${new URLSearchParams({ ...(q ? { q } : {}), ...(environment ? { environment } : { folder }) })}`;
+};
 
 // Fills `{path}` / `{number}` in a configured command and runs it.
 const runCommand = (command: string[], values: Record<string, string>) =>
@@ -465,7 +472,7 @@ export function createCodeDashboard(root: string) {
     await knownWorktree(path);
     const tree = lastWorktrees.find((candidate) => candidate.path === path);
     const url = app === "claude"
-      ? `claude://code/new?${new URLSearchParams({ folder: path })}`
+      ? claudeUrl(path)
       : codexNewTaskUrl(`Working in ${path} on branch ${tree?.branch || "(unknown)"}. `, path);
     await exec("/usr/bin/open", [url]);
   }
@@ -494,14 +501,13 @@ export function createCodeDashboard(root: string) {
       const notes = await prNotes.drafts(pull[1], Number(pull[2]));
       if (!notes.text) throw new Error("No draft notes on this PR.");
       const draft = `${NOTE_PROMPTS[skill as keyof typeof NOTE_PROMPTS](prUrl, pull[1], Number(pull[2]), where, notes.path)}\n\n${notes.text}\n`;
-      url = app === "claude" ? `claude://code/new?${new URLSearchParams({ q: draft, folder: root })}` : codexNewTaskUrl(draft, root);
+      url = app === "claude" ? claudeUrl(root, draft) : codexNewTaskUrl(draft, root);
     } else if (skill === "discuss") {
       const draft = `Let's talk through this pull request: ${prUrl}.${where} Read it first, then `;
-      url = app === "claude" ? `claude://code/new?${new URLSearchParams({ q: draft, folder: root })}` : codexNewTaskUrl(draft, root);
+      url = app === "claude" ? claudeUrl(root, draft) : codexNewTaskUrl(draft, root);
     } else if (app === "claude") {
       // Claude turns a leading "/" from a link into a full-width "／" so links can't run commands; name the skill instead.
-      const draft = new URLSearchParams({ q: `Use the ${skill} skill on ${prUrl}.${where}`, folder: root });
-      url = `claude://code/new?${draft}`;
+      url = claudeUrl(root, `Use the ${skill} skill on ${prUrl}.${where}`);
     } else if (app === "codex") {
       if (!file) throw new Error(`No ${skill} skill under ${root}/.claude/skills.`);
       url = codexNewTaskUrl(`Read and follow the ${skill} skill at ${file} for this pull request: ${prUrl}.${where}`, root);
@@ -539,7 +545,7 @@ export function createCodeDashboard(root: string) {
 
   async function launchCleanup(app: string, paths: string[]) {
     const { repo, prompt } = cleanupPrompt(paths);
-    const url = app === "claude" ? `claude://code/new?${new URLSearchParams({ q: prompt, folder: repo })}` : codexNewTaskUrl(prompt, repo);
+    const url = app === "claude" ? claudeUrl(repo, prompt) : codexNewTaskUrl(prompt, repo);
     await exec("/usr/bin/open", [url]);
   }
 

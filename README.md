@@ -103,6 +103,7 @@ config.toml                  # optional, git-ignored secrets: [linear] API_KEY, 
 | `code.prNotesDir` | Local PR review notes, one Markdown file per PR. |
 | `code.editor`, `code.terminal.command` | Commands for the worktree buttons (`E`, `X`); `{path}` is the worktree. |
 | `code.prSkills` | Review skills drafted against a PR (`1`…`N`). Each `id` is a skill under the repository's `.claude/skills/`; `icon` names a built-in icon. An open "Discuss" prompt always follows. |
+| `code.claudeEnvironments` | Claude Desktop environment for each tracked repository, keyed by its folder name (`{ "atlas": "atlas" }`). Claude drafts for that repository open in the named environment, with its folder and permissions, instead of on "This computer". |
 | `code.postNotesSkill` | Skill the "Post as review" notes prompt tells the agent to follow. |
 | `code.prPreview` | Preview button for repositories containing every `requires` file; runs `command` with `{number}`. `null` hides it. |
 

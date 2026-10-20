@@ -34,6 +34,8 @@ export const DEFAULT_CONFIG = {
     prSkills: [],
     // Skill file the "Post as review" notes prompt follows; empty asks the agent to post without one.
     postNotesSkill: "",
+    // Claude Desktop environment per tracked repo folder name, e.g. { "app": "app" }; drafts there open in it, not "This computer".
+    claudeEnvironments: {},
     // Opens a PR preview from a repo that has every `requires` file; `{number}` is the PR. null hides the button.
     prPreview: null,
   },
