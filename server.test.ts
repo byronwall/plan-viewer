@@ -209,6 +209,11 @@ test("resolves only approved repository image assets", () => {
   assert.deepEqual(resolveMarkdownAsset("https://example.com/diagram.png", "tasks/TASK-0001.md"), { kind: "unavailable" });
   assert.deepEqual(resolveMarkdownAsset("../../outside.png", "tasks/TASK-0001.md"), { kind: "unavailable" });
   assert.deepEqual(resolveMarkdownAsset("../plans/topic/notes.md", "tasks/TASK-0001.md"), { kind: "unavailable" });
+  assert.deepEqual(resolveMarkdownAsset("https://uploads.linear.app/org/a/b", ""), { kind: "remote", href: "/api/linear-image?url=https%3A%2F%2Fuploads.linear.app%2Forg%2Fa%2Fb" });
+});
+
+test("angle-bracket link destinations, as Linear writes them, stay live", () => {
+  assert.match(inlineMarkdown("[report](<https://acme.example/r/1>)", ""), /href="https:\/\/acme\.example\/r\/1"/);
 });
 
 test("links approved rendered and editable repository assets", () => {

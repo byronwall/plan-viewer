@@ -12,6 +12,7 @@ import { CodexDesktopClient, taskTitle } from "./codex-desktop.ts";
 import { createLinkMetadataStore } from "./link-metadata.ts";
 import { createCodeDashboard } from "./code-dashboard.ts";
 import { createIssueTracker } from "./issues.ts";
+import { linearImage } from "./linear.ts";
 import { config, setConfig } from "./public/config.js";
 
 // The planning workspace is the current directory (npm scripts run from the content repository); PLANNING_ROOT
@@ -561,6 +562,13 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     const url = new URL(request.url || "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/api/documents") return json(response, 200, { documents: await listDocuments(), defaultPath: todayPath() });
     if (request.method === "GET" && url.pathname === "/api/document") return json(response, 200, await loadDocument(url.searchParams.get("path") || ""));
+    if (request.method === "GET" && url.pathname === "/api/linear-image") {
+      const image = await linearImage(ROOT, url.searchParams.get("url") || "");
+      // SVG from a third party could run script if opened directly, so it is sandboxed.
+      response.writeHead(200, { "content-type": image.type, "cache-control": "private, max-age=86400", "x-content-type-options": "nosniff", "content-security-policy": "sandbox" });
+      response.end(image.body);
+      return;
+    }
     if (request.method === "GET" && url.pathname === "/api/asset") {
       const asset = safeAssetPath(url.searchParams.get("path") || "");
       const assetStat = await stat(asset.absolute);

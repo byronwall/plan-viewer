@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { linearKey } from "./link-metadata.ts";
 import type { Issue } from "./issues.ts";
 
@@ -96,4 +99,25 @@ export async function fetchLinear(fetcher: Fetcher, teams: string[], since = "",
     for (const raw of await pages(fetcher, team, "projects", PROJECT_FIELDS, null, () => {})) projects.push(slimLinearProject(raw, team));
   }
   return { issues, projects };
+}
+
+// Images in Linear descriptions and comments live on uploads.linear.app behind the API key. Each is downloaded once into
+// the workspace's ignored tmp/linear-images/ (named by a hash of its URL, type in a sidecar) and served from there.
+const UPLOAD = /^https:\/\/uploads\.linear\.app\/[\w./-]+$/;
+export async function linearImage(root: string, url: string) {
+  if (!UPLOAD.test(url)) throw new Error("Not a Linear upload URL.");
+  const file = join(root, "tmp", "linear-images", createHash("sha256").update(url).digest("hex"));
+  try {
+    return { type: await readFile(`${file}.type`, "utf8"), body: await readFile(file) };
+  } catch {}
+  const key = await linearKey(root);
+  if (!key) throw new Error("No Linear API key in LINEAR_API_KEY or config.toml [linear] API_KEY.");
+  const response = await fetch(url, { headers: { authorization: key } });
+  const type = response.headers.get("content-type") || "";
+  if (!response.ok || !type.startsWith("image/")) throw new Error(`Linear upload: ${response.status} ${type}`);
+  const body = Buffer.from(await response.arrayBuffer());
+  await mkdir(join(root, "tmp", "linear-images"), { recursive: true });
+  await writeFile(file, body);
+  await writeFile(`${file}.type`, type);
+  return { type, body };
 }

@@ -137,9 +137,13 @@ export function resolveMarkdownLink(href, currentPath) {
   return { kind: "unavailable" };
 }
 
+// Linear uploads need the API key, so the server downloads them once into the workspace's tmp/ and serves the copy.
+const LINEAR_UPLOAD = /^https:\/\/uploads\.linear\.app\/[\w./-]+$/;
+
 export function resolveMarkdownAsset(href, currentPath) {
   const value = href.trim();
   if (!value) return { kind: "unavailable" };
+  if (LINEAR_UPLOAD.test(value)) return { kind: "remote", href: `/api/linear-image?${new URLSearchParams({ url: value })}` };
 
   try {
     const repositoryRelative = /^(daily|tasks|plans|reference)\//.test(value) ? `/${value}` : value;
@@ -312,12 +316,12 @@ export function inlineMarkdown(value, currentPath = "") {
     output.push(formatInlineText(value.slice(cursor, match.index), currentPath, true, value.slice(0, cursor)));
     const isImage = match[1] === "!";
     const labelSource = match[2];
-    const target = match[3];
+    const target = match[3].replace(/^<(.+)>$/, "$1"); // CommonMark's `(<url>)` destination, which Linear writes
     if (isImage) {
       const asset = resolveMarkdownAsset(target, currentPath);
-      if (asset.kind === "asset") {
+      if (asset.kind === "asset" || asset.kind === "remote") {
         const accessibleLabel = labelSource ? `Open ${labelSource} in image viewer` : "Open image in viewer";
-        output.push(`<button class="markdown-image-trigger" type="button" aria-label="${escapeHtml(accessibleLabel)}"><img class="markdown-image" src="${escapeHtml(assetHref(asset.path))}" alt="${escapeHtml(labelSource)}" loading="lazy" decoding="async"></button>`);
+        output.push(`<button class="markdown-image-trigger" type="button" aria-label="${escapeHtml(accessibleLabel)}"><img class="markdown-image" src="${escapeHtml(asset.href || assetHref(asset.path))}" alt="${escapeHtml(labelSource)}" loading="lazy" decoding="async"></button>`);
       } else {
         const label = formatInlineText(labelSource || "Image", currentPath);
         output.push(`<span class="markdown-unavailable-image" role="img" aria-label="Unavailable image: ${escapeHtml(labelSource || "Image")}">${label} <span aria-hidden="true">— image unavailable</span></span>`);

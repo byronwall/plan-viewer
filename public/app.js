@@ -635,8 +635,9 @@ function closeComposer(returnFocus = false) {
   if (returnFocus) trigger?.focus();
 }
 
-function imageViewerItems() {
-  return [...elements.chunks.querySelectorAll(".markdown-image-trigger")].map((trigger, index) => {
+// Images in an open overlay (an issue's description) page among themselves; elsewhere among the document's.
+function imageViewerItems(trigger) {
+  return [...(trigger.closest("dialog") || elements.chunks).querySelectorAll(".markdown-image-trigger")].map((trigger, index) => {
     const image = trigger.querySelector(".markdown-image");
     return {
       trigger,
@@ -754,7 +755,7 @@ function renderImageViewer() {
 }
 
 function showImageViewer(trigger) {
-  const items = imageViewerItems();
+  const items = imageViewerItems(trigger);
   const index = items.findIndex((item) => item.trigger === trigger);
   if (index < 0) return;
   imageViewerState.items = items;
@@ -1553,6 +1554,11 @@ document.addEventListener("click", (event) => {
     .then(response => { if (!response.ok) throw new Error(); })
     .catch(() => window.open(link.href, "_blank", "noreferrer"));
 }, true);
+// Images inside an overlay (an issue's description) open the same viewer, stacked above the overlay.
+document.addEventListener("click", (event) => {
+  const imageTrigger = event.target.closest("dialog .markdown-image-trigger");
+  if (imageTrigger) showImageViewer(imageTrigger);
+});
 elements.chunks.addEventListener("click", (event) => {
   if (event.target.closest("[data-dock-draft]")) {
     openDocumentComposer();
