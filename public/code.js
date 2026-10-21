@@ -1883,7 +1883,7 @@ function renderDiff() {
   renderDiffFiles();
   diffRegion("filehead", file && !all ? `<div class="code-diff-file-head">${fileHeadInner(file, markdown ? diffSegment("data-diff-mode", rendered ? "rendered" : "diff", { rendered: "Rendered", diff: "Diff" }) : "")}${viewedBox(file)}</div>` : "");
   const body = local ? localFilesBody()
-    : description ? (info.body ? `<div class="markdown code-diff-markdown">${renderMarkdown(info.body)}</div>` : `<p class="code-muted">Loading…</p>`)
+    : description ? (info.body ? `<div class="markdown code-diff-markdown">${prBodyHtml(pr.slug, pr.number, info.body)}</div>` : `<p class="code-muted">Loading…</p>`)
     : !files ? `<p class="code-muted">Loading diff…</p>`
     : diff.error ? `<p class="work-warning code-diff-error">Couldn't load this diff: ${escapeHtml(diff.error)}</p>`
     : !files.length ? `<p class="code-muted">No changes.</p>`
@@ -2023,7 +2023,7 @@ function prDetail(pr) {
     ${stackSection(pr)}
     <section><h4>Files <span>${extra?.files?.length ?? ""}</span></h4>${extra ? fileTree(extra.files, diffFileLink) : `<p class="code-muted">Loading…</p>`}</section>
     <section><h4>Commits <span>${extra ? extra.commits.length : ""}</span></h4>${commitList(extra?.commits.slice(-15).reverse(), "No commits.", { repo: pr.repo, slug: pr.slug })}</section>
-    ${extra?.body ? descriptionSection(`${pr.slug}#${pr.number}`, extra.body) : ""}`;
+    ${extra?.body ? descriptionSection(pr, extra.body) : ""}`;
 }
 
 // Changed files as a folder tree; single-child folder chains collapse into one row, as in VS Code.
@@ -2086,11 +2086,15 @@ function stackSection(pr) {
   return `<section><h4>Stack <span>${stack.indexOf(pr) + 1} of ${stack.length} · on ${escapeHtml(stack[0].base)}</span></h4><ol class="code-stack-list">${stack.map((item, index) => `<li class="${item === pr ? "is-current" : ""}"><b class="code-stack-n">${index + 1}</b>${prChip(item)}<span>${escapeHtml(item.title)}</span></li>`).join("")}</ol></section>`;
 }
 
+// A PR body's attached images load through the server, which can sign in to GitHub for them.
+const prBodyHtml = (slug, number, body) => renderMarkdown(body.replace(/https:\/\/github\.com\/user-attachments\/assets\/([0-9a-f-]{36})/g, (_, id) => `/api/github-image?${new URLSearchParams({ slug, number, id })}`));
+
 // Long PR bodies collapse to a short preview; the toggle remembers per PR so background refreshes keep it open.
-function descriptionSection(key, body) {
+function descriptionSection(pr, body) {
+  const key = `${pr.slug}#${pr.number}`;
   const open = ui.openDescriptions.has(key);
   const long = body.length > 600 || body.split("\n").length > 12;
-  return `<section><h4>Description</h4><div class="markdown code-description${long && !open ? " is-collapsed" : ""}">${renderMarkdown(body)}</div>${long ? `<button type="button" class="code-more" data-code-description="${escapeHtml(key)}">${open ? "Show less" : "Show full description"}</button>` : ""}</section>`;
+  return `<section><h4>Description</h4><div class="markdown code-description${long && !open ? " is-collapsed" : ""}">${prBodyHtml(pr.slug, pr.number, body)}</div>${long ? `<button type="button" class="code-more" data-code-description="${escapeHtml(key)}">${open ? "Show less" : "Show full description"}</button>` : ""}</section>`;
 }
 
 async function loadDetail(key) {

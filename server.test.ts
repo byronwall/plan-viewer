@@ -212,6 +212,15 @@ test("resolves only approved repository image assets", () => {
   assert.deepEqual(resolveMarkdownAsset("https://uploads.linear.app/org/a/b", ""), { kind: "remote", href: "/api/linear-image?url=https%3A%2F%2Fuploads.linear.app%2Forg%2Fa%2Fb" });
 });
 
+test("GitHub bodies: raw img and details tags render, attachment images go through the proxy", () => {
+  const src = "/api/github-image?slug=acme%2Fatlas&number=7&id=a0251724-7d15-4c41-b0a9-392837578513";
+  const html = renderMarkdown(`<details> <summary>Try it **locally**</summary>\n\nRun \`dev\`.\n\n</details>\n\n<img width="1280" alt="Closed [sidebar]" src="${src}"\n/>\n\n**[notes.md](https://acme.example/n)**`, "");
+  assert.match(html, /<details class="markdown-details"><summary>Try it <strong>locally<\/strong><\/summary><p>Run <code>dev<\/code>\.<\/p><\/details>/);
+  assert.match(html, /<figure class="markdown-figure">.*<img class="markdown-image" src="\/api\/github-image\?slug=acme%2Fatlas&amp;number=7&amp;id=a0251724-[^"]*" alt="Closed sidebar"/);
+  assert.match(html, /<strong><a class="markdown-external-link" href="https:\/\/acme\.example\/n"/);
+  assert.doesNotMatch(renderMarkdown('<img src="javascript:alert(1)">', ""), /<img/);
+});
+
 test("angle-bracket link destinations, as Linear writes them, stay live", () => {
   assert.match(inlineMarkdown("[report](<https://acme.example/r/1>)", ""), /href="https:\/\/acme\.example\/r\/1"/);
 });

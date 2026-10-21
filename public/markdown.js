@@ -144,6 +144,7 @@ export function resolveMarkdownAsset(href, currentPath) {
   const value = href.trim();
   if (!value) return { kind: "unavailable" };
   if (LINEAR_UPLOAD.test(value)) return { kind: "remote", href: `/api/linear-image?${new URLSearchParams({ url: value })}` };
+  if (/^\/api\/github-image\?[\w=&%./-]+$/.test(value)) return { kind: "remote", href: value };
 
   try {
     const repositoryRelative = /^(daily|tasks|plans|reference)\//.test(value) ? `/${value}` : value;
@@ -348,7 +349,8 @@ export function inlineMarkdown(value, currentPath = "") {
   }
 
   output.push(formatInlineText(value.slice(cursor), currentPath, true, value.slice(0, cursor)));
-  return output.join("");
+  // `**[label](href)**`: the bold markers land in the text on either side of the link.
+  return output.join("").replace(/\*\*(<a\b[^>]*>[\s\S]*?<\/a>(?:&#8288;)?)\*\*/g, "<strong>$1</strong>");
 }
 
 function splitTableRow(line) {
@@ -479,8 +481,14 @@ export function codeBlock(lines, language = "") {
   return `<pre class="markdown-diff"><code>${rows.join("")}</code></pre>`;
 }
 
+// GitHub bodies write images as raw `<img>` tags; only their src and alt are kept, as Markdown images.
+const htmlImages = (markdown) => markdown.replace(/<img\b[^>]*>/gi, (tag) => {
+  const attr = (name) => tag.match(new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, "i"))?.[1] || "";
+  return attr("src") ? `![${attr("alt").replace(/[[\]]/g, "")}](${attr("src")})` : "";
+});
+
 export function renderMarkdown(markdown, currentPath = "") {
-  const lines = markdown.split(/\r?\n/);
+  const lines = htmlImages(markdown).split(/\r?\n/);
   const html = [];
   let paragraph = [];
   let inCode = false;
@@ -501,6 +509,21 @@ export function renderMarkdown(markdown, currentPath = "") {
       continue;
     }
     if (inCode) { code.push(line); continue; }
+
+    // `<details><summary>…</summary> … </details>`, the collapsible GitHub bodies use; the inside is Markdown.
+    if (/^\s*<details>/i.test(line)) {
+      flushParagraph();
+      const block = [line];
+      let depth = 0;
+      for (let at = index; ; at += 1) {
+        depth += (lines[at].match(/<details>/gi) || []).length - (lines[at].match(/<\/details>/gi) || []).length;
+        if (at > index) block.push(lines[at]);
+        if (depth <= 0 || at + 1 === lines.length) { index = at; break; }
+      }
+      const [, summary = "Details", inner = ""] = block.join("\n").match(/^\s*<details>\s*(?:<summary>([\s\S]*?)<\/summary>)?([\s\S]*?)(?:<\/details>\s*)?$/i) || [];
+      html.push(`<details class="markdown-details"><summary>${inlineMarkdown(summary.trim(), currentPath)}</summary>${renderMarkdown(inner, currentPath)}</details>`);
+      continue;
+    }
 
     if (/^!\[[^\]]*\]\([^\s)]+\)$/.test(line.trim())) {
       flushParagraph();

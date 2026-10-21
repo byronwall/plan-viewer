@@ -55,6 +55,27 @@ export function classifyWorktree(tree: Worktree, merged: boolean, now = Date.now
   return { level: "keep", reason: "recent activity" };
 }
 
+// Images attached to a PR body (github.com/user-attachments/assets/<id>) need a signed-in browser. The API's rendered
+// body_html carries short-lived signed URLs for them, so each is downloaded once into the workspace's ignored
+// tmp/github-images/ (named by its asset id, type in a sidecar) and served from there.
+export async function githubImage(root: string, slug: string, number: number, id: string) {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(slug) || !Number.isInteger(number) || !/^[0-9a-f-]{36}$/.test(id)) throw new Error("Bad GitHub image.");
+  const file = join(root, "tmp", "github-images", id);
+  try {
+    return { type: await readFile(`${file}.type`, "utf8"), body: await readFile(file) };
+  } catch {}
+  const { stdout } = await exec("gh", ["api", `repos/${slug}/issues/${number}`, "-H", "Accept: application/vnd.github.full+json", "--jq", ".body_html"], { maxBuffer: 32 << 20 });
+  const signed = stdout.match(new RegExp(`https://private-user-images\\.githubusercontent\\.com/[^"\\s]*${id}[^"\\s]*`))?.[0]?.replaceAll("&amp;", "&");
+  const response = await fetch(signed || `https://github.com/user-attachments/assets/${id}`); // public repos serve it directly
+  const type = response.headers.get("content-type") || "";
+  if (!response.ok || !type.startsWith("image/")) throw new Error(`GitHub image: ${response.status} ${type}`);
+  const body = Buffer.from(await response.arrayBuffer());
+  await mkdir(join(root, "tmp", "github-images"), { recursive: true });
+  await writeFile(file, body);
+  await writeFile(`${file}.type`, type);
+  return { type, body };
+}
+
 export function createCodeDashboard(root: string) {
   const prNotes = createPrNotes(root, config().code.prNotesDir);
   const configPath = join(root, config().code.reposFile);

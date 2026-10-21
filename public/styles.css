@@ -391,6 +391,10 @@ button.task-list-id:hover { text-decoration: underline; }
 .task-detail-open { flex: none; height: 28px; display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 7px; background: var(--action); padding: 0 11px; color: var(--paper); font: inherit; font-size: .76rem; font-weight: 650; cursor: pointer; }
 .task-detail-open:hover { background: var(--action-deep); }
 .task-detail h3 { margin: 10px 0 4px; font-size: 1.02rem; line-height: 1.3; letter-spacing: -.012em; text-wrap: balance; }
+.markdown-details { margin: 8px 0; }
+.markdown-details > summary { width: fit-content; color: var(--muted); font-weight: 600; cursor: pointer; }
+.markdown-details > summary:hover { color: var(--ink); }
+.markdown-details[open] > summary { margin-bottom: 6px; }
 .task-detail-summary { margin: 0; color: var(--body-ink); font-size: .82rem; line-height: 1.5; }
 .task-detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 8px 0 0; color: var(--muted); font-size: .72rem; }
 .task-detail-tag { border-radius: 999px; background: var(--quiet-field); padding: 1px 7px; color: var(--body-ink); }
