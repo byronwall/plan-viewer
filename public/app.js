@@ -1581,6 +1581,22 @@ document.addEventListener("click", (event) => {
     .then(response => { if (!response.ok) throw new Error(); })
     .catch(() => window.open(link.href, "_blank", "noreferrer"));
 }, true);
+// Plain clicks on PR and issue links in written content open the in-app overview first; modified clicks still go out.
+document.addEventListener("click", (event) => {
+  const link = event.target.closest(".markdown a[href], a.dock-link");
+  if (!link || event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const [, kind, ref] = metadataKey(link.href).match(/^(github|linear|jira):(.+)$/) || [];
+  if (kind === "github" && /\/pull\//.test(link.href)) {
+    event.preventDefault();
+    const [slug, number] = ref.split("#");
+    openPrOverlay(slug, Number(number));
+  } else if (kind === "linear" || kind === "jira") {
+    const key = kind === "linear" ? `linear:${ref}` : ref;
+    if (!cachedIssues()?.issues?.some(issue => issue.key === key)) return; // not synced: open the tracker
+    event.preventDefault();
+    openIssue(key);
+  }
+}, true);
 // Images inside an overlay (an issue's description) open the same viewer, stacked above the overlay.
 document.addEventListener("click", (event) => {
   const imageTrigger = event.target.closest("dialog .markdown-image-trigger");
