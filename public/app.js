@@ -1490,23 +1490,51 @@ function hideLinkTip() {
   clearTimeout(linkTipTimer);
   linkTip.hidden = true;
 }
-function showLinkTip(link) {
-  const meta = link.dataset.meta ? JSON.parse(link.dataset.meta) : {};
-  const row = (className, text) => Object.assign(document.createElement("div"), { className, textContent: text });
-  const rows = [row("link-tip-label", link.dataset.tip)];
-  if (meta.title && !link.dataset.tip.includes(meta.title)) rows.push(row("link-tip-title", meta.title));
-  if (meta.state || meta.person) {
-    const status = row("link-tip-status", "");
-    if (meta.state) {
-      const pill = Object.assign(document.createElement("span"), { className: "dock-link-state", textContent: meta.state });
-      pill.dataset.tone = meta.tone || "";
-      status.append(pill);
-    }
-    if (meta.person) status.append(meta.person);
-    rows.push(status);
+const REVIEW = { APPROVED: ["Approved", "good"], CHANGES_REQUESTED: ["Changes requested", "bad"], REVIEW_REQUIRED: ["Needs review", "wait"] };
+const CHECKS = { SUCCESS: ["Checks pass", "good"], FAILURE: ["Checks failing", "bad"], ERROR: ["Checks failing", "bad"], PENDING: ["Checks running", "wait"], EXPECTED: ["Checks running", "wait"] };
+const tipFact = ([text, tone]) => `<span class="link-tip-fact" data-tone="${tone}">${escapeHtml(text)}</span>`;
+// Where a PR sits in its stack, read from the other PR links on this page: the PR its base branch belongs to, and the ones built on its head.
+function stackPlace(slug, pr) {
+  const below = [], above = [];
+  for (const other of elements.chunks.querySelectorAll("a[data-meta]")) {
+    const [, otherSlug, number] = metadataKey(other.href).match(/^github:(.+)#(\d+)$/) || [];
+    const facts = otherSlug === slug && JSON.parse(other.dataset.meta).pr;
+    if (!facts) continue;
+    if (facts.head === pr.base && !below.includes(number)) below.push(number);
+    if (facts.base === pr.head && !above.includes(number)) above.push(number);
   }
-  rows.push(row("link-tip-where", link.dataset.documentPath || link.href.replace(/^https?:\/\//, "")));
-  linkTip.replaceChildren(...rows);
+  return [below.length ? `on #${below.join(", #")}` : `into ${pr.base}`, above.length ? `#${above.join(", #")} on top` : ""].filter(Boolean);
+}
+// Header (source and state), title, then the facts that decide the next move; for a PR that is whether it can land.
+function linkTipHtml(link, meta) {
+  const key = metadataKey(link.href);
+  const github = key.match(/^github:(.+)#(\d+)$/);
+  const name = github ? `${github[1]} #${github[2]}` : key.replace(/^\w+:/, "") || link.dataset.tip;
+  const state = meta.state ? `<span class="link-tip-state" data-tone="${escapeHtml(meta.tone || "")}">${escapeHtml(meta.state)}${meta.when && !key.startsWith("slack:") ? ` <span>${ago(meta.when)} ago</span>` : ""}</span>` : "";
+  const icon = link.querySelector(".service-icon")?.outerHTML || "";
+  const lines = [];
+  const pr = meta.pr;
+  if (pr) {
+    const live = meta.tone === "open" || meta.tone === "draft";
+    const gate = live ? [REVIEW[pr.review], CHECKS[pr.checks], pr.mergeable === "CONFLICTING" ? ["Conflicts", "bad"] : null].filter(Boolean).map(tipFact) : [];
+    if (gate.length) lines.push(gate.join(""));
+    lines.push([meta.person, ...stackPlace(github[1], pr)].filter(Boolean).map(escapeHtml).join(" · "));
+    lines.push(`<span class="link-tip-diff"><b>+${pr.additions}</b> <i>−${pr.deletions}</i></span> · ${pr.files} file${pr.files === 1 ? "" : "s"} · <code>${escapeHtml(pr.head)}</code>`);
+  } else {
+    const facts = [meta.person || (meta.state && !key.startsWith("slack:") ? "Unassigned" : ""), meta.priority && `${meta.priority} priority`].filter(Boolean);
+    if (facts.length) lines.push(facts.map(escapeHtml).join(" · "));
+  }
+  const target = inAppTarget(link);
+  const hint = target ? `Click for overview · ⌘-click opens ${target.site}` : link.dataset.documentPath ? link.dataset.documentPath : "";
+  return `<div class="link-tip-head">${icon}<span class="link-tip-name">${escapeHtml(name)}</span>${state}</div>`
+    + (meta.title ? `<div class="link-tip-title">${escapeHtml(meta.title)}</div>` : "")
+    + lines.map(line => `<div class="link-tip-line">${line}</div>`).join("")
+    + (hint ? `<div class="link-tip-hint">${escapeHtml(hint)}</div>` : "");
+}
+function showLinkTip(link) {
+  const meta = link.dataset.meta ? JSON.parse(link.dataset.meta) : null;
+  if (meta) linkTip.innerHTML = linkTipHtml(link, meta);
+  else linkTip.innerHTML = `<div class="link-tip-title">${escapeHtml(link.dataset.tip)}</div>${link.dataset.documentPath ? `<div class="link-tip-hint">${escapeHtml(link.dataset.documentPath)}</div>` : ""}`;
   linkTip.hidden = false;
   const box = link.getBoundingClientRect();
   const left = Math.max(12, Math.min(box.left, innerWidth - linkTip.offsetWidth - 12));
@@ -1581,21 +1609,26 @@ document.addEventListener("click", (event) => {
     .then(response => { if (!response.ok) throw new Error(); })
     .catch(() => window.open(link.href, "_blank", "noreferrer"));
 }, true);
+// The in-app overview a written link opens on a plain click, or null when it goes out: PRs always, issues once synced.
+function inAppTarget(link) {
+  const [, kind, ref] = metadataKey(link.href).match(/^(github|linear|jira):(.+)$/) || [];
+  if (kind === "github" && /\/pull\//.test(link.href)) {
+    const [slug, number] = ref.split("#");
+    return { open: () => openPrOverlay(slug, Number(number)), site: "GitHub" };
+  }
+  if (kind !== "linear" && kind !== "jira") return null;
+  const key = kind === "linear" ? `linear:${ref}` : ref;
+  return cachedIssues()?.issues?.some(issue => issue.key === key) ? { open: () => openIssue(key), site: kind === "linear" ? "Linear" : "Jira" } : null;
+}
 // Plain clicks on PR and issue links in written content open the in-app overview first; modified clicks still go out.
 document.addEventListener("click", (event) => {
   const link = event.target.closest(".markdown a[href], a.dock-link");
   if (!link || event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-  const [, kind, ref] = metadataKey(link.href).match(/^(github|linear|jira):(.+)$/) || [];
-  if (kind === "github" && /\/pull\//.test(link.href)) {
-    event.preventDefault();
-    const [slug, number] = ref.split("#");
-    openPrOverlay(slug, Number(number));
-  } else if (kind === "linear" || kind === "jira") {
-    const key = kind === "linear" ? `linear:${ref}` : ref;
-    if (!cachedIssues()?.issues?.some(issue => issue.key === key)) return; // not synced: open the tracker
-    event.preventDefault();
-    openIssue(key);
-  }
+  const target = inAppTarget(link);
+  if (!target) return;
+  event.preventDefault();
+  hideLinkTip();
+  target.open();
 }, true);
 // Images inside an overlay (an issue's description) open the same viewer, stacked above the overlay.
 document.addEventListener("click", (event) => {

@@ -12,9 +12,13 @@ const BATCH = 50;
 const FRESH_MS = 30 * 60 * 1000;
 const SETTLED_MS = 7 * 24 * 60 * 60 * 1000;
 const FAILED_MS = 5 * 60 * 1000;
+// Bump when entries gain fields; older entries still answer but refresh behind the response.
+const VERSION = 2;
 
 export type Tone = "open" | "progress" | "draft" | "done" | "closed";
-export type LinkMetadata = { title: string; state: string; tone: Tone; person?: string; fetchedAt: number };
+// `when` dates the state (merged, closed, opened, or last updated); `pr` carries what decides whether a pull request can land.
+export type PrFacts = { review: string; checks: string; mergeable: string; base: string; head: string; additions: number; deletions: number; files: number };
+export type LinkMetadata = { title: string; state: string; tone: Tone; person?: string; when?: string; priority?: string; pr?: PrFacts; v?: number; fetchedAt: number };
 
 type Cache = Record<string, LinkMetadata>;
 
@@ -42,7 +46,7 @@ export function createLinkMetadataStore(root: string) {
         fetchSlack(pending.filter((key) => key.startsWith("slack:")), root),
       ]);
       for (const result of results) {
-        if (result.status === "fulfilled") Object.assign(store, result.value);
+        if (result.status === "fulfilled") for (const [key, meta] of Object.entries(result.value)) store[key] = { ...meta, v: VERSION };
         else console.warn(`Link metadata lookup failed: ${result.reason instanceof Error ? result.reason.message.split("\n")[0] : result.reason}`);
       }
       for (const key of pending) if (!store[key]) failedAt.set(key, Date.now());
@@ -55,7 +59,7 @@ export function createLinkMetadataStore(root: string) {
   return async function lookup(keys: string[]) {
     const wanted = [...new Set(keys.filter((key) => /^(github:[\w.-]+\/[\w.-]+#\d+|linear:[A-Z]+-\d+|jira:[A-Z]+-\d+|slack:[A-Z0-9]+\/\d+\.\d+(\/\d+\.\d+)?)$/.test(key)))];
     const store = await load();
-    const isStale = (meta: LinkMetadata) => Date.now() - meta.fetchedAt > (meta.tone === "done" || meta.tone === "closed" ? SETTLED_MS : FRESH_MS);
+    const isStale = (meta: LinkMetadata) => meta.v !== VERSION || Date.now() - meta.fetchedAt > (meta.tone === "done" || meta.tone === "closed" ? SETTLED_MS : FRESH_MS);
     const missing = wanted.filter((key) => !store[key]);
     const stale = wanted.filter((key) => store[key] && isStale(store[key]));
     if (stale.length) refresh(stale).catch(() => {});
@@ -77,10 +81,11 @@ const literal = (value: string) => JSON.stringify(value);
 async function fetchGithub(keys: string[]) {
   const out: Cache = {};
   for (const batch of chunks(keys)) {
-    const fields = "title state author { login }";
+    const fields = "title state createdAt closedAt author { login }";
+    const pull = "isDraft mergedAt reviewDecision mergeable baseRefName headRefName additions deletions changedFiles commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }";
     const query = `query { ${batch.map((key, i) => {
       const [, owner, name, number] = key.match(/^github:([^/]+)\/([^#]+)#(\d+)$/)!;
-      return `k${i}: repository(owner: ${literal(owner)}, name: ${literal(name)}) { issueOrPullRequest(number: ${number}) { __typename ... on PullRequest { ${fields} isDraft } ... on Issue { ${fields} } } }`;
+      return `k${i}: repository(owner: ${literal(owner)}, name: ${literal(name)}) { issueOrPullRequest(number: ${number}) { __typename ... on PullRequest { ${fields} ${pull} } ... on Issue { ${fields} } } }`;
     }).join(" ")} }`;
     // GraphQL reports unknown numbers as errors alongside partial data, so read stdout even when gh exits non-zero.
     const { stdout } = await run("gh", ["api", "graphql", "-f", `query=${query}`], { maxBuffer: 8 << 20 }).catch((error: { stdout?: string }) => ({ stdout: error.stdout || "{}" }));
@@ -92,7 +97,11 @@ async function fetchGithub(keys: string[]) {
       const [state, tone]: [string, Tone] = item.state === "MERGED" ? ["Merged", "done"]
         : item.state === "CLOSED" ? (isPull ? ["Closed", "closed"] : ["Closed", "done"])
         : item.isDraft ? ["Draft", "draft"] : ["Open", "open"];
-      out[key] = { title: item.title, state, tone, person: item.author?.login, fetchedAt: Date.now() };
+      const pr = isPull ? {
+        review: item.reviewDecision || "", checks: item.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state || "", mergeable: item.mergeable || "",
+        base: item.baseRefName, head: item.headRefName, additions: item.additions, deletions: item.deletions, files: item.changedFiles,
+      } : undefined;
+      out[key] = { title: item.title, state, tone, person: item.author?.login, when: item.mergedAt || item.closedAt || item.createdAt, pr, fetchedAt: Date.now() };
     });
   }
   return out;
@@ -116,12 +125,12 @@ async function fetchLinear(keys: string[], root: string) {
   if (!key) throw new Error("No Linear API key in LINEAR_API_KEY or config.toml");
   const tones: Record<string, Tone> = { completed: "done", canceled: "closed", started: "progress", unstarted: "open", backlog: "open", triage: "open" };
   for (const batch of chunks(keys)) {
-    const query = `query { ${batch.map((k, i) => `k${i}: issue(id: ${literal(k.slice("linear:".length))}) { title state { name type } assignee { name } }`).join(" ")} }`;
+    const query = `query { ${batch.map((k, i) => `k${i}: issue(id: ${literal(k.slice("linear:".length))}) { title priorityLabel updatedAt state { name type } assignee { name } }`).join(" ")} }`;
     const response = await fetch("https://api.linear.app/graphql", { method: "POST", headers: { "Content-Type": "application/json", Authorization: key }, body: JSON.stringify({ query }) });
     const data = (await response.json()).data || {};
     batch.forEach((k, i) => {
       const item = data[`k${i}`];
-      if (item) out[k] = { title: item.title, state: item.state?.name || "", tone: tones[item.state?.type] || "open", person: item.assignee?.name, fetchedAt: Date.now() };
+      if (item) out[k] = { title: item.title, state: item.state?.name || "", tone: tones[item.state?.type] || "open", person: item.assignee?.name, when: item.updatedAt, priority: item.priorityLabel === "No priority" ? "" : item.priorityLabel, fetchedAt: Date.now() };
     });
   }
   return out;
@@ -134,10 +143,10 @@ async function fetchJira(keys: string[]): Promise<Cache> {
   const tones: Record<string, Tone> = { done: "done", indeterminate: "progress", new: "open" };
   const ids = keys.map((key) => key.slice("jira:".length));
   try {
-    const { stdout } = await run("acli", ["jira", "workitem", "search", "--jql", `key in (${ids.join(",")})`, "--fields", "summary,status,assignee", "--paginate", "--json"], { maxBuffer: 16 << 20 });
+    const { stdout } = await run("acli", ["jira", "workitem", "search", "--jql", `key in (${ids.join(",")})`, "--fields", "summary,status,assignee,priority,updated", "--paginate", "--json"], { maxBuffer: 16 << 20 });
     return Object.fromEntries(JSON.parse(stdout).map((item: any) => {
       const status = item.fields?.status;
-      return [`jira:${item.key}`, { title: item.fields?.summary || "", state: status?.name || "", tone: tones[status?.statusCategory?.key] || "open", person: item.fields?.assignee?.displayName, fetchedAt: Date.now() }];
+      return [`jira:${item.key}`, { title: item.fields?.summary || "", state: status?.name || "", tone: tones[status?.statusCategory?.key] || "open", person: item.fields?.assignee?.displayName, when: item.fields?.updated, priority: item.fields?.priority?.name || "", fetchedAt: Date.now() }];
     }));
   } catch (error) {
     if (keys.length === 1) return {};
