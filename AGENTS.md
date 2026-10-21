@@ -35,6 +35,10 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 - `/api/code` takes several seconds on its first scan. Wait for `[data-code-state="ready"]` (and `[data-commits-state="ready"]` on the Commits tab) instead of polling the table.
 - Load the `byron-ui-taste` skill in full before any UI change in `public/`.
 
+## Design intent
+
+`docs/code-view.md` records why the Code view works the way it does; read it before adding a new list/inspector/overview surface. `docs/issues-plan.md` is the plan for the Jira issues view.
+
 ## Rules
 
 - Keep the viewer generic. Anything that names a person, organization, repository, tracker, tool path, or skill belongs in `viewer.config.json` with a neutral default in `public/config.js`, documented in the README's configuration table. Fixtures and tests use the fictional `acme` organization.
