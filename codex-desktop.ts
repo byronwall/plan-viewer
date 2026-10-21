@@ -32,6 +32,11 @@ export function claudeNewSessionUrl(folder: string, prompt = "") {
   return `claude://code/new?${new URLSearchParams({ ...(prompt ? { q: prompt } : {}), folder })}`;
 }
 
+// Neither app's deep link carries attachments, so pasted images travel as workspace file paths the agent opens.
+export function withImages(prompt: string, images: string[]) {
+  return images.length ? `${prompt}\n\nAttached images (pasted into the handoff; open each file to view it):\n${images.map(path => `- ${path}`).join("\n")}` : prompt;
+}
+
 export class CodexDesktopClient {
   private log: Logger;
   private run: RunCommand;
@@ -43,9 +48,10 @@ export class CodexDesktopClient {
     this.platform = options.platform || process.platform;
   }
 
-  async openDraft(cwd: string, title: string, prompt: string, app = "codex") {
+  async openDraft(cwd: string, title: string, prompt: string, app = "codex", images: string[] = []) {
     if (this.platform !== "darwin") throw new Error("Opening an agent draft currently requires macOS.");
 
+    prompt = withImages(prompt, images);
     const url = app === "claude" ? claudeNewSessionUrl(cwd, prompt) : codexNewTaskUrl(prompt, cwd);
     await this.run("/usr/bin/open", [url]);
     this.log("desktop-draft-opened", { app, title: taskTitle(title), promptLength: prompt.length, workspace: cwd });

@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { join } from "node:path";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { refreshSlackChannels } from "./link-metadata.ts";
-import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle } from "./codex-desktop.ts";
+import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle, withImages } from "./codex-desktop.ts";
 import { inlineMarkdown, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
 import { buildWeeks, dateKey, parseDateKey, startOfWeek } from "./public/weeks.js";
-import { ROOT, buildCodexPrompt, dailyDigest, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize } from "./server.ts";
+import { ROOT, buildCodexPrompt, saveHandoffImages, dailyDigest, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
   const previous = process.env.SLACK_TOKEN;
@@ -334,6 +334,16 @@ test("file handoff attaches the path without copying the file contents", async (
   assert.match(prompt, /Source file: daily\/2026\/07\/31\/plan\.md/);
   assert.match(prompt, /Review the whole file/);
   assert.doesNotMatch(prompt, /single-command `acme init` bootstrap/);
+});
+
+test("pasted handoff images are saved under tmp and listed in the prompt", async () => {
+  const [path] = await saveHandoffImages([`data:image/png;base64,${Buffer.from("png").toString("base64")}`]);
+  assert.ok(path.startsWith(`${ROOT}/tmp/handoff-images/`) && path.endsWith(".png"));
+  assert.equal(await readFile(path, "utf8"), "png");
+  await rm(path);
+  assert.match(withImages("Fix it.", [path]), /Fix it\.\n\nAttached images[^\n]*\n- .*\.png$/);
+  assert.equal(withImages("Fix it.", []), "Fix it.");
+  await assert.rejects(saveHandoffImages(["data:text/html;base64,PGI+"]), /Only PNG/);
 });
 
 test("global handoff carries no file or chunk context", () => {

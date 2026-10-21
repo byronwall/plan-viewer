@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { execFile } from "node:child_process";
 import { readFileSync, watch, type FSWatcher } from "node:fs";
-import { readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -443,7 +443,27 @@ export function buildActionPrompt(document: Awaited<ReturnType<typeof loadDocume
   return `Advance this next action: ${action.title}\n\nPlanning workspace: ${ROOT}\nSource file: ${document.absolutePath}\nRead the source file and the workspace AGENTS.md before acting. Follow the applicable target repository instructions and preserve unrelated work.\n\n${commentary.trim() ? `${config().user}'s direction for this run (takes precedence over the stored prompt where they differ):\n${commentary.trim()}\n\n` : ""}Stored action prompt:\n${action.prompt}\n\nCarry out the bounded action and verify its result. Record evidence and any remaining blocker in the authoritative task file. Update task state and the work breakdown only when supported by the result. Do not treat drafting a message as authorization to send it.\n\n${CHAT_LINK_INSTRUCTION}`;
 }
 
-async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex") {
+const MAX_IMAGES = 6;
+
+// Pasted images arrive as data URLs and land in the workspace's ignored tmp/ so either agent can open them by path.
+export async function saveHandoffImages(images: unknown[]) {
+  if (images.length > MAX_IMAGES) throw new Error(`Attach at most ${MAX_IMAGES} images.`);
+  const folder = join(ROOT, "tmp", "handoff-images");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const paths = [];
+  for (const [index, image] of images.entries()) {
+    const match = /^data:image\/(png|jpeg|gif|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(image));
+    if (!match) throw new Error("Only PNG, JPEG, GIF, and WebP images can be attached.");
+    await mkdir(folder, { recursive: true });
+    const file = join(folder, `${stamp}-${index + 1}.${match[1] === "jpeg" ? "jpg" : match[1]}`);
+    await writeFile(file, Buffer.from(match[2], "base64"));
+    paths.push(file);
+  }
+  return paths;
+}
+
+async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex", images: string[] = []) {
+  const openDraft = (title: string, prompt: string) => getCodexApp().openDraft(ROOT, title, prompt, app, images);
   if (scope === "action") {
     const document = await loadDocument(path);
     const action = document.nextActions.find(action => action.id === actionId);
@@ -453,7 +473,7 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
     const prompt = buildActionPrompt(document, action, commentary);
     dispatchLog(requestId, "validated", { scope, path, actionId });
     if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true };
-    return { accepted: true, ...await getCodexApp().openDraft(ROOT, action.title, prompt, app) };
+    return { accepted: true, ...await openDraft(action.title, prompt) };
   }
   if (!commentary.trim()) throw new Error("Add a request before opening a draft.");
   if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Commentary is too long for this first version.");
@@ -461,7 +481,7 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
     const prompt = buildGlobalCodexPrompt(commentary);
     dispatchLog(requestId, "validated", { scope, commentaryLength: commentary.length });
     if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true };
-    const result = await getCodexApp().openDraft(ROOT, "Plan viewer command", prompt, app);
+    const result = await openDraft("Plan viewer command", prompt);
     dispatchLog(requestId, "draft-opened", { draftOpened: result.draftOpened });
     return { accepted: true, ...result };
   }
@@ -470,7 +490,7 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
     const prompt = buildDocumentCodexPrompt(document, commentary);
     dispatchLog(requestId, "validated", { scope, path: document.path, commentaryLength: commentary.length });
     if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true };
-    const result = await getCodexApp().openDraft(ROOT, document.title, prompt, app);
+    const result = await openDraft(document.title, prompt);
     dispatchLog(requestId, "draft-opened", { draftOpened: result.draftOpened });
     return { accepted: true, ...result };
   }
@@ -481,7 +501,7 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
   dispatchLog(requestId, "validated", { path: document.path, chunkId, chunkTitle: chunk.title, commentaryLength: commentary.length });
 
   if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true };
-  const result = await getCodexApp().openDraft(ROOT, chunk.title, prompt, app);
+  const result = await openDraft(chunk.title, prompt);
   dispatchLog(requestId, "draft-opened", { draftOpened: result.draftOpened });
   return { accepted: true, ...result };
 }
@@ -513,12 +533,12 @@ function json(response: ServerResponse, status: number, value: unknown) {
   response.end(JSON.stringify(value));
 }
 
-async function readJson(request: IncomingMessage) {
+async function readJson(request: IncomingMessage, maxBytes = 64_000) {
   const parts: Buffer[] = [];
   let size = 0;
   for await (const part of request) {
     size += part.length;
-    if (size > 64_000) throw new Error("Request is too large.");
+    if (size > maxBytes) throw new Error("Request is too large.");
     parts.push(part);
   }
   return JSON.parse(Buffer.concat(parts).toString("utf8"));
@@ -638,10 +658,10 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
     if (request.method === "POST" && url.pathname === "/api/dispatch") {
       const requestId = `dispatch-${Date.now()}-${++dispatchSequence}`;
-      const body = await readJson(request);
+      const body = await readJson(request, 50_000_000);
       dispatchLog(requestId, "received", { path: String(body.path || ""), scope: String(body.scope || ""), chunkId: String(body.chunkId || "") });
       try {
-        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex")));
+        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex"), await saveHandoffImages(Array.isArray(body.images) ? body.images : [])));
       } catch (error) {
         dispatchLog(requestId, "failed", { error: error instanceof Error ? error.message : String(error) });
         throw error;

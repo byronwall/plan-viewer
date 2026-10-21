@@ -501,6 +501,12 @@ button.task-list-id:hover { text-decoration: underline; }
 .composer textarea { display: block; width: 100%; min-height: 104px; max-height: min(480px, calc(100vh - 250px)); resize: vertical; overflow-y: hidden; border: 1px solid var(--line-strong); border-radius: 9px; padding: 12px 14px; color: var(--ink); font: inherit; font-size: .9rem; line-height: 1.5; outline: none; transition: border-color .12s, box-shadow .12s; }
 .composer textarea::placeholder { color: var(--muted); }
 .composer textarea:focus { border-color: var(--action); box-shadow: 0 0 0 3px rgba(49, 87, 213, .14); }
+.composer-images { display: flex; flex-wrap: wrap; gap: 8px; }
+.composer-images[hidden] { display: none; }
+.composer-images figure { position: relative; margin: 0; }
+.composer-images img { display: block; height: 72px; max-width: 160px; border: 1px solid var(--line); border-radius: 6px; object-fit: cover; }
+.composer-image-remove { position: absolute; top: 3px; right: 3px; display: grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .55); color: #fff; font-size: .9rem; line-height: 1; opacity: .8; transition: opacity .14s, background-color .14s; }
+.composer-image-remove:hover { background: rgba(0, 0, 0, .8); opacity: 1; }
 .composer-actions { display: flex; align-items: center; gap: 8px; padding: 20px 24px 24px 28px; }
 .composer-hint { margin: 0 auto 0 0; color: var(--muted); font-size: .74rem; }
 .composer-hint kbd { border: 1px solid var(--line); border-radius: 5px; background: var(--hover-field); padding: 1px 5px; color: var(--body-ink); font: 600 .68rem/1.4 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; }

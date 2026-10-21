@@ -542,7 +542,7 @@ function showWeeks({ historyMode = "push", anchor = null } = {}) {
 }
 
 function composerTemplate(target) {
-  const hint = `<p class="composer-hint"><kbd>Enter</kbd> to open · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</p>`;
+  const hint = `<p class="composer-hint"><kbd>Enter</kbd> to open · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · paste images</p>`;
   const close = `<button class="popover-close" type="button" aria-label="Close dialog">×</button>`;
   const heading = (meta) => `<header class="composer-heading"><div><h3>${escapeHtml(target.title)}</h3>${meta ? `<p class="composer-meta">${meta}</p>` : ""}</div>${close}</header>`;
   if (target.scope === "action") {
@@ -555,6 +555,7 @@ function composerTemplate(target) {
         <div class="composer-field">
           <label for="action-context">Add context <span class="optional-label">optional</span></label>
           <textarea id="action-context" name="commentary" placeholder="A constraint, recent finding, or where to start…"></textarea>
+          <div class="composer-images" hidden></div>
         </div>
       </div>
       <footer class="composer-actions">${hint}<button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open in ${agentName()}</button></footer>
@@ -572,6 +573,7 @@ function composerTemplate(target) {
       <div class="composer-field">
         <label for="comment-${target.key}">${fieldLabel}</label>
         <textarea id="comment-${target.key}" name="commentary" placeholder="Add direction, a question, or the outcome you want…" required>${escapeHtml(target.commentary || '')}</textarea>
+        <div class="composer-images" hidden></div>
       </div>
     </div>
     <footer class="composer-actions">${hint}<button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open draft in ${agentName()}</button></footer>
@@ -588,7 +590,21 @@ function resizeComposerTextarea(textarea) {
 }
 
 function composerHasText() {
-  return Boolean(elements.handoffPopover.querySelector("textarea")?.value.trim());
+  return Boolean(elements.handoffPopover.querySelector("textarea")?.value.trim() || elements.handoffPopover.querySelector(".composer-images img"));
+}
+
+// Pasted or dropped images ride along as data URLs; the server saves them where the agent can open them.
+async function attachComposerImages(files) {
+  const strip = elements.handoffPopover.querySelector(".composer-images");
+  const images = [...files].filter((file) => /^image\/(png|jpeg|gif|webp)$/.test(file.type));
+  if (!strip || !images.length) return false;
+  for (const file of images) {
+    const url = await new Promise((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.readAsDataURL(file); });
+    strip.insertAdjacentHTML("beforeend", `<figure><img src="${url}" alt="Attached image"><button type="button" class="composer-image-remove" aria-label="Remove image" title="Remove image">×</button></figure>`);
+  }
+  strip.hidden = false;
+  syncComposerDraftState();
+  return true;
 }
 
 function syncComposerDraftState() {
@@ -605,7 +621,7 @@ function syncComposerDraftState() {
     hint.classList.remove("draft-warning");
     hint.innerHTML = protectedDraft
       ? "<kbd>Enter</kbd> to open · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · Cancel discards"
-      : "<kbd>Enter</kbd> to open · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line";
+      : "<kbd>Enter</kbd> to open · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · paste images";
   }
 }
 
@@ -1370,7 +1386,7 @@ async function dispatch(form) {
     const response = await fetch("/api/dispatch", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ app: agentApp(), path: form.dataset.sourcePath || state.selectedPath, scope: form.dataset.scope, chunkId: form.dataset.chunkId, actionId: form.dataset.actionId, expectedPrompt: form.dataset.expectedPrompt, commentary }),
+      body: JSON.stringify({ app: agentApp(), path: form.dataset.sourcePath || state.selectedPath, scope: form.dataset.scope, chunkId: form.dataset.chunkId, actionId: form.dataset.actionId, expectedPrompt: form.dataset.expectedPrompt, commentary, images: [...form.querySelectorAll(".composer-images img")].map((img) => img.src) }),
     });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || `${agentName()} could not open the draft.`);
@@ -2093,6 +2109,26 @@ elements.handoffPopover.addEventListener("input", (event) => {
     resizeComposerTextarea(event.target);
     syncComposerDraftState();
   }
+});
+elements.handoffPopover.addEventListener("paste", (event) => {
+  if (event.clipboardData?.files.length && [...event.clipboardData.files].some((file) => file.type.startsWith("image/"))) {
+    event.preventDefault();
+    attachComposerImages(event.clipboardData.files);
+  }
+});
+elements.handoffPopover.addEventListener("dragover", (event) => { if (event.dataTransfer?.types.includes("Files")) event.preventDefault(); });
+elements.handoffPopover.addEventListener("drop", (event) => {
+  if (!event.dataTransfer?.files.length) return;
+  event.preventDefault();
+  attachComposerImages(event.dataTransfer.files);
+});
+elements.handoffPopover.addEventListener("click", (event) => {
+  const remove = event.target.closest(".composer-image-remove");
+  if (!remove) return;
+  const strip = remove.closest(".composer-images");
+  remove.closest("figure").remove();
+  strip.hidden = !strip.querySelector("img");
+  syncComposerDraftState();
 });
 elements.handoffPopover.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
