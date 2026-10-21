@@ -15,7 +15,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 | Markdown rendering, link and chat detection, heading IDs | `public/markdown.js` |
 | App shell, routing (`?view=`), library rail, Tasks page, Weeks page, document page, image viewer, ⌘K palette, toasts, recently-viewed history (from every URL change; Reopen toast when an overview closes) | `public/app.js` |
 | Sticky document dock (sections, outgoing links, backlinks), link metadata keys | `public/dock.js` |
-| Code view: worktrees, PRs, commits, diff viewer, PR overview overlay, branch picker | `public/code.js` (client), `public/diff-map.js` (the overlay's change-map treemap layout), `code-dashboard.ts` (git/gh scanning, PR cache in the workspace's `tmp/code-cache.json`, `/api/code/pr-index` for ⌘K, `/api/code/line-counts` for the map) |
+| Code view: worktrees, PRs, commits, diff viewer, PR overview overlay, branch picker | `public/code.js` (client), `public/diff-map.js` (the overlay's change-map treemap layout), `code-dashboard.ts` (git/gh scanning, `code.run` local servers through `local-runs.ts`, PR cache in the workspace's `tmp/code-cache.json`, `/api/code/pr-index` for ⌘K, `/api/code/line-counts` for the map) |
 | Issues page: Jira sync through `acli`, Linear issues and projects, `tmp/issues-cache.json`, activity diffs, issue ↔ PR joins, Jira ↔ Linear pairs, issue agent drafts | `issues.ts` (server), `linear.ts` (Linear GraphQL reads in the Jira issue shape), `public/issues.js` (client), `fixtures/jira/` (fictional corpus and the `fake-acli.js` the fixtures config runs) |
 | GitHub, Linear, Jira and Slack titles cached in `tmp/link-metadata.json` | `link-metadata.ts` |
 | Codex Desktop deep links | `codex-desktop.ts` |

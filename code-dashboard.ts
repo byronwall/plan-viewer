@@ -4,6 +4,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { claudeNewSessionUrl as claudeUrl, codexNewTaskUrl } from "./codex-desktop.ts";
+import { createLocalRuns } from "./local-runs.ts";
 import { createPrNotes } from "./pr-notes.ts";
 import { config } from "./public/config.js";
 
@@ -253,7 +254,7 @@ export function createCodeDashboard(root: string) {
       prs.push(...open, ...(prHistory.get(slug)?.prs || []).filter((pr) => !openNumbers.has(pr.number)).map((pr) => ({ repo, slug, ...pr, url: `https://github.com/${slug}/pull/${pr.number}` })));
     }
     if (!login) login = (await exec("gh", ["api", "user", "--jq", ".login"]).catch(() => ({ stdout: "" }))).stdout.trim();
-    return { prs, me: login, skills: prSkills(), previews: repos.filter(hasPreview), loading: openPrsLoading.size > 0 || Boolean(scan) };
+    return { prs, me: login, skills: prSkills(), previews: repos.filter(hasPreview), runnable: repos.filter(hasRun), runs: runs.list(), loading: openPrsLoading.size > 0 || Boolean(scan) };
   }
 
   // Every worktree's branch, for joining issue keys to local work; `git worktree list` per repo, no status scan.
@@ -295,7 +296,8 @@ export function createCodeDashboard(root: string) {
     worktrees.sort((a, b) => b.activity - a.activity);
     const richPrs = prs.map((pr: any) => ({ ...pr, ...prExtras.get(pr.slug)?.byNumber.get(pr.number) }));
     const previews = repos.filter(hasPreview);
-    return { repos, me: login, slugs: Object.fromEntries(slugs), worktrees, prs: richPrs, skills: prSkills(), previews, scanning: scanning || Boolean(scan) || openPrsLoading.size > 0, errors };
+    const runnable = repos.filter(hasRun);
+    return { repos, me: login, slugs: Object.fromEntries(slugs), worktrees, prs: richPrs, skills: prSkills(), previews, runnable, runs: runs.list(), scanning: scanning || Boolean(scan) || openPrsLoading.size > 0, errors };
   }
 
   // The overview can open a worktree from a ?wt= URL before the Code page has scanned anything; one scan settles it.
@@ -354,6 +356,34 @@ export function createCodeDashboard(root: string) {
     const { command } = config().code.prPreview;
     await runCommand(command, { number, cwd: repo }).catch((error) => { throw new Error(`${command.join(" ")} failed for #${number}: ${(error.stderr || error.stdout || error.message).trim().split("\n").pop()}`); });
   }
+
+  // `code.run` starts a repo's own local server (e.g. `bun all --ports`) in a worktree; a PR without one is checked out
+  // first with `code.run.worktree` (run in the repo, `{branch}` filled), when configured.
+  const runs = createLocalRuns();
+  const runRepo = (path: string) => lastWorktrees.find((tree) => tree.path === path)?.repo || path;
+  const hasRun = (repo: string) => Boolean(config().code.run?.requires.every((file: string) => existsSync(join(repo, file))));
+  async function startRun(path: string) {
+    await knownWorktree(path);
+    if (!hasRun(runRepo(path))) throw new Error(`${path} has no local run command.`);
+    return runs.start(path, config().code.run.command);
+  }
+  async function runPr(repo: string, branch: string) {
+    await knownWorktree(repo);
+    const existing = lastWorktrees.find((tree) => tree.repo === repo && tree.branch === branch);
+    if (existing) return startRun(existing.path);
+    const { worktree } = config().code.run || {};
+    if (!hasRun(repo) || !worktree) throw new Error(`No worktree for ${branch}, and ${repo} has no worktree command.`);
+    if (!/^[\w./-]+$/.test(branch) || branch.startsWith("-")) throw new Error("Not a branch name.");
+    await git(repo, ["fetch", "origin", branch]).catch(() => {});
+    await runCommand(worktree, { branch, cwd: repo }).catch((error) => { throw new Error(`${worktree.join(" ")} failed for ${branch}: ${(error.stderr || error.stdout || error.message).trim().split("\n").pop()}`); });
+    const blocks = (await git(repo, ["worktree", "list", "--porcelain"])).trim().split("\n\n");
+    const path = blocks.find((block) => block.includes(`branch refs/heads/${branch}\n`) || block.endsWith(`branch refs/heads/${branch}`))?.match(/^worktree (.+)$/m)?.[1];
+    if (!path) throw new Error(`${worktree.join(" ")} finished but no worktree has ${branch} checked out.`);
+    await load(true);
+    return startRun(path);
+  }
+  const stopRun = (path: string) => runs.stop(path);
+  const runLog = (path: string) => runs.log(path);
 
   async function open(kind: string, path: string) {
     await knownWorktree(path);
@@ -805,5 +835,5 @@ export function createCodeDashboard(root: string) {
     return { before: old, after: now };
   }
 
-  return { notes: prNotes, load, localDir, prIndex, worktreeIndex, startBackgroundRefresh, commits, commitDetail, commitSummary, diff, fileContent, fileSides, lineCounts, worktreeDetail, prDetail, launchSession, addRepo, removeRepo, open, openPreview, launchAgent, removeWorktrees, cleanupPrompt, launchCleanup };
+  return { notes: prNotes, load, localDir, prIndex, worktreeIndex, startBackgroundRefresh, commits, commitDetail, commitSummary, diff, fileContent, fileSides, lineCounts, worktreeDetail, prDetail, launchSession, addRepo, removeRepo, open, openPreview, startRun, runPr, stopRun, runLog, launchAgent, removeWorktrees, cleanupPrompt, launchCleanup };
 }

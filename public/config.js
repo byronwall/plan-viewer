@@ -36,6 +36,9 @@ export const DEFAULT_CONFIG = {
     postNotesSkill: "",
     // Opens a PR preview from a repo that has every `requires` file; `{number}` is the PR. null hides the button.
     prPreview: null,
+    // Starts a local server in a worktree from repos that have every `requires` file: { requires, command, worktree }.
+    // `worktree` (run in the repo, `{branch}` filled) checks out a PR that has no worktree yet. null hides the button.
+    run: null,
   },
   issues: {
     // JQL for the Issues page; empty hides the page. Read through `command` (acli), already signed in.

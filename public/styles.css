@@ -1714,3 +1714,9 @@ button.issue-parent:hover { background: var(--hover-field); color: var(--action-
 .issue-people-pop .code-branch-list li { display: block; padding: 0; }
 .issue-person-row > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .issue-people-pop .code-branch-list li:hover { background: none; }
+
+/* Local servers started from the Code page: the stop button and state glow green while running, amber while starting. */
+.code-icon-button[data-run-state="running"], .code-run-state[data-run-state="running"] { color: var(--pass, #1f9d6b); }
+.code-icon-button[data-run-state="starting"], .code-run-state[data-run-state="starting"] { color: var(--pending, #e0a100); }
+.code-run p { margin: 0 0 6px; font-size: .78rem; }
+.code-run-log { margin: 0; max-height: 18em; overflow: auto; padding: 6px 8px; border-radius: 6px; background: var(--quiet-field); font-size: .7rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
