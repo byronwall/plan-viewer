@@ -1868,7 +1868,8 @@ const renderPrResult = ({ pr }, index, terms) => resultRow({ ...prResult(pr, ter
 
 function issueResult(issue, terms) {
   const detail = [issue.type, issue.assignee?.name || "Unassigned", issue.updated && `${ago(issue.updated)} ago`].filter(Boolean).map((part) => highlightTerms(part, terms)).join(" · ");
-  return { icon: "issue", tone: `issue is-${escapeHtml(issue.category)}`, title: `<span class="search-pr-number">${highlightTerms(issue.key, terms)}</span> ${highlightTerms(issue.summary, terms)}`, detail, side: escapeHtml(issue.status) };
+  const label = issue.type === "Project" ? "Project" : issue.label || issue.key;
+  return { icon: "issue", tone: `issue is-${escapeHtml(issue.category)}`, title: `<span class="search-pr-number">${highlightTerms(label, terms)}</span> ${highlightTerms(issue.summary, terms)}`, detail: `${issue.source === "linear" ? "Linear · " : ""}${detail}`, side: escapeHtml(issue.status) };
 }
 const renderIssueResult = ({ issue }, index, terms) => resultRow({ ...issueResult(issue, terms), attrs: searchAttrs(index) });
 // A key (`OPS-12`, or a bare number matching the end of one), an old key it was imported from, or words from the title.
@@ -1878,9 +1879,10 @@ function searchIssues(query) {
   const upper = query.trim().toUpperCase().replace(/^#/, "");
   const alias = data.aliases[upper];
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const scored = data.issues.filter((issue) => !issue.bot).map((issue) => {
-    const key = issue.key === upper || issue.key === alias ? 3 : /^\d+$/.test(upper) && issue.key.endsWith(`-${upper}`) ? 2 : 0;
-    const words = terms.every((term) => `${issue.key} ${issue.summary}`.toLowerCase().includes(term)) ? 1 : 0;
+  const scored = data.issues.filter((issue) => !issue.bot && !issue.mirrorOf).map((issue) => {
+    const shown = issue.label || issue.key;
+    const key = shown === upper || issue.key === alias ? 3 : /^\d+$/.test(upper) && shown.endsWith(`-${upper}`) ? 2 : 0;
+    const words = terms.every((term) => `${shown} ${issue.summary}`.toLowerCase().includes(term)) ? 1 : 0;
     return [issue, key || words];
   }).filter(([, score]) => score);
   return scored.sort((a, b) => b[1] - a[1] || b[0].updated.localeCompare(a[0].updated)).slice(0, 8).map(([issue]) => issue);
@@ -1950,7 +1952,7 @@ function openSearchResult(index, external = false) {
   const doc = searchMatches[index];
   if (!doc) return;
   if (doc.pr && external) return window.open(doc.pr.url, "_blank", "noreferrer");
-  if (doc.issue && external) return window.open(`https://${cachedIssues().site}/browse/${doc.issue.key}`, "_blank", "noreferrer");
+  if (doc.issue && external) return window.open(doc.issue.url || `https://${cachedIssues().site}/browse/${doc.issue.key}`, "_blank", "noreferrer");
   elements.searchDialog.close();
   if (doc.page) { closeOverview(); doc.page.run(); }
   else if (doc.pr) openPrOverlay(doc.pr.slug, doc.pr.number);
@@ -2208,7 +2210,7 @@ document.addEventListener("overview-closed", (event) => {
   const issueKey = params.get("issue");
   const description = pr?.length === 2
     ? `${prNumberLabel(pr[0], pr[1])} ${findPr(pr[0], Number(pr[1]))?.title || ""}`.trim()
-    : issueKey ? `${issueKey} ${cachedIssues()?.issues?.find((issue) => issue.key === issueKey)?.summary || ""}`.trim()
+    : issueKey ? `${issueKey.replace(/^linear:/, "")} ${cachedIssues()?.issues?.find((issue) => issue.key === issueKey)?.summary || ""}`.trim()
     : params.get("wt")?.split("/").pop() || "";
   showNotice(`Closed the ${pr ? "PR" : issueKey ? "issue" : "worktree"} overview`, false, { kind: "info", description, action: { label: "Reopen", run: () => resumeVisit(event.detail) } });
 });

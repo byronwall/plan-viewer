@@ -64,3 +64,41 @@ test("a sync reads the scope, its parents and epic children, and joins issues to
   assert.ok(!("description" in data.issues[0]), "long text stays in the detail call");
   assert.match(tracker.detail("OPS-112").description, /Show three templates/);
 });
+
+const linearRaw = (identifier: string, title: string, state: [string, string], extra: Record<string, unknown> = {}) => ({
+  identifier, title, url: `https://linear.app/acme/issue/${identifier}`, description: "", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-10T00:00:00Z",
+  priorityLabel: "High", state: { name: state[0], type: state[1] }, team: { key: "ATL" }, labels: { nodes: [] }, relations: { nodes: [] },
+  attachments: { nodes: [] }, syncedWith: [], comments: { nodes: [] }, ...extra,
+});
+
+test("Linear issues and projects join Jira ones: sync copies, imports, and matching titles group together", async (t) => {
+  const { fetchLinear, slimLinearIssue } = await import("./linear.ts");
+  const { clustersOf, pairIssues } = await import("./issues.ts");
+  const original = slimLinearIssue(linearRaw("ATL-2845", "Onboarding checklist survives a reload", ["Backlog", "backlog"], { project: { slugId: "p1" }, attachments: { nodes: [{ url: "https://github.com/acme/atlas/pull/7" }] } }));
+  assert.equal(original.key, "linear:ATL-2845");
+  assert.equal(original.label, "ATL-2845");
+  assert.equal(original.parent, "linear-project:p1");
+  assert.deepEqual(original.prUrls, ["https://github.com/acme/atlas/pull/7"]);
+  const mirror = slimLinearIssue(linearRaw("ATL-2990", "Onboarding checklist survives a reload", ["Canceled", "canceled"], { syncedWith: [{ metadata: { issueKey: "OPS-113" } }] }));
+  const lonely = slimLinearIssue(linearRaw("ATL-3000", "Shared links open the wrong workspace", ["Triage", "triage"]));
+  assert.equal(lonely.triage, true);
+  const jira = ["OPS-113", "OPS-115", "OPS-112"].map((key) => slimIssue(fixture(key)));
+  const pairs = pairIssues([original, mirror, lonely, ...jira], ["ATL"]);
+  assert.deepEqual(pairs.map((pair) => [pair.a, pair.b, pair.kind]), [["linear:ATL-2990", "OPS-113", "mirror"], ["OPS-113", "linear:ATL-2845", "import"], ["linear:ATL-3000", "OPS-115", "title"]]);
+  assert.deepEqual(clustersOf(pairs).map((keys) => keys.sort()), [["OPS-113", "linear:ATL-2845", "linear:ATL-2990"], ["OPS-115", "linear:ATL-3000"]]);
+
+  const pages: any[] = [];
+  t.mock.method(globalThis, "fetch", async (_url: string, init: any) => {
+    const { query, variables } = JSON.parse(init.body);
+    pages.push(variables);
+    const nodes = query.includes("projects(") ? [{ slugId: "p1", name: "Workspace onboarding", state: "started", health: "atRisk", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-12T00:00:00Z", projectUpdates: { nodes: [{ body: "Slipping a week." }] } }]
+      : variables.after ? [linearRaw("ATL-3000", "Shared links open the wrong workspace", ["Triage", "triage"])] : [linearRaw("ATL-2845", "Onboarding checklist survives a reload", ["Backlog", "backlog"])];
+    const connection = query.includes("projects(") ? "projects" : "issues";
+    return Response.json({ data: { team: { [connection]: { nodes, pageInfo: { hasNextPage: connection === "issues" && !variables.after, endCursor: "c1" } } } } });
+  });
+  const result = await fetchLinear(async (query, variables) => (await (await fetch("x", { method: "POST", body: JSON.stringify({ query, variables }) })).json()).data, ["ATL"], "2026-10-09T00:00:00Z");
+  assert.deepEqual(result.issues.map((issue) => issue.label), ["ATL-2845", "ATL-3000"], "issues page through endCursor");
+  assert.deepEqual(pages[0].filter, { updatedAt: { gt: "2026-10-09T00:00:00Z" } }, "an incremental read filters by updatedAt");
+  assert.equal(result.projects[0].confidence, "🟡 At Risk");
+  assert.equal(result.projects[0].statusUpdate, "Slipping a week.");
+});

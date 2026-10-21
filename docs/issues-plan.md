@@ -164,3 +164,25 @@ All six milestones shipped in one pass. Where the build differs from the plan ab
 - **Search:** `acli` returns null items when `--fields key` is the only field, so searches ask for `status`.
 - **Sync:** the incremental query covers in-scope issues and children of in-scope epics and initiatives. Context parents refresh on the hourly full scan.
 - **Doc links:** a Linear key that was imported into Jira shows the Jira issue's title and "status · now RAI-NNNN".
+
+## Round 7: Linear beside Jira (Oct 21, 2026)
+
+The Linear-to-Jira move used a two-way sync, so the trackers now hold each other's copies. 42 Linear MOD issues are synced from Jira (`integrationSourceType: jira`, with the Jira key in `syncedWith`). 23+ Jira issues are imports of Linear ones (labels `mod-NNNN`). Some go all the way around: MOD-2937 was imported as RAI-55069, which was synced back as MOD-2965.
+
+**Decision:** how Linear issues and projects enter the viewer.
+
+| Approach | Duplicates visible side by side | Linear-only work findable for migration | Reuse of the Issues page |
+| --- | ---: | ---: | ---: |
+| A. A separate Linear page that mirrors the Issues page | 3 | 7 | 4 |
+| B. Linear as a second source on the Issues page, plus a Migration tab that pairs items across trackers | 9 | 9 | 9 |
+| C. Linear shown only as counterparts on Jira issues | 7 | 2 | 8 |
+
+- **Choice:** B.
+  - Linear issues and projects take the Jira issue shape, so All, Triage, Epics, and Activity work unchanged behind a Both / Jira / Linear switch.
+  - Projects read as epics. Their lead is the owner, their health is the confidence, and their latest project update is the status update.
+  - The Migration tab pairs items through the sync marker, the import label, or an exact title match. It groups chains and sorts each group into one of: In Linear only, Out of step, Open Linear copies, Same title, or Linked.
+- **Why:** the job is to migrate what's useful and find the duplicates. That needs both trackers in one list, and B is the only option that gives both views.
+- **Watch:**
+  - Title matching is exact after normalization, so reworded duplicates won't pair.
+  - "Out of step" compares status categories, not status names.
+  - Linear sub-issue hierarchies are kept, but Linear initiatives aren't read.

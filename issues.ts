@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { codexNewTaskUrl } from "./codex-desktop.ts";
 import { config } from "./public/config.js";
+import { fetchLinear, linearClient } from "./linear.ts";
 
 // Jira issues for the Issues page (viewer.config.json `issues`), read through `acli` and cached in tmp/issues-cache.json.
 // acli's search returns only a few fields, so a sync lists keys with search and reads each issue with `view --fields *all`.
@@ -18,15 +19,17 @@ const FULL_SCAN_MS = 60 * 60_000; // keys that left the scope (component removed
 
 type Person = { name: string; email: string };
 type Comment = { id: string; author: Person | null; created: string; body: string };
-type Link = { type: string; label: string; key: string; summary: string; status: string; category: string };
+type Link = { type: string; label: string; key: string; display?: string; summary: string; status: string; category: string };
+// Jira issues, and Linear issues and projects (linear.ts) in the same shape. `label` is the shown key when `key` is namespaced,
+// `mirrorOf` the Jira key a Linear issue was synced from, `triage` a Linear issue in its team's Triage state.
 export type Issue = {
-  key: string; summary: string; project: string; type: string; level: number; status: string; category: string; priority: string;
+  key: string; label?: string; source?: "jira" | "linear"; url?: string; mirrorOf?: string; triage?: boolean; summary: string; project: string; type: string; level: number; status: string; category: string; priority: string;
   assignee: Person | null; reporter: Person | null; labels: string[]; components: string[]; parent: string; created: string; updated: string;
   resolution: string; due: string; start: string; confidence: string; statusUpdate: string; links: Link[]; prCount: number; prState: string;
   description: string; comments: Comment[]; attachments: number; prUrls: string[];
 };
 type Activity = { at: string; key: string; kind: string; from?: string; to?: string; by?: string; text?: string };
-type Cache = { at: number; fullAt: number; scope: string[]; issues: Record<string, Issue>; activity: Activity[]; me: string; site: string };
+type Cache = { at: number; fullAt: number; scope: string[]; issues: Record<string, Issue>; activity: Activity[]; me: string; site: string; linearAt: number; linearFullAt: number };
 
 // ---------- Atlassian document format → Markdown ----------
 
@@ -110,7 +113,7 @@ export function slimIssue(raw: any): Issue {
   const description = adfToMarkdown(f.description);
   const comments = (f.comment?.comments || []).map((comment: any) => ({ id: String(comment.id), author: person(comment.author), created: comment.created || "", body: adfToMarkdown(comment.body) }));
   return {
-    key: raw.key, summary: f.summary || "", project: raw.key.split("-")[0], type: f.issuetype?.name || "", level: f.issuetype?.hierarchyLevel ?? 0,
+    key: raw.key, source: "jira", summary: f.summary || "", project: raw.key.split("-")[0], type: f.issuetype?.name || "", level: f.issuetype?.hierarchyLevel ?? 0,
     status: f.status?.name || "", category: f.status?.statusCategory?.key || "new", priority: f.priority?.name || "",
     assignee: person(f.assignee), reporter: person(f.reporter), labels: f.labels || [], components: (f.components || []).map((component: any) => component.name),
     parent: f.parent?.key || (custom.epicLink && f[custom.epicLink]) || "", created: f.created || "", updated: f.updated || "", resolution: f.resolution?.name || "",
@@ -151,17 +154,56 @@ export function diffIssue(before: Issue | undefined, after: Issue): Activity[] {
 // Old keys an issue carries from a tracker it was imported from, as lowercase labels (`atl-123` for an issue
 // migrated from the `ATL` Linear tracker), so code and documents that still say ATL-123 find the new issue.
 export function aliasesOf(issue: Issue, prefixes: string[]) {
+  if (issue.source === "linear") return [];
   return issue.labels.map((label) => label.toUpperCase()).filter((label) => prefixes.some((prefix) => label.startsWith(`${prefix}-`)) && /^[A-Z][A-Z0-9]*-\d+$/.test(label));
 }
 
-// Issue keys a PR's title or branch mentions (branches are lowercase: `alex/atl-123-fix`), resolved through aliases.
+// Issue keys a PR's title or branch mentions (branches are lowercase: `alex/atl-123-fix`): the Jira issue of that key,
+// the Jira issue it was imported into, and the Linear issue of that identifier.
 export function keysIn(text: string, issues: Map<string, unknown>, aliases: Map<string, string>) {
   const found = new Set<string>();
   for (const [token] of text.toUpperCase().matchAll(/(?<![A-Z0-9])[A-Z][A-Z0-9]*-\d+(?!\d)/g)) {
-    const key = aliases.get(token) || (issues.has(token) ? token : "");
-    if (key) found.add(key);
+    for (const key of [aliases.get(token), token, `linear:${token}`]) if (key && issues.has(key)) found.add(key);
   }
   return [...found];
+}
+
+// The same work in both trackers. `a` is the copy and `b` the original: a Linear issue synced from Jira ("mirror"), a Jira
+// issue imported from Linear ("import"), or, without either marker, two open items with the same title ("title"; for
+// a Linear project and a Jira epic too).
+export type Pair = { a: string; b: string; kind: "mirror" | "import" | "title" };
+const normalTitle = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+export function pairIssues(issues: Issue[], prefixes: string[]): Pair[] {
+  const pairs: Pair[] = [];
+  const byKey = new Map(issues.map((issue) => [issue.key, issue]));
+  const linked = new Set<string>();
+  const add = (a: string, b: string, kind: Pair["kind"]) => { pairs.push({ a, b, kind }); linked.add(a); linked.add(b); };
+  for (const issue of issues) {
+    if (issue.source === "linear" && issue.mirrorOf && byKey.has(issue.mirrorOf)) add(issue.key, issue.mirrorOf, "mirror");
+    for (const alias of aliasesOf(issue, prefixes)) if (byKey.has(`linear:${alias}`)) add(issue.key, `linear:${alias}`, "import");
+  }
+  // ponytail: exact match on the normalized title; token overlap if real duplicates turn out to be reworded
+  const jiraByTitle = new Map<string, Issue[]>();
+  for (const issue of issues) if (issue.source !== "linear" && issue.category !== "done") {
+    const title = normalTitle(issue.summary);
+    if (title.length >= 12) jiraByTitle.set(title, [...(jiraByTitle.get(title) || []), issue]);
+  }
+  for (const issue of issues) {
+    if (issue.source !== "linear" || issue.mirrorOf || linked.has(issue.key) || issue.category === "done") continue;
+    const match = (jiraByTitle.get(normalTitle(issue.summary)) || []).find((candidate) => !linked.has(candidate.key) && (candidate.level >= 1) === (issue.level >= 1));
+    if (match) add(issue.key, match.key, "title");
+  }
+  return pairs;
+}
+
+// Connected pairs as groups: MOD-1 imported as RAI-2 and synced back as MOD-3 is one group of three.
+export function clustersOf(pairs: Pair[]) {
+  const parent = new Map<string, string>();
+  const find = (key: string): string => { const up = parent.get(key) || key; if (up === key) return key; const root = find(up); parent.set(key, root); return root; };
+  for (const { a, b } of pairs) { parent.set(find(a), find(b)); }
+  const groups = new Map<string, string[]>();
+  for (const key of new Set(pairs.flatMap(({ a, b }) => [a, b]))) groups.set(find(key), [...(groups.get(find(key)) || []), key]);
+  return [...groups.values()];
 }
 
 // ---------- the store ----------
@@ -170,14 +212,16 @@ type Runner = (args: string[]) => Promise<string>;
 
 export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs: any[]; worktrees: { repo: string; path: string; branch: string }[] }>) {
   const cachePath = join(root, "tmp", "issues-cache.json");
-  let cache: Cache = { at: 0, fullAt: 0, scope: [], issues: {}, activity: [], me: "", site: "" };
+  let cache: Cache = { at: 0, fullAt: 0, scope: [], issues: {}, activity: [], me: "", site: "", linearAt: 0, linearFullAt: 0 };
   try { cache = { ...cache, ...JSON.parse(readFileSync(cachePath, "utf8")) }; } catch {}
   let sync: Promise<void> | null = null;
   let error = "";
   let progress = "";
 
   const settings = () => config().issues;
-  const enabled = () => Boolean(settings().jql);
+  const linearTeams = () => settings().linear?.teams || [];
+  const enabled = () => Boolean(settings().jql || linearTeams().length);
+  const linear = linearClient(root);
   const acli: Runner = async (args) => {
     const [command, ...rest] = settings().command;
     return (await exec(command, [...rest, ...args], { cwd: root, maxBuffer: 64 << 20 })).stdout;
@@ -221,14 +265,38 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     const children = containers.length ? await search(`parent in (${containers.join(",")})`) : [];
     const wanted = new Set(children);
     for (let pass = 0; pass < 3; pass++) { // up to initiative level
-      const parents = Object.values(cache.issues).map((issue) => issue.parent).filter((key) => key && !cache.issues[key]);
+      const parents = Object.values(cache.issues).filter((issue) => issue.source !== "linear").map((issue) => issue.parent).filter((key) => key && !cache.issues[key]);
       if (!parents.length) break;
       store(await viewAll([...new Set(parents)]));
     }
     store(await viewAll([...wanted].filter((key) => !cache.issues[key] && !scope.has(key))));
   }
 
+  // Linear answers a whole team in under a minute, so a full read runs hourly and on R; between them only issues updated
+  // since the last read. A full read also drops issues that were deleted or archived.
+  async function runLinear(force: boolean) {
+    const started = Date.now();
+    const full = force || !cache.linearFullAt || started - cache.linearFullAt > FULL_SCAN_MS;
+    const since = full ? "" : new Date(cache.linearAt - 2 * 60_000).toISOString();
+    const { issues, projects } = await fetchLinear(linear, linearTeams(), since, (text) => { progress = text; });
+    if (full) {
+      const current = new Set([...issues, ...projects].map((issue) => issue.key));
+      for (const key of Object.keys(cache.issues)) if (cache.issues[key].source === "linear" && !current.has(key)) delete cache.issues[key];
+      cache.linearFullAt = started;
+    }
+    store([...projects, ...issues]);
+    cache.linearAt = started;
+  }
+
   async function run(force: boolean) {
+    if (linearTeams().length) await runLinear(force);
+    if (settings().jql) await runJira(force);
+    progress = "";
+    await mkdir(join(root, "tmp"), { recursive: true });
+    await writeFile(cachePath, JSON.stringify(cache));
+  }
+
+  async function runJira(force: boolean) {
     const jql = settings().jql;
     if (!cache.me || !cache.site) {
       const status = await acli(["jira", "auth", "status"]).catch(() => "");
@@ -255,9 +323,6 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     }
     if (full) await loadContext();
     cache.at = started;
-    progress = "";
-    await mkdir(join(root, "tmp"), { recursive: true });
-    await writeFile(cachePath, JSON.stringify(cache));
   }
 
   function refresh(force = false) {
@@ -292,23 +357,29 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
       add(issue.key, "prs", byUrl.has(url) ? prSummary(byUrl.get(url)) : { slug, number: Number(number), title: "", url, state: "" });
     }
     for (const tree of worktrees) for (const key of keysIn(tree.branch, issues, aliases)) add(key, "worktrees", { path: tree.path, branch: tree.branch, repo: tree.repo });
-    return { aliases: Object.fromEntries(aliases), code };
+    const pairs = pairIssues([...issues.values()], prefixes);
+    return { aliases: Object.fromEntries(aliases), code, pairs, clusters: clustersOf(pairs) };
   }
 
   // The list payload: every issue without its long text, which the detail call returns.
   async function load(force = false) {
     if (!enabled()) return { enabled: false };
     if (force) refresh(true).catch(() => {});
-    else if (!cache.at || Date.now() - cache.at > settings().refreshMinutes * 60_000) refresh().catch(() => {});
-    const { aliases, code } = await joins();
+    else if (Date.now() - Math.max(cache.at, cache.linearAt) > settings().refreshMinutes * 60_000) refresh().catch(() => {});
+    const { aliases, code, pairs, clusters } = await joins();
     const scope = new Set(cache.scope);
     const hidden = new Set(settings().hideLabels);
+    // One name per person: Linear shows some accounts by handle, Jira by full name, both by the same email.
+    const names = new Map<string, string>();
+    for (const issue of Object.values(cache.issues)) if (issue.source !== "linear") for (const who of [issue.assignee, issue.reporter]) if (who?.email && who.name) names.set(who.email, who.name);
+    const named = (who: Person | null) => (who && names.has(who.email) ? { ...who, name: names.get(who.email)! } : who);
     const issues = Object.values(cache.issues).map(({ description, comments, statusUpdate, ...issue }) => ({
-      ...issue, inScope: scope.has(issue.key), bot: issue.labels.some((label) => hidden.has(label)), comments: comments.length,
+      ...issue, assignee: named(issue.assignee), reporter: named(issue.reporter), inScope: issue.source === "linear" || scope.has(issue.key), bot: issue.labels.some((label) => hidden.has(label)), comments: comments.length,
       lastComment: comments.at(-1) ? { by: comments.at(-1)!.author?.name || "", at: comments.at(-1)!.created } : null, hasUpdate: Boolean(statusUpdate),
     }));
     return {
-      enabled: true, site: cache.site, me: cache.me, syncedAt: cache.at, syncing: Boolean(sync), progress, error, issues, aliases, code,
+      enabled: true, site: cache.site, me: cache.me, syncedAt: Math.max(cache.at, cache.linearAt), syncing: Boolean(sync), progress, error, issues, aliases, code, pairs, clusters,
+      sources: [...(settings().jql ? ["jira"] : []), ...(linearTeams().length ? ["linear"] : [])],
       activity: cache.activity, skills: issueSkills(), triage: settings().triage,
     };
   }
@@ -319,15 +390,20 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     return issue;
   }
 
-  const issueUrl = (key: string) => `https://${cache.site}/browse/${key}`;
-  function context(issue: Issue, code: Record<string, { prs: any[] }>) {
+  const issueUrl = (issue: Issue) => issue.url || `https://${cache.site}/browse/${issue.key}`;
+  const name = (issue: Issue) => `${issue.source === "linear" ? `Linear ${issue.type === "Project" ? "project" : issue.label}` : issue.key}`;
+  const ROLE = { mirror: ["synced into Linear as", "a Linear copy of"], import: ["imported into Jira from", "imported into Jira as"], title: ["same title as", "same title as"] };
+  function context(issue: Issue, code: Record<string, { prs: any[] }>, pairs: Pair[]) {
     const parent = cache.issues[issue.parent];
     const prs = code[issue.key]?.prs || [];
+    const counterparts = pairs.flatMap((pair) => pair.a === issue.key ? [[ROLE[pair.kind][1], pair.b]] : pair.b === issue.key ? [[ROLE[pair.kind][0], pair.a]] : [])
+      .map(([role, key]) => cache.issues[key] ? `${role} ${name(cache.issues[key])} (${cache.issues[key].status}, ${issueUrl(cache.issues[key])})` : "");
     return [
-      `- ${issue.key}: ${issue.summary} (${issueUrl(issue.key)})`,
+      `- ${name(issue)}: ${issue.summary} (${issueUrl(issue)})`,
       `  - ${issue.type} · ${issue.status} · ${issue.priority || "no priority"} · ${issue.assignee?.name || "unassigned"}`,
-      parent ? `  - Parent: ${parent.key} ${parent.summary}` : "",
+      parent ? `  - Parent: ${name(parent)} ${parent.summary}` : "",
       prs.length ? `  - Pull requests: ${prs.map((pr) => pr.url).join(", ")}` : "",
+      ...counterparts.filter(Boolean).map((text) => `  - Also ${text}`),
     ].filter(Boolean).join("\n");
   }
 
@@ -337,10 +413,13 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     if (!chosen) throw new Error("Unknown skill.");
     const issues = keys.map(detail);
     if (!issues.length) throw new Error("No issues selected.");
-    const { code } = await joins();
-    const list = issues.map((issue) => context(issue, code)).join("\n");
-    const intro = chosen.id === "discuss" ? `Let's talk through ${issues.length === 1 ? "this Jira issue" : "these Jira issues"}. Read ${issues.length === 1 ? "it" : "them"} first with acli, then ` : `${chosen.prompt}\n\n`;
-    const draft = chosen.id === "discuss" ? `${intro}\n\n${list}\n` : `${intro}${list}\n\nRead each issue in full with \`acli jira workitem view <KEY> --json\` first. Don't change anything in Jira until I say which way to go.`;
+    const { code, pairs } = await joins();
+    const list = issues.map((issue) => context(issue, code, pairs)).join("\n");
+    const reading = [issues.some((issue) => issue.source !== "linear") && "Jira issues with `acli jira workitem view <KEY> --json`", issues.some((issue) => issue.source === "linear") && "Linear issues with the Linear MCP"].filter(Boolean).join(" and ");
+    const noun = issues.length === 1 ? "this issue" : "these issues";
+    const draft = chosen.id === "discuss"
+      ? `Let's talk through ${noun}. Read ${reading} first, then \n\n${list}\n`
+      : `${chosen.prompt}\n\n${list}\n\nRead ${reading} in full first. Don't change anything in Jira or Linear until I say which way to go.`;
     const folder = (settings().workspace || root).replace(/^~(?=\/)/, process.env.HOME || "~");
     const environment = config().code.claudeEnvironments[folder.split("/").pop() || ""];
     const url = app === "claude"
@@ -359,7 +438,7 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     for (const key of keys) {
       const [service, id] = key.split(":");
       const issue = service === "jira" ? cache.issues[id] : aliases.get(id);
-      if (issue) out[key] = { title: issue.summary, state: service === "jira" ? issue.status : `${issue.status} · now ${issue.key}`, tone: tones[issue.category] || "open", person: issue.assignee?.name, fetchedAt: cache.at };
+      if (issue && issue.source !== "linear") out[key] = { title: issue.summary, state: service === "jira" ? issue.status : `${issue.status} · now ${issue.key}`, tone: tones[issue.category] || "open", person: issue.assignee?.name, fetchedAt: cache.at };
     }
     return out;
   }

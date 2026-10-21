@@ -55,6 +55,8 @@ export const DEFAULT_CONFIG = {
     refreshMinutes: 5,
     // Site-specific custom field ids: { start, confidence, statusUpdate, epicLink }.
     fields: {},
+    // Linear teams (by key) whose issues and projects sit beside the Jira ones, read with the Linear API key.
+    linear: { teams: [] },
   },
 };
 
@@ -63,7 +65,7 @@ const merge = (overrides = {}) => ({
   ...overrides,
   github: { ...DEFAULT_CONFIG.github, ...overrides.github },
   code: { ...DEFAULT_CONFIG.code, ...overrides.code },
-  issues: { ...DEFAULT_CONFIG.issues, ...overrides.issues, triage: { ...DEFAULT_CONFIG.issues.triage, ...overrides.issues?.triage } },
+  issues: { ...DEFAULT_CONFIG.issues, ...overrides.issues, triage: { ...DEFAULT_CONFIG.issues.triage, ...overrides.issues?.triage }, linear: { ...DEFAULT_CONFIG.issues.linear, ...overrides.issues?.linear } },
 });
 
 let current = merge();

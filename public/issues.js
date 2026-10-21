@@ -5,7 +5,7 @@ import { ago, avatar, ciBadge, copied, fadeIn, heat, hideTip, icon, iconButton, 
 // Issues page: Jira issues in the configured scope (viewer.config.json `issues`), laid out like the Code page:
 // a dense list newest first, an inspector for the selected row, and a full overview on Enter. Read-only; changes go
 // through agent drafts.
-export const TABS = { all: "All", triage: "Triage", epics: "Epics", activity: "Activity" };
+export const TABS = { all: "All", triage: "Triage", epics: "Epics", activity: "Activity", migration: "Migration" };
 export const issueTab = (value) => (value in TABS ? value : "all");
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -13,6 +13,7 @@ const storage = { get: (key, fallback) => { try { return localStorage.getItem(ke
 const ui = {
   tab: "all", data: null, filter: "", scope: "all", people: new Set(), showBots: false, showDone: false, hideSeen: storage.get("issues-hide-seen", "on") === "on",
   sel: "", detail: new Map(), selected: new Set(), expanded: new Set(), since: "", activityScope: "all", poll: 0, peopleQuery: "",
+  source: storage.get("issues-source", "all"), migration: "linear",
 };
 let seen = {};
 try { seen = JSON.parse(storage.get("issues-seen", "{}")); } catch {}
@@ -30,6 +31,10 @@ const TYPE_ICONS = {
   Bug: ['<circle cx="12" cy="13" r="6"/><path d="M12 7V4M8.5 5.5 10 7.5M15.5 5.5 14 7.5M6 13H3M21 13h-3"/>', "bug"],
   "Sub-task": ['<rect x="4" y="4" width="9" height="9" rx="2"/><rect x="11" y="11" width="9" height="9" rx="2"/>', "task"],
   Task: ['<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/>', "task"],
+  // Linear: issues are one type, drawn as Linear draws them; projects read as epics
+  Issue: ['<circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/>', "linear"],
+  "Sub-issue": ['<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>', "linear"],
+  Project: ['<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M3.5 10h17M9 5v14"/>', "project"],
 };
 const typeIcon = (issue) => {
   const [path, tone] = TYPE_ICONS[issue.type] || TYPE_ICONS.Task;
@@ -40,12 +45,17 @@ const priorityIcon = (issue) => {
   const [tone, path] = PRIORITY[issue.priority] || [];
   return tone ? `<span class="issue-priority issue-priority-${tone}" data-tip="${escapeHtml(issue.priority)} priority" role="img" aria-label="${escapeHtml(issue.priority)} priority"><svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg></span>` : '<span class="issue-priority" aria-hidden="true"></span>';
 };
-const isTriage = (issue) => issue.category === "new" && (ui.data.triage.statuses.includes(issue.status) || issue.labels.some((label) => ui.data.triage.labels.some((prefix) => label.startsWith(prefix))));
+const isTriage = (issue) => issue.category === "new" && (issue.triage || ui.data.triage.statuses.includes(issue.status) || issue.labels.some((label) => ui.data.triage.labels.some((prefix) => label.startsWith(prefix))));
 const statusTag = (issue) => `<span class="code-tag issue-status issue-status-${isTriage(issue) && ui.data.triage.statuses.includes(issue.status) ? "triage" : issue.category}">${escapeHtml(issue.status)}</span>`;
 const firstName = (person) => (person?.name || "").split(" ")[0];
 const personMark = (person, full = false) => person ? `<span class="code-side-person" data-tip="${escapeHtml(person.name)}">${avatar("", person.name)}${escapeHtml(full ? person.name : firstName(person))}</span>` : '<span class="code-muted">Unassigned</span>';
 const isMine = (issue) => Boolean(ui.data.me) && [issue.assignee?.email, issue.reporter?.email].includes(ui.data.me);
-const issueUrl = (key) => `https://${ui.data.site}/browse/${key}`;
+// Linear keys are namespaced (`linear:MOD-12`) since a Jira project can share the prefix; the label is what shows.
+const label = (issue) => issue.label || issue.key;
+const keyLabel = (key) => { const issue = byKey().get(key); return issue ? label(issue) : key.replace(/^linear:/, ""); };
+const issueUrl = (key) => byKey().get(key)?.url || `https://${ui.data.site}/browse/${key}`;
+const trackerName = (issue) => (issue?.source === "linear" ? "Linear" : "Jira");
+const keyMark = (issue) => issue.type === "Project" ? "" : `<code>${escapeHtml(label(issue))}</code>`;
 const byKey = () => (ui.byKey ||= new Map(ui.data.issues.map((issue) => [issue.key, issue])));
 const codeOf = (issue) => ui.data.code[issue.key] || { prs: [], worktrees: [] };
 const aliasesFor = (key) => Object.entries(ui.data.aliases).filter(([, target]) => target === key).map(([alias]) => alias);
@@ -76,7 +86,9 @@ function codeChips(issue) {
 const matches = (issue) => !ui.filter || ui.filter.toLowerCase().split(/\s+/).every((word) => `${issue.key} ${issue.summary} ${issue.status} ${issue.assignee?.name || "unassigned"} ${issue.labels.join(" ")} ${aliasesFor(issue.key).join(" ")} ${byKey().get(issue.parent)?.summary || ""}`.toLowerCase().includes(word));
 const personKey = (issue) => issue.assignee?.name || "";
 const peopleFilter = (issue) => !ui.people.size || ui.people.has(personKey(issue));
-const base = () => ui.data.issues.filter((issue) => issue.inScope && (ui.showBots || !issue.bot));
+// Linear copies of Jira issues (the two-way sync's mirrors) only show on the Migration tab, beside their originals.
+const sourceMatch = (issue) => ui.source === "all" || (issue.source || "jira") === ui.source;
+const base = () => ui.data.issues.filter((issue) => issue.inScope && (ui.showBots || !issue.bot) && !issue.mirrorOf && sourceMatch(issue));
 const SCOPES = {
   all: ["All", () => true],
   mine: ["Mine", isMine],
@@ -104,7 +116,7 @@ function issueRow(issue, { check = false, depth = 0 } = {}) {
   const key = issue.key;
   return `<tr class="code-row issue-row${isSeen(issue) && ui.tab === "triage" ? " is-seen" : ""}${issue.inScope ? "" : " is-context"}" data-issue-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">
     ${check ? `<td class="issue-col-check"><input type="checkbox" data-issue-select="${escapeHtml(key)}" aria-label="Select ${escapeHtml(key)}" ${ui.selected.has(key) ? "checked" : ""}></td>` : ""}
-    <td class="issue-col-key"${depth ? ` style="padding-left:${6 + depth * 18}px"` : ""}><span class="issue-key-cell">${typeIcon(issue)}<code>${escapeHtml(key)}</code></span></td>
+    <td class="issue-col-key"${depth ? ` style="padding-left:${6 + depth * 18}px"` : ""}><span class="issue-key-cell">${typeIcon(issue)}${keyMark(issue)}</span></td>
     <td class="code-col-main"><div class="code-pr-title">${escapeHtml(issue.summary)}</div>${parentLine(issue)}</td>
     <td class="issue-col-priority">${priorityIcon(issue)}</td>
     <td class="issue-col-status">${statusTag(issue)}</td>
@@ -163,7 +175,7 @@ function epicRow(epic) {
   const expanded = ui.expanded.has(epic.key);
   const shown = children.filter(open).sort((a, b) => ({ indeterminate: 0, new: 1, done: 2 }[a.category] - { indeterminate: 0, new: 1, done: 2 }[b.category]) || byUpdated(a, b));
   const row = `<tr class="code-row issue-row issue-epic-row${epic.inScope ? "" : " is-context"}" data-issue-row="${escapeHtml(epic.key)}" aria-selected="${ui.sel === epic.key}">
-    <td class="issue-col-key"><span class="issue-key-cell"><button type="button" class="issue-chevron" data-issue-expand="${escapeHtml(epic.key)}" aria-expanded="${expanded}" aria-label="${expanded ? "Collapse" : "Expand"} ${escapeHtml(epic.key)}" ${children.length ? "" : "disabled"}><svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>${typeIcon(epic)}<code>${escapeHtml(epic.key)}</code></span></td>
+    <td class="issue-col-key"><span class="issue-key-cell"><button type="button" class="issue-chevron" data-issue-expand="${escapeHtml(epic.key)}" aria-expanded="${expanded}" aria-label="${expanded ? "Collapse" : "Expand"} ${escapeHtml(label(epic))}" ${children.length ? "" : "disabled"}><svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>${typeIcon(epic)}${keyMark(epic)}</span></td>
     <td class="code-col-main"><div class="code-pr-title">${escapeHtml(epic.summary)}</div></td>
     <td class="issue-col-progress">${progress(children)}</td>
     <td class="issue-col-confidence">${confidenceMark(epic)}</td>
@@ -176,7 +188,7 @@ function epicRow(epic) {
 }
 function childRow(issue) {
   return `<tr class="code-row issue-row issue-child-row${issue.inScope ? "" : " is-context"}" data-issue-row="${escapeHtml(issue.key)}" aria-selected="${ui.sel === issue.key}">
-    <td class="issue-col-key"><span class="issue-key-cell issue-indent">${typeIcon(issue)}<code>${escapeHtml(issue.key)}</code></span></td>
+    <td class="issue-col-key"><span class="issue-key-cell issue-indent">${typeIcon(issue)}${keyMark(issue)}</span></td>
     <td class="code-col-main"><div class="issue-child-title">${escapeHtml(issue.summary)}</div></td>
     <td class="issue-col-progress">${codeChips(issue)}</td>
     <td class="issue-col-confidence">${priorityIcon(issue)}</td>
@@ -188,16 +200,17 @@ function childRow(issue) {
 
 // Initiatives group their epics; an epic counts when it, or any of its children, is in scope.
 function epicGroups() {
-  const epics = ui.data.issues.filter((issue) => issue.level === 1 && (issue.inScope || childrenOf(issue.key).some((child) => child.inScope)))
+  const epics = ui.data.issues.filter((issue) => issue.level === 1 && sourceMatch(issue) && (issue.inScope || childrenOf(issue.key).some((child) => child.inScope)))
     .filter((epic) => open(epic) && (matches(epic) || childrenOf(epic.key).some(matches)) && (!ui.people.size || peopleFilter(epic) || childrenOf(epic.key).some(peopleFilter)));
   const groups = new Map();
   for (const epic of epics.sort(byUpdated)) {
     const parent = byKey().get(epic.parent);
-    const key = parent?.level >= 2 ? parent.key : "";
+    const key = parent?.level >= 2 ? parent.key : epic.source === "linear" ? "linear" : "";
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(epic);
   }
-  return [...groups].sort(([a], [b]) => (a ? 0 : 1) - (b ? 0 : 1));
+  const order = (key) => (key === "linear" ? 2 : key ? 0 : 1);
+  return [...groups].sort(([a], [b]) => order(a) - order(b));
 }
 function epicsBody() {
   const groups = epicGroups();
@@ -207,7 +220,7 @@ function epicsBody() {
     const initiative = byKey().get(key);
     const head = initiative
       ? `<tr class="code-group-row issue-initiative-row" data-issue-row="${escapeHtml(initiative.key)}" aria-selected="${ui.sel === initiative.key}"><th colspan="${columns.length}">${typeIcon(initiative)}<button type="button" class="issue-initiative" data-issue-open="${escapeHtml(initiative.key)}">${escapeHtml(initiative.key)} ${escapeHtml(initiative.summary)}</button>${confidenceMark(initiative)} <span>${epics.length} ${epics.length === 1 ? "epic" : "epics"} · ${escapeHtml(initiative.status)}</span></th></tr>`
-      : `<tr class="code-group-row"><th colspan="${columns.length}">No initiative <span>${epics.length}</span></th></tr>`;
+      : `<tr class="code-group-row"><th colspan="${columns.length}">${key === "linear" ? "Linear projects" : "No initiative"} <span>${epics.length}</span></th></tr>`;
     return `<tbody>${head}${epics.map(epicRow).join("")}</tbody>`;
   }).join("");
   return `<table class="code-table issue-table issue-epics">${tableHead(columns)}${sections}</table>`;
@@ -221,7 +234,7 @@ function activityRows() {
   const since = ui.since ? new Date(`${ui.since}T00:00:00`).getTime() : 0;
   return ui.data.activity.filter((row) => {
     const issue = issues.get(row.key);
-    if (!issue || (!ui.showBots && issue.bot) || new Date(row.at).getTime() < since) return false;
+    if (!issue || (!ui.showBots && issue.bot) || issue.mirrorOf || !sourceMatch(issue) || new Date(row.at).getTime() < since) return false;
     if (ui.activityScope === "mine" && !isMine(issue)) return false;
     if (ui.activityScope === "comments" && row.kind !== "comment") return false;
     if (ui.activityScope === "status" && !["status", "created"].includes(row.kind)) return false;
@@ -249,7 +262,7 @@ function activityBody() {
   const issues = byKey();
   const sections = [...days].map(([label, items]) => `<tbody><tr class="code-group-row"><th colspan="4">${escapeHtml(label)} <span>${items.length}</span></th></tr>${items.map((row) => {
     const issue = issues.get(row.key);
-    return `<tr class="code-row issue-row" data-issue-row="${escapeHtml(row.key)}" aria-selected="${ui.sel === row.key}"><td class="code-col-when">${new Date(row.at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</td><td class="issue-col-key"><span class="issue-key-cell">${typeIcon(issue)}<code>${escapeHtml(row.key)}</code></span></td><td class="code-col-main"><div class="issue-child-title">${escapeHtml(issue.summary)}</div><div class="code-sub issue-activity-change">${changeText(row)}</div></td><td class="issue-col-person">${personMark(issue.assignee)}</td></tr>`;
+    return `<tr class="code-row issue-row" data-issue-row="${escapeHtml(row.key)}" aria-selected="${ui.sel === row.key}"><td class="code-col-when">${new Date(row.at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</td><td class="issue-col-key"><span class="issue-key-cell">${typeIcon(issue)}${keyMark(issue)}</span></td><td class="code-col-main"><div class="issue-child-title">${escapeHtml(issue.summary)}</div><div class="code-sub issue-activity-change">${changeText(row)}</div></td><td class="issue-col-person">${personMark(issue.assignee)}</td></tr>`;
   }).join("")}</tbody>`).join("");
   return `<table class="code-table issue-table issue-activity">${sections}</table>${rows.length > shown.length ? `<p class="code-muted issue-more">Showing the newest ${shown.length} of ${rows.length}. Narrow with the filter or a day.</p>` : ""}`;
 }
@@ -269,12 +282,12 @@ function issueFacts(issue, overlay = false) {
     ["Status", `${status}${issue.resolution && issue.resolution !== "Done" ? `<span class="code-muted">${escapeHtml(issue.resolution)}</span>` : ""}${issue.confidence ? `<span>${escapeHtml(issue.confidence)}</span>` : ""}`],
     ["Type", `${typeIcon(issue)}<span>${escapeHtml(issue.type)}</span>${priorityIcon(issue)}<span class="code-muted">${escapeHtml(issue.priority)}</span>`],
     ["Owner", `${personMark(issue.assignee, true)}${issue.reporter && issue.reporter.name !== issue.assignee?.name ? `<span class="code-muted">from ${escapeHtml(issue.reporter.name)}</span>` : ""}`],
-    ["Parent", parent ? `<button type="button" class="issue-link-row" data-issue-open="${escapeHtml(parent.key)}">${typeIcon(parent)}<code>${escapeHtml(parent.key)}</code><span>${escapeHtml(parent.summary)}</span></button>` : issue.parent ? `<code>${escapeHtml(issue.parent)}</code>` : ""],
+    [issue.source === "linear" && parent?.type === "Project" ? "Project" : "Parent", parent ? `<button type="button" class="issue-link-row" data-issue-open="${escapeHtml(parent.key)}">${typeIcon(parent)}${keyMark(parent)}<span>${escapeHtml(parent.summary)}</span></button>` : issue.parent ? `<code>${escapeHtml(keyLabel(issue.parent))}</code>` : ""],
     ["Dates", `<span class="code-muted" data-tip="Created ${escapeHtml(new Date(issue.created).toLocaleString())}">opened ${ago(issue.created)} ago</span><span class="code-muted" data-tip="Updated ${escapeHtml(new Date(issue.updated).toLocaleString())}">updated ${ago(issue.updated)} ago</span>${dateRange(issue)}`],
     ["Labels", issue.labels.filter((label) => !aliases.includes(label.toUpperCase())).map((label) => `<span class="code-tag">${escapeHtml(label)}</span>`).join("")],
     ["Was", aliases.map((alias) => `<code>${escapeHtml(alias)}</code>`).join(" ")],
     [appName(), `<span class="code-side-skills">${skillButtons(keys)}</span>`],
-    ["Jira", `<span class="code-side-tools"><a class="code-icon-button" href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in Jira (O)" aria-label="Open in Jira">${icon("external")}</a>${iconButton("copy", "Copy link (Y)", `data-issue-copy="${escapeHtml(issueUrl(issue.key))}"`)}${overlay ? "" : iconButton("expand", "Open overview (Enter)", `data-issue-open="${escapeHtml(issue.key)}"`)}</span>`],
+    [trackerName(issue), `<span class="code-side-tools"><a class="code-icon-button" href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in ${trackerName(issue)} (O)" aria-label="Open in ${trackerName(issue)}">${icon("external")}</a>${iconButton("copy", "Copy link (Y)", `data-issue-copy="${escapeHtml(issueUrl(issue.key))}"`)}${overlay ? "" : iconButton("expand", "Open overview (Enter)", `data-issue-open="${escapeHtml(issue.key)}"`)}</span>`],
   ]);
 }
 
@@ -284,12 +297,69 @@ function codeSection(issue) {
   return `<section>${sideHead("Code", String(prs.length + worktrees.length))}<ul class="issue-code-list">${prs.map((pr) => `<li>${prMark(pr)}<span>${escapeHtml(pr.title || pr.url)}</span>${pr.author ? avatar(pr.author) : ""}</li>`).join("")}${worktrees.map((tree) => `<li><button type="button" class="issue-link-row" data-issue-wt="${escapeHtml(tree.path)}" data-tip="Worktree overview">${icon("branch")}<span>${escapeHtml(tree.branch)}</span></button></li>`).join("")}</ul></section>`;
 }
 
-const linkRow = (key, summary, status, category, label = "") => `<li><button type="button" class="issue-link-row" data-issue-open="${escapeHtml(key)}">${label ? `<span class="code-muted">${escapeHtml(label)}</span>` : ""}<code>${escapeHtml(key)}</code><span>${escapeHtml(summary)}</span><span class="code-tag issue-status issue-status-${escapeHtml(category)}">${escapeHtml(status)}</span></button></li>`;
+const linkRow = (key, summary, status, category, label = "") => `<li><button type="button" class="issue-link-row" data-issue-open="${escapeHtml(key)}">${label ? `<span class="code-muted">${escapeHtml(label)}</span>` : ""}${byKey().has(key) ? typeIcon(byKey().get(key)) : ""}<code>${escapeHtml(keyLabel(key))}</code><span>${escapeHtml(summary)}</span><span class="code-tag issue-status issue-status-${escapeHtml(category)}">${escapeHtml(status)}</span></button></li>`;
 function relationsSection(issue) {
   const children = childrenOf(issue.key).sort((a, b) => a.category.localeCompare(b.category) || byUpdated(a, b));
   const kids = children.length ? `<section>${sideHead("Children", `${children.filter((child) => child.category === "done").length}/${children.length} done`)}${progress(children)}<ul class="issue-code-list">${children.map((child) => linkRow(child.key, child.summary, child.status, child.category)).join("")}</ul></section>` : "";
   const links = issue.links.length ? `<section>${sideHead("Links", String(issue.links.length))}<ul class="issue-code-list">${issue.links.map((link) => linkRow(link.key, link.summary, link.status, link.category, link.label)).join("")}</ul></section>` : "";
-  return kids + links;
+  return counterpartsSection(issue) + kids + links;
+}
+
+// ---------- migration: the same work in Linear and Jira ----------
+
+const ROLES = { mirror: ["Linear copy", "Jira original"], import: ["Jira import", "Linear original"], title: ["Same title", "Same title"] };
+// The other side of every pair this issue is in, named by what it is to this one.
+function counterparts(key) {
+  return (ui.data.pairs || []).flatMap((pair) => pair.a === key ? [[pair.b, ROLES[pair.kind][1], pair.kind]] : pair.b === key ? [[pair.a, ROLES[pair.kind][0], pair.kind]] : []);
+}
+function counterpartsSection(issue) {
+  const items = counterparts(issue.key).filter(([key]) => byKey().has(key));
+  if (!items.length) return "";
+  return `<section>${sideHead("In the other tracker", String(items.length))}<ul class="issue-code-list">${items.map(([key, role]) => { const other = byKey().get(key); return linkRow(key, other.summary, other.status, other.category, role); }).join("")}</ul></section>`;
+}
+
+// Each group of linked items, plus every open Linear original with no Jira counterpart.
+const MIGRATION = { linear: "In Linear only", drift: "Out of step", copies: "Open Linear copies", title: "Same title", linked: "Linked" };
+function migrationGroups() {
+  const issues = byKey();
+  const kinds = new Map();
+  for (const pair of ui.data.pairs || []) for (const key of [pair.a, pair.b]) kinds.set(key, [...(kinds.get(key) || []), pair.kind]);
+  const groups = (ui.data.clusters || []).map((keys) => keys.map((key) => issues.get(key)).filter(Boolean)).filter((members) => members.length > 1).map((members) => {
+    const pairKinds = new Set(members.flatMap((member) => kinds.get(member.key) || []));
+    // Originals and imports should agree on how far along the work is; a synced Linear copy is a duplicate to close.
+    const stages = new Set(members.filter((member) => !member.mirrorOf).map((member) => member.category));
+    const openCopy = members.some((member) => member.mirrorOf && member.category !== "done");
+    const kind = pairKinds.size === 1 && pairKinds.has("title") ? "title" : stages.size > 1 ? "drift" : openCopy ? "copies" : "linked";
+    const primary = members.find((member) => member.source !== "linear" && !member.mirrorOf && !(kinds.get(member.key) || []).includes("import")) || members.find((member) => member.source !== "linear") || members[0];
+    return { kind, primary, members, updated: members.map((member) => member.updated).sort().at(-1) };
+  });
+  const paired = new Set((ui.data.clusters || []).flat());
+  const alone = ui.data.issues.filter((issue) => issue.source === "linear" && !issue.mirrorOf && issue.category !== "done" && !paired.has(issue.key))
+    .map((issue) => ({ kind: "linear", primary: issue, members: [issue], updated: issue.updated }));
+  const all = [...groups, ...alone].filter(({ members }) => (ui.showBots || !members.some((member) => member.bot)) && members.some(matches) && (!ui.people.size || members.some(peopleFilter)));
+  return all.sort((a, b) => b.updated.localeCompare(a.updated));
+}
+const memberChip = (issue) => `<button type="button" class="issue-member" data-issue-open="${escapeHtml(issue.key)}" data-tip="${escapeHtml(`${trackerName(issue)} · ${issue.status}${issue.mirrorOf ? " · synced copy" : ""}`)}">${typeIcon(issue)}<code>${escapeHtml(label(issue))}</code><span class="code-tag issue-status issue-status-${issue.category}">${escapeHtml(issue.status)}</span></button>`;
+const RELATION = { mirror: "synced", import: "imported", title: "same title?" };
+function migrationRow(group) {
+  const { primary, members } = group;
+  const side = (linear) => members.filter((member) => (member.source === "linear") === linear).map(memberChip).join("");
+  const kinds = [...new Set((ui.data.pairs || []).filter((pair) => members.some((member) => member.key === pair.a)).map((pair) => RELATION[pair.kind]))];
+  return `<tr class="code-row issue-row" data-issue-row="${escapeHtml(primary.key)}" aria-selected="${ui.sel === primary.key}">
+    <td class="issue-col-check"><input type="checkbox" data-issue-select="${escapeHtml(primary.key)}" aria-label="Select ${escapeHtml(label(primary))}" ${ui.selected.has(primary.key) ? "checked" : ""}></td>
+    <td class="code-col-main"><div class="code-pr-title">${escapeHtml(primary.summary)}</div>${parentLine(primary)}</td>
+    <td class="issue-col-side">${side(true) || '<span class="code-muted">—</span>'}</td>
+    <td class="issue-col-relation">${kinds.length ? escapeHtml(kinds.join(", ")) : ""}</td>
+    <td class="issue-col-side">${side(false) || '<span class="code-muted">not in Jira</span>'}</td>
+    <td class="issue-col-person">${personMark(primary.assignee)}</td>
+    <td class="code-col-when code-heat-${heat(group.updated)}">${when(group.updated)}</td></tr>`;
+}
+function migrationBody() {
+  const groups = migrationGroups().filter((group) => group.kind === ui.migration);
+  if (!groups.length) return emptyState(MIGRATION[ui.migration].toLowerCase());
+  const columns = [["issue-col-check", ""], ["code-col-main", "Title"], ["issue-col-side", "Linear"], ["issue-col-relation", ""], ["issue-col-side", "Jira"], ["issue-col-person", "Assignee"], ["code-col-when", "Updated"]];
+  const note = { linear: "Open Linear issues and projects with no Jira copy: what's left to migrate.", drift: "Linked across trackers, but at different stages: in progress on one side and in the backlog or finished on the other.", copies: "Jira issues the two-way sync copied into Linear, where the copy is still open: duplicates to close in Linear.", title: "No sync or import marker, but the same title: likely duplicates to confirm.", linked: "Linked by the sync or the import and in step." }[ui.migration];
+  return `<p class="code-muted issue-migration-note">${note}</p>${grouped(groups.map((group) => ({ ...group.primary, updated: group.updated, group })), (item) => migrationRow(item.group), columns)}`;
 }
 
 const markdownBlock = (text) => `<div class="markdown code-description issue-markdown">${renderMarkdown(text, "")}</div>`;
@@ -325,7 +395,7 @@ function renderDetail({ animate = false } = {}) {
   const issue = byKey().get(ui.sel);
   const multi = ui.selected.size > 1 ? `<p class="issue-multi">${ui.selected.size} selected · ${skillButtons([...ui.selected])} <button type="button" class="code-bar-button" data-issue-select-none>Clear</button></p>` : "";
   pane.innerHTML = issue
-    ? `${multi}<div class="code-detail-head">${typeIcon(issue)}<h3><code>${escapeHtml(issue.key)}</code> ${escapeHtml(issue.summary)}</h3></div>${issueFacts(issue)}${codeSection(issue)}${relationsSection(issue)}${textSections(issue, false)}`
+    ? `${multi}<div class="code-detail-head">${typeIcon(issue)}<h3>${keyMark(issue)} ${escapeHtml(issue.summary)}</h3></div>${issueFacts(issue)}${codeSection(issue)}${relationsSection(issue)}${textSections(issue, false)}`
     : `${multi}<p class="code-detail-empty">Select an issue to see its details, code, and comments.<br><br><kbd>J</kbd><kbd>K</kbd> move · <kbd>Enter</kbd> overview · <kbd>1</kbd>–<kbd>${(ui.data.skills || []).length}</kbd> agent drafts · <kbd>Space</kbd> select · <kbd>X</kbd> seen · <kbd>O</kbd> Jira · <kbd>Y</kbd> copy link · <kbd>A</kbd> people · <kbd>F</kbd> filter · <kbd>R</kbd> refresh</p>`;
   if (animate) { pane.scrollTop = 0; fadeIn(pane, 160); }
   if (issue) loadDetail(issue.key);
@@ -388,7 +458,8 @@ function renderOverview() {
   if (!issue) return;
   const position = overview.list.indexOf(issue.key);
   const walk = position >= 0 && overview.list.length > 1 ? `<span class="code-muted">${position + 1} of ${overview.list.length} · <kbd>J</kbd><kbd>K</kbd> walk · <kbd>X</kbd> seen and next</span>` : "";
-  dialog.querySelector('[data-o="head"]').innerHTML = `${typeIcon(issue)}<div class="issue-overview-title"><h3><code>${escapeHtml(issue.key)}</code> ${escapeHtml(issue.summary)}</h3><p class="code-muted">${escapeHtml(issue.project)} · ${escapeHtml(issue.components.join(", ") || "no component")}${issue.inScope ? "" : " · outside the configured scope"}${isSeen(issue) ? " · seen" : ""}</p></div><span class="code-spacer"></span>${walk}${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
+  const where = issue.source === "linear" ? `Linear · ${issue.project} team${issue.mirrorOf ? ` · synced copy of ${issue.mirrorOf}` : ""}` : `${issue.project} · ${issue.components.join(", ") || "no component"}`;
+  dialog.querySelector('[data-o="head"]').innerHTML = `${typeIcon(issue)}<div class="issue-overview-title"><h3>${keyMark(issue)} ${escapeHtml(issue.summary)}</h3><p class="code-muted">${escapeHtml(where)}${issue.inScope ? "" : " · outside the configured scope"}${isSeen(issue) ? " · seen" : ""}</p></div><span class="code-spacer"></span>${walk}${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
   dialog.querySelector('[data-o="side"]').innerHTML = issueFacts(issue, true) + codeSection(issue) + relationsSection(issue);
   dialog.querySelector('[data-o="main"]').innerHTML = `<div class="issue-overview-text">${textSections(issue, true)}</div>`;
 }
@@ -428,14 +499,18 @@ function toolbar() {
   const count = (value) => ` <span class="code-count">${value}</span>`;
   const segment = (attr, current, options) => `<div class="code-segment">${Object.entries(options).map(([id, label]) => `<button type="button" ${attr}="${id}" aria-pressed="${current === id}">${label}</button>`).join("")}</div>`;
   const scoped = base();
-  const counts = { all: scoped.filter(open).length, triage: scoped.filter(isTriage).length, epics: epicGroups().reduce((sum, [, epics]) => sum + epics.length, 0), activity: "" };
-  const tabs = `<div class="code-segment code-tabs">${Object.entries(TABS).map(([id, label]) => `<button type="button" data-issue-tab="${id}" aria-pressed="${ui.tab === id}">${label}${counts[id] === "" ? "" : count(counts[id])}</button>`).join("")}</div>`;
+  const both = ui.data.sources?.length > 1;
+  const groups = both ? migrationGroups() : [];
+  const counts = { all: scoped.filter(open).length, triage: scoped.filter(isTriage).length, epics: epicGroups().reduce((sum, [, epics]) => sum + epics.length, 0), activity: "", migration: groups.filter((group) => ["drift", "copies", "title"].includes(group.kind)).length };
+  const tabs = `<div class="code-segment code-tabs">${Object.entries(TABS).filter(([id]) => id !== "migration" || both).map(([id, label]) => `<button type="button" data-issue-tab="${id}" aria-pressed="${ui.tab === id}">${label}${counts[id] === "" ? "" : count(counts[id])}</button>`).join("")}</div>`;
   const people = `<button type="button" class="code-bar-button issue-people-trigger${ui.people.size ? " is-active" : ""}" popovertarget="issue-people" data-issue-people-trigger>${icon("person")}${ui.people.size === 1 ? escapeHtml([...ui.people][0] || "Unassigned") : ui.people.size ? `${ui.people.size} people` : "Everyone"} <kbd>A</kbd></button>`;
   let controls = "";
   if (ui.tab === "all") controls = segment("data-issue-scope", ui.scope, Object.fromEntries(Object.entries(SCOPES).map(([id, [label, test]]) => [id, `${label}${count(scoped.filter(open).filter(test).length)}`])));
   if (ui.tab === "triage") controls = `<label class="code-check"><input type="checkbox" data-issue-hide-seen-box ${ui.hideSeen ? "checked" : ""}> Hide seen <kbd>U</kbd>${count(scoped.filter(isTriage).filter(isSeen).length)}</label>${ui.selected.size ? `<span class="issue-bulk">${ui.selected.size} selected ${skillButtons([...ui.selected])}<button type="button" class="code-bar-button" data-issue-select-none>Clear</button></span>` : '<span class="code-muted">Space selects rows for one draft about several issues.</span>'}`;
+  if (ui.tab === "migration") controls = segment("data-issue-migration", ui.migration, Object.fromEntries(Object.entries(MIGRATION).map(([id, label]) => [id, `${label}${count(groups.filter((group) => group.kind === id).length)}`]))) + (ui.selected.size ? `<span class="issue-bulk">${ui.selected.size} selected ${skillButtons([...ui.selected])}<button type="button" class="code-bar-button" data-issue-select-none>Clear</button></span>` : "");
   if (ui.tab === "activity") controls = segment("data-issue-activity", ui.activityScope, ACTIVITY_SCOPES) + `<label class="code-check">Since <input type="date" data-issue-since value="${escapeHtml(ui.since)}"></label>`;
-  const shared = `${people}${ui.tab !== "triage" && ui.tab !== "activity" ? `<label class="code-check"><input type="checkbox" data-issue-done ${ui.showDone ? "checked" : ""}> Done</label>` : ""}<label class="code-check" data-tip="Issues labeled ${escapeHtml((config().issues.hideLabels || []).join(", ") || "by scanners")}"><input type="checkbox" data-issue-bots ${ui.showBots ? "checked" : ""}> Bots${count(ui.data.issues.filter((issue) => issue.inScope && issue.bot && issue.category !== "done").length)}</label>`;
+  const sources = both && ui.tab !== "migration" ? segment("data-issue-source", ui.source, { all: "Both", jira: `Jira${count(ui.data.issues.filter((issue) => issue.inScope && !issue.bot && !issue.mirrorOf && issue.source !== "linear" && open(issue)).length)}`, linear: `Linear${count(ui.data.issues.filter((issue) => issue.source === "linear" && !issue.mirrorOf && open(issue)).length)}` }) : "";
+  const shared = `${sources}${people}${ui.tab !== "triage" && ui.tab !== "activity" ? `<label class="code-check"><input type="checkbox" data-issue-done ${ui.showDone ? "checked" : ""}> Done</label>` : ""}<label class="code-check" data-tip="Issues labeled ${escapeHtml((config().issues.hideLabels || []).join(", ") || "by scanners")}"><input type="checkbox" data-issue-bots ${ui.showBots ? "checked" : ""}> Bots${count(ui.data.issues.filter((issue) => issue.inScope && issue.bot && issue.category !== "done").length)}</label>`;
   const synced = ui.data.syncing ? escapeHtml(ui.data.progress || "Syncing with Jira…") : ui.data.syncedAt ? `Synced ${ago(ui.data.syncedAt)} ago` : "Never synced";
   const apps = segment("data-issue-app", agentApp(), { codex: "Codex", claude: "Claude" });
   return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-issue-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span><span class="code-muted issue-synced">${synced}</span><span class="code-app-label">Agent</span>${apps}${iconButton("refresh", ui.data.syncing ? "Syncing with Jira…" : "Re-read every issue from Jira  (R)", `data-issue-refresh class="code-icon-button${ui.data.syncing ? " is-spinning" : ""}"`)}</div><div class="code-controls">${controls}${shared}</div></div></div>`;
@@ -463,7 +538,7 @@ function render({ animate = false } = {}) {
   hideTip();
   patch("toolbar", toolbar());
   patch("errors", ui.data.error ? `<p class="work-warning">Jira sync failed: ${escapeHtml(ui.data.error)}</p>` : "");
-  const body = ui.tab === "triage" ? triageBody() : ui.tab === "epics" ? epicsBody() : ui.tab === "activity" ? activityBody() : allBody();
+  const body = ui.tab === "triage" ? triageBody() : ui.tab === "epics" ? epicsBody() : ui.tab === "activity" ? activityBody() : ui.tab === "migration" ? migrationBody() : allBody();
   const list = patch("list", body);
   if (list && animate) fadeIn(list);
   if (!host.querySelector("#issue-people:popover-open")) patch("people", peoplePopover());
@@ -498,7 +573,7 @@ export const cachedIssues = () => ui.data;
 function syncUrl() {
   const url = new URL(location.href);
   const issue = url.searchParams.get("issue");
-  url.search = new URLSearchParams({ view: "issues", ...(ui.tab === "all" ? {} : { tab: ui.tab }), ...(ui.since ? { since: ui.since } : {}), ...(issue ? { issue } : {}) });
+  url.search = new URLSearchParams({ view: "issues", ...(ui.tab === "all" ? {} : { tab: ui.tab }), ...(ui.source === "all" ? {} : { source: ui.source }), ...(ui.since ? { since: ui.since } : {}), ...(issue ? { issue } : {}) });
   history.replaceState(null, "", url);
 }
 
@@ -539,6 +614,8 @@ async function handleClick(event) {
   try {
     if (dataset.issueTab) { ui.tab = issueTab(dataset.issueTab); syncUrl(); return render({ animate: true }); }
     if (dataset.issueScope) { ui.scope = dataset.issueScope; return render({ animate: true }); }
+    if (dataset.issueSource) { ui.source = dataset.issueSource; storage.set("issues-source", ui.source); syncUrl(); return render({ animate: true }); }
+    if (dataset.issueMigration) { ui.migration = dataset.issueMigration; return render({ animate: true }); }
     if (dataset.issueActivity) { ui.activityScope = dataset.issueActivity; return render({ animate: true }); }
     if ("issueDone" in dataset) { ui.showDone = target.checked; return render({ animate: true }); }
     if ("issueBots" in dataset) { ui.showBots = target.checked; return render({ animate: true }); }
@@ -585,7 +662,7 @@ function handleKey(event) {
     u: () => { if (ui.tab !== "triage") return; ui.hideSeen = !ui.hideSeen; storage.set("issues-hide-seen", ui.hideSeen ? "on" : "off"); render({ animate: true }); },
     escape: () => { if (!host.querySelector("[data-issue-reset]") && !ui.selected.size) return; ui.selected.clear(); resetFilters(); render({ animate: true }); },
     enter: () => issue && openIssue(issue.key, rowKeys()),
-    " ": () => { if (!issue || ui.tab !== "triage") return; ui.selected.has(issue.key) ? ui.selected.delete(issue.key) : ui.selected.add(issue.key); render(); },
+    " ": () => { if (!issue || !["triage", "migration"].includes(ui.tab)) return; ui.selected.has(issue.key) ? ui.selected.delete(issue.key) : ui.selected.add(issue.key); render(); },
     x: () => { if (!issue) return; toggleSeen(issue); render(); if (ui.tab === "triage") move(ui.hideSeen ? 0 : 1); },
     o: () => issue && window.open(issueUrl(issue.key), "_blank", "noreferrer"),
     y: () => issue && navigator.clipboard.writeText(issueUrl(issue.key)).then(() => notify(`Copied ${issueUrl(issue.key)}`)),
@@ -603,6 +680,8 @@ export function renderIssuesPage(container, { tab, showNotice }) {
   notify = showNotice;
   ui.tab = issueTab(tab);
   ui.since = new URLSearchParams(location.search).get("since") || "";
+  const source = new URLSearchParams(location.search).get("source");
+  if (["all", "jira", "linear"].includes(source)) ui.source = source;
   if (host !== container) {
     host = container;
     container.addEventListener("click", (event) => { if (container.querySelector(".issue-surface")) handleClick(event); });

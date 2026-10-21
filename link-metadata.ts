@@ -105,7 +105,7 @@ async function configValue(root: string, section: string, key: string) {
   return body.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]+)"`, "m"))?.[1] || "";
 }
 
-async function linearKey(root: string) {
+export async function linearKey(root: string) {
   return process.env.LINEAR_API_KEY || configValue(root, "linear", "API_KEY");
 }
 
