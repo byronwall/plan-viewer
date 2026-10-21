@@ -11,7 +11,7 @@
     <!--
       THESIS: Markdown becomes a review stack, refusing the generic file-tree-plus-preview arrangement.
       OWN-WORLD: Cool workbench canvas, white reading sheets, ink-blue action, and compact path metadata.
-      STORY: Open today's plan, scan complete milestones, choose one, add a note, and hand it to Codex.
+      STORY: Open today's plan, scan complete milestones, choose one, add a note, and hand it to an agent.
       FIRST VIEWPORT: A dense document rail at left and today's title plus its first two work cards at right.
       FORM: A vertical review stack, chosen directly for this precisely scoped local utility; no concept seed.
     -->
@@ -21,6 +21,7 @@
           <svg aria-hidden="true" viewBox="0 0 32 32"><path d="M7 5.5h14.5L26 10v16.5H7z"/><path d="M21.5 5.5V10H26M11 15h11M11 19h11M11 23h7"/></svg>
           <strong>Plan viewer</strong>
         </div>
+        <div class="agent-picker" role="group" aria-label="Agent for every draft"><span>Agent</span><div id="agent-picker" class="code-segment"></div></div>
         <div class="sidebar-actions">
           <button id="open-search" class="search-launcher" type="button" aria-haspopup="dialog" aria-controls="search-dialog"><span>Search…</span><kbd>⌘K</kbd></button>
           <button id="global-handoff" class="global-handoff" type="button" aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false">
@@ -76,7 +77,7 @@
         </div>
       </main>
     </div>
-    <div id="handoff-popover" class="handoff-popover" popover="manual" role="dialog" aria-label="Open a Codex draft"></div>
+    <div id="handoff-popover" class="handoff-popover" popover="manual" role="dialog" aria-label="Open an agent draft"></div>
     <ol id="toaster" class="toaster" aria-label="Notifications"></ol>
     <button id="open-history" class="history-button" type="button" aria-controls="history-menu" aria-expanded="false" aria-label="Recently viewed (H)" aria-keyshortcuts="h"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9"/><path d="M2.5 2.5v2.5H5"/><path d="M8 5v3.2l2 1.3"/></svg><kbd class="history-button-key" aria-hidden="true">H</kbd></button>
     <div id="history-menu" class="history-menu" popover role="menu" aria-label="Recently viewed"></div>
@@ -96,7 +97,7 @@
     <dialog id="shortcuts-dialog" class="viewer-dialog shortcuts-dialog" aria-labelledby="shortcuts-title">
       <header class="viewer-dialog-heading"><h2 id="shortcuts-title">Keyboard shortcuts</h2><button type="button" data-dialog-close aria-label="Close keyboard shortcuts">×</button></header>
       <div id="shortcut-list" class="shortcut-list"></div>
-      <footer class="viewer-dialog-footer">Letter shortcuts pause while typing or while a dialog is open. Esc closes dialogs; Codex drafts with text are kept until you open or cancel them.</footer>
+      <footer class="viewer-dialog-footer">Letter shortcuts pause while typing or while a dialog is open. Esc closes dialogs; Drafts with text are kept until you open or cancel them.</footer>
     </dialog>
     <script type="module" src="/app.js"></script>
   </body>

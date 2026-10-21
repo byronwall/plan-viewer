@@ -98,3 +98,13 @@ export function referenceConfig() {
 }
 
 export const githubSlug = (repo) => `${current.github.owner}/${repo}`;
+
+// The desktop agent every handoff opens in, chosen in the library rail and kept per browser.
+export const AGENTS = { codex: "Codex", claude: "Claude" };
+export function agentApp() {
+  try { return AGENTS[localStorage.getItem("code-agent-app")] ? localStorage.getItem("code-agent-app") : "codex"; } catch { return "codex"; }
+}
+export const agentName = () => AGENTS[agentApp()];
+export function setAgentApp(app) {
+  try { localStorage.setItem("code-agent-app", app); } catch {}
+}

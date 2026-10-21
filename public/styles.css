@@ -40,6 +40,7 @@ button { cursor: pointer; }
 .brand { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; }
 .brand svg { width: 18px; height: 18px; fill: none; stroke: var(--action); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .brand strong { font-size: .86rem; letter-spacing: -.01em; }
+.agent-picker { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 10px 8px; }
 .sidebar-actions { display: flex; gap: 6px; margin: 0 10px 8px; }
 .global-handoff { flex: none; height: 28px; display: flex; align-items: center; gap: 7px; border: 1px solid var(--action); border-radius: 7px; background: var(--action); padding: 0 6px 0 9px; color: var(--paper); font-size: .78rem; font-weight: 650; text-align: left; }
 .global-handoff:hover { border-color: var(--action-deep); background: var(--action-deep); }
@@ -896,7 +897,7 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 5px; border-top: 1px solid #edf0f4; }
 .code-day-chip { border: 1px solid var(--action); border-radius: 8px; background: var(--selected); color: var(--action-ink); padding: 4px 9px; font-size: .78rem; font-weight: 600; }
 .code-check { white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: .78rem; }
-.code-app-label, .code-guard-label { color: var(--label-text); font-size: .66rem; font-weight: 650; line-height: 1.2; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+.code-guard-label, .agent-picker > span { color: var(--label-text); font-size: .66rem; font-weight: 650; line-height: 1.2; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
 @keyframes code-pulse { 50% { opacity: .25; } }
 
 /* buttons */

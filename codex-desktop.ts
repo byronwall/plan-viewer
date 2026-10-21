@@ -43,12 +43,12 @@ export class CodexDesktopClient {
     this.platform = options.platform || process.platform;
   }
 
-  async openDraft(cwd: string, title: string, prompt: string) {
-    if (this.platform !== "darwin") throw new Error("Opening a Codex draft currently requires macOS.");
+  async openDraft(cwd: string, title: string, prompt: string, app = "codex") {
+    if (this.platform !== "darwin") throw new Error("Opening an agent draft currently requires macOS.");
 
-    const url = codexNewTaskUrl(prompt, cwd);
+    const url = app === "claude" ? claudeNewSessionUrl(cwd, prompt) : codexNewTaskUrl(prompt, cwd);
     await this.run("/usr/bin/open", [url]);
-    this.log("desktop-draft-opened", { title: taskTitle(title), promptLength: prompt.length, workspace: cwd });
+    this.log("desktop-draft-opened", { app, title: taskTitle(title), promptLength: prompt.length, workspace: cwd });
     return { draftOpened: true };
   }
 }

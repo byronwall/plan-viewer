@@ -1,5 +1,5 @@
 import { escapeHtml, renderMarkdown } from "./markdown.js";
-import { config } from "./config.js";
+import { agentApp, agentName as appName, config } from "./config.js";
 import { ago, avatar, ciBadge, copied, fadeIn, heat, hideTip, icon, iconButton, isSummonKey, openPrOverlay, openWorktreeOverlay, showTip, sideFacts, sideHead, sideStatus, when } from "./code.js";
 
 // Issues page: Jira issues in the configured scope (viewer.config.json `issues`), laid out like the Code page:
@@ -19,8 +19,6 @@ let seen = {};
 try { seen = JSON.parse(storage.get("issues-seen", "{}")); } catch {}
 let host = null;
 let notify = () => {};
-const agentApp = () => storage.get("code-agent-app", "codex");
-const appName = () => (agentApp() === "claude" ? "Claude" : "Codex");
 
 // ---------- marks ----------
 
@@ -544,8 +542,7 @@ function toolbar() {
   const sources = both && ui.tab !== "migration" ? segment("data-issue-source", ui.source, { all: "Both", jira: `Jira${count(ui.data.issues.filter((issue) => issue.inScope && !issue.bot && !issue.mirrorOf && issue.source !== "linear" && open(issue)).length)}`, linear: `Linear${count(ui.data.issues.filter((issue) => issue.source === "linear" && !issue.mirrorOf && open(issue)).length)}` }) : "";
   const shared = `${sources}${people}${ui.tab !== "triage" && ui.tab !== "activity" ? `<label class="code-check"><input type="checkbox" data-issue-done ${ui.showDone ? "checked" : ""}> Done</label>` : ""}<label class="code-check" data-tip="Issues labeled ${escapeHtml((config().issues.hideLabels || []).join(", ") || "by scanners")}"><input type="checkbox" data-issue-bots ${ui.showBots ? "checked" : ""}> Bots${count(ui.data.issues.filter((issue) => issue.inScope && issue.bot && issue.category !== "done").length)}</label>`;
   const synced = ui.data.syncing ? escapeHtml(ui.data.progress || "Syncing with Jira…") : ui.data.syncedAt ? `Synced ${ago(ui.data.syncedAt)} ago` : "Never synced";
-  const apps = segment("data-issue-app", agentApp(), { codex: "Codex", claude: "Claude" });
-  return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-issue-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span><span class="code-muted issue-synced">${synced}</span><span class="code-app-label">Agent</span>${apps}${iconButton("refresh", ui.data.syncing ? "Syncing with Jira…" : "Re-read every issue from Jira  (R)", `data-issue-refresh class="code-icon-button${ui.data.syncing ? " is-spinning" : ""}"`)}</div><div class="code-controls">${controls}${shared}</div></div></div>`;
+  return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-issue-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span><span class="code-muted issue-synced">${synced}</span>${iconButton("refresh", ui.data.syncing ? "Syncing with Jira…" : "Re-read every issue from Jira  (R)", `data-issue-refresh class="code-icon-button${ui.data.syncing ? " is-spinning" : ""}"`)}</div><div class="code-controls">${controls}${shared}</div></div></div>`;
 }
 
 const lastHtml = new WeakMap();
@@ -654,7 +651,6 @@ async function handleClick(event) {
     if ("issueDone" in dataset) { ui.showDone = target.checked; return render({ animate: true }); }
     if ("issueBots" in dataset) { ui.showBots = target.checked; return render({ animate: true }); }
     if ("issueHideSeenBox" in dataset || "issueHideSeen" in dataset) { ui.hideSeen = "issueHideSeenBox" in dataset ? target.checked : !ui.hideSeen; storage.set("issues-hide-seen", ui.hideSeen ? "on" : "off"); return render({ animate: true }); }
-    if (dataset.issueApp) { storage.set("code-agent-app", dataset.issueApp); return render(); }
     if ("issueRefresh" in dataset) { target.classList.add("is-spinning"); return load(true); }
     if ("issueReset" in dataset) { resetFilters(); return render({ animate: true }); }
     if (dataset.issuePerson !== undefined) { ui.people.has(dataset.issuePerson) ? ui.people.delete(dataset.issuePerson) : ui.people.add(dataset.issuePerson); render({ animate: true }); return patch("people", peoplePopover()); }

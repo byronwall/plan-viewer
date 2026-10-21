@@ -425,7 +425,7 @@ export async function loadDocument(requested: string) {
   return { ...summary, absolutePath: path.absolute, markdown: contents, chatLinks: extractChatLinks(renderedContents), chunks, nextActions, scheduledActions, actionWarnings, work };
 }
 
-const CHAT_LINK_INSTRUCTION = "When your current conversation URL or Codex thread ID is available from trusted session context or app tools, record a labeled Markdown link under ## Chats in the authoritative task or daily plan you work on. Use the verified ChatGPT conversation URL or codex://threads/<thread-id>. Keep existing links and avoid duplicates. Do not guess IDs, use a shared snapshot as a follow-up link, or associate unrelated chats. If this is a global request, record the link only after identifying its task or daily plan. If the URL or ID is unavailable, continue the work without inventing a link.";
+const CHAT_LINK_INSTRUCTION = "When your current conversation URL or thread ID is available from trusted session context or app tools, record a labeled Markdown link under ## Chats in the authoritative task or daily plan you work on. Use the verified conversation URL (a ChatGPT or Claude link) or codex://threads/<thread-id>. Keep existing links and avoid duplicates. Do not guess IDs, use a shared snapshot as a follow-up link, or associate unrelated chats. If this is a global request, record the link only after identifying its task or daily plan. If the URL or ID is unavailable, continue the work without inventing a link.";
 
 export function buildCodexPrompt(document: Awaited<ReturnType<typeof loadDocument>>, chunk: Chunk, commentary: string) {
   return `Task: ${taskTitle(chunk.title)}\n\nYou are receiving a work handoff from the local ${config().title}. Work in the ${WORKSPACE} repository and follow its AGENTS.md instructions. The source file remains authoritative.\n\nSource file: ${document.path}\nDocument: ${document.title}\nSelected ${chunk.kind}: ${chunk.title}\n\nSelected chunk:\n\n${chunk.markdown}\n\n${config().user}'s commentary:\n\n${commentary.trim()}\n\nInterpret the selected chunk together with ${config().user}'s commentary. Inspect the source file and relevant repository context before acting. If the commentary asks for a change or implementation, carry it through; if it asks for analysis, report evidence-backed findings. Preserve unrelated work and update the planning Markdown when the requested outcome calls for it.\n\n${CHAT_LINK_INSTRUCTION}`;
@@ -443,7 +443,7 @@ export function buildActionPrompt(document: Awaited<ReturnType<typeof loadDocume
   return `Advance this next action: ${action.title}\n\nPlanning workspace: ${ROOT}\nSource file: ${document.absolutePath}\nRead the source file and the workspace AGENTS.md before acting. Follow the applicable target repository instructions and preserve unrelated work.\n\n${commentary.trim() ? `${config().user}'s direction for this run (takes precedence over the stored prompt where they differ):\n${commentary.trim()}\n\n` : ""}Stored action prompt:\n${action.prompt}\n\nCarry out the bounded action and verify its result. Record evidence and any remaining blocker in the authoritative task file. Update task state and the work breakdown only when supported by the result. Do not treat drafting a message as authorization to send it.\n\n${CHAT_LINK_INSTRUCTION}`;
 }
 
-async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "") {
+async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex") {
   if (scope === "action") {
     const document = await loadDocument(path);
     const action = document.nextActions.find(action => action.id === actionId);
@@ -453,15 +453,15 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
     const prompt = buildActionPrompt(document, action, commentary);
     dispatchLog(requestId, "validated", { scope, path, actionId });
     if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true };
-    return { accepted: true, ...await getCodexApp().openDraft(ROOT, action.title, prompt) };
+    return { accepted: true, ...await getCodexApp().openDraft(ROOT, action.title, prompt, app) };
   }
-  if (!commentary.trim()) throw new Error("Add a request before opening a Codex draft.");
+  if (!commentary.trim()) throw new Error("Add a request before opening a draft.");
   if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Commentary is too long for this first version.");
   if (scope === "global") {
     const prompt = buildGlobalCodexPrompt(commentary);
     dispatchLog(requestId, "validated", { scope, commentaryLength: commentary.length });
     if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true };
-    const result = await getCodexApp().openDraft(ROOT, "Plan viewer command", prompt);
+    const result = await getCodexApp().openDraft(ROOT, "Plan viewer command", prompt, app);
     dispatchLog(requestId, "draft-opened", { draftOpened: result.draftOpened });
     return { accepted: true, ...result };
   }
@@ -470,18 +470,18 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
     const prompt = buildDocumentCodexPrompt(document, commentary);
     dispatchLog(requestId, "validated", { scope, path: document.path, commentaryLength: commentary.length });
     if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true };
-    const result = await getCodexApp().openDraft(ROOT, document.title, prompt);
+    const result = await getCodexApp().openDraft(ROOT, document.title, prompt, app);
     dispatchLog(requestId, "draft-opened", { draftOpened: result.draftOpened });
     return { accepted: true, ...result };
   }
-  if (scope !== "chunk") throw new Error("Choose a valid Codex context.");
+  if (scope !== "chunk") throw new Error("Choose a valid draft context.");
   const chunk = document.chunks.find((candidate) => candidate.id === chunkId);
   if (!chunk) throw new Error("That chunk is no longer present. Reload the document and try again.");
   const prompt = buildCodexPrompt(document, chunk, commentary);
   dispatchLog(requestId, "validated", { path: document.path, chunkId, chunkTitle: chunk.title, commentaryLength: commentary.length });
 
   if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true };
-  const result = await getCodexApp().openDraft(ROOT, chunk.title, prompt);
+  const result = await getCodexApp().openDraft(ROOT, chunk.title, prompt, app);
   dispatchLog(requestId, "draft-opened", { draftOpened: result.draftOpened });
   return { accepted: true, ...result };
 }
@@ -638,7 +638,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request);
       dispatchLog(requestId, "received", { path: String(body.path || ""), scope: String(body.scope || ""), chunkId: String(body.chunkId || "") });
       try {
-        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || "")));
+        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex")));
       } catch (error) {
         dispatchLog(requestId, "failed", { error: error instanceof Error ? error.message : String(error) });
         throw error;

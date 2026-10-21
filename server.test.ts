@@ -451,6 +451,16 @@ test("opens a Codex draft without submitting it", async () => {
   assert.equal(new URL(commands[0].args[0]).searchParams.get("path"), "/repo");
 });
 
+test("opens a Claude draft in the workspace folder when Claude is the agent", async () => {
+  const commands: string[][] = [];
+  const client = new CodexDesktopClient(() => {}, { platform: "darwin", run: async (_executable, args) => { commands.push(args); } });
+  await client.openDraft("/repo", "Ship it", "Do the work.", "claude");
+  const url = new URL(commands[0][0]);
+  assert.equal(url.protocol, "claude:");
+  assert.equal(url.searchParams.get("q"), "Do the work.");
+  assert.equal(url.searchParams.get("folder"), "/repo");
+});
+
 test("extracts executable prompt blocks and preserves legacy nested actions", async () => {
   const { parseActions } = await import('./public/actions.js');
   const actions = parseActions('### Prove the fix\n\nWork item: W1.1\n\n```prompt\nInspect /repo and reproduce the failure.\nRecord evidence.\n```', 'tasks/TASK-0042.md');
@@ -492,7 +502,7 @@ test("work breakdown diagnostics explain unsupported statuses and how to repair 
   assert.equal(repaired.nodes[1].ready, true);
   const entirelyInvalid = renderWorkBreakdown(parseWorkBreakdown('- W1: Prepare [unknown]'), [], 'actions', 'work-breakdown');
   assert.match(entirelyInvalid, /Use one of: open, active, waiting, deferred, completed/);
-  assert.match(entirelyInvalid, /Prepare fix in Codex/);
+  assert.match(entirelyInvalid, /Prepare fix ↗/);
   assert.doesNotMatch(entirelyInvalid, /Add nested work items/);
 });
 

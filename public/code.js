@@ -1,5 +1,5 @@
 import { escapeHtml, renderMarkdown } from "./markdown.js";
-import { config, escapeRegExp } from "./config.js";
+import { agentApp, agentName as appName, config, escapeRegExp } from "./config.js";
 import { decorate, lineClasses, markWords } from "./word-diff.js";
 import { mapHtml, mapSvg, moveGroups, svgToPng, tileCard } from "./diff-map.js";
 
@@ -14,7 +14,6 @@ const ui = {
   authors: new Set(), authorQuery: "", authorActive: 0,
 };
 const storage = { get: (key, fallback) => { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }, set: (key, value) => { try { localStorage.setItem(key, value); } catch {} } };
-let agentApp = storage.get("code-agent-app", "codex");
 // Cleanup never offers a worktree created or touched more recently than this; a fresh one may be about to get used.
 const GUARDS = { off: 0, day: DAY, week: 7 * DAY };
 let cleanupGuard = storage.get("code-cleanup-guard", "day");
@@ -82,7 +81,6 @@ const heat = (time) => { const age = Date.now() - new Date(time).getTime(); retu
 const dayKey = (time) => { const d = new Date(time); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const shortPath = (path) => path.replace(/^\/Users\/[^/]+\/repos\//, "").replace(/^\/Users\/[^/]+/, "~");
 const repoName = (path) => path.split("/").pop();
-const appName = () => (agentApp === "claude" ? "Claude" : "Codex");
 const worktreeFor = (pr) => ui.data.worktrees.find((tree) => tree.repo === pr.repo && tree.branch === pr.branch && !ui.removed.has(tree.path));
 const prFor = (tree) => ui.data.prs.find((pr) => pr.repo === tree.repo && pr.branch === tree.branch);
 const matches = (text) => !ui.filter || ui.filter.toLowerCase().split(/\s+/).every((word) => text.toLowerCase().includes(word));
@@ -2132,9 +2130,8 @@ function toolbar() {
   if (ui.tab === "commits") controls = commitControls();
   if (ui.tab === "cleanup") controls = cleanupControls();
   const day = ui.day ? `<button type="button" class="code-day-chip" data-code-day="${ui.day}">${new Date(`${ui.day}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })} ×</button>` : "";
-  const apps = segment("data-code-app", agentApp, { codex: "Codex", claude: "Claude" });
   // Sized to its content, with the activity strip spanning both rows; scanning shows as the spinning refresh icon, so nothing shifts.
-  return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-code-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span><span class="code-app-label">Agent</span>${apps}${iconButton("refresh", ui.data.scanning ? "Scanning worktrees, CI, and PR history…" : "Refresh everything  (R)", `data-code-refresh class="code-icon-button${ui.data.scanning ? " is-spinning" : ""}"`)}${iconButton("settings", `Tracked repositories (${ui.data.repos.length})`, 'popovertarget="code-settings" data-code-settings')}</div>${controls || day ? `<div class="code-controls">${day}${controls}</div>` : ""}</div>${activityStrip(trees)}</div>`;
+  return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-code-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span>${iconButton("refresh", ui.data.scanning ? "Scanning worktrees, CI, and PR history…" : "Refresh everything  (R)", `data-code-refresh class="code-icon-button${ui.data.scanning ? " is-spinning" : ""}"`)}${iconButton("settings", `Tracked repositories (${ui.data.repos.length})`, 'popovertarget="code-settings" data-code-settings')}</div>${controls || day ? `<div class="code-controls">${day}${controls}</div>` : ""}</div>${activityStrip(trees)}</div>`;
 }
 
 // Tracked repositories live in a settings popover opened from the toolbar gear.
@@ -2310,7 +2307,6 @@ async function handleClick(event) {
       for (const path of ui.selected) { const tree = ui.data.worktrees.find((candidate) => candidate.path === path); if (tree && level(tree) === "fresh") ui.selected.delete(path); }
       return render({ animate: true });
     }
-    if (dataset.codeApp) { agentApp = dataset.codeApp; storage.set("code-agent-app", agentApp); return render(); }
     if ("codeReset" in dataset) { resetFilters(); return render({ animate: true }); }
     if (dataset.codeTreeScope) { ui.treeScope = dataset.codeTreeScope; return render({ animate: true }); }
     if (dataset.codeCommitScope) { ui.commitScope = dataset.codeCommitScope; return render({ animate: true }); }
@@ -2358,9 +2354,9 @@ async function handleClick(event) {
     if ("codeSelectNone" in dataset) { ui.selected.clear(); return render(); }
     if (dataset.codePreview) { notify(`Opening the PR #${dataset.codePreview} deployment…`); await post("preview", { repo: dataset.repo, number: dataset.codePreview }); return; }
     if (dataset.codeOpen) { await post("open", { kind: dataset.codeOpen, path: dataset.path }); return; }
-    if ("codeSession" in dataset) { await post("session", { app: agentApp, path: dataset.path }); notify(`Opened a ${appName()} session in ${shortPath(dataset.path)}.`); return; }
+    if ("codeSession" in dataset) { await post("session", { app: agentApp(), path: dataset.path }); notify(`Opened a ${appName()} session in ${shortPath(dataset.path)}.`); return; }
     if (dataset.codeSkill) {
-      await post("agent", { app: agentApp, skill: dataset.codeSkill, url: dataset.url, path: dataset.path });
+      await post("agent", { app: agentApp(), skill: dataset.codeSkill, url: dataset.url, path: dataset.path });
       notify(`Drafted ${dataset.codeSkill} in ${appName()}. Review it and press Enter to send.`);
       return;
     }
@@ -2370,7 +2366,7 @@ async function handleClick(event) {
       return load();
     }
     if ("codeCleanupAgent" in dataset) {
-      await post("cleanup-agent", { app: agentApp, paths: [...ui.selected] });
+      await post("cleanup-agent", { app: agentApp(), paths: [...ui.selected] });
       notify(`Drafted a cleanup review of ${ui.selected.size} worktrees in ${appName()}.`);
       return;
     }
@@ -2402,7 +2398,7 @@ function handleKey(event) {
   const key = event.key.toLowerCase();
   const item = selectedItem();
   const tree = item.tree || (item.pr && worktreeFor(item.pr)) || (item.commit?.worktree && ui.data.worktrees.find((candidate) => candidate.path === item.commit.worktree));
-  const skill = (index) => item.pr && post("agent", { app: agentApp, skill: ui.data.skills[index].id, url: item.pr.url, path: tree?.path || item.pr.repo }).then(() => notify(`Drafted ${ui.data.skills[index].id} in ${appName()}. Review it and press Enter to send.`));
+  const skill = (index) => item.pr && post("agent", { app: agentApp(), skill: ui.data.skills[index].id, url: item.pr.url, path: tree?.path || item.pr.repo }).then(() => notify(`Drafted ${ui.data.skills[index].id} in ${appName()}. Review it and press Enter to send.`));
   const copyText = (text) => navigator.clipboard.writeText(text).then(() => notify(`Copied ${text}`));
   const actions = {
     arrowdown: () => move(1), j: () => move(1), arrowup: () => move(-1), k: () => move(-1),
@@ -2414,7 +2410,7 @@ function handleKey(event) {
     enter: () => item.commit ? openDiff() : item.pr ? openPrOverlay(item.pr.slug, item.pr.number) : item.tree && openWorktreeOverlay(item.tree.path),
     e: () => tree && post("open", { kind: "vscode", path: tree.path }),
     x: () => tree && post("open", { kind: "terminal", path: tree.path }),
-    s: () => tree && post("session", { app: agentApp, path: tree.path }).then(() => notify(`Opened a ${appName()} session in ${shortPath(tree.path)}.`)),
+    s: () => tree && post("session", { app: agentApp(), path: tree.path }).then(() => notify(`Opened a ${appName()} session in ${shortPath(tree.path)}.`)),
     y: () => copyText(item.commit ? item.commit.sha : item.pr ? item.pr.url : tree.path),
     d: () => { const pr = item.pr || prFor(item.tree); if (!pr || !ui.data.previews?.includes(pr.repo)) return; notify(`Opening the PR #${pr.number} deployment…`); return post("preview", { repo: pr.repo, number: String(pr.number) }); },
     1: () => skill(0), 2: () => skill(1), 3: () => skill(2), 4: () => skill(3),

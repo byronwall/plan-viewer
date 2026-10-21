@@ -130,7 +130,7 @@ export function renderActions(actions, key) {
 
 export function renderWorkBreakdown(work, actions, key, repairChunkId = '') {
   const { nodes, warnings } = work;
-  const diagnostics = warnings.length ? `<section class="work-validation" aria-label="Work breakdown needs repair"><strong>Work breakdown needs repair</strong><p>Actions are paused until these issues are fixed in the task Markdown.</p><ul>${warnings.map(w => `<li class="work-warning">${escapeHtml(w)}</li>`).join('')}</ul>${repairChunkId ? `<button type="button" class="handoff-button" data-chunk-id="${escapeHtml(repairChunkId)}" data-repair-work aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false">Prepare fix in Codex ↗</button>` : ''}</section>` : '';
+  const diagnostics = warnings.length ? `<section class="work-validation" aria-label="Work breakdown needs repair"><strong>Work breakdown needs repair</strong><p>Actions are paused until these issues are fixed in the task Markdown.</p><ul>${warnings.map(w => `<li class="work-warning">${escapeHtml(w)}</li>`).join('')}</ul>${repairChunkId ? `<button type="button" class="handoff-button" data-chunk-id="${escapeHtml(repairChunkId)}" data-repair-work aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false">Prepare fix ↗</button>` : ''}</section>` : '';
   if (!nodes.length) return `${diagnostics}${warnings.length ? '' : '<p class="action-empty">Add nested work items to this task to see its tree and dependencies.</p>'}`;
   const hasChildren = n => nodes.some(child => child.parent === n.id);
   const statusLabel = n => n.ready && !hasChildren(n) ? 'Ready' : ['open', 'active'].includes(n.status) && !n.ready && !hasChildren(n) ? 'Blocked' : n.status[0].toUpperCase() + n.status.slice(1);

@@ -4,7 +4,7 @@ import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock
 import { documentHref, escapeHtml, markdownOutline, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, ago, cachedPrIndex, installCommitCards, loadPrIndex, openPrOverlay, openWorktreeOverlay, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
-import { config, referenceConfig, setConfig } from "./config.js";
+import { AGENTS, agentApp, agentName, config, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
 
 const state = { documents: [], defaultPath: "", selectedPath: "", document: null, activeChunkId: "", openComposer: null, view: "document", weekAnchor: null };
@@ -24,6 +24,7 @@ const elements = {
   codeButton: document.querySelector("#open-code"),
   issuesButton: document.querySelector("#open-issues"),
   globalHandoff: document.querySelector("#global-handoff"),
+  agentPicker: document.querySelector("#agent-picker"),
   get documentHandoff() { return document.querySelector("[data-dock-draft]"); },
   title: document.querySelector("#document-title"),
   meta: document.querySelector("#document-meta"),
@@ -556,14 +557,14 @@ function composerTemplate(target) {
           <textarea id="action-context" name="commentary" placeholder="A constraint, recent finding, or where to start…"></textarea>
         </div>
       </div>
-      <footer class="composer-actions">${hint}<button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open in ChatGPT</button></footer>
+      <footer class="composer-actions">${hint}<button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open in ${agentName()}</button></footer>
     </form>`;
   }
   const context = target.scope === "chunk"
     ? `<div class="composer-context"><div class="composer-context-body" id="composer-context-body"><div class="markdown">${renderMarkdownSource(target.chunk.markdown, state.selectedPath)}</div></div><button class="context-toggle" type="button" aria-expanded="false" aria-controls="composer-context-body" hidden>Show full chunk</button></div>`
     : "";
   const meta = target.scope === "document" ? escapeHtml(state.selectedPath) : "";
-  const fieldLabel = target.scope === "chunk" ? "What should Codex do with this chunk?" : "What should Codex do?";
+  const fieldLabel = target.scope === "chunk" ? `What should ${agentName()} do with this chunk?` : `What should ${agentName()} do?`;
   return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="${target.scope}" ${target.chunk ? `data-chunk-id="${target.chunk.id}"` : ""}>
     ${heading(meta)}
     <div class="composer-body">
@@ -573,7 +574,7 @@ function composerTemplate(target) {
         <textarea id="comment-${target.key}" name="commentary" placeholder="Add direction, a question, or the outcome you want…" required>${escapeHtml(target.commentary || '')}</textarea>
       </div>
     </div>
-    <footer class="composer-actions">${hint}<button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open draft in Codex</button></footer>
+    <footer class="composer-actions">${hint}<button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open draft in ${agentName()}</button></footer>
   </form>`;
 }
 
@@ -1082,7 +1083,7 @@ function renderDocument() {
     <div class="chunk-heading">
       <span class="chunk-index">${String(index + 1).padStart(2, "0")}</span>
       <h2>${escapeHtml(chunk.title)}</h2>
-      <button class="handoff-button" type="button" data-chunk-id="${chunk.id}" aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="${state.openComposer === `chunk:${chunk.id}`}">Open in Codex</button>
+      <button class="handoff-button" type="button" data-chunk-id="${chunk.id}" aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="${state.openComposer === `chunk:${chunk.id}`}">Open in ${agentName()}</button>
     </div>
     ${chunkBody(doc, chunk)}
   </article>`).join("");
@@ -1152,8 +1153,8 @@ function setActiveChunk(chunkId, outlinePath = null) {
 
 function syncGlobalHandoff() {
   elements.globalHandoff.disabled = false;
-  elements.globalHandoff.title = "Open a new Codex draft without context (C)";
-  elements.globalHandoff.setAttribute("aria-label", "Open a new Codex draft without context, C");
+  elements.globalHandoff.title = `Open a new ${agentName()} draft without context (C)`;
+  elements.globalHandoff.setAttribute("aria-label", `Open a new ${agentName()} draft without context, C`);
 }
 
 function openGlobalComposer() {
@@ -1161,7 +1162,7 @@ function openGlobalComposer() {
     elements.handoffPopover.querySelector("textarea")?.focus();
     return;
   }
-  openComposer({ key: "global", scope: "global", title: "New Codex task" }, elements.globalHandoff);
+  openComposer({ key: "global", scope: "global", title: `New ${agentName()} task` }, elements.globalHandoff);
 }
 
 function openDocumentComposer() {
@@ -1369,28 +1370,38 @@ async function dispatch(form) {
     const response = await fetch("/api/dispatch", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: form.dataset.sourcePath || state.selectedPath, scope: form.dataset.scope, chunkId: form.dataset.chunkId, actionId: form.dataset.actionId, expectedPrompt: form.dataset.expectedPrompt, commentary }),
+      body: JSON.stringify({ app: agentApp(), path: form.dataset.sourcePath || state.selectedPath, scope: form.dataset.scope, chunkId: form.dataset.chunkId, actionId: form.dataset.actionId, expectedPrompt: form.dataset.expectedPrompt, commentary }),
     });
     const body = await response.json();
-    if (!response.ok) throw new Error(body.error || "Codex could not open the draft.");
+    if (!response.ok) throw new Error(body.error || `${agentName()} could not open the draft.`);
     const chunkId = form.dataset.chunkId;
     const scope = form.dataset.scope;
     closeComposer();
     if (state.view === "document") renderDocument();
     if (scope === "chunk") document.querySelector(`#${chunkId}`)?.classList.add("card-drafted");
-    if (scope === "action") showNotice("Draft loaded in ChatGPT. Review it there, then click Send.");
-    else showNotice(body.draftOpened
-      ? "Draft loaded in Codex. Review or edit it there, then click Send."
-      : "Codex opened the draft.");
+    showNotice(`Draft loaded in ${agentName()}. Review or edit it there, then send it.`);
   } catch (error) {
     button.disabled = false;
-    button.textContent = form.dataset.scope === "action" ? "Open in ChatGPT" : "Open draft in Codex";
+    button.textContent = form.dataset.scope === "action" ? `Open in ${agentName()}` : `Open draft in ${agentName()}`;
     showNotice(error.message, true);
   }
 }
 
 elements.searchButton.addEventListener("click", openSearch);
 elements.globalHandoff.addEventListener("click", openGlobalComposer);
+function renderAgentPicker() {
+  elements.agentPicker.innerHTML = Object.entries(AGENTS).map(([id, label]) => `<button type="button" data-agent="${id}" aria-pressed="${agentApp() === id}">${label}</button>`).join("");
+  syncGlobalHandoff();
+}
+// Pages build their agent labels while rendering, so re-run the current route to pick up the new name.
+elements.agentPicker.addEventListener("click", (event) => {
+  const app = event.target.closest("[data-agent]")?.dataset.agent;
+  if (!app || app === agentApp()) return;
+  setAgentApp(app);
+  renderAgentPicker();
+  dispatchEvent(new PopStateEvent("popstate"));
+});
+renderAgentPicker();
 elements.copyTaskPath.addEventListener("click", async () => {
   const path = elements.copyTaskPath.dataset.copyPath;
   if (!path) return;
@@ -1744,8 +1755,8 @@ document.addEventListener("click", (event) => {
 // Keep the shortcut guide and bindings together so the documentation stays current.
 const shortcuts = [
   { keys: ["T"], description: "Go to today’s plan", run: goToToday },
-  { keys: ["C"], description: "Open hovered action or section in Codex; otherwise a global draft", run: openCursorComposer },
-  { keys: ["D"], description: "Open a Codex draft for the current file", run: openDocumentComposer },
+  { keys: ["C"], description: "Open hovered action or section in the agent draft; otherwise a global draft", run: openCursorComposer },
+  { keys: ["D"], description: "Open an agent draft for the current file", run: openDocumentComposer },
   { keys: ["⌘K", "Ctrl+K", "/"], description: "Search pages, plans, tasks, topics, reference files, and PRs", run: openSearch },
   { keys: ["A"], description: "Open Tasks", run: () => showTasks() },
   { keys: ["W"], description: "Open Weeks", run: () => showWeeks() },
