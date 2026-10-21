@@ -1025,7 +1025,6 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-avatar-stack .code-avatar + .code-avatar { margin-left: -5px; }
 .code-branch-trigger.code-author-trigger > span:first-of-type { font-family: inherit; }
 .code-author-trigger svg { width: 14px; height: 14px; }
-.code-author-pop { width: min(440px, calc(100vw - 16px)); }
 .code-author-list li { grid-template-columns: auto minmax(0, 1fr) 2.6em 3em 3em; }
 .code-author-name { display: flex; align-items: center; gap: 7px; min-width: 0; white-space: nowrap; }
 .code-author-name b { font-weight: 600; }
@@ -1283,6 +1282,13 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-picked button:hover b { opacity: 1; }
 .code-branch-pop { width: min(680px, calc(100vw - 16px)); padding: 8px; display: none; }
 .code-branch-pop:popover-open { display: grid; gap: 6px; }
+.code-branch-pop.code-author-pop { width: min(360px, calc(100vw - 16px)); }
+/* The pickers hang off their trigger and follow it as the toolbar re-renders; code.js positions them where anchors are unsupported. */
+[data-code-branch-trigger] { anchor-name: --code-branches; }
+[data-code-author-trigger] { anchor-name: --code-authors; }
+#code-branches { position-anchor: --code-branches; }
+#code-authors { position-anchor: --code-authors; }
+@supports (anchor-name: --a) { .code-branch-pop { top: calc(anchor(bottom) + 6px); left: anchor(left); position-try-fallbacks: flip-inline; } }
 .code-branch-pop .code-filter { width: auto; }
 .code-branch-list { max-height: min(420px, 60vh); overflow: auto; margin: 0; padding: 0; list-style: none; }
 .code-branch-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto 2.2em 2.6em 3em; gap: 8px; align-items: center; border-radius: 6px; padding: 4px 6px; cursor: pointer; font-size: .78rem; }
