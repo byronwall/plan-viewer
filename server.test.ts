@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { refreshSlackChannels } from "./link-metadata.ts";
-import { CodexDesktopClient, codexNewTaskUrl, taskTitle } from "./codex-desktop.ts";
+import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle } from "./codex-desktop.ts";
 import { inlineMarkdown, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
 import { buildWeeks, dateKey, parseDateKey, startOfWeek } from "./public/weeks.js";
 import { ROOT, buildCodexPrompt, dailyDigest, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize } from "./server.ts";
@@ -419,6 +419,14 @@ test("builds a Codex draft link pinned to the workspace", () => {
   assert.deepEqual([...url.searchParams.keys()], ["path", "prompt"]);
   assert.equal(url.searchParams.get("path"), "/Users/me/daily-planning");
   assert.equal(url.searchParams.get("prompt"), "Do the work.\nKeep context.");
+});
+
+// Claude matches a local preset by its folder; `environment=` would be read as a cloud environment ID and ignored.
+test("builds a Claude draft link that names the repository folder", () => {
+  const url = new URL(claudeNewSessionUrl("/Users/me/repos/acme", "Discuss this PR."));
+  assert.equal(url.href.split("?")[0], "claude://code/new");
+  assert.deepEqual([...url.searchParams.keys()], ["q", "folder"]);
+  assert.equal(url.searchParams.get("folder"), "/Users/me/repos/acme");
 });
 
 test("uses a concise milestone title in draft-opened logs", () => {

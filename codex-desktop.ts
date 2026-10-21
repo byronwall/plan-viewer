@@ -25,6 +25,13 @@ export function codexNewTaskUrl(prompt: string, workspace: string) {
   return url.toString();
 }
 
+// Claude Desktop opens a local session preset (an "environment" in its picker) from the preset's folder; its own
+// deep links send `folder=<cwd>` for one. `environment=` names only cloud environment IDs, so a local preset's name
+// there is ignored and the draft lands in the default preset instead.
+export function claudeNewSessionUrl(folder: string, prompt = "") {
+  return `claude://code/new?${new URLSearchParams({ ...(prompt ? { q: prompt } : {}), folder })}`;
+}
+
 export class CodexDesktopClient {
   private log: Logger;
   private run: RunCommand;

@@ -103,7 +103,6 @@ config.toml                  # optional, git-ignored secrets: [linear] API_KEY, 
 | `code.prNotesDir` | Local PR review notes, one Markdown file per PR. |
 | `code.editor`, `code.terminal.command` | Commands for the worktree buttons (`E`, `X`); `{path}` is the worktree. |
 | `code.prSkills` | Review skills drafted against a PR (`1`…`N`). Each `id` is a skill under the repository's `.claude/skills/`; `icon` names a built-in icon. An open "Discuss" prompt always follows. |
-| `code.claudeEnvironments` | Claude Desktop environment for each tracked repository, keyed by its folder name (`{ "atlas": "atlas" }`). Claude drafts for that repository open in the named environment, with its folder and permissions, instead of on "This computer". |
 | `code.postNotesSkill` | Skill the "Post as review" notes prompt tells the agent to follow. |
 | `code.prPreview` | Preview button for repositories containing every `requires` file; runs `command` with `{number}`. `null` hides it. |
 | `issues.jql` | Jira scope for the Issues page (`component = Atlas OR project = OPS`). Empty hides the page. |
@@ -111,7 +110,7 @@ config.toml                  # optional, git-ignored secrets: [linear] API_KEY, 
 | `issues.hideLabels` | Labels of machine-made issues (security scanners) hidden until **Bots** is checked. |
 | `issues.triage` | The Triage queue: `statuses` (default `Needs Triage`) plus open issues with a label starting with one of `labels` (a migration's review label). |
 | `issues.skills` | Agent drafts against issues (`1`…`N`): `{ id, label, icon, prompt }`; the selected issues follow the prompt as bullets. An open "Discuss" prompt always follows. |
-| `issues.workspace` | Folder issue drafts open in (the repository the issues are about); empty uses the planning workspace. Its `code.claudeEnvironments` entry applies. |
+| `issues.workspace` | Folder issue drafts open in (the repository the issues are about); empty uses the planning workspace. Claude drafts open in the Claude Desktop preset whose folder this is. |
 | `issues.fields` | Site-specific custom field ids: `start`, `confidence`, `statusUpdate`, `epicLink`. |
 | `issues.refreshMinutes` | Minutes between incremental syncs (default 5). |
 | `issues.linear.teams` | Linear team keys (`["ATL"]`) whose issues and projects sit beside the Jira ones, read with the Linear API key. With both trackers the page gains a source switch and a Migration tab. |

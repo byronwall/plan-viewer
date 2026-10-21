@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { codexNewTaskUrl } from "./codex-desktop.ts";
+import { claudeNewSessionUrl as claudeUrl, codexNewTaskUrl } from "./codex-desktop.ts";
 import { createPrNotes } from "./pr-notes.ts";
 import { config } from "./public/config.js";
 
@@ -20,13 +20,6 @@ const LOGIN_RETRY_MS = 60 * 60_000; // an email GitHub could not name yet; its c
 // The review skills run against PRs (viewer.config.json `code.prSkills`), each under the tracked repo's
 // `.claude/skills/<id>/`, then an open "Discuss" prompt about the PR for the user to finish.
 export const prSkills = () => [...config().code.prSkills, { id: "discuss", label: "Discuss" }];
-
-// A Claude Desktop draft in a tracked repo opens in the environment named for it (`code.claudeEnvironments`), which
-// carries its own folder and permissions; anywhere else it opens on this computer at the folder.
-const claudeUrl = (folder: string, q = "") => {
-  const environment = config().code.claudeEnvironments[basename(folder)];
-  return `claude://code/new?${new URLSearchParams({ ...(q ? { q } : {}), ...(environment ? { environment } : { folder }) })}`;
-};
 
 // Fills `{path}` / `{number}` in a configured command and runs it.
 const runCommand = (command: string[], values: Record<string, string>) =>

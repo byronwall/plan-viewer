@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { codexNewTaskUrl } from "./codex-desktop.ts";
+import { claudeNewSessionUrl, codexNewTaskUrl } from "./codex-desktop.ts";
 import { config } from "./public/config.js";
 import { fetchLinear, linearClient } from "./linear.ts";
 
@@ -421,10 +421,7 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
       ? `Let's talk through ${noun}. Read ${reading} first, then \n\n${list}\n`
       : `${chosen.prompt}\n\n${list}\n\nRead ${reading} in full first. Don't change anything in Jira or Linear until I say which way to go.`;
     const folder = (settings().workspace || root).replace(/^~(?=\/)/, process.env.HOME || "~");
-    const environment = config().code.claudeEnvironments[folder.split("/").pop() || ""];
-    const url = app === "claude"
-      ? `claude://code/new?${new URLSearchParams({ q: draft, ...(environment ? { environment } : { folder }) })}`
-      : codexNewTaskUrl(draft, folder);
+    const url = app === "claude" ? claudeNewSessionUrl(folder, draft) : codexNewTaskUrl(draft, folder);
     await exec("/usr/bin/open", [url]);
   }
 
