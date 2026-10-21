@@ -252,6 +252,10 @@ test("renders level-five Markdown headings as headings", () => {
   assert.doesNotMatch(html, /#####/);
 });
 
+test("renders tables whose delimiter cells have fewer than three dashes, as Linear writes them", () => {
+  assert.match(renderMarkdown("| A | B |\n| -- | -- |\n| 1 | 2 |"), /<table/);
+});
+
 test("preserves nested Markdown list structure and inline emphasis", () => {
   const html = renderMarkdown(`- **Change — Pin the base demonstration path**
   - Use one named instance.

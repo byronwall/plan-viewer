@@ -71,6 +71,23 @@ const linearRaw = (identifier: string, title: string, state: [string, string], e
   attachments: { nodes: [] }, syncedWith: [], comments: { nodes: [] }, ...extra,
 });
 
+test("Linear projects carry their body, custom status, priority, milestones and resources", async () => {
+  const { slimLinearProject } = await import("./linear.ts");
+  const project = slimLinearProject({
+    slugId: "p1", name: "Atlas onboarding", url: "https://linear.app/acme/project/p1", status: { name: "Ideas", type: "backlog" }, priorityLabel: "High",
+    description: "One line.", content: "# Atlas onboarding\n\nThe body.", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-10T00:00:00Z",
+    labels: { nodes: [{ name: "q4" }] }, externalLinks: { nodes: [{ label: "Spec", url: "https://example.com/spec" }] },
+    projectMilestones: { nodes: [{ name: "Second", sortOrder: 2, progress: 0, status: "unstarted" }, { name: "First", sortOrder: 1, progress: 1, status: "done", targetDate: "2026-11-01" }] },
+  }, "ATL");
+  assert.equal(project.status, "Ideas");
+  assert.equal(project.category, "new");
+  assert.equal(project.priority, "High");
+  assert.equal(project.description, "One line.\n\n# Atlas onboarding\n\nThe body.");
+  assert.deepEqual(project.labels, ["q4"]);
+  assert.deepEqual(project.resources, [{ name: "Spec", url: "https://example.com/spec" }]);
+  assert.deepEqual(project.milestones!.map((item) => [item.name, item.target, item.status]), [["First", "2026-11-01", "done"], ["Second", "", "unstarted"]]);
+});
+
 test("Linear issues and projects join Jira ones: sync copies, imports, and matching titles group together", async (t) => {
   const { fetchLinear, slimLinearIssue } = await import("./linear.ts");
   const { clustersOf, pairIssues } = await import("./issues.ts");

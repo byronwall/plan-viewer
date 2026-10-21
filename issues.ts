@@ -27,6 +27,8 @@ export type Issue = {
   assignee: Person | null; reporter: Person | null; labels: string[]; components: string[]; parent: string; created: string; updated: string;
   resolution: string; due: string; start: string; confidence: string; statusUpdate: string; links: Link[]; prCount: number; prState: string;
   description: string; comments: Comment[]; attachments: number; prUrls: string[];
+  initiatives?: { name: string; url: string }[]; resources?: { name: string; url: string }[];
+  milestones?: { name: string; description: string; target: string; progress: number; status: string }[];
 };
 type Activity = { at: string; key: string; kind: string; from?: string; to?: string; by?: string; text?: string };
 type Cache = { at: number; fullAt: number; scope: string[]; issues: Record<string, Issue>; activity: Activity[]; me: string; site: string; linearAt: number; linearFullAt: number };
@@ -250,8 +252,8 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     const rows: Activity[] = [];
     for (const issue of issues) {
       const before = cache.issues[issue.key];
-      if (before && before.updated === issue.updated) continue;
-      rows.push(...diffIssue(before, issue));
+      // An unchanged issue has no activity, but still takes the fresh copy so fields added to the reader fill in.
+      if (!before || before.updated !== issue.updated) rows.push(...diffIssue(before, issue));
       cache.issues[issue.key] = issue;
     }
     // The first sync backfills creations and comments; later ones also carry field changes.
@@ -373,7 +375,7 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     const names = new Map<string, string>();
     for (const issue of Object.values(cache.issues)) if (issue.source !== "linear") for (const who of [issue.assignee, issue.reporter]) if (who?.email && who.name) names.set(who.email, who.name);
     const named = (who: Person | null) => (who && names.has(who.email) ? { ...who, name: names.get(who.email)! } : who);
-    const issues = Object.values(cache.issues).map(({ description, comments, statusUpdate, ...issue }) => ({
+    const issues = Object.values(cache.issues).map(({ description, comments, statusUpdate, milestones, resources, ...issue }) => ({
       ...issue, assignee: named(issue.assignee), reporter: named(issue.reporter), inScope: issue.source === "linear" || scope.has(issue.key), bot: issue.labels.some((label) => hidden.has(label)), comments: comments.length,
       lastComment: comments.at(-1) ? { by: comments.at(-1)!.author?.name || "", at: comments.at(-1)!.created } : null, hasUpdate: Boolean(statusUpdate),
     }));

@@ -9,7 +9,8 @@ import type { Issue } from "./issues.ts";
 // projects can reuse a Linear team's prefix (Jira MOD-12 and Linear MOD-12 are different issues); `label` is what shows.
 
 const API = "https://api.linear.app/graphql";
-const PAGE = 40; // with descriptions, relations and 20 comments each, 50 per page passes Linear's complexity limit
+// With descriptions, relations and 20 comments each, larger pages pass Linear's complexity limit; projects also carry milestones and links.
+const PAGE = { issues: 40, projects: 10 };
 
 const CATEGORY: Record<string, string> = { triage: "new", backlog: "new", unstarted: "new", planned: "new", started: "indeterminate", paused: "new", completed: "done", canceled: "done", duplicate: "done" };
 const HEALTH: Record<string, string> = { onTrack: "🟢 On Track", atRisk: "🟡 At Risk", offTrack: "🔴 Off Track" };
@@ -25,8 +26,11 @@ const ISSUE_FIELDS = `identifier title url description createdAt updatedAt dueDa
   attachments { nodes { sourceType url } }
   syncedWith { metadata { ... on ExternalEntityInfoJiraMetadata { issueKey } } }
   comments(first: 20) { nodes { id body createdAt user { name displayName email } } }`;
-const PROJECT_FIELDS = `slugId name url state health description createdAt updatedAt startDate targetDate lead { name displayName email } creator { name displayName email }
-  projectUpdates(first: 1) { nodes { body } }`;
+const PROJECT_FIELDS = `slugId name url status { name type } health description content priorityLabel createdAt updatedAt startDate targetDate lead { name displayName email } creator { name displayName email }
+  labels(first: 10) { nodes { name } } initiatives(first: 5) { nodes { name url } } externalLinks(first: 20) { nodes { label url } }
+  projectMilestones(first: 20) { nodes { name description targetDate progress status sortOrder } }
+  projectUpdates(first: 1) { nodes { body } }
+  comments(first: 20) { nodes { id body createdAt user { name displayName email } } }`;
 
 export function slimLinearIssue(raw: any): Issue {
   const comments = (raw.comments?.nodes || []).map((comment: any) => ({ id: comment.id, author: person(comment.user), created: comment.createdAt, body: comment.body || "" }))
@@ -51,13 +55,22 @@ export function slimLinearIssue(raw: any): Issue {
 }
 
 // A Linear project reads as an epic: its lead owns it, its health is the confidence, its latest update is the status update.
+// The one-line `description` is the project's summary; `content` is the body Linear shows under it.
 export function slimLinearProject(raw: any, team: string): Issue {
+  const type = raw.status?.type || "backlog";
+  const comments = (raw.comments?.nodes || []).map((comment: any) => ({ id: comment.id, author: person(comment.user), created: comment.createdAt, body: comment.body || "" }))
+    .sort((a: any, b: any) => a.created.localeCompare(b.created));
   return {
     key: linearProjectKey(raw.slugId), label: "Project", source: "linear", url: raw.url, summary: raw.name || "", project: team, type: "Project", level: 1,
-    status: raw.state ? raw.state[0].toUpperCase() + raw.state.slice(1) : "", category: CATEGORY[raw.state] || "new", priority: "",
-    assignee: person(raw.lead), reporter: person(raw.creator), labels: [], components: [], parent: "", created: raw.createdAt, updated: raw.updatedAt,
-    resolution: raw.state === "canceled" ? "Canceled" : "", due: raw.targetDate || "", start: raw.startDate || "", confidence: HEALTH[raw.health] || "",
-    statusUpdate: raw.projectUpdates?.nodes?.[0]?.body || "", links: [], prCount: 0, prState: "", description: raw.description || "", comments: [], attachments: 0, prUrls: [],
+    status: raw.status?.name || "", category: CATEGORY[type] || "new", priority: raw.priorityLabel === "No priority" ? "" : raw.priorityLabel || "",
+    assignee: person(raw.lead), reporter: person(raw.creator), labels: (raw.labels?.nodes || []).map((label: any) => label.name), components: [], parent: "", created: raw.createdAt, updated: raw.updatedAt,
+    resolution: type === "canceled" ? "Canceled" : "", due: raw.targetDate || "", start: raw.startDate || "", confidence: HEALTH[raw.health] || "",
+    statusUpdate: raw.projectUpdates?.nodes?.[0]?.body || "", links: [], prCount: 0, prState: "", description: [raw.description, raw.content].filter(Boolean).join("\n\n"), comments, attachments: 0,
+    prUrls: [...new Set([raw.content || "", ...comments.map((comment: any) => comment.body)].join("\n").match(PR_URL) || [])],
+    initiatives: (raw.initiatives?.nodes || []).map((item: any) => ({ name: item.name, url: item.url })),
+    resources: (raw.externalLinks?.nodes || []).map((item: any) => ({ name: item.label || item.url, url: item.url })),
+    milestones: (raw.projectMilestones?.nodes || []).sort((a: any, b: any) => a.sortOrder - b.sortOrder)
+      .map((item: any) => ({ name: item.name, description: item.description || "", target: item.targetDate || "", progress: item.progress ?? 0, status: item.status || "" })),
   };
 }
 
@@ -78,7 +91,7 @@ async function pages(fetcher: Fetcher, team: string, connection: "issues" | "pro
   const out: any[] = [];
   let after: string | null = null;
   do {
-    const query = `query($team: String!, $after: String${filter ? ", $filter: IssueFilter" : ""}) { team(id: $team) { ${connection}(first: ${PAGE}, after: $after, orderBy: updatedAt${filter ? ", filter: $filter" : ""}) { pageInfo { hasNextPage endCursor } nodes { ${fields} } } } }`;
+    const query = `query($team: String!, $after: String${filter ? ", $filter: IssueFilter" : ""}) { team(id: $team) { ${connection}(first: ${PAGE[connection]}, after: $after, orderBy: updatedAt${filter ? ", filter: $filter" : ""}) { pageInfo { hasNextPage endCursor } nodes { ${fields} } } } }`;
     const data = await fetcher(query, { team, after, ...(filter ? { filter } : {}) });
     const page = data.team[connection];
     out.push(...page.nodes);

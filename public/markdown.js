@@ -373,7 +373,7 @@ function splitTableRow(line) {
 
 function tableAlignments(line) {
   const cells = splitTableRow(line);
-  if (!cells.length || cells.some((cell) => !/^:?-{3,}:?$/.test(cell))) return null;
+  if (!cells.length || cells.some((cell) => !/^:?-+:?$/.test(cell))) return null;
   return cells.map((cell) => {
     if (cell.startsWith(":") && cell.endsWith(":")) return "center";
     if (cell.endsWith(":")) return "right";

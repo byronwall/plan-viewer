@@ -288,6 +288,7 @@ function issueFacts(issue, overlay = false) {
     ["Owner", `${personMark(issue.assignee, true)}${issue.reporter && issue.reporter.name !== issue.assignee?.name ? `<span class="code-muted">from ${escapeHtml(issue.reporter.name)}</span>` : ""}`],
     [issue.source === "linear" && parent?.type === "Project" ? "Project" : "Parent", parent ? `<button type="button" class="issue-link-row" data-issue-open="${escapeHtml(parent.key)}">${typeIcon(parent)}${keyMark(parent)}<span>${escapeHtml(parent.summary)}</span></button>` : issue.parent ? `<code>${escapeHtml(keyLabel(issue.parent))}</code>` : ""],
     ["Dates", `<span class="code-muted" data-tip="Created ${escapeHtml(new Date(issue.created).toLocaleString())}">opened ${ago(issue.created)} ago</span><span class="code-muted" data-tip="Updated ${escapeHtml(new Date(issue.updated).toLocaleString())}">updated ${ago(issue.updated)} ago</span>${dateRange(issue)}`],
+    ["Initiative", (issue.initiatives || []).map((item) => `<a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.name)}</a>`).join("")],
     ["Labels", issue.labels.filter((label) => !aliases.includes(label.toUpperCase())).map((label) => `<span class="code-tag">${escapeHtml(label)}</span>`).join("")],
     ["Was", aliases.map((alias) => `<code>${escapeHtml(alias)}</code>`).join(" ")],
     [appName(), `<span class="code-side-skills">${skillButtons(keys)}</span>`],
@@ -400,7 +401,10 @@ function textSections(issue, full) {
   const update = detail.statusUpdate ? `<section>${sideHead("Status update")}${markdownBlock(detail.statusUpdate)}</section>` : "";
   const description = `<section>${sideHead("Description")}${detail.description ? markdownBlock(full || detail.description.length < 900 ? detail.description : `${detail.description.slice(0, 900)}…`) : '<p class="code-muted">No description.</p>'}</section>`;
   const thread = detail.comments.length ? `<section>${sideHead("Comments", full || detail.comments.length <= 2 ? String(detail.comments.length) : `last 2 of ${detail.comments.length}`)}<ol class="issue-comments">${comments.map((comment) => `<li><header>${avatar("", comment.author?.name || "?")}<b>${escapeHtml(comment.author?.name || "Unknown")}</b>${when(comment.created)}</header>${markdownBlock(comment.body)}</li>`).join("")}</ol></section>` : "";
-  return update + description + (full ? childrenTable(issue) : "") + thread;
+  const milestones = detail.milestones?.length ? `<section>${sideHead("Milestones", `${detail.milestones.filter((item) => item.status === "done").length}/${detail.milestones.length} done`)}<ol class="issue-milestones">${detail.milestones.map((item) => `<li class="issue-milestone-${escapeHtml(item.status)}">
+    <header><b>${escapeHtml(item.name)}</b>${item.target ? `<span class="code-muted">${escapeHtml(item.target)}</span>` : ""}<span class="code-muted">${Math.round(item.progress * 100)}%</span></header>${item.description && full ? markdownBlock(item.description) : ""}</li>`).join("")}</ol></section>` : "";
+  const resources = detail.resources?.length ? `<section>${sideHead("Resources", String(detail.resources.length))}<ul class="issue-code-list">${detail.resources.map((item) => `<li><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${icon("external")}<span>${escapeHtml(item.name)}</span></a></li>`).join("")}</ul></section>` : "";
+  return update + description + milestones + resources + (full ? childrenTable(issue) : "") + thread;
 }
 
 async function loadDetail(key) {

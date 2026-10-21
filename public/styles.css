@@ -1668,6 +1668,10 @@ section > .issue-progress-wrap { margin-bottom: 6px; }
 .issue-comments { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
 .issue-comments header { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; font-size: .78rem; }
 .issue-comments header time { color: var(--quiet-text); }
+.issue-milestones { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.issue-milestones header { display: flex; align-items: baseline; gap: 8px; font-size: .84rem; }
+.issue-milestones header b { font-weight: 600; }
+.issue-milestone-done header b { color: var(--quiet-text); text-decoration: line-through; }
 .issue-overview { max-width: 1400px; }
 .issue-overview .code-diff-head > .issue-type { width: 20px; height: 20px; }
 .issue-overview .code-diff-head > .issue-type .code-icon { width: 18px; height: 18px; }
