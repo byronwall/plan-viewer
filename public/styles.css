@@ -1694,3 +1694,18 @@ section > .issue-progress-wrap { margin-bottom: 6px; }
 .issue-member:hover { background: var(--quiet-field); }
 .issue-member code { font-size: .74rem; }
 .issue-migration-note { padding: 8px 6px 0; }
+.code-side-progress { color: var(--action-ink); }
+.issue-people-pop { width: min(300px, calc(100vw - 16px)); }
+.issue-key-none { color: var(--quiet-text); font-size: .72rem; }
+.issue-priority-head { display: inline-grid; place-items: center; color: var(--quiet-text); cursor: help; }
+.issue-priority-head .code-icon { width: 12px; height: 12px; stroke-width: 2.2; }
+button.issue-parent { border: 0; border-radius: 5px; background: none; padding: 0 3px; margin-left: -3px; color: var(--muted); font: inherit; text-align: left; cursor: pointer; transition: background-color 140ms, color 140ms; }
+button.issue-parent:hover { background: var(--hover-field); color: var(--action-ink); }
+.issue-sub .issue-progress { width: 56px; height: 5px; }
+.issue-children { margin-top: 4px; }
+.issue-children tr[data-issue-open] { cursor: pointer; }
+.markdown blockquote { margin: 6px 0; border-radius: 6px; background: var(--hover-field); padding: 6px 10px; color: var(--body-ink); }
+.markdown blockquote > :first-child { margin-top: 0; } .markdown blockquote > :last-child { margin-bottom: 0; }
+.issue-people-pop .code-branch-list li { display: block; padding: 0; }
+.issue-person-row > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue-people-pop .code-branch-list li:hover { background: none; }

@@ -2391,7 +2391,7 @@ function move(step) {
 // Page keys run before the global shortcuts (which skip prevented events), so J/K move rows here instead of sections.
 function handleKey(event) {
   if (!host?.querySelector(".code-surface") || event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
-  if (document.querySelector("dialog[open], :popover-open")) return;
+  if (document.querySelector("dialog[open], :popover-open:not(.code-tip)")) return;
   const filter = event.target.matches?.("[data-code-filter]");
   if (event.target.closest?.("input, textarea, select, [contenteditable]")) {
     // Esc clears the search; on an empty list it also clears the filters, as the empty state's button says

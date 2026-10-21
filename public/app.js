@@ -2023,7 +2023,7 @@ document.addEventListener("keydown", (event) => {
   if (modal) return;
   if (event.metaKey || event.ctrlKey || event.altKey || (event.shiftKey && event.key !== "?")) return;
   if (event.target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox']")) return;
-  if (state.openComposer || document.querySelector(":popover-open")) return;
+  if (state.openComposer || document.querySelector(":popover-open:not(.code-tip)")) return;
   const shortcut = shortcuts.find(shortcut => shortcut.run && shortcut.keys.some(binding => binding.toLowerCase() === key));
   if (shortcut) { event.preventDefault(); shortcut.run(); }
 });
@@ -2208,11 +2208,12 @@ document.addEventListener("overview-closed", (event) => {
   const params = new URL(event.detail).searchParams;
   const pr = params.get("pr")?.split("#");
   const issueKey = params.get("issue");
+  const issue = issueKey && cachedIssues()?.issues?.find((candidate) => candidate.key === issueKey);
   const description = pr?.length === 2
     ? `${prNumberLabel(pr[0], pr[1])} ${findPr(pr[0], Number(pr[1]))?.title || ""}`.trim()
-    : issueKey ? `${issueKey.replace(/^linear:/, "")} ${cachedIssues()?.issues?.find((issue) => issue.key === issueKey)?.summary || ""}`.trim()
+    : issueKey ? (issue ? `${issue.type === "Project" ? "" : issue.label || issue.key} ${issue.summary}`.trim() : issueKey.replace(/^linear:/, ""))
     : params.get("wt")?.split("/").pop() || "";
-  showNotice(`Closed the ${pr ? "PR" : issueKey ? "issue" : "worktree"} overview`, false, { kind: "info", description, action: { label: "Reopen", run: () => resumeVisit(event.detail) } });
+  showNotice(`Closed the ${pr ? "PR" : issue?.type === "Project" ? "project" : issueKey ? "issue" : "worktree"} overview`, false, { kind: "info", description, action: { label: "Reopen", run: () => resumeVisit(event.detail) } });
 });
 
 const historyMenu = document.querySelector("#history-menu");

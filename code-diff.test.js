@@ -45,6 +45,11 @@ test('a diff fence colors lines by sign and keeps code aligned under a sign colu
   assert.equal(html.replace(/<\/?mark[^>]*>/g, ''), '<pre class="markdown-diff"><code><span class="markdown-diff-ctx"><span class="markdown-diff-sign"></span>file.py</span><span class="markdown-diff-add"><span class="markdown-diff-sign">+</span>  added</span><span class="markdown-diff-del"><span class="markdown-diff-sign">-</span>  &lt;gone&gt;</span><span class="markdown-diff-hunk"><span class="markdown-diff-sign"></span>@@ -1 +1 @@</span></code></pre><pre><code>plain</code></pre>');
 });
 
+test('consecutive > lines render as one blockquote with Markdown inside', async () => {
+  const { renderMarkdown } = await import('./public/markdown.js');
+  assert.equal(renderMarkdown('**Evidence:**\n> "Is there a way\n> to go back?"\nAfter'), '<p><strong>Evidence:</strong></p><blockquote><p>&quot;Is there a way to go back?&quot;</p></blockquote><p>After</p>');
+});
+
 test('a diff fence marks the changed words of a paired -/+ run', async () => {
   const { renderMarkdown } = await import('./public/markdown.js');
   const html = renderMarkdown('```diff\n-  config: dict | None\n+  config: Secret[dict] | None\n```');

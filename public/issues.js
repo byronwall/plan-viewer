@@ -40,6 +40,7 @@ const typeIcon = (issue) => {
   const [path, tone] = TYPE_ICONS[issue.type] || TYPE_ICONS.Task;
   return `<span class="issue-type issue-type-${tone}" data-tip="${escapeHtml(issue.type || "Issue")}" role="img" aria-label="${escapeHtml(issue.type)}"><svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true">${path}</svg></span>`;
 };
+const PRIORITY_LEGEND = "Priority: ⇈ urgent · ↑ high · = medium · ↓ low · blank when unset";
 const PRIORITY = { Highest: ["urgent", "M6 15l6-6 6 6M6 10l6-6 6 6"], Urgent: ["urgent", "M6 15l6-6 6 6M6 10l6-6 6 6"], High: ["high", "M6 15l6-6 6 6"], Medium: ["medium", "M6 10h12M6 14h12"], Low: ["low", "M6 9l6 6 6-6"], Lowest: ["low", "M6 9l6 6 6-6M6 4l6 6 6-6"] };
 const priorityIcon = (issue) => {
   const [tone, path] = PRIORITY[issue.priority] || [];
@@ -56,6 +57,8 @@ const keyLabel = (key) => { const issue = byKey().get(key); return issue ? label
 const issueUrl = (key) => byKey().get(key)?.url || `https://${ui.data.site}/browse/${key}`;
 const trackerName = (issue) => (issue?.source === "linear" ? "Linear" : "Jira");
 const keyMark = (issue) => issue.type === "Project" ? "" : `<code>${escapeHtml(label(issue))}</code>`;
+// Linear projects have no identifier; in list rows the slot says what the row is instead of sitting empty.
+const keyCell = (issue) => keyMark(issue) || `<span class="issue-key-none">${escapeHtml(issue.type)}</span>`;
 const byKey = () => (ui.byKey ||= new Map(ui.data.issues.map((issue) => [issue.key, issue])));
 const codeOf = (issue) => ui.data.code[issue.key] || { prs: [], worktrees: [] };
 const aliasesFor = (key) => Object.entries(ui.data.aliases).filter(([, target]) => target === key).map(([alias]) => alias);
@@ -104,11 +107,13 @@ function visibleIssues() {
   return base().filter(open).filter(SCOPES[ui.scope]?.[1] || SCOPES.all[1]).filter(peopleFilter).filter(matches).sort(byUpdated);
 }
 
-const tableHead = (columns) => `<thead><tr>${columns.map(([className, label]) => `<th class="${className}">${label}</th>`).join("")}</tr></thead>`;
+const tableHead = (columns) => `<thead><tr>${columns.map(([className, label]) => `<th class="${className}"${className === "issue-col-priority" ? ` data-tip="${PRIORITY_LEGEND}"` : ""}>${label}</th>`).join("")}</tr></thead>`;
 const parentLine = (issue) => {
   const parent = byKey().get(issue.parent);
   const aliases = aliasesFor(issue.key);
-  const bits = [parent ? `<span class="issue-parent">${typeIcon(parent)}<span>${escapeHtml(parent.summary)}</span></span>` : "", aliases.length ? `<span class="code-muted" data-tip="Imported from ${escapeHtml(aliases.join(", "))}">was ${escapeHtml(aliases.join(", "))}</span>` : ""].filter(Boolean);
+  const children = issue.level >= 1 ? childrenOf(issue.key) : [];
+  const bits = [parent ? `<button type="button" class="issue-parent" data-issue-open="${escapeHtml(parent.key)}" data-tip="Open ${escapeHtml(parent.type.toLowerCase())} overview">${typeIcon(parent)}<span>${escapeHtml(parent.summary)}</span></button>` : "",
+    children.length ? progress(children) : "", aliases.length ? `<span class="code-muted" data-tip="Imported from ${escapeHtml(aliases.join(", "))}">was ${escapeHtml(aliases.join(", "))}</span>` : ""].filter(Boolean);
   return bits.length ? `<div class="code-sub issue-sub">${bits.join("")}</div>` : "";
 };
 
@@ -116,9 +121,9 @@ function issueRow(issue, { check = false, depth = 0 } = {}) {
   const key = issue.key;
   return `<tr class="code-row issue-row${isSeen(issue) && ui.tab === "triage" ? " is-seen" : ""}${issue.inScope ? "" : " is-context"}" data-issue-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">
     ${check ? `<td class="issue-col-check"><input type="checkbox" data-issue-select="${escapeHtml(key)}" aria-label="Select ${escapeHtml(key)}" ${ui.selected.has(key) ? "checked" : ""}></td>` : ""}
-    <td class="issue-col-key"${depth ? ` style="padding-left:${6 + depth * 18}px"` : ""}><span class="issue-key-cell">${typeIcon(issue)}${keyMark(issue)}</span></td>
-    <td class="code-col-main"><div class="code-pr-title">${escapeHtml(issue.summary)}</div>${parentLine(issue)}</td>
     <td class="issue-col-priority">${priorityIcon(issue)}</td>
+    <td class="issue-col-key"${depth ? ` style="padding-left:${6 + depth * 18}px"` : ""}><span class="issue-key-cell">${typeIcon(issue)}${keyCell(issue)}</span></td>
+    <td class="code-col-main"><div class="code-pr-title">${escapeHtml(issue.summary)}</div>${parentLine(issue)}</td>
     <td class="issue-col-status">${statusTag(issue)}</td>
     <td class="issue-col-person">${personMark(issue.assignee)}</td>
     <td class="issue-col-code">${codeChips(issue)}</td>
@@ -141,7 +146,8 @@ function grouped(issues, row, columns) {
   }).join("");
   return `<table class="code-table issue-table">${tableHead(columns)}${sections}</table>`;
 }
-const COLUMNS = [["issue-col-key", "Issue"], ["code-col-main", "Title"], ["issue-col-priority", ""], ["issue-col-status", "Status"], ["issue-col-person", "Assignee"], ["issue-col-code", "Code"], ["code-col-when", "Updated"]];
+const PRIORITY_HEAD = `<span class="issue-priority-head" aria-label="Priority"><svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${PRIORITY.Urgent[1]}"/></svg></span>`;
+const COLUMNS = [["issue-col-priority", PRIORITY_HEAD], ["issue-col-key", "Issue"], ["code-col-main", "Title"], ["issue-col-status", "Status"], ["issue-col-person", "Assignee"], ["issue-col-code", "Code"], ["code-col-when", "Updated"]];
 
 function allBody() {
   const issues = visibleIssues();
@@ -188,7 +194,7 @@ function epicRow(epic) {
 }
 function childRow(issue) {
   return `<tr class="code-row issue-row issue-child-row${issue.inScope ? "" : " is-context"}" data-issue-row="${escapeHtml(issue.key)}" aria-selected="${ui.sel === issue.key}">
-    <td class="issue-col-key"><span class="issue-key-cell issue-indent">${typeIcon(issue)}${keyMark(issue)}</span></td>
+    <td class="issue-col-key"><span class="issue-key-cell issue-indent">${typeIcon(issue)}${keyCell(issue)}</span></td>
     <td class="code-col-main"><div class="issue-child-title">${escapeHtml(issue.summary)}</div></td>
     <td class="issue-col-progress">${codeChips(issue)}</td>
     <td class="issue-col-confidence">${priorityIcon(issue)}</td>
@@ -262,7 +268,7 @@ function activityBody() {
   const issues = byKey();
   const sections = [...days].map(([label, items]) => `<tbody><tr class="code-group-row"><th colspan="4">${escapeHtml(label)} <span>${items.length}</span></th></tr>${items.map((row) => {
     const issue = issues.get(row.key);
-    return `<tr class="code-row issue-row" data-issue-row="${escapeHtml(row.key)}" aria-selected="${ui.sel === row.key}"><td class="code-col-when">${new Date(row.at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</td><td class="issue-col-key"><span class="issue-key-cell">${typeIcon(issue)}${keyMark(issue)}</span></td><td class="code-col-main"><div class="issue-child-title">${escapeHtml(issue.summary)}</div><div class="code-sub issue-activity-change">${changeText(row)}</div></td><td class="issue-col-person">${personMark(issue.assignee)}</td></tr>`;
+    return `<tr class="code-row issue-row" data-issue-row="${escapeHtml(row.key)}" aria-selected="${ui.sel === row.key}"><td class="code-col-when">${new Date(row.at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</td><td class="issue-col-key"><span class="issue-key-cell">${typeIcon(issue)}${keyCell(issue)}</span></td><td class="code-col-main"><div class="issue-child-title">${escapeHtml(issue.summary)}</div><div class="code-sub issue-activity-change">${changeText(row)}</div></td><td class="issue-col-person">${personMark(issue.assignee)}</td></tr>`;
   }).join("")}</tbody>`).join("");
   return `<table class="code-table issue-table issue-activity">${sections}</table>${rows.length > shown.length ? `<p class="code-muted issue-more">Showing the newest ${shown.length} of ${rows.length}. Narrow with the filter or a day.</p>` : ""}`;
 }
@@ -277,7 +283,7 @@ function issueFacts(issue, overlay = false) {
   const parent = byKey().get(issue.parent);
   const aliases = aliasesFor(issue.key);
   const keys = ui.selected.size && ui.selected.has(issue.key) && !overlay ? [...ui.selected] : [issue.key];
-  const status = sideStatus(issue.category === "done" ? "merged" : issue.category === "indeterminate" ? "pass" : "quiet", issue.category === "done" ? "pass" : issue.category === "indeterminate" ? "pending" : "draft", escapeHtml(issue.status));
+  const status = sideStatus(issue.category === "done" ? "pass" : issue.category === "indeterminate" ? "progress" : "quiet", issue.category === "done" ? "pass" : issue.category === "indeterminate" ? "pending" : "draft", escapeHtml(issue.status));
   return sideFacts([
     ["Status", `${status}${issue.resolution && issue.resolution !== "Done" ? `<span class="code-muted">${escapeHtml(issue.resolution)}</span>` : ""}${issue.confidence ? `<span>${escapeHtml(issue.confidence)}</span>` : ""}`],
     ["Type", `${typeIcon(issue)}<span>${escapeHtml(issue.type)}</span>${priorityIcon(issue)}<span class="code-muted">${escapeHtml(issue.priority)}</span>`],
@@ -298,9 +304,9 @@ function codeSection(issue) {
 }
 
 const linkRow = (key, summary, status, category, label = "") => `<li><button type="button" class="issue-link-row" data-issue-open="${escapeHtml(key)}">${label ? `<span class="code-muted">${escapeHtml(label)}</span>` : ""}${byKey().has(key) ? typeIcon(byKey().get(key)) : ""}<code>${escapeHtml(keyLabel(key))}</code><span>${escapeHtml(summary)}</span><span class="code-tag issue-status issue-status-${escapeHtml(category)}">${escapeHtml(status)}</span></button></li>`;
-function relationsSection(issue) {
+function relationsSection(issue, overlay = false) {
   const children = childrenOf(issue.key).sort((a, b) => a.category.localeCompare(b.category) || byUpdated(a, b));
-  const kids = children.length ? `<section>${sideHead("Children", `${children.filter((child) => child.category === "done").length}/${children.length} done`)}${progress(children)}<ul class="issue-code-list">${children.map((child) => linkRow(child.key, child.summary, child.status, child.category)).join("")}</ul></section>` : "";
+  const kids = children.length && !overlay ? `<section>${sideHead("Children", `${children.filter((child) => child.category === "done").length}/${children.length} done`)}${progress(children)}<ul class="issue-code-list">${children.map((child) => linkRow(child.key, child.summary, child.status, child.category)).join("")}</ul></section>` : "";
   const links = issue.links.length ? `<section>${sideHead("Links", String(issue.links.length))}<ul class="issue-code-list">${issue.links.map((link) => linkRow(link.key, link.summary, link.status, link.category, link.label)).join("")}</ul></section>` : "";
   return counterpartsSection(issue) + kids + links;
 }
@@ -362,7 +368,33 @@ function migrationBody() {
   return `<p class="code-muted issue-migration-note">${note}</p>${grouped(groups.map((group) => ({ ...group.primary, updated: group.updated, group })), (item) => migrationRow(item.group), columns)}`;
 }
 
-const markdownBlock = (text) => `<div class="markdown code-description issue-markdown">${renderMarkdown(text, "")}</div>`;
+// A project's or epic's issues in the overview, in progress first, each opening with J/K walking its siblings.
+const STAGES = [["indeterminate", "In progress"], ["new", "To do"], ["done", "Done"]];
+function childrenTable(issue) {
+  const children = childrenOf(issue.key);
+  if (!children.length) return "";
+  const stages = STAGES.map(([category, title]) => [title, children.filter((child) => child.category === category).sort(byUpdated)]).filter(([, rows]) => rows.length);
+  const keys = stages.flatMap(([, rows]) => rows.map((child) => child.key)).join(",");
+  const body = stages.map(([title, rows]) => `<tbody><tr class="code-group-row"><th colspan="6">${title} <span>${rows.length}</span></th></tr>${rows.map((child) => `<tr class="code-row issue-row" data-issue-open="${escapeHtml(child.key)}" data-issue-list="${escapeHtml(keys)}">
+    <td class="issue-col-priority">${priorityIcon(child)}</td>
+    <td class="issue-col-key"><span class="issue-key-cell">${typeIcon(child)}${keyCell(child)}</span></td>
+    <td class="code-col-main"><div class="issue-child-title">${escapeHtml(child.summary)}</div></td>
+    <td class="issue-col-status">${statusTag(child)}</td>
+    <td class="issue-col-person">${personMark(child.assignee)}</td>
+    <td class="code-col-when code-heat-${heat(child.updated)}">${when(child.updated)}</td></tr>`).join("")}</tbody>`).join("");
+  return `<section>${sideHead(issue.type === "Project" ? "Issues" : "Children", String(children.length))}${progress(children)}<table class="code-table issue-table issue-children">${body}</table></section>`;
+}
+
+// Jira and Linear keep single line breaks, so two plain lines in a row are two paragraphs here, not one.
+const PLAIN = /^(?!\s*([-+*]\s|\d+\.\s|>|#|```|\|))\S/;
+function softBreaks(text) {
+  let fenced = false;
+  return text.split(/\r?\n/).map((line, index, lines) => {
+    if (line.startsWith("```")) fenced = !fenced;
+    return !fenced && PLAIN.test(line) && PLAIN.test(lines[index + 1] || "") && !line.includes("|") ? `${line}\n` : line;
+  }).join("\n");
+}
+const markdownBlock = (text) => `<div class="markdown code-description issue-markdown">${renderMarkdown(softBreaks(text), "")}</div>`;
 function textSections(issue, full) {
   const detail = ui.detail.get(issue.key);
   if (!detail) return `<section><p class="code-muted">${ui.detail.has(issue.key) ? "Loading…" : ""}</p></section>`;
@@ -370,7 +402,7 @@ function textSections(issue, full) {
   const update = detail.statusUpdate ? `<section>${sideHead("Status update")}${markdownBlock(detail.statusUpdate)}</section>` : "";
   const description = `<section>${sideHead("Description")}${detail.description ? markdownBlock(full || detail.description.length < 900 ? detail.description : `${detail.description.slice(0, 900)}…`) : '<p class="code-muted">No description.</p>'}</section>`;
   const thread = detail.comments.length ? `<section>${sideHead("Comments", full || detail.comments.length <= 2 ? String(detail.comments.length) : `last 2 of ${detail.comments.length}`)}<ol class="issue-comments">${comments.map((comment) => `<li><header>${avatar("", comment.author?.name || "?")}<b>${escapeHtml(comment.author?.name || "Unknown")}</b>${when(comment.created)}</header>${markdownBlock(comment.body)}</li>`).join("")}</ol></section>` : "";
-  return update + description + thread;
+  return update + description + (full ? childrenTable(issue) : "") + thread;
 }
 
 async function loadDetail(key) {
@@ -460,7 +492,7 @@ function renderOverview() {
   const walk = position >= 0 && overview.list.length > 1 ? `<span class="code-muted">${position + 1} of ${overview.list.length} · <kbd>J</kbd><kbd>K</kbd> walk · <kbd>X</kbd> seen and next</span>` : "";
   const where = issue.source === "linear" ? `Linear · ${issue.project} team${issue.mirrorOf ? ` · synced copy of ${issue.mirrorOf}` : ""}` : `${issue.project} · ${issue.components.join(", ") || "no component"}`;
   dialog.querySelector('[data-o="head"]').innerHTML = `${typeIcon(issue)}<div class="issue-overview-title"><h3>${keyMark(issue)} ${escapeHtml(issue.summary)}</h3><p class="code-muted">${escapeHtml(where)}${issue.inScope ? "" : " · outside the configured scope"}${isSeen(issue) ? " · seen" : ""}</p></div><span class="code-spacer"></span>${walk}${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
-  dialog.querySelector('[data-o="side"]').innerHTML = issueFacts(issue, true) + codeSection(issue) + relationsSection(issue);
+  dialog.querySelector('[data-o="side"]').innerHTML = issueFacts(issue, true) + codeSection(issue) + relationsSection(issue, true);
   dialog.querySelector('[data-o="main"]').innerHTML = `<div class="issue-overview-text">${textSections(issue, true)}</div>`;
 }
 function syncIssueUrl(key) {
@@ -528,7 +560,7 @@ function patch(region, html) {
 function render({ animate = false } = {}) {
   if (!host?.isConnected || !ui.data?.enabled || !host.querySelector(".issue-surface, .issue-loading")) return;
   if (!host.querySelector(".issue-surface")) {
-    host.innerHTML = `<section class="issue-surface" aria-label="Issues"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="issue-people" class="code-settings code-branch-pop" popover aria-label="Filter by person" data-region="people"></div></section>`;
+    host.innerHTML = `<section class="issue-surface" aria-label="Issues"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="issue-people" class="code-settings code-branch-pop issue-people-pop" popover aria-label="Filter by person" data-region="people"></div></section>`;
     animate = true;
     new ResizeObserver(([entry]) => host.style.setProperty("--code-bar-h", `${Math.ceil(entry.borderBoxSize[0].blockSize)}px`)).observe(host.querySelector('[data-region="toolbar"]'));
   }
@@ -608,6 +640,8 @@ async function draft(skill, keys) {
 async function handleClick(event) {
   const target = event.target.closest("button, input, a");
   const row = event.target.closest("[data-issue-row]");
+  const opener = event.target.closest("tr[data-issue-open]");
+  if (!target && opener) return openIssue(opener.dataset.issueOpen, opener.dataset.issueList.split(","));
   if (!target) { if (row && host?.contains(row)) select(row.dataset.issueRow); return; }
   if (target.matches("a")) return;
   const { dataset } = target;
@@ -649,7 +683,7 @@ function handleKey(event) {
     if (event.target.matches?.("[data-people-query]") && event.key === "Enter") { host.querySelector("[data-issue-person]")?.click(); event.preventDefault(); }
     return;
   }
-  if (document.querySelector(":popover-open")) return;
+  if (document.querySelector(":popover-open:not(.code-tip)")) return; // the tooltip stays a popover while hidden
   const key = event.key.toLowerCase();
   const issue = byKey().get(ui.sel);
   const keys = issue && ui.selected.has(issue.key) ? [...ui.selected] : issue ? [issue.key] : [...ui.selected];

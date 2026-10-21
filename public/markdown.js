@@ -521,6 +521,14 @@ export function renderMarkdown(markdown, currentPath = "") {
       continue;
     }
 
+    if (/^\s*>/.test(line)) {
+      flushParagraph();
+      const quoted = [line];
+      while (index + 1 < lines.length && /^\s*>/.test(lines[index + 1])) quoted.push(lines[++index]);
+      html.push(`<blockquote>${renderMarkdown(quoted.map((text) => text.replace(/^\s*> ?/, "")).join("\n"), currentPath)}</blockquote>`);
+      continue;
+    }
+
     const heading = line.match(/^(#{2,5})\s+(.+)$/);
     const listItem = markdownListItem(line);
     if (heading) {
