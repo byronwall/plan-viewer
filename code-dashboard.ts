@@ -263,6 +263,12 @@ export function createCodeDashboard(root: string) {
     return { prs, me: login, skills: prSkills(), previews: repos.filter(hasPreview), loading: openPrsLoading.size > 0 || Boolean(scan) };
   }
 
+  // Every worktree's branch, for joining issue keys to local work; `git worktree list` per repo, no status scan.
+  async function worktreeIndex() {
+    const lists = await Promise.all((await readRepos()).map((repo) => listWorktrees(repo).catch(() => [])));
+    return lists.flat().filter((tree) => !tree.main).map(({ repo, path, branch }) => ({ repo, path, branch }));
+  }
+
   // Keeps the PR caches warm for ⌘K: open PRs, history, and CI every BACKGROUND_MS, starting now if the disk copy is old.
   function startBackgroundRefresh() {
     const tick = () => prIndex().catch(() => {});
@@ -806,5 +812,5 @@ export function createCodeDashboard(root: string) {
     return { before: old, after: now };
   }
 
-  return { notes: prNotes, load, localDir, prIndex, startBackgroundRefresh, commits, commitDetail, commitSummary, diff, fileContent, fileSides, lineCounts, worktreeDetail, prDetail, launchSession, addRepo, removeRepo, open, openPreview, launchAgent, removeWorktrees, cleanupPrompt, launchCleanup };
+  return { notes: prNotes, load, localDir, prIndex, worktreeIndex, startBackgroundRefresh, commits, commitDetail, commitSummary, diff, fileContent, fileSides, lineCounts, worktreeDetail, prDetail, launchSession, addRepo, removeRepo, open, openPreview, launchAgent, removeWorktrees, cleanupPrompt, launchCleanup };
 }

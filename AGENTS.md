@@ -16,6 +16,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 | App shell, routing (`?view=`), library rail, Tasks page, Weeks page, document page, image viewer, ⌘K palette, toasts, recently-viewed history (from every URL change; Reopen toast when an overview closes) | `public/app.js` |
 | Sticky document dock (sections, outgoing links, backlinks), link metadata keys | `public/dock.js` |
 | Code view: worktrees, PRs, commits, diff viewer, PR overview overlay, branch picker | `public/code.js` (client), `public/diff-map.js` (the overlay's change-map treemap layout), `code-dashboard.ts` (git/gh scanning, PR cache in the workspace's `tmp/code-cache.json`, `/api/code/pr-index` for ⌘K, `/api/code/line-counts` for the map) |
+| Issues page: Jira sync through `acli`, `tmp/issues-cache.json`, activity diffs, issue ↔ PR joins, issue agent drafts | `issues.ts` (server), `public/issues.js` (client), `fixtures/jira/` (fictional corpus and the `fake-acli.js` the fixtures config runs) |
 | GitHub, Linear, Jira and Slack titles cached in `tmp/link-metadata.json` | `link-metadata.ts` |
 | Codex Desktop deep links | `codex-desktop.ts` |
 | Search and the Weeks calendar | `public/search.js`, `public/weeks.js` |
@@ -32,6 +33,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 - Server changes (`*.ts`) need a server restart; client changes in `public/` need only a reload.
 - Byron's own viewer runs on 4173. For previews, start another port with `PLAN_VIEWER_PORT`.
 - `html` has `scroll-behavior: smooth`, so a plain `window.scrollTo(0, y)` animates and may not move at all in a background preview pane. Use `window.scrollTo({ top: y, behavior: "instant" })`. The library rail (`nav.documents`) scrolls on its own.
+- `/api/issues` answers from cache; the first live sync takes about two minutes. Wait for `[data-issues-state="ready"]`. `acli jira workitem search --fields key` returns nulls, so searches ask for `status`.
 - `/api/code` takes several seconds on its first scan. Wait for `[data-code-state="ready"]` (and `[data-commits-state="ready"]` on the Commits tab) instead of polling the table.
 - Load the `byron-ui-taste` skill in full before any UI change in `public/`.
 

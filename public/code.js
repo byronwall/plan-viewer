@@ -2600,3 +2600,6 @@ export function renderCodePage(container, { tab, showNotice }) {
   if (ui.data) render();
   load();
 }
+
+// Pieces the Issues page shares, so an issue reads like a PR: icons, tooltips, the facts grid, avatars, PR chips.
+export { icon, iconButton, avatar, sideFacts, sideHead, sideStatus, showTip, hideTip, fadeIn, when, heat, ciBadge, prChip, copied };

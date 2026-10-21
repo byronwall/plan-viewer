@@ -3,6 +3,7 @@ import { renderActions, renderWorkBreakdown } from "./actions.js";
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock.js";
 import { documentHref, escapeHtml, markdownOutline, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, ago, cachedPrIndex, installCommitCards, loadPrIndex, openPrOverlay, openWorktreeOverlay, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
+import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { config, referenceConfig, setConfig } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
 
@@ -21,6 +22,7 @@ const elements = {
   referenceButton: document.querySelector("#open-reference"),
   weeksButton: document.querySelector("#open-weeks"),
   codeButton: document.querySelector("#open-code"),
+  issuesButton: document.querySelector("#open-issues"),
   globalHandoff: document.querySelector("#global-handoff"),
   get documentHandoff() { return document.querySelector("[data-dock-draft]"); },
   title: document.querySelector("#document-title"),
@@ -118,7 +120,8 @@ function resetPageNavigation() {
   elements.referenceButton.setAttribute("aria-current", "false");
   elements.weeksButton.setAttribute("aria-current", "false");
   elements.codeButton.setAttribute("aria-current", "false");
-  elements.chunks.classList.remove("tasks-page", "weeks-page", "library-page", "code-page");
+  elements.issuesButton.setAttribute("aria-current", "false");
+  elements.chunks.classList.remove("tasks-page", "weeks-page", "library-page", "code-page", "issues-page");
 }
 
 function documentButton(doc, dailyChild = false) {
@@ -380,6 +383,33 @@ function renderCode(tab = new URLSearchParams(location.search).get("tab") || "")
   elements.chunkNav.replaceChildren();
   elements.chunks.classList.add("code-page");
   renderCodePage(elements.chunks, { tab, showNotice });
+}
+
+function showIssues({ historyMode = "push", tab = "" } = {}) {
+  if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
+  closeComposer();
+  if (historyMode !== "none") {
+    const url = new URL(location.href);
+    url.search = new URLSearchParams({ view: "issues", ...(tab ? { tab } : {}) });
+    url.hash = "";
+    history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
+  }
+  renderIssues(tab);
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+
+function renderIssues(tab = new URLSearchParams(location.search).get("tab") || "") {
+  state.view = "issues";
+  resetPageNavigation();
+  elements.issuesButton.setAttribute("aria-current", "page");
+  for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
+  elements.title.textContent = "Issues";
+  elements.meta.textContent = `Jira  /  ${config().issues.jql}`;
+  elements.count.textContent = "";
+  elements.chunkNav.hidden = true;
+  elements.chunkNav.replaceChildren();
+  elements.chunks.classList.add("code-page", "issues-page");
+  renderIssuesPage(elements.chunks, { tab, showNotice });
 }
 
 function formatCalendarDay(date) {
@@ -1258,7 +1288,7 @@ async function refreshFromMarkdown(changedPaths) {
       return;
     }
 
-    if (state.view === "code") {
+    if (state.view === "code" || state.view === "issues") {
       renderLibrary();
       return;
     }
@@ -1387,6 +1417,7 @@ elements.topicsButton.addEventListener("click", () => showLibrary("topics"));
 elements.referenceButton.addEventListener("click", () => showLibrary("reference"));
 elements.weeksButton.addEventListener("click", () => showWeeks());
 elements.codeButton.addEventListener("click", () => showCode());
+elements.issuesButton.addEventListener("click", () => showIssues());
 elements.meta.addEventListener("click", async (event) => {
   const plainClick = !(event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
   const view = event.target.closest("[data-crumb-view]");
@@ -1713,6 +1744,7 @@ const shortcuts = [
   { keys: ["A"], description: "Open Tasks", run: () => showTasks() },
   { keys: ["W"], description: "Open Weeks", run: () => showWeeks() },
   { keys: ["G"], description: "Open Code: worktrees, pull requests, cleanup", run: () => showCode() },
+  { keys: ["I"], description: "Open Issues: Jira triage, epics, activity", run: () => config().issues.jql && showIssues() },
   { keys: ["H"], description: "Recently viewed, from anywhere (even the PR overview): ↑↓ to move, Enter to go back, 1–9 to jump" },
   { keys: ["J"], description: "Jump to the next document section", run: () => jumpSection(1) },
   { keys: ["K"], description: "Jump to the previous document section", run: () => jumpSection(-1) },
@@ -1786,6 +1818,7 @@ const SEARCH_ICONS = {
   branch: '<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="5" r="1.5"/><path d="M4.5 5v6M11.5 6.5c0 3-7 2.5-7 4.5"/>',
   code: '<path d="m6 4.5-3.5 3.5L6 11.5M10 4.5l3.5 3.5-3.5 3.5"/>',
   list: '<path d="M6 4.5h7.5M6 8h7.5M6 11.5h7.5M2.75 4.5h.5M2.75 8h.5M2.75 11.5h.5"/>',
+  issue: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.5"/>',
 };
 
 function searchIconKey(doc) {
@@ -1833,6 +1866,26 @@ function prResult(pr, terms) {
 }
 const renderPrResult = ({ pr }, index, terms) => resultRow({ ...prResult(pr, terms), attrs: searchAttrs(index) });
 
+function issueResult(issue, terms) {
+  const detail = [issue.type, issue.assignee?.name || "Unassigned", issue.updated && `${ago(issue.updated)} ago`].filter(Boolean).map((part) => highlightTerms(part, terms)).join(" · ");
+  return { icon: "issue", tone: `issue is-${escapeHtml(issue.category)}`, title: `<span class="search-pr-number">${highlightTerms(issue.key, terms)}</span> ${highlightTerms(issue.summary, terms)}`, detail, side: escapeHtml(issue.status) };
+}
+const renderIssueResult = ({ issue }, index, terms) => resultRow({ ...issueResult(issue, terms), attrs: searchAttrs(index) });
+// A key (`OPS-12`, or a bare number matching the end of one), an old key it was imported from, or words from the title.
+function searchIssues(query) {
+  const data = cachedIssues();
+  if (!data?.enabled || !query) return [];
+  const upper = query.trim().toUpperCase().replace(/^#/, "");
+  const alias = data.aliases[upper];
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const scored = data.issues.filter((issue) => !issue.bot).map((issue) => {
+    const key = issue.key === upper || issue.key === alias ? 3 : /^\d+$/.test(upper) && issue.key.endsWith(`-${upper}`) ? 2 : 0;
+    const words = terms.every((term) => `${issue.key} ${issue.summary}`.toLowerCase().includes(term)) ? 1 : 0;
+    return [issue, key || words];
+  }).filter(([, score]) => score);
+  return scored.sort((a, b) => b[1] - a[1] || b[0].updated.localeCompare(a[0].updated)).slice(0, 8).map(([issue]) => issue);
+}
+
 // Every top-level page and Code tab, so ⌘K jumps straight to e.g. Pull requests.
 const PAGES = [
   { title: "Today", detail: "Today’s plan", icon: "plan", run: goToToday },
@@ -1840,8 +1893,9 @@ const PAGES = [
   { title: "Weeks", detail: "Calendar of daily plans", icon: "plan", run: () => showWeeks() },
   ...Object.entries(LIBRARY_VIEWS).map(([view, { title, intro }]) => ({ title, detail: intro, icon: title === "Topics" ? "topic" : "reference", run: () => showLibrary(view) })),
   ...Object.entries(CODE_TABS).map(([tab, title]) => ({ title, detail: `Code · ${title}`, icon: tab === "prs" ? "pr" : tab === "commits" ? "branch" : "code", run: () => showCode({ tab: tab === "worktrees" ? "" : tab }) })),
+  ...Object.entries(ISSUE_TABS).map(([tab, title]) => ({ title: tab === "all" ? "Issues" : `${title} issues`, detail: `Issues · ${title}`, icon: "issue", issues: true, run: () => showIssues({ tab: tab === "all" ? "" : tab }) })),
 ];
-const searchPages = (query) => { const terms = query.toLowerCase().split(/\s+/).filter(Boolean); return PAGES.filter((page) => terms.every((term) => `${page.title} ${page.detail}`.toLowerCase().includes(term))).map((page) => ({ page })); };
+const searchPages = (query) => { const terms = query.toLowerCase().split(/\s+/).filter(Boolean); return PAGES.filter((page) => (!page.issues || config().issues.jql) && terms.every((term) => `${page.title} ${page.detail}`.toLowerCase().includes(term))).map((page) => ({ page })); };
 const renderPageResult = ({ page }, index) => resultRow({ icon: page.icon, title: escapeHtml(page.title), detail: escapeHtml(page.detail), side: "Page", attrs: searchAttrs(index) });
 
 // With no query, PRs waiting on you lead; a query lists matching PRs (number, title, branch, author) above documents.
@@ -1849,7 +1903,7 @@ function searchGroups(query) {
   const index = cachedPrIndex();
   const prs = index?.prs || [];
   const docs = searchDocuments(state.documents, query);
-  if (query) return [["Pages", searchPages(query)], ["Pull requests", searchPrs(prs, query)], ["Documents", docs]];
+  if (query) return [["Pages", searchPages(query)], ["Issues", searchIssues(query)], ["Pull requests", searchPrs(prs, query)], ["Documents", docs]];
   const open = prs.filter((pr) => pr.state === "OPEN").sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
   return [["Needs your review", open.filter((pr) => pr.requestedOfMe).slice(0, 5)], ["Your open PRs", open.filter((pr) => pr.author === index?.me && !pr.requestedOfMe).slice(0, 5)], ["Pages", searchPages("")], ["Documents", docs]];
 }
@@ -1857,15 +1911,15 @@ function searchGroups(query) {
 function renderSearchResults() {
   const query = elements.searchInput.value.trim();
   const terms = query.toLowerCase().replace(/^#/, "").split(/\s+/).filter(Boolean);
-  const groups = searchGroups(query).map(([label, items]) => [label, items.map((item) => (label === "Documents" || item.page ? item : { pr: item }))]).filter(([, items]) => items.length);
+  const groups = searchGroups(query).map(([label, items]) => [label, items.map((item) => (label === "Documents" || item.page ? item : label === "Issues" ? { issue: item } : { pr: item }))]).filter(([, items]) => items.length);
   searchMatches = groups.flatMap(([, items]) => items);
   searchIndex = 0;
   const prCount = searchMatches.filter((item) => item.pr).length;
-  const docCount = searchMatches.filter((item) => !item.pr && !item.page).length;
+  const docCount = searchMatches.filter((item) => !item.pr && !item.page && !item.issue).length;
   elements.searchStatus.textContent = `${prCount ? `${prCount} ${prCount === 1 ? "PR" : "PRs"} · ` : ""}${docCount} ${docCount === 1 ? "document" : "documents"}`;
   let position = 0;
   elements.searchResults.innerHTML = searchMatches.length
-    ? groups.map(([label, items]) => `<div class="search-section" role="presentation">${label}</div>${items.map((item) => { const index = position++; return item.pr ? renderPrResult(item, index, terms) : item.page ? renderPageResult(item, index) : renderSearchResult(item, index, terms); }).join("")}`).join("")
+    ? groups.map(([label, items]) => `<div class="search-section" role="presentation">${label}</div>${items.map((item) => { const index = position++; return item.pr ? renderPrResult(item, index, terms) : item.issue ? renderIssueResult(item, index, terms) : item.page ? renderPageResult(item, index) : renderSearchResult(item, index, terms); }).join("")}`).join("")
     : '<div class="search-empty"><strong>No matches</strong><span>Try a title, path, task ID, PR number or title, project, or tag.</span></div>';
   elements.searchResults.scrollTop = 0;
   syncSearchSelection();
@@ -1896,9 +1950,11 @@ function openSearchResult(index, external = false) {
   const doc = searchMatches[index];
   if (!doc) return;
   if (doc.pr && external) return window.open(doc.pr.url, "_blank", "noreferrer");
+  if (doc.issue && external) return window.open(`https://${cachedIssues().site}/browse/${doc.issue.key}`, "_blank", "noreferrer");
   elements.searchDialog.close();
   if (doc.page) { closeOverview(); doc.page.run(); }
   else if (doc.pr) openPrOverlay(doc.pr.slug, doc.pr.number);
+  else if (doc.issue) openIssue(doc.issue.key);
   else { closeOverview(); selectDocument(doc.path); }
 }
 
@@ -1998,6 +2054,10 @@ window.addEventListener("popstate", () => {
     showCode({ historyMode: "none", tab: params.get("tab") || "" });
     return;
   }
+  if (params.get("view") === "issues") {
+    showIssues({ historyMode: "none", tab: params.get("tab") || "" });
+    return;
+  }
   if (params.get("view") === "weeks") {
     showWeeks({ historyMode: "none", anchor: parseDateKey(params.get("date")) || parseDateKey(localTodayKey()) });
     return;
@@ -2086,10 +2146,10 @@ let visits = [];
 try { visits = JSON.parse(localStorage.getItem(VISITS_KEY) || "[]"); } catch {}
 const pageKey = (url) => {
   const params = new URLSearchParams(url.search);
-  for (const name of ["pr", "wt", "file", "scope"]) params.delete(name);
+  for (const name of ["pr", "wt", "issue", "file", "scope"]) params.delete(name);
   return params.toString();
 };
-const visitKey = (url) => (url.searchParams.get("pr") ? `pr:${url.searchParams.get("pr")}` : url.searchParams.get("wt") ? `wt:${url.searchParams.get("wt")}` : pageKey(url));
+const visitKey = (url) => (url.searchParams.get("pr") ? `pr:${url.searchParams.get("pr")}` : url.searchParams.get("wt") ? `wt:${url.searchParams.get("wt")}` : url.searchParams.get("issue") ? `issue:${url.searchParams.get("issue")}` : pageKey(url));
 function recordVisit() {
   const url = new URL(location.href);
   const key = visitKey(url);
@@ -2110,6 +2170,8 @@ function visitResult(href) {
   const params = new URL(href, location.href).searchParams;
   const pr = params.get("pr")?.split("#");
   if (pr?.length === 2) return prResult(findPr(pr[0], Number(pr[1])) || { slug: pr[0], number: Number(pr[1]) }, []);
+  const issueKey = params.get("issue");
+  if (issueKey) { const issue = cachedIssues()?.issues?.find((candidate) => candidate.key === issueKey); return issue ? issueResult(issue, []) : { icon: "issue", title: escapeHtml(issueKey), detail: "Jira issue", side: "Issue" }; }
   const tree = params.get("wt");
   if (tree) return { icon: "branch", title: escapeHtml(tree.split("/").pop()), detail: escapeHtml(tree.replace(/^\/Users\/[^/]+/, "~")), side: "Worktree" };
   const view = params.get("view");
@@ -2117,6 +2179,7 @@ function visitResult(href) {
   const page = (icon, title, detail) => ({ icon, title: escapeHtml(title), detail: escapeHtml(detail), side: "Page" });
   if (view === "tasks") return doc(`tasks/${params.get("task")}.md`) ? docResult(doc(`tasks/${params.get("task")}.md`), []) : page("list", "Tasks", "Every task by status");
   if (view === "code") return page("code", "Code", CODE_TABS[params.get("tab") || "worktrees"] || "Worktrees");
+  if (view === "issues") return page("issue", "Issues", ISSUE_TABS[params.get("tab") || "all"] || "All");
   if (view === "weeks") return page("plan", "Weeks", params.get("date") ? `Week of ${formatDate(params.get("date"))}` : "This week");
   if (view in LIBRARY_VIEWS) return page(view === "topics" ? "topic" : "reference", LIBRARY_VIEWS[view].title, LIBRARY_VIEWS[view].intro);
   const path = params.get("path") || state.defaultPath;
@@ -2133,18 +2196,21 @@ function resumeVisit(href) {
   const [file, scope] = [params.get("file") || "", params.get("scope") || "all"];
   if (pr?.length === 2) openPrOverlay(pr[0], Number(pr[1]), file, scope);
   else if (params.get("wt")) openWorktreeOverlay(params.get("wt"), file, scope);
+  else if (params.get("issue")) openIssue(params.get("issue"));
   else closeOverview();
 }
 // Going to a plain page from over the PR/worktree overview closes it (its toast offers Reopen).
-const closeOverview = () => document.querySelector("dialog.code-diff[open]")?.close();
+const closeOverview = () => { for (const overlay of document.querySelectorAll("dialog.code-diff[open]")) overlay.close(); };
 
 document.addEventListener("overview-closed", (event) => {
   const params = new URL(event.detail).searchParams;
   const pr = params.get("pr")?.split("#");
+  const issueKey = params.get("issue");
   const description = pr?.length === 2
     ? `${prNumberLabel(pr[0], pr[1])} ${findPr(pr[0], Number(pr[1]))?.title || ""}`.trim()
+    : issueKey ? `${issueKey} ${cachedIssues()?.issues?.find((issue) => issue.key === issueKey)?.summary || ""}`.trim()
     : params.get("wt")?.split("/").pop() || "";
-  showNotice(`Closed the ${pr ? "PR" : "worktree"} overview`, false, { kind: "info", description, action: { label: "Reopen", run: () => resumeVisit(event.detail) } });
+  showNotice(`Closed the ${pr ? "PR" : issueKey ? "issue" : "worktree"} overview`, false, { kind: "info", description, action: { label: "Reopen", run: () => resumeVisit(event.detail) } });
 });
 
 const historyMenu = document.querySelector("#history-menu");
@@ -2220,6 +2286,7 @@ async function boot() {
     }
     else if (requestedView in LIBRARY_VIEWS) renderLibraryPage(requestedView);
     else if (requestedView === "code") renderCode();
+    else if (requestedView === "issues") renderIssues();
     else if (requestedView === "weeks") {
       state.weekAnchor = parseDateKey(new URLSearchParams(location.search).get("date")) || parseDateKey(localTodayKey());
       renderWeeksPage();
@@ -2234,6 +2301,8 @@ async function boot() {
     if (pr?.length === 2) openPrOverlay(pr[0], Number(pr[1]), file, scope);
     const worktree = search.get("wt");
     if (worktree) openWorktreeOverlay(worktree, file, scope);
+    if (search.get("issue")) openIssue(search.get("issue"));
+    if (config().issues.jql) loadIssues().catch(() => {}); // ⌘K finds issues by key and title
     recordVisit();
   } catch (error) {
     showNotice(error.message, true);
@@ -2244,6 +2313,7 @@ async function boot() {
 try {
   setConfig(await fetch("/api/config").then((response) => response.json()));
   document.title = config().title;
+  elements.issuesButton.hidden = !config().issues.jql;
 } catch {}
 installCommitCards({ showNotice });
 boot();

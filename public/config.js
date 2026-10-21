@@ -39,6 +39,23 @@ export const DEFAULT_CONFIG = {
     // Opens a PR preview from a repo that has every `requires` file; `{number}` is the PR. null hides the button.
     prPreview: null,
   },
+  issues: {
+    // JQL for the Issues page; empty hides the page. Read through `command` (acli), already signed in.
+    jql: "",
+    command: ["acli"],
+    // Labels that mark machine-made issues (security scanners and the like), hidden until the bot toggle shows them.
+    hideLabels: [],
+    // The triage queue: issues in these statuses, plus open issues with a label starting with a `labels` prefix
+    // (a migration's review label, say).
+    triage: { statuses: ["Needs Triage"], labels: [] },
+    // Agent drafts for issues: { id, label, icon, prompt }; the issue list follows the prompt. "Discuss" always follows.
+    skills: [],
+    // Folder the drafts open in (the repository the issues are about); empty uses the planning workspace.
+    workspace: "",
+    refreshMinutes: 5,
+    // Site-specific custom field ids: { start, confidence, statusUpdate, epicLink }.
+    fields: {},
+  },
 };
 
 const merge = (overrides = {}) => ({
@@ -46,6 +63,7 @@ const merge = (overrides = {}) => ({
   ...overrides,
   github: { ...DEFAULT_CONFIG.github, ...overrides.github },
   code: { ...DEFAULT_CONFIG.code, ...overrides.code },
+  issues: { ...DEFAULT_CONFIG.issues, ...overrides.issues, triage: { ...DEFAULT_CONFIG.issues.triage, ...overrides.issues?.triage } },
 });
 
 let current = merge();

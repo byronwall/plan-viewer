@@ -11,6 +11,7 @@ import { extractChatLinks } from "./public/markdown.js";
 import { CodexDesktopClient, taskTitle } from "./codex-desktop.ts";
 import { createLinkMetadataStore } from "./link-metadata.ts";
 import { createCodeDashboard } from "./code-dashboard.ts";
+import { createIssueTracker } from "./issues.ts";
 import { config, setConfig } from "./public/config.js";
 
 // The planning workspace is the current directory (npm scripts run from the content repository); PLANNING_ROOT
@@ -33,6 +34,7 @@ const isExcluded = (path: string) => config().exclude.some((folder: string) => p
 const PUBLIC = fileURLToPath(new URL("public", import.meta.url));
 const lookupLinkMetadata = createLinkMetadataStore(ROOT);
 const codeDashboard = createCodeDashboard(ROOT);
+const issueTracker = createIssueTracker(ROOT, async () => ({ prs: (await codeDashboard.prIndex()).prs, worktrees: await codeDashboard.worktreeIndex() }));
 const PORT = Number(process.env.PLAN_VIEWER_PORT || process.env.PORT || config().port);
 const MAX_COMMENT_LENGTH = 12_000;
 const ASSET_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".dot"]);
@@ -607,9 +609,17 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       if (action === "session") return json(response, 200, await codeDashboard.launchSession(String(body.app || ""), String(body.path || "")).then(() => ({ opened: true })));
       if (action === "agent") return json(response, 200, await codeDashboard.launchAgent(String(body.app || ""), String(body.skill || ""), String(body.url || ""), String(body.path || "")).then(() => ({ opened: true })));
     }
+    if (request.method === "GET" && url.pathname === "/api/issues") return json(response, 200, await issueTracker.load(url.searchParams.has("refresh")));
+    if (request.method === "GET" && url.pathname === "/api/issues/issue") return json(response, 200, issueTracker.detail(url.searchParams.get("key") || ""));
+    if (request.method === "POST" && url.pathname === "/api/issues/agent") {
+      const body = await readJson(request);
+      await issueTracker.launchAgent(String(body.app || ""), String(body.skill || ""), Array.isArray(body.keys) ? body.keys.map(String).slice(0, 50) : []);
+      return json(response, 200, { opened: true });
+    }
     if (request.method === "POST" && url.pathname === "/api/link-metadata") {
       const body = await readJson(request);
-      return json(response, 200, { metadata: await lookupLinkMetadata(Array.isArray(body.keys) ? body.keys.map(String).slice(0, 1000) : []) });
+      const keys = Array.isArray(body.keys) ? body.keys.map(String).slice(0, 1000) : [];
+      return json(response, 200, { metadata: { ...await lookupLinkMetadata(keys), ...issueTracker.aliasMetadata(keys) } });
     }
     if (request.method === "POST" && url.pathname === "/api/task-status") {
       const body = await readJson(request);
@@ -643,6 +653,7 @@ export function startServer(port = PORT) {
   const server = createServer(handleRequest);
   const closeWatchers = watchMarkdownSources(broadcastMarkdownChange);
   codeDashboard.startBackgroundRefresh();
+  issueTracker.startBackgroundRefresh();
   server.once("close", () => {
     closeWatchers();
   });

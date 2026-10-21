@@ -1,0 +1,999 @@
+[
+ {
+  "key": "OPS-100",
+  "inScope": false,
+  "fields": {
+   "summary": "Atlas teams adopt the shared workspace",
+   "status": {
+    "name": "In Progress",
+    "statusCategory": {
+     "key": "indeterminate"
+    }
+   },
+   "issuetype": {
+    "name": "Initiative",
+    "hierarchyLevel": 2
+   },
+   "priority": {
+    "name": "High"
+   },
+   "assignee": {
+    "displayName": "Kim Tanaka",
+    "emailAddress": "kim@acme.test"
+   },
+   "reporter": {
+    "displayName": "Sam Okafor",
+    "emailAddress": "sam@acme.test"
+   },
+   "labels": [],
+   "components": [
+    {
+     "name": "Platform"
+    }
+   ],
+   "parent": null,
+   "created": "2026-10-01T10:00:00.000+0000",
+   "updated": "2026-10-15T10:00:00.000+0000",
+   "resolution": null,
+   "duedate": null,
+   "customfield_10015": null,
+   "customfield_10281": null,
+   "customfield_10283": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "On track for the December review."
+       }
+      ]
+     }
+    ]
+   },
+   "customfield_10000": "{}",
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Atlas teams adopt the shared workspace."
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": []
+   },
+   "issuelinks": [],
+   "attachment": []
+  }
+ },
+ {
+  "key": "OPS-110",
+  "inScope": true,
+  "fields": {
+   "summary": "Workspace onboarding flow",
+   "status": {
+    "name": "In Development",
+    "statusCategory": {
+     "key": "indeterminate"
+    }
+   },
+   "issuetype": {
+    "name": "Epic",
+    "hierarchyLevel": 1
+   },
+   "priority": {
+    "name": "High"
+   },
+   "assignee": {
+    "displayName": "Alex Rivera",
+    "emailAddress": "alex@acme.test"
+   },
+   "reporter": {
+    "displayName": "Sam Okafor",
+    "emailAddress": "sam@acme.test"
+   },
+   "labels": [],
+   "components": [
+    {
+     "name": "Atlas"
+    }
+   ],
+   "parent": {
+    "key": "OPS-100"
+   },
+   "created": "2026-10-01T10:00:00.000+0000",
+   "updated": "2026-10-20T16:00:00.000+0000",
+   "resolution": null,
+   "duedate": "2026-11-15",
+   "customfield_10015": "2026-10-01",
+   "customfield_10281": {
+    "value": "🟢 On Track"
+   },
+   "customfield_10283": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Sign-up and invite are merged; template picker is next."
+       }
+      ]
+     }
+    ]
+   },
+   "customfield_10000": "{}",
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Workspace onboarding flow."
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": []
+   },
+   "issuelinks": [],
+   "attachment": []
+  }
+ },
+ {
+  "key": "OPS-111",
+  "inScope": true,
+  "fields": {
+   "summary": "Invite teammates from the empty workspace",
+   "status": {
+    "name": "Closed",
+    "statusCategory": {
+     "key": "done"
+    }
+   },
+   "issuetype": {
+    "name": "Task",
+    "hierarchyLevel": 0
+   },
+   "priority": {
+    "name": "Medium"
+   },
+   "assignee": {
+    "displayName": "Alex Rivera",
+    "emailAddress": "alex@acme.test"
+   },
+   "reporter": {
+    "displayName": "Sam Okafor",
+    "emailAddress": "sam@acme.test"
+   },
+   "labels": [],
+   "components": [
+    {
+     "name": "Atlas"
+    }
+   ],
+   "parent": {
+    "key": "OPS-110"
+   },
+   "created": "2026-10-01T10:00:00.000+0000",
+   "updated": "2026-10-12T09:00:00.000+0000",
+   "resolution": {
+    "name": "Done"
+   },
+   "duedate": null,
+   "customfield_10015": null,
+   "customfield_10281": null,
+   "customfield_10283": null,
+   "customfield_10000": "{}",
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Invite teammates from the empty workspace."
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": []
+   },
+   "issuelinks": [],
+   "attachment": []
+  }
+ },
+ {
+  "key": "OPS-112",
+  "inScope": true,
+  "fields": {
+   "summary": "Template picker on first open",
+   "status": {
+    "name": "In Review",
+    "statusCategory": {
+     "key": "indeterminate"
+    }
+   },
+   "issuetype": {
+    "name": "Task",
+    "hierarchyLevel": 0
+   },
+   "priority": {
+    "name": "High"
+   },
+   "assignee": {
+    "displayName": "Alex Rivera",
+    "emailAddress": "alex@acme.test"
+   },
+   "reporter": {
+    "displayName": "Sam Okafor",
+    "emailAddress": "sam@acme.test"
+   },
+   "labels": [],
+   "components": [
+    {
+     "name": "Atlas"
+    }
+   ],
+   "parent": {
+    "key": "OPS-110"
+   },
+   "created": "2026-10-01T10:00:00.000+0000",
+   "updated": "2026-10-21T08:30:00.000+0000",
+   "resolution": null,
+   "duedate": null,
+   "customfield_10015": null,
+   "customfield_10281": null,
+   "customfield_10283": null,
+   "customfield_10000": "{}",
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Pick a starting template before the workspace opens."
+       }
+      ]
+     },
+     {
+      "type": "bulletList",
+      "content": [
+       {
+        "type": "listItem",
+        "content": [
+         {
+          "type": "paragraph",
+          "content": [
+           {
+            "type": "text",
+            "text": "Show three templates"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "type": "listItem",
+        "content": [
+         {
+          "type": "paragraph",
+          "content": [
+           {
+            "type": "text",
+            "text": "PR: "
+           },
+           {
+            "type": "text",
+            "text": "atlas#1938",
+            "marks": [
+             {
+              "type": "link",
+              "attrs": {
+               "href": "https://github.com/acme/atlas/pull/1938"
+              }
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": [
+     {
+      "id": "1",
+      "author": {
+       "displayName": "Sam Okafor",
+       "emailAddress": "sam@acme.test"
+      },
+      "created": "2026-10-20T15:00:00.000+0000",
+      "body": {
+       "type": "doc",
+       "version": 1,
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Looks good; can we keep the blank option first?"
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "id": "2",
+      "author": {
+       "displayName": "Alex Rivera",
+       "emailAddress": "alex@acme.test"
+      },
+      "created": "2026-10-21T08:30:00.000+0000",
+      "body": {
+       "type": "doc",
+       "version": 1,
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Done, blank is first now."
+          }
+         ]
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "issuelinks": [],
+   "attachment": []
+  }
+ },
+ {
+  "key": "OPS-113",
+  "inScope": true,
+  "fields": {
+   "summary": "Onboarding checklist survives a reload",
+   "status": {
+    "name": "Backlog",
+    "statusCategory": {
+     "key": "new"
+    }
+   },
+   "issuetype": {
+    "name": "Bug",
+    "hierarchyLevel": 0
+   },
+   "priority": {
+    "name": "Medium"
+   },
+   "assignee": null,
+   "reporter": {
+    "displayName": "Sam Okafor",
+    "emailAddress": "sam@acme.test"
+   },
+   "labels": [
+    "linear-migration-2026-10-20",
+    "atl-2845"
+   ],
+   "components": [
+    {
+     "name": "Atlas"
+    }
+   ],
+   "parent": {
+    "key": "OPS-110"
+   },
+   "created": "2026-10-20T19:00:00.000+0000",
+   "updated": "2026-10-20T19:05:00.000+0000",
+   "resolution": null,
+   "duedate": null,
+   "customfield_10015": null,
+   "customfield_10281": null,
+   "customfield_10283": null,
+   "customfield_10000": "{}",
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Imported from Linear — October 20, 2026. Source: ATL-2845."
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "The checklist resets after a reload."
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": []
+   },
+   "issuelinks": [],
+   "attachment": []
+  }
+ },
+ {
+  "key": "OPS-114",
+  "inScope": true,
+  "fields": {
+   "summary": "Workspace settings page loses unsaved name",
+   "status": {
+    "name": "Needs Triage",
+    "statusCategory": {
+     "key": "new"
+    }
+   },
+   "issuetype": {
+    "name": "Bug",
+    "hierarchyLevel": 0
+   },
+   "priority": {
+    "name": "High"
+   },
+   "assignee": null,
+   "reporter": {
+    "displayName": "Kim Tanaka",
+    "emailAddress": "kim@acme.test"
+   },
+   "labels": [],
+   "components": [
+    {
+     "name": "Atlas"
+    }
+   ],
+   "parent": null,
+   "created": "2026-10-21T07:10:00.000+0000",
+   "updated": "2026-10-21T07:10:00.000+0000",
+   "resolution": null,
+   "duedate": null,
+   "customfield_10015": null,
+   "customfield_10281": null,
+   "customfield_10283": null,
+   "customfield_10000": "{}",
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Workspace settings page loses unsaved name."
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": []
+   },
+   "issuelinks": [],
+   "attachment": []
+  }
+ },
+ {
+  "key": "OPS-115",
+  "inScope": true,
+  "fields": {
+   "summary": "Shared links open the wrong workspace",
+   "status": {
+    "name": "Needs Triage",
+    "statusCategory": {
+     "key": "new"
+    }
+   },
+   "issuetype": {
+    "name": "Bug",
+    "hierarchyLevel": 0
+   },
+   "priority": {
+    "name": "Urgent"
+   },
+   "assignee": null,
+   "reporter": {
+    "displayName": "Sam Okafor",
+    "emailAddress": "sam@acme.test"
+   },
+   "labels": [],
+   "components": [
+    {
+     "name": "Atlas"
+    }
+   ],
+   "parent": null,
+   "created": "2026-10-19T12:00:00.000+0000",
+   "updated": "2026-10-20T10:00:00.000+0000",
+   "resolution": null,
+   "duedate": null,
+   "customfield_10015": null,
+   "customfield_10281": null,
+   "customfield_10283": null,
+   "customfield_10000": "{}",
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Shared links open the wrong workspace."
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": []
+   },
+   "issuelinks": [
+    {
+     "type": {
+      "name": "Relates",
+      "inward": "relates to",
+      "outward": "relates to"
+     },
+     "outwardIssue": {
+      "key": "OPS-112",
+      "fields": {
+       "summary": "Template picker on first open",
+       "status": {
+        "name": "In Review",
+        "statusCategory": {
+         "key": "indeterminate"
+        }
+       }
+      }
+     }
+    }
+   ],
+   "attachment": []
+  }
+ },
+ {
+  "key": "OPS-116",
+  "inScope": true,
+  "fields": {
+   "summary": "Document the workspace import format",
+   "status": {
+    "name": "Backlog",
+    "statusCategory": {
+     "key": "new"
+    }
+   },
+   "issuetype": {
+    "name": "Task",
+    "hierarchyLevel": 0
+   },
+   "priority": {
+    "name": "Low"
+   },
+   "assignee": {
+    "displayName": "Sam Okafor",
+    "emailAddress": "sam@acme.test"
+   },
+   "reporter": {
+    "displayName": "Sam Okafor",
+    "emailAddress": "sam@acme.test"
+   },
+   "labels": [
+    "linear-migration-2026-10-20",
+    "atl-2851"
+   ],
+   "components": [
+    {
+     "name": "Atlas"
+    }
+   ],
+   "parent": null,
+   "created": "2026-10-20T19:01:00.000+0000",
+   "updated": "2026-10-20T19:06:00.000+0000",
+   "resolution": null,
+   "duedate": null,
+   "customfield_10015": null,
+   "customfield_10281": null,
+   "customfield_10283": null,
+   "customfield_10000": "{}",
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Document the workspace import format."
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": []
+   },
+   "issuelinks": [],
+   "attachment": []
+  }
+ },
+ {
+  "key": "OPS-120",
+  "inScope": true,
+  "fields": {
+   "summary": "Workspace permissions",
+   "status": {
+    "name": "Backlog",
+    "statusCategory": {
+     "key": "new"
+    }
+   },
+   "issuetype": {
+    "name": "Epic",
+    "hierarchyLevel": 1
+   },
+   "priority": {
+    "name": "Medium"
+   },
+   "assignee": {
+    "displayName": "Kim Tanaka",
+    "emailAddress": "kim@acme.test"
+   },
+   "reporter": {
+    "displayName": "Sam Okafor",
+    "emailAddress": "sam@acme.test"
+   },
+   "labels": [],
+   "components": [
+    {
+     "name": "Atlas"
+    }
+   ],
+   "parent": {
+    "key": "OPS-100"
+   },
+   "created": "2026-10-01T10:00:00.000+0000",
+   "updated": "2026-10-18T11:00:00.000+0000",
+   "resolution": null,
+   "duedate": "2026-12-01",
+   "customfield_10015": null,
+   "customfield_10281": {
+    "value": "🟡 At Risk"
+   },
+   "customfield_10283": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Waiting on the roles design."
+       }
+      ]
+     }
+    ]
+   },
+   "customfield_10000": "{}",
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Workspace permissions."
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": []
+   },
+   "issuelinks": [],
+   "attachment": []
+  }
+ },
+ {
+  "key": "OPS-121",
+  "inScope": true,
+  "fields": {
+   "summary": "Viewer role cannot edit templates",
+   "status": {
+    "name": "In Development",
+    "statusCategory": {
+     "key": "indeterminate"
+    }
+   },
+   "issuetype": {
+    "name": "Task",
+    "hierarchyLevel": 0
+   },
+   "priority": {
+    "name": "Medium"
+   },
+   "assignee": {
+    "displayName": "Kim Tanaka",
+    "emailAddress": "kim@acme.test"
+   },
+   "reporter": {
+    "displayName": "Sam Okafor",
+    "emailAddress": "sam@acme.test"
+   },
+   "labels": [],
+   "components": [
+    {
+     "name": "Atlas"
+    }
+   ],
+   "parent": {
+    "key": "OPS-120"
+   },
+   "created": "2026-10-01T10:00:00.000+0000",
+   "updated": "2026-10-19T14:00:00.000+0000",
+   "resolution": null,
+   "duedate": null,
+   "customfield_10015": null,
+   "customfield_10281": null,
+   "customfield_10283": null,
+   "customfield_10000": "{}",
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Viewer role cannot edit templates."
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": []
+   },
+   "issuelinks": [],
+   "attachment": []
+  }
+ },
+ {
+  "key": "OPS-122",
+  "inScope": false,
+  "fields": {
+   "summary": "Audit log for permission changes",
+   "status": {
+    "name": "Backlog",
+    "statusCategory": {
+     "key": "new"
+    }
+   },
+   "issuetype": {
+    "name": "Task",
+    "hierarchyLevel": 0
+   },
+   "priority": {
+    "name": "Low"
+   },
+   "assignee": null,
+   "reporter": {
+    "displayName": "Sam Okafor",
+    "emailAddress": "sam@acme.test"
+   },
+   "labels": [],
+   "components": [
+    {
+     "name": "Platform"
+    }
+   ],
+   "parent": {
+    "key": "OPS-120"
+   },
+   "created": "2026-10-01T10:00:00.000+0000",
+   "updated": "2026-10-10T14:00:00.000+0000",
+   "resolution": null,
+   "duedate": null,
+   "customfield_10015": null,
+   "customfield_10281": null,
+   "customfield_10283": null,
+   "customfield_10000": "{}",
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Audit log for permission changes."
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": []
+   },
+   "issuelinks": [],
+   "attachment": []
+  }
+ },
+ {
+  "key": "OPS-130",
+  "inScope": true,
+  "fields": {
+   "summary": "Upgrade the YAML parser (CVE-2026-0001)",
+   "status": {
+    "name": "Backlog",
+    "statusCategory": {
+     "key": "new"
+    }
+   },
+   "issuetype": {
+    "name": "Task",
+    "hierarchyLevel": 0
+   },
+   "priority": {
+    "name": "Urgent"
+   },
+   "assignee": null,
+   "reporter": {
+    "displayName": "Security Scanner",
+    "emailAddress": "scanner@acme.test"
+   },
+   "labels": [
+    "security"
+   ],
+   "components": [
+    {
+     "name": "Atlas"
+    }
+   ],
+   "parent": null,
+   "created": "2026-10-18T03:00:00.000+0000",
+   "updated": "2026-10-18T03:00:00.000+0000",
+   "resolution": null,
+   "duedate": null,
+   "customfield_10015": null,
+   "customfield_10281": null,
+   "customfield_10283": null,
+   "customfield_10000": "{}",
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Upgrade the YAML parser (CVE-2026-0001)."
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": []
+   },
+   "issuelinks": [],
+   "attachment": []
+  }
+ },
+ {
+  "key": "OPS-131",
+  "inScope": true,
+  "fields": {
+   "summary": "Old export button removed",
+   "status": {
+    "name": "Closed",
+    "statusCategory": {
+     "key": "done"
+    }
+   },
+   "issuetype": {
+    "name": "Task",
+    "hierarchyLevel": 0
+   },
+   "priority": {
+    "name": "Low"
+   },
+   "assignee": {
+    "displayName": "Sam Okafor",
+    "emailAddress": "sam@acme.test"
+   },
+   "reporter": {
+    "displayName": "Sam Okafor",
+    "emailAddress": "sam@acme.test"
+   },
+   "labels": [],
+   "components": [
+    {
+     "name": "Atlas"
+    }
+   ],
+   "parent": null,
+   "created": "2026-09-01T10:00:00.000+0000",
+   "updated": "2026-09-20T10:00:00.000+0000",
+   "resolution": {
+    "name": "Done"
+   },
+   "duedate": null,
+   "customfield_10015": null,
+   "customfield_10281": null,
+   "customfield_10283": null,
+   "customfield_10000": "{}",
+   "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Old export button removed."
+       }
+      ]
+     }
+    ]
+   },
+   "comment": {
+    "comments": []
+   },
+   "issuelinks": [],
+   "attachment": []
+  }
+ }
+]

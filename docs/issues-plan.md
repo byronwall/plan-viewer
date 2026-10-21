@@ -2,7 +2,7 @@
 
 A Jira issues view for Modeler work, built by the same rules as the Code view ([code-view.md](code-view.md)). It is a dense, keyboard-first, read-only workspace that makes sense of everything going on, with agents doing any writing.
 
-Status: planning. Nothing in this document is built yet.
+Status: milestones 1–6 are built (Oct 21, 2026). The README's "Issues" section describes the behavior. Deviations from this plan are listed under "Built" at the end.
 
 ## Decisions already made (Byron, Oct 21, 2026)
 
@@ -153,3 +153,14 @@ These facts constrain the design. The raw survey outputs are in the session scra
 6. **Activity.** Snapshot diffs, the comment backfill, the day grouping, and the `since=` link.
 
 Deferred: the epic treemap, direct Jira writes, and the REST/changelog upgrade.
+
+## Built (Oct 21, 2026)
+
+All six milestones shipped in one pass. Where the build differs from the plan above:
+
+- **Triage queue:** configured statuses plus labels matching a prefix (`linear-migration`), not "unassigned and updated in 14 days". Unassigned is a scope on All instead, because 52 unassigned issues would bury the real queue.
+- **Code join:** PRs come from the Code page's PR index, both open and historical, and worktrees from `git worktree list`. Commit messages are not scanned.
+- **Activity:** mass edits are not collapsed yet. The Oct 20 migration shows as one long day of creations.
+- **Search:** `acli` returns null items when `--fields key` is the only field, so searches ask for `status`.
+- **Sync:** the incremental query covers in-scope issues and children of in-scope epics and initiatives. Context parents refresh on the hourly full scan.
+- **Doc links:** a Linear key that was imported into Jira shows the Jira issue's title and "status · now RAI-NNNN".
