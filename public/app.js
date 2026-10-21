@@ -2,7 +2,7 @@ import { searchDocuments, searchPrs } from "./search.js";
 import { renderActions, renderWorkBreakdown } from "./actions.js";
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock.js";
 import { documentHref, escapeHtml, markdownOutline, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
-import { TABS as CODE_TABS, ago, cachedPrIndex, installCommitCards, loadPrIndex, openPrOverlay, openWorktreeOverlay, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
+import { TABS as CODE_TABS, ago, cachedPrIndex, commitLinkMatch, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { AGENTS, agentApp, agentName, config, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
@@ -1278,9 +1278,6 @@ async function refreshFromMarkdown(changedPaths) {
   const openPanel = elements.chunks.querySelector(".doc-dock-panel:popover-open")?.id;
   const openSource = elements.chunks.querySelector('.dock-source[aria-selected="true"]')?.dataset.dockSource;
   const keepScroll = (render) => { render(); window.scrollTo({ top: scrollY, behavior: "instant" }); };
-  const draft = state.openComposer
-    ? document.querySelector(`.composer[data-composer-key="${state.openComposer}"] textarea`)?.value
-    : null;
 
   try {
     const libraryResponse = await fetch("/api/documents");
@@ -1336,14 +1333,6 @@ async function refreshFromMarkdown(changedPaths) {
     if (openPanel) {
       document.getElementById(openPanel)?.showPopover();
       elements.chunks.querySelector(`[data-dock-source="${openSource}"]`)?.click();
-    }
-
-    if (draft != null && state.openComposer) {
-      const textarea = document.querySelector(`.composer[data-composer-key="${state.openComposer}"] textarea`);
-      if (textarea) {
-        textarea.value = draft;
-        resizeComposerTextarea(textarea);
-      }
     }
 
     window.requestAnimationFrame(syncActiveChunk);
@@ -1609,8 +1598,10 @@ document.addEventListener("click", (event) => {
     .then(response => { if (!response.ok) throw new Error(); })
     .catch(() => window.open(link.href, "_blank", "noreferrer"));
 }, true);
-// The in-app overview a written link opens on a plain click, or null when it goes out: PRs always, issues once synced.
+// The in-app overview a written link opens on a plain click, or null when it goes out: PRs and commits always, issues once synced.
 function inAppTarget(link) {
+  const commit = commitLinkMatch(link.href);
+  if (commit) return { open: () => openCommit(commit[1], commit[2]), site: "GitHub" };
   const [, kind, ref] = metadataKey(link.href).match(/^(github|linear|jira):(.+)$/) || [];
   if (kind === "github" && /\/pull\//.test(link.href)) {
     const [slug, number] = ref.split("#");
@@ -2188,6 +2179,12 @@ elements.handoffPopover.addEventListener("keydown", (event) => {
   if (event.target.matches("textarea") && event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
     event.target.closest("form").requestSubmit();
+  }
+  // Dictation apps paste with a synthetic ⌘V right after their Option hotkey. macOS ORs the still-held Option
+  // into it, and Chrome has no ⌘⌥V binding, so the paste vanished. Treat it as a plain paste.
+  if (event.target.matches("textarea") && event.code === "KeyV" && event.metaKey && event.altKey && !event.shiftKey && !event.ctrlKey) {
+    event.preventDefault();
+    navigator.clipboard.readText().then((text) => { if (text) document.execCommand("insertText", false, text); }, () => {});
   }
 });
 
