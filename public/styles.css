@@ -262,32 +262,37 @@ button { cursor: pointer; }
 .markdown a[data-tone="done"] { color: var(--success-ink); }
 .markdown a[data-tone="closed"] { color: #8a2f2f; }
 .markdown a[data-tone="draft"] { color: #7a6a8f; }
-.link-tip { position: fixed; z-index: 50; width: max-content; max-width: min(380px, calc(100vw - 24px)); display: grid; gap: 3px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 7px 10px 6px; box-shadow: 0 6px 18px rgba(24, 33, 47, .1); color: var(--body-ink); font: 400 .78rem/1.4 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; pointer-events: none; animation: link-tip-in 120ms ease-out; }
-.link-tip[hidden] { display: none; }
-.link-tip-head { display: flex; align-items: baseline; gap: 10px; color: var(--muted); font-size: .72rem; }
-.link-tip-head .service-icon { align-self: center; margin: 0 -6px 0 0; color: var(--quiet-text); }
-.link-tip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.link-tip-state { margin-left: auto; padding-left: 12px; color: var(--action-ink); font-weight: 600; white-space: nowrap; }
-.link-tip-state span { color: var(--quiet-text); font-weight: 400; }
-.link-tip-state[data-tone="done"] { color: var(--success-ink); }
-.link-tip-state[data-tone="closed"] { color: #8a2f2f; }
-.link-tip-state[data-tone="draft"] { color: #7a6a8f; }
-.link-tip-title { color: var(--ink); font-size: .84rem; font-weight: 600; line-height: 1.3; }
-.link-tip-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.link-tip-line code { display: inline-block; overflow: hidden; max-width: 24ch; vertical-align: bottom; color: var(--muted); font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
-.link-tip-fact { font-weight: 600; }
-.link-tip-fact + .link-tip-fact { margin-left: 12px; }
-.link-tip-fact::before { margin-right: 4px; }
-.link-tip-fact[data-tone="good"] { color: var(--success-ink); }
-.link-tip-fact[data-tone="good"]::before { content: "✓"; }
-.link-tip-fact[data-tone="bad"] { color: var(--danger); }
-.link-tip-fact[data-tone="bad"]::before { content: "✕"; }
-.link-tip-fact[data-tone="wait"] { color: var(--status-waiting-ink); }
-.link-tip-fact[data-tone="wait"]::before { content: "◷"; }
-.link-tip-diff b { color: var(--success-ink); font-weight: 600; }
-.link-tip-diff i { color: var(--danger); font-style: normal; font-weight: 600; }
-.link-tip-hint { margin-top: 2px; color: var(--quiet-text); font-size: .7rem; }
-@keyframes link-tip-in { from { opacity: 0; transform: translateY(-2px); } }
+.hover-card { position: fixed; z-index: 50; box-sizing: border-box; width: max-content; min-width: 260px; max-width: min(380px, calc(100vw - 24px)); display: grid; gap: 3px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 7px 10px 6px; box-shadow: 0 6px 18px rgba(24, 33, 47, .1); color: var(--body-ink); font: 400 .78rem/1.4 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; pointer-events: none; animation: hover-card-in 120ms ease-out; }
+.hover-card[hidden] { display: none; }
+.hover-card-head { display: flex; align-items: center; gap: 6px; min-height: 1.05rem; color: var(--muted); font-size: .72rem; }
+.hover-card-head .service-icon { width: 12px; height: 12px; margin: 0; color: var(--quiet-text); }
+.hover-card-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hover-card-state { margin-left: auto; padding-left: 12px; color: var(--action-ink); font-weight: 600; white-space: nowrap; }
+.hover-card-state span { color: var(--quiet-text); font-weight: 400; }
+.hover-card-state[data-tone="done"] { color: var(--success-ink); }
+.hover-card-state[data-tone="closed"] { color: #8a2f2f; }
+.hover-card-state[data-tone="draft"] { color: #7a6a8f; }
+.hover-card-note { margin-left: auto; padding-left: 12px; color: var(--quiet-text); white-space: nowrap; }
+.hover-card-title { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: var(--ink); font-size: .84rem; font-weight: 600; line-height: 1.3; }
+.hover-card-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hover-card-line.is-wrap { white-space: normal; }
+.hover-card-line code { display: inline-block; overflow: hidden; max-width: 24ch; vertical-align: bottom; color: var(--muted); font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.hover-card-fact { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; }
+.hover-card-fact + .hover-card-fact { margin-left: 12px; }
+.hover-card-fact .code-icon { width: 12px; height: 12px; stroke-width: 2.2; }
+.hover-card-fact[data-tone="good"] { color: var(--success-ink); }
+.hover-card-fact[data-tone="bad"] { color: var(--danger); }
+.hover-card-fact[data-tone="wait"] { color: var(--status-waiting-ink); }
+.hover-card-diff { font-variant-numeric: tabular-nums; }
+.hover-card-diff b { color: var(--success-ink); font-weight: 600; }
+.hover-card-diff i { color: var(--danger); font-style: normal; font-weight: 600; }
+.hover-card-diff .is-zero { color: var(--quiet-text); font-weight: 400; }
+.hover-card-hint { margin-top: 2px; color: var(--quiet-text); font-size: .7rem; }
+.hover-card-skeleton { width: 70%; height: .8rem; margin: 2px 0; border-radius: 3px; background: var(--quiet-field); }
+.hover-card-skeleton.is-title { width: 85%; height: .9rem; }
+@keyframes hover-card-in { from { opacity: 0; transform: translateY(-2px); } }
+@keyframes hover-card-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .hover-card { animation-name: hover-card-fade; } }
 .link-label-clip { display: inline-block; max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .markdown a:focus-visible { outline: 3px solid rgba(49, 87, 213, .26); outline-offset: 2px; }
 .markdown-document-link::after { content: "→"; display: inline-block; margin-inline-start: .2em; color: var(--action-muted); text-decoration: none; }
@@ -1386,16 +1391,13 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-diff-table .hljs-deletion { color: #82071e; }
 
 /* commit hover card and clickable SHAs */
-.code-hovercard { position: fixed; inset: auto; margin: 0; width: 340px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 10px 12px; box-shadow: 0 10px 28px rgba(24, 33, 47, .16); color: var(--ink); font-size: .8rem; cursor: pointer; --pass: #1f9d6b; --fail: #d6453d; }
+/* The commit card is a .hover-card that takes the pointer: hovering it keeps it open, clicking opens the diff. */
+.code-hovercard { inset: auto; margin: 0; pointer-events: auto; cursor: pointer; transition: border-color 140ms ease; }
+.code-hovercard:not(:popover-open) { display: none; } /* .hover-card's display: grid would otherwise keep a closed popover on screen */
 .code-hovercard:hover { border-color: var(--action); }
-.code-hovercard p { margin: 4px 0 0; }
-.code-hovercard-head { display: flex; justify-content: space-between; gap: 8px; font-size: .74rem; }
-.code-hovercard-head code { color: var(--action-ink); }
-.code-hovercard-subject { font-weight: 600; line-height: 1.35; }
-.code-hovercard .code-file-add { color: var(--pass); } .code-hovercard .code-file-del { color: var(--fail); }
-.code-hovercard-place { overflow: hidden; color: var(--body-ink); text-overflow: ellipsis; white-space: nowrap; }
+.code-hovercard.is-error { cursor: default; }
+.code-hovercard.is-error:hover { border-color: var(--line); }
 .code-commit-pr-button { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; cursor: pointer; }
-.code-hovercard-hint { color: var(--action); font-size: .72rem; font-weight: 600; }
 .code-commit-sha { border: 0; border-radius: 4px; background: none; padding: 0 2px; margin-left: -2px; color: var(--action); font: inherit; cursor: pointer; }
 .code-commit-sha:hover { background: var(--selected); text-decoration: underline; }
 

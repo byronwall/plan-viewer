@@ -2,7 +2,7 @@ import { searchDocuments, searchPrs } from "./search.js";
 import { renderActions, renderWorkBreakdown } from "./actions.js";
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock.js";
 import { documentHref, escapeHtml, markdownOutline, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
-import { TABS as CODE_TABS, ago, cachedPrIndex, commitLinkMatch, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
+import { TABS as CODE_TABS, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { AGENTS, agentApp, agentName, config, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
@@ -1471,7 +1471,7 @@ elements.meta.addEventListener("click", async (event) => {
   }
 });
 // Clipped labels and links with cached metadata get a quick, quiet hover card: full label, fetched title, state, person, destination.
-const linkTip = Object.assign(document.createElement("div"), { className: "link-tip", hidden: true });
+const linkTip = Object.assign(document.createElement("div"), { className: "hover-card", hidden: true });
 linkTip.setAttribute("role", "tooltip");
 document.body.append(linkTip);
 let linkTipTimer = 0;
@@ -1479,9 +1479,10 @@ function hideLinkTip() {
   clearTimeout(linkTipTimer);
   linkTip.hidden = true;
 }
-const REVIEW = { APPROVED: ["Approved", "good"], CHANGES_REQUESTED: ["Changes requested", "bad"], REVIEW_REQUIRED: ["Needs review", "wait"] };
-const CHECKS = { SUCCESS: ["Checks pass", "good"], FAILURE: ["Checks failing", "bad"], ERROR: ["Checks failing", "bad"], PENDING: ["Checks running", "wait"], EXPECTED: ["Checks running", "wait"] };
-const tipFact = ([text, tone]) => `<span class="link-tip-fact" data-tone="${tone}">${escapeHtml(text)}</span>`;
+const REVIEW = { APPROVED: ["Approved", "good", "approved"], CHANGES_REQUESTED: ["Changes requested", "bad", "fail"], REVIEW_REQUIRED: ["Needs review", "wait", "review"] };
+const CHECKS = { SUCCESS: ["Checks pass", "good", "pass"], FAILURE: ["Checks failing", "bad", "fail"], ERROR: ["Checks failing", "bad", "fail"], PENDING: ["Checks running", "wait", "pending"], EXPECTED: ["Checks running", "wait", "pending"] };
+const tipFact = ([text, tone, glyph]) => `<span class="hover-card-fact" data-tone="${tone}">${icon(glyph)}${escapeHtml(text)}</span>`;
+const SITES = { github: "GitHub", linear: "Linear", jira: "Jira", slack: "Slack" };
 // Where a PR sits in its stack, read from the other PR links on this page: the PR its base branch belongs to, and the ones built on its head.
 function stackPlace(slug, pr) {
   const below = [], above = [];
@@ -1497,33 +1498,35 @@ function stackPlace(slug, pr) {
 // Header (source and state), title, then the facts that decide the next move; for a PR that is whether it can land.
 function linkTipHtml(link, meta) {
   const key = metadataKey(link.href);
+  const source = key.split(":")[0];
   const github = key.match(/^github:(.+)#(\d+)$/);
-  const name = github ? `${github[1]} #${github[2]}` : key.replace(/^\w+:/, "") || link.dataset.tip;
-  const state = meta.state ? `<span class="link-tip-state" data-tone="${escapeHtml(meta.tone || "")}">${escapeHtml(meta.state)}${meta.when && !key.startsWith("slack:") ? ` <span>${ago(meta.when)} ago</span>` : ""}</span>` : "";
-  const icon = link.querySelector(".service-icon")?.outerHTML || "";
+  // Slack keys are channel/timestamp IDs, so a Slack card leads with its channel name instead.
+  const name = github ? `${github[1]} #${github[2]}` : source === "slack" ? meta.state || "Slack message" : key.replace(/^\w+:/, "") || link.dataset.tip;
+  const state = meta.state && source !== "slack" ? `<span class="hover-card-state" data-tone="${escapeHtml(meta.tone || "")}">${escapeHtml(meta.state)}${meta.when ? ` <span>${ago(meta.when)} ago</span>` : ""}</span>` : "";
+  const sourceIcon = link.querySelector(".service-icon")?.outerHTML || "";
   const lines = [];
   const pr = meta.pr;
   if (pr) {
     const live = meta.tone === "open" || meta.tone === "draft";
-    const gate = live ? [REVIEW[pr.review], CHECKS[pr.checks], pr.mergeable === "CONFLICTING" ? ["Conflicts", "bad"] : null].filter(Boolean).map(tipFact) : [];
+    const gate = live ? [REVIEW[pr.review], CHECKS[pr.checks], pr.mergeable === "CONFLICTING" ? ["Conflicts", "bad", "conflict"] : null].filter(Boolean).map(tipFact) : [];
     if (gate.length) lines.push(gate.join(""));
     lines.push([meta.person, ...stackPlace(github[1], pr)].filter(Boolean).map(escapeHtml).join(" · "));
-    lines.push(`<span class="link-tip-diff"><b>+${pr.additions}</b> <i>−${pr.deletions}</i></span> · ${pr.files} file${pr.files === 1 ? "" : "s"} · <code>${escapeHtml(pr.head)}</code>`);
+    lines.push(diffSize(pr) + (live ? ` · <code>${escapeHtml(pr.head)}</code>` : "")); // the head branch only matters while it can still change
   } else {
-    const facts = [meta.person || (meta.state && !key.startsWith("slack:") ? "Unassigned" : ""), meta.priority && `${meta.priority} priority`].filter(Boolean);
+    const facts = [meta.person || (meta.state && source !== "slack" ? "Unassigned" : ""), meta.priority && `${meta.priority} priority`].filter(Boolean);
     if (facts.length) lines.push(facts.map(escapeHtml).join(" · "));
   }
   const target = inAppTarget(link);
-  const hint = target ? `Click for overview · ⌘-click opens ${target.site}` : link.dataset.documentPath ? link.dataset.documentPath : "";
-  return `<div class="link-tip-head">${icon}<span class="link-tip-name">${escapeHtml(name)}</span>${state}</div>`
-    + (meta.title ? `<div class="link-tip-title">${escapeHtml(meta.title)}</div>` : "")
-    + lines.map(line => `<div class="link-tip-line">${line}</div>`).join("")
-    + (hint ? `<div class="link-tip-hint">${escapeHtml(hint)}</div>` : "");
+  const hint = target ? `Click for overview · ${modKey}-click opens ${target.site}` : SITES[source] ? `Click opens ${SITES[source]}` : link.dataset.documentPath || "";
+  return `<div class="hover-card-head">${sourceIcon}<span class="hover-card-name">${escapeHtml(name)}</span>${state}</div>`
+    + (meta.title ? `<div class="hover-card-title">${escapeHtml(meta.title)}</div>` : "")
+    + lines.map(line => `<div class="hover-card-line">${line}</div>`).join("")
+    + (hint ? `<div class="hover-card-hint">${escapeHtml(hint)}</div>` : "");
 }
 function showLinkTip(link) {
   const meta = link.dataset.meta ? JSON.parse(link.dataset.meta) : null;
   if (meta) linkTip.innerHTML = linkTipHtml(link, meta);
-  else linkTip.innerHTML = `<div class="link-tip-title">${escapeHtml(link.dataset.tip)}</div>${link.dataset.documentPath ? `<div class="link-tip-hint">${escapeHtml(link.dataset.documentPath)}</div>` : ""}`;
+  else linkTip.innerHTML = `<div class="hover-card-title">${escapeHtml(link.dataset.tip)}</div>${link.dataset.documentPath ? `<div class="hover-card-hint">${escapeHtml(link.dataset.documentPath)}</div>` : ""}`;
   linkTip.hidden = false;
   const box = link.getBoundingClientRect();
   const left = Math.max(12, Math.min(box.left, innerWidth - linkTip.offsetWidth - 12));
@@ -1536,7 +1539,7 @@ for (const [on, off] of [["pointerover", "pointerout"], ["focusin", "focusout"]]
     const link = event.target.closest?.("a[data-tip]");
     if (!link) return;
     clearTimeout(linkTipTimer);
-    linkTipTimer = setTimeout(() => showLinkTip(link), 150);
+    linkTipTimer = setTimeout(() => showLinkTip(link), 200);
   });
   elements.chunks.addEventListener(off, (event) => {
     const link = event.target.closest?.("a[data-tip]");
@@ -1544,6 +1547,7 @@ for (const [on, off] of [["pointerover", "pointerout"], ["focusin", "focusout"]]
   });
 }
 addEventListener("scroll", hideLinkTip, { capture: true, passive: true });
+addEventListener("keydown", (event) => { if (event.key === "Escape") hideLinkTip(); });
 // Hovering a task in the Weeks calendar lights up the same task on every other day.
 elements.chunks.addEventListener("pointerover", (event) => {
   const row = event.target.closest?.(".calendar-task[data-task-id]");

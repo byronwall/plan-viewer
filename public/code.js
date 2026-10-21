@@ -1,4 +1,4 @@
-import { escapeHtml, renderMarkdown } from "./markdown.js";
+import { escapeHtml, renderMarkdown, SERVICE_ICONS } from "./markdown.js";
 import { agentApp, agentName as appName, config, escapeRegExp } from "./config.js";
 import { decorate, lineClasses, markWords } from "./word-diff.js";
 import { mapHtml, mapSvg, moveGroups, svgToPng, tileCard } from "./diff-map.js";
@@ -2516,6 +2516,13 @@ function showTip(target) {
 }
 const hideTip = () => { if (tip?.classList.contains("is-visible")) { tip.classList.remove("is-visible"); tipHiddenAt = Date.now(); } };
 
+// ---------- hover cards (whole app) ----------
+
+// Shared by the link card (app.js) and the commit card: `+12,040 −9,600 · 1,031 files`, a zero side muted.
+export const diffSize = ({ additions = 0, deletions = 0, files = 0 }) => `<span class="hover-card-diff"><b${additions ? "" : ' class="is-zero"'}>+${additions.toLocaleString()}</b> <i${deletions ? "" : ' class="is-zero"'}>−${deletions.toLocaleString()}</i> · ${files.toLocaleString()} file${files === 1 ? "" : "s"}</span>`;
+export const modKey = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
+const defaultFirst = (branches) => [...branches].sort((a, b) => /^(main|master)$/.test(b) - /^(main|master)$/.test(a));
+
 // ---------- commit hover cards (whole app) ----------
 
 // Any commit link (github.com/<github.owner>/<repo>/commit/<sha>) gets a hover card with a terse summary; clicking the
@@ -2528,10 +2535,11 @@ let cardTimer = 0;
 
 function commitCard() {
   if (card) return card;
-  card = Object.assign(document.body.appendChild(document.createElement("div")), { className: "code-hovercard", popover: "manual" });
+  card = Object.assign(document.body.appendChild(document.createElement("div")), { className: "hover-card code-hovercard", popover: "manual" });
   card.addEventListener("pointerenter", () => window.clearTimeout(cardTimer));
   card.addEventListener("pointerleave", () => hideCardSoon());
   card.addEventListener("click", () => {
+    if (card.classList.contains("is-error")) return; // nothing to open; ⌘-click the link for GitHub
     const { name, sha } = card.dataset;
     hideCard();
     openCommit(name, sha);
@@ -2548,21 +2556,27 @@ function fillCard(name, sha) {
   box.dataset.name = name;
   box.dataset.sha = sha;
   box.dataset.subject = summary?.subject || "";
-  const head = `<div class="code-hovercard-head"><code>${escapeHtml(name)}@${escapeHtml(sha.slice(0, 8))}</code>${summary && !summary.error && !summary.local ? '<span class="code-muted">from GitHub</span>' : ""}</div>`;
-  box.innerHTML = !summary ? `${head}<p class="code-muted">Loading…</p>`
-    : summary.error ? `${head}<p class="code-muted">${escapeHtml(summary.error)}</p>`
-    : `${head}<p class="code-hovercard-subject">${escapeHtml(summary.subject)}</p><p class="code-muted">${escapeHtml(summary.author)} · ${ago(summary.time)} ago · ${summary.files} ${summary.files === 1 ? "file" : "files"} <b class="code-file-add">+${summary.additions}</b> <b class="code-file-del">−${summary.deletions}</b></p>${commitPlaceLine(summary)}<p class="code-hovercard-hint">Click to open the diff · ⌘-click opens GitHub</p>`;
+  box.classList.toggle("is-error", Boolean(summary?.error));
+  // Same anatomy as the link card: source and where it came from, title, facts, then what a click does.
+  const note = summary && !summary.error && !summary.local ? '<span class="hover-card-note">Not on this machine</span>' : "";
+  const head = `<div class="hover-card-head">${SERVICE_ICONS.github}<span class="hover-card-name">${escapeHtml(name)}@${escapeHtml(sha.slice(0, 8))}</span>${note}</div>`;
+  const line = (html) => `<div class="hover-card-line">${html}</div>`;
+  const hint = `<div class="hover-card-hint">Click to open the diff · ${modKey}-click opens GitHub</div>`;
+  box.innerHTML = !summary ? `${head}<div class="hover-card-skeleton is-title"></div><div class="hover-card-skeleton"></div><div class="hover-card-skeleton"></div>${hint}` // a loaded card's height, so it doesn't jump
+    : summary.error ? `${head}<div class="hover-card-line is-wrap">${escapeHtml(summary.error)}</div><div class="hover-card-hint">${modKey}-click opens GitHub</div>`
+    : `${head}<div class="hover-card-title">${escapeHtml(summary.subject)}</div>${line(`${escapeHtml(summary.author)} · ${ago(summary.time)} ago · ${diffSize(summary)}`)}${commitPlaceLine(summary)}${hint}`;
 }
 
-// "in #1940 Title (Merged into main)", else the branches that contain it; the overlay's version makes the PR a button.
-const commitPrLabel = (pr) => `#${pr.number} ${pr.title} · ${pr.state} into ${pr.base}`;
+// "#1940 · Merged into main · Title", else the branches that contain it (default branch first). State and base lead so
+// the title, not the state, is what truncates; the overlay's one-line version names the title only on the PR button's tip.
 function commitPlaceLine(summary) {
-  const text = summary.prs?.length ? `In ${summary.prs.map(commitPrLabel).join("; ")}` : summary.branches?.length ? `On ${summary.branches.join(", ")}` : "";
-  return text ? `<p class="code-hovercard-place">${escapeHtml(text)}</p>` : "";
+  const text = summary.prs?.length ? summary.prs.map((pr) => `#${pr.number} · ${pr.state} into ${pr.base} · ${pr.title}`).join("; ")
+    : summary.branches?.length ? `On ${defaultFirst(summary.branches).join(", ")}` : "";
+  return text ? `<div class="hover-card-line">${escapeHtml(text)}</div>` : "";
 }
 function commitPlace(context) {
-  if (context?.prs?.length) return ` · in ${context.prs.map((pr) => `<button type="button" class="code-pr-link code-commit-pr-button" data-commit-pr="${escapeHtml(`${pr.slug}#${pr.number}`)}" data-tip="Open the PR overview">#${pr.number}</button> ${escapeHtml(pr.title)} <span class="code-muted">(${escapeHtml(pr.state.toLowerCase())} into ${escapeHtml(pr.base)})</span>`).join("; ")}`;
-  return context?.branches?.length ? ` · on ${context.branches.map(escapeHtml).join(", ")}` : "";
+  if (context?.prs?.length) return ` · in ${context.prs.map((pr) => `<button type="button" class="code-pr-link code-commit-pr-button" data-commit-pr="${escapeHtml(`${pr.slug}#${pr.number}`)}" data-tip="${escapeHtml(`${pr.title} · open the PR overview`)}">#${pr.number}</button> ${escapeHtml(pr.state.toLowerCase())} into ${escapeHtml(pr.base)}`).join("; ")}`;
+  return context?.branches?.length ? ` · on ${defaultFirst(context.branches).map(escapeHtml).join(", ")}` : "";
 }
 
 async function commitSummaryFor(name, sha) {
@@ -2596,7 +2610,7 @@ function placeCard(link) {
   if (!box.matches(":popover-open")) box.showPopover();
   const anchor = link.getBoundingClientRect();
   const size = box.getBoundingClientRect();
-  box.style.left = `${Math.max(8, Math.min(innerWidth - size.width - 8, anchor.left))}px`;
+  box.style.left = `${Math.max(12, Math.min(innerWidth - size.width - 12, anchor.left))}px`; // same 12px gutter as the link card
   box.style.top = `${anchor.bottom + 6 + size.height > innerHeight ? anchor.top - size.height - 6 : anchor.bottom + 6}px`;
 }
 
@@ -2617,12 +2631,20 @@ export function installCommitCards({ showNotice } = {}) {
     if (!match) return;
     window.clearTimeout(cardTimer);
     if (cardFor === link) return;
-    cardTimer = window.setTimeout(() => showCard(link, match[1], match[2]), 350);
+    cardTimer = window.setTimeout(() => showCard(link, match[1], match[2]), 200);
   });
   document.addEventListener("pointerout", (event) => {
     const link = event.target.closest?.("a[href]");
     if (commitLinkMatch(link?.href) && !link.contains(event.relatedTarget)) { if (cardFor === link) hideCardSoon(); else window.clearTimeout(cardTimer); }
   });
+  // Keyboard focus shows the same card; Esc dismisses it.
+  document.addEventListener("focusin", (event) => {
+    const link = event.target.closest?.("a[href]");
+    const match = commitLinkMatch(link?.href);
+    if (match && cardFor !== link) showCard(link, match[1], match[2]);
+  });
+  document.addEventListener("focusout", (event) => { if (cardFor && cardFor === event.target.closest?.("a[href]")) hideCard(); });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape" && cardFor) hideCard(); });
   document.addEventListener("scroll", () => { if (cardFor) hideCard(); }, { capture: true, passive: true });
 }
 
