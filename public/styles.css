@@ -258,6 +258,10 @@ button { cursor: pointer; }
 .markdown a { border-radius: 5px; color: var(--action-ink); font-weight: inherit; text-decoration: none; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .markdown a:hover { color: var(--action-deep); text-decoration: underline; }
 .markdown a:not(.task-reference-item) { white-space: nowrap; }
+/* Reference state from link metadata, matching the dock's state pills; open stays the plain link color. */
+.markdown a[data-tone="done"] { color: var(--success-ink); }
+.markdown a[data-tone="closed"] { color: #8a2f2f; }
+.markdown a[data-tone="draft"] { color: #7a6a8f; }
 .link-tip { position: fixed; z-index: 50; max-width: min(360px, calc(100vw - 24px)); display: grid; gap: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 6px 9px; box-shadow: 0 6px 18px rgba(24, 33, 47, .1); color: var(--body-ink); font: 400 .78rem/1.4 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; pointer-events: none; animation: link-tip-in 120ms ease-out; }
 .link-tip[hidden] { display: none; }
 .link-tip-label { color: var(--ink); font-weight: 600; }

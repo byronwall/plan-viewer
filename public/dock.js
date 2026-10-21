@@ -63,6 +63,7 @@ export function applyLinkMetadata(root, metadata) {
     if (!meta) continue;
     // The hover card in app.js reads these; the visible label minus the ↗ mark is its first line.
     link.dataset.meta = JSON.stringify(meta);
+    link.dataset.tone = meta.tone || ""; // colors merged/closed/draft references so state reads without opening them
     link.dataset.tip ||= link.textContent.replace(/\u2060/g, "").replace(/\s*↗[\s\S]*$/, "").trim();
   }
 }
