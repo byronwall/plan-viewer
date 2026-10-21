@@ -828,6 +828,8 @@ function ensureDiffDialog() {
   diffDialog.addEventListener("pointerdown", (event) => { pressedBackdrop = event.target === diffDialog; });
   diffDialog.addEventListener("click", (event) => {
     if (event.target === diffDialog) return composerDirty() || !pressedBackdrop ? null : diffDialog.close();
+    const commitPr = event.target.closest("[data-commit-pr]");
+    if (commitPr) { const [slug, number] = commitPr.dataset.commitPr.split("#"); return openPrOverlay(slug, Number(number)); }
     const noteButton = event.target.closest("[data-note-file], [data-note-new], [data-note-save], [data-note-cancel], [data-note-edit], [data-note-delete], [data-note-jump]");
     if (noteButton) {
       const { dataset } = noteButton;
@@ -1869,7 +1871,7 @@ function renderDiff() {
   const title = wt ? `${icon("branch")} ${escapeHtml(wtInfo?.tree?.branch || shortPath(wt.path))}`
     : pr ? `<a class="code-pr-link" href="${escapeHtml(info.url || `https://github.com/${pr.slug}/pull/${pr.number}`)}" target="_blank" rel="noreferrer">#${pr.number}</a> ${escapeHtml(info.title || "")}` : escapeHtml(diff.title);
   const sub = wt ? `${escapeHtml(shortPath(wt.path))} · ${wtCommit ? `commit ${wtCommits().indexOf(wtCommit) + 1} of ${wtCommits().length} · ${escapeHtml(wtCommit.sha.slice(0, 7))} ${escapeHtml(wtCommit.subject)}` : wtScope || ""}`
-    : pr ? `${escapeHtml(pr.slug.split("/")[1])} · ${commit ? `commit ${commits.indexOf(commit) + 1} of ${commits.length} · ${escapeHtml(commit.sha.slice(0, 7))} ${escapeHtml(commit.subject)}` : description ? "Description" : diff.scope === "stack" ? `Whole stack vs ${escapeHtml(prStack().stack[0]?.base || "")}` : "All changes"}` : escapeHtml(diff.sub);
+    : pr ? `${escapeHtml(pr.slug.split("/")[1])} · ${commit ? `commit ${commits.indexOf(commit) + 1} of ${commits.length} · ${escapeHtml(commit.sha.slice(0, 7))} ${escapeHtml(commit.subject)}` : description ? "Description" : diff.scope === "stack" ? `Whole stack vs ${escapeHtml(prStack().stack[0]?.base || "")}` : "All changes"}` : escapeHtml(diff.sub) + (diff.params?.source === "commit" ? commitPlace(diff.context) : "");
   const viewedCount = subject() && files && !description && !local ? files.filter(isViewed).length : 0;
   const progress = subject() && files?.length && !description && !local
     ? ` · <span class="code-diff-progress${viewedCount === files.length ? " is-done" : viewedCount ? "" : " is-none"}">${viewedCount === files.length ? `All ${files.length} viewed` : `${viewedCount} of ${files.length} viewed`}</span>` : "";
@@ -1978,7 +1980,7 @@ function commitList(commits, empty, where) {
   return `<ol class="code-commits">${commits.map((commit) => `<li><button type="button" class="code-commit-sha" data-code-commit-diff="${escapeHtml(commit.sha)}" data-repo="${escapeHtml(where.repo)}" data-slug="${escapeHtml(where.slug || "")}" data-subject="${escapeHtml(commit.subject)}" data-tip="Open diff">${escapeHtml(commit.sha.slice(0, 7))}</button><span>${escapeHtml(commit.subject)}</span>${when(commit.time)}</li>`).join("")}</ol>`;
 }
 
-const commitTarget = (params, subject, sub) => ({ params: { source: "commit", ...params }, title: subject || params.sha.slice(0, 8), sub });
+const commitTarget = (params, subject, sub, context = null) => ({ params: { source: "commit", ...params }, title: subject || params.sha.slice(0, 8), sub, context });
 
 function treeDetail(tree) {
   const pr = prFor(tree);
@@ -2518,7 +2520,7 @@ const hideTip = () => { if (tip?.classList.contains("is-visible")) { tip.classLi
 
 // Any commit link (github.com/<github.owner>/<repo>/commit/<sha>) gets a hover card with a terse summary; clicking the
 // card opens the diff overlay. A manual popover, so it also sits above an open dialog.
-const commitLinkMatch = (href) => config().github.owner && href?.match(new RegExp(`github\\.com/${escapeRegExp(config().github.owner)}/([\\w.-]+)/commit/([0-9a-f]{7,40})`));
+export const commitLinkMatch = (href) => config().github.owner && href?.match(new RegExp(`github\\.com/${escapeRegExp(config().github.owner)}/([\\w.-]+)/commit/([0-9a-f]{7,40})`));
 const summaries = new Map();
 let card = null;
 let cardFor = null;
@@ -2530,10 +2532,9 @@ function commitCard() {
   card.addEventListener("pointerenter", () => window.clearTimeout(cardTimer));
   card.addEventListener("pointerleave", () => hideCardSoon());
   card.addEventListener("click", () => {
-    const { name, sha, subject } = card.dataset;
+    const { name, sha } = card.dataset;
     hideCard();
-    loadHighlighter();
-    openDiff("", commitTarget({ name, sha }, subject, `${name}@${sha.slice(0, 8)}`));
+    openCommit(name, sha);
   });
   return card;
 }
@@ -2550,7 +2551,44 @@ function fillCard(name, sha) {
   const head = `<div class="code-hovercard-head"><code>${escapeHtml(name)}@${escapeHtml(sha.slice(0, 8))}</code>${summary && !summary.error && !summary.local ? '<span class="code-muted">from GitHub</span>' : ""}</div>`;
   box.innerHTML = !summary ? `${head}<p class="code-muted">Loading…</p>`
     : summary.error ? `${head}<p class="code-muted">${escapeHtml(summary.error)}</p>`
-    : `${head}<p class="code-hovercard-subject">${escapeHtml(summary.subject)}</p><p class="code-muted">${escapeHtml(summary.author)} · ${ago(summary.time)} ago · ${summary.files} ${summary.files === 1 ? "file" : "files"} <b class="code-file-add">+${summary.additions}</b> <b class="code-file-del">−${summary.deletions}</b></p><p class="code-hovercard-hint">Click to open the diff</p>`;
+    : `${head}<p class="code-hovercard-subject">${escapeHtml(summary.subject)}</p><p class="code-muted">${escapeHtml(summary.author)} · ${ago(summary.time)} ago · ${summary.files} ${summary.files === 1 ? "file" : "files"} <b class="code-file-add">+${summary.additions}</b> <b class="code-file-del">−${summary.deletions}</b></p>${commitPlaceLine(summary)}<p class="code-hovercard-hint">Click to open the diff · ⌘-click opens GitHub</p>`;
+}
+
+// "in #1940 Title (Merged into main)", else the branches that contain it; the overlay's version makes the PR a button.
+const commitPrLabel = (pr) => `#${pr.number} ${pr.title} · ${pr.state} into ${pr.base}`;
+function commitPlaceLine(summary) {
+  const text = summary.prs?.length ? `In ${summary.prs.map(commitPrLabel).join("; ")}` : summary.branches?.length ? `On ${summary.branches.join(", ")}` : "";
+  return text ? `<p class="code-hovercard-place">${escapeHtml(text)}</p>` : "";
+}
+function commitPlace(context) {
+  if (context?.prs?.length) return ` · in ${context.prs.map((pr) => `<button type="button" class="code-pr-link code-commit-pr-button" data-commit-pr="${escapeHtml(`${pr.slug}#${pr.number}`)}" data-tip="Open the PR overview">#${pr.number}</button> ${escapeHtml(pr.title)} <span class="code-muted">(${escapeHtml(pr.state.toLowerCase())} into ${escapeHtml(pr.base)})</span>`).join("; ")}`;
+  return context?.branches?.length ? ` · on ${context.branches.map(escapeHtml).join(", ")}` : "";
+}
+
+async function commitSummaryFor(name, sha) {
+  const key = `${name}@${sha}`;
+  if (summaries.has(key)) return summaries.get(key);
+  try {
+    const response = await fetch(`/api/code/commit-summary?${new URLSearchParams({ name, sha })}`);
+    const body = await response.json();
+    summaries.set(key, response.ok ? body : { error: body.error || "Commit not found." });
+  } catch {
+    summaries.set(key, { error: "Could not load the commit." });
+  }
+  return summaries.get(key);
+}
+
+// Opens a commit named in a document (`<repo>@<sha>`) in the diff overlay at once; its subject and PR arrive after.
+export async function openCommit(name, sha) {
+  loadHighlighter();
+  const label = `${name}@${sha.slice(0, 8)}`;
+  const known = summaries.get(`${name}@${sha}`);
+  const target = (summary) => commitTarget({ name, sha }, summary?.subject, summary?.author ? `${label} · ${summary.author} · ${ago(summary.time)} ago` : label, summary?.error ? null : summary);
+  const opening = openDiff("", target(known));
+  if (known) return opening;
+  const summary = await commitSummaryFor(name, sha);
+  const params = diff.params;
+  if (diffDialog?.open && params?.source === "commit" && params.sha === sha && params.name === name) { Object.assign(diff, target(summary), { params }); renderDiff(); }
 }
 
 function placeCard(link) {
@@ -2566,15 +2604,8 @@ async function showCard(link, name, sha) {
   cardFor = link;
   fillCard(name, sha);
   placeCard(link);
-  const key = `${name}@${sha}`;
-  if (summaries.has(key)) return;
-  try {
-    const response = await fetch(`/api/code/commit-summary?${new URLSearchParams({ name, sha })}`);
-    const body = await response.json();
-    summaries.set(key, response.ok ? body : { error: body.error || "Commit not found." });
-  } catch {
-    summaries.set(key, { error: "Could not load the commit." });
-  }
+  if (summaries.has(`${name}@${sha}`)) return;
+  await commitSummaryFor(name, sha);
   if (cardFor === link) { fillCard(name, sha); placeCard(link); }
 }
 

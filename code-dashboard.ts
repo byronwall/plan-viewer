@@ -683,20 +683,32 @@ export function createCodeDashboard(root: string) {
     return { repo, slug, sha };
   }
 
-  // A terse summary for hover cards: local git first, GitHub when the commit isn't on this machine.
+  // Where a commit lives, so a link to it needs no trip to GitHub: the PRs that carry it, and up to five local branches with it.
+  async function commitContext(repo: string, slug: string, sha: string) {
+    const [pulls, refs] = await Promise.all([
+      slug ? gh(["api", `repos/${slug}/commits/${sha}/pulls`]).then(JSON.parse).catch(() => []) : [],
+      repo ? git(repo, ["for-each-ref", "--contains", sha, "--count=5", "--format=%(refname:short)", "refs/heads", "refs/remotes/origin"]).catch(() => "") : "",
+    ]);
+    const prs = pulls.map((pr: any) => ({ slug, number: pr.number, title: pr.title, state: pr.merged_at ? "Merged" : pr.state === "closed" ? "Closed" : pr.draft ? "Draft" : "Open", base: pr.base?.ref, head: pr.head?.ref }));
+    const branches = [...new Set(refs.split("\n").filter(Boolean).map((ref: string) => ref.replace(/^origin\//, "")).filter((ref: string) => ref !== "HEAD" && ref !== "origin"))];
+    return { prs, branches };
+  }
+
+  // A terse summary for hover cards and the diff overlay: local git first, GitHub when the commit isn't on this machine.
   async function commitSummary(params: URLSearchParams) {
     const { repo, slug, sha } = await commitTarget(params);
+    const context = commitContext(repo, slug, sha);
     const local = repo ? await git(repo, ["show", "-s", "--shortstat", "--diff-merges=first-parent", "--format=%H%x1f%s%x1f%an%x1f%ct", sha]).catch(() => null) : null;
     if (local !== null) {
       const [head, ...rest] = local.trim().split("\n");
       const [full, subject, author, time] = head.split("\x1f");
       const stat = rest.join(" ");
       const num = (pattern: RegExp) => Number(stat.match(pattern)?.[1] || 0);
-      return { sha: full, subject, author, time: Number(time) * 1000, files: num(/(\d+) files? changed/), additions: num(/(\d+) insertion/), deletions: num(/(\d+) deletion/), local: true };
+      return { sha: full, subject, author, time: Number(time) * 1000, files: num(/(\d+) files? changed/), additions: num(/(\d+) insertion/), deletions: num(/(\d+) deletion/), local: true, ...await context };
     }
     if (!slug) throw new Error("Commit not found.");
     const commit = JSON.parse(await gh(["api", `repos/${slug}/commits/${sha}`]).catch(() => { throw new Error(`${sha.slice(0, 8)} is not in a local checkout or on GitHub (${slug}).`); }));
-    return { sha: commit.sha, subject: commit.commit.message.split("\n")[0], author: commit.commit.author?.name || commit.author?.login || "", time: new Date(commit.commit.author?.date).getTime(), files: commit.files?.length || 0, additions: commit.stats?.additions || 0, deletions: commit.stats?.deletions || 0, local: false };
+    return { sha: commit.sha, subject: commit.commit.message.split("\n")[0], author: commit.commit.author?.name || commit.author?.login || "", time: new Date(commit.commit.author?.date).getTime(), files: commit.files?.length || 0, additions: commit.stats?.additions || 0, deletions: commit.stats?.deletions || 0, local: false, ...await context };
   }
 
   // Unified patch text for a commit, a worktree's uncommitted changes (tracked and untracked), or a pull request.

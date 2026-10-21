@@ -1393,6 +1393,8 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-hovercard-head code { color: var(--action-ink); }
 .code-hovercard-subject { font-weight: 600; line-height: 1.35; }
 .code-hovercard .code-file-add { color: var(--pass); } .code-hovercard .code-file-del { color: var(--fail); }
+.code-hovercard-place { overflow: hidden; color: var(--body-ink); text-overflow: ellipsis; white-space: nowrap; }
+.code-commit-pr-button { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; cursor: pointer; }
 .code-hovercard-hint { color: var(--action); font-size: .72rem; font-weight: 600; }
 .code-commit-sha { border: 0; border-radius: 4px; background: none; padding: 0 2px; margin-left: -2px; color: var(--action); font: inherit; cursor: pointer; }
 .code-commit-sha:hover { background: var(--selected); text-decoration: underline; }

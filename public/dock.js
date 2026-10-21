@@ -58,7 +58,7 @@ export function applyLinkMetadata(root, metadata) {
       channel.parentElement.removeAttribute("title");
     }
   }
-  for (const link of root.querySelectorAll(".chunk-card a.markdown-external-link")) {
+  for (const link of root.querySelectorAll("a.markdown-external-link")) {
     const meta = metadata[metadataKey(link.href)];
     if (!meta) continue;
     // The hover card in app.js reads these; the visible label minus the ↗ mark is its first line.
