@@ -1102,7 +1102,7 @@ function renderDocument() {
     <div class="chunk-heading">
       <span class="chunk-index">${String(index + 1).padStart(2, "0")}</span>
       <h2>${escapeHtml(chunk.title)}</h2>
-      <button class="handoff-button" type="button" data-chunk-id="${chunk.id}" aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="${state.openComposer === `chunk:${chunk.id}`}">Open in ${agentName()}</button>
+      <span class="chunk-actions"><button class="handoff-button" type="button" data-chunk-copy="${chunk.id}" aria-label="Copy section as Markdown">Copy</button><button class="handoff-button" type="button" data-chunk-id="${chunk.id}" aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="${state.openComposer === `chunk:${chunk.id}`}">Open in ${agentName()}</button></span>
     </div>
     ${chunkBody(doc, chunk)}
   </article>`).join("");
@@ -2133,7 +2133,47 @@ function showTableViewer(wrapper) {
   dialog.innerHTML = `<header class="viewer-dialog-heading"><h2 id="table-viewer-title">Table <span>${table.tBodies[0].rows.length} rows × ${table.tHead.rows[0].cells.length} columns</span></h2>${tools.outerHTML}<button type="button" data-dialog-close aria-label="Close table">×</button></header><div class="table-viewer-body markdown" tabindex="0">${table.outerHTML}</div>`;
   if (openViewerDialog(dialog, { stack: true })) dialog.querySelector(".table-viewer-body").focus();
 }
+// Code blocks copy and download their fenced source verbatim; the file extension follows the fence's language.
+const CODE_EXTENSIONS = { javascript: "js", typescript: "ts", python: "py", bash: "sh", shell: "sh", zsh: "sh", markdown: "md", text: "txt", yaml: "yml" };
+async function copyCode(button) {
+  try {
+    await navigator.clipboard.writeText(button.closest("[data-code-source]").dataset.codeSource);
+    button.classList.remove("is-copied");
+    void button.offsetWidth;
+    button.classList.add("is-copied");
+  } catch {
+    showNotice("Could not copy the code.", true);
+  }
+}
+function downloadCode(button) {
+  const host = button.closest("[data-code-source]");
+  const language = host.dataset.codeLanguage.toLowerCase();
+  const extension = CODE_EXTENSIONS[language] || (/^[a-z0-9]{1,8}$/.test(language) ? language : "txt");
+  const file = new Blob([`${host.dataset.codeSource}\n`], { type: "text/plain" });
+  const link = Object.assign(document.createElement("a"), { href: URL.createObjectURL(file), download: `${tableName(host).replace(/^table$/, "code")}.${extension}` });
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+// A section copies as its own Markdown, under its heading unless it is the untitled overview.
+async function copyChunk(button) {
+  const chunk = state.document?.chunks.find((item) => item.id === button.dataset.chunkCopy);
+  if (!chunk) return;
+  try {
+    await navigator.clipboard.writeText(chunk.kind === "overview" ? chunk.markdown : `${"#".repeat(chunk.level)} ${chunk.title}\n\n${chunk.markdown}`);
+    button.classList.remove("is-copied");
+    void button.offsetWidth;
+    button.classList.add("is-copied");
+  } catch {
+    showNotice("Could not copy the section.", true);
+  }
+}
 document.addEventListener("click", (event) => {
+  const chunkCopy = event.target.closest("[data-chunk-copy]");
+  if (chunkCopy) return void copyChunk(chunkCopy);
+  const codeCopy = event.target.closest("[data-code-copy]");
+  if (codeCopy) return void copyCode(codeCopy);
+  const codeDownload = event.target.closest("[data-code-download]");
+  if (codeDownload) return downloadCode(codeDownload);
   const copy = event.target.closest("[data-table-copy]");
   if (copy) return void copyTable(copy);
   const download = event.target.closest("[data-table-download]");

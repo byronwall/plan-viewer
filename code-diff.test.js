@@ -42,7 +42,10 @@ test('marks wrap highlighted HTML without breaking its spans or entities', () =>
 test('a diff fence colors lines by sign and keeps code aligned under a sign column', async () => {
   const { renderMarkdown } = await import('./public/markdown.js');
   const html = renderMarkdown('```diff\n file.py\n+  added\n-  <gone>\n@@ -1 +1 @@\n```\n\n```py\nplain\n```');
-  assert.equal(html.replace(/<\/?mark[^>]*>/g, ''), '<pre class="markdown-diff"><code><span class="markdown-diff-ctx"><span class="markdown-diff-sign"></span>file.py</span><span class="markdown-diff-add"><span class="markdown-diff-sign">+</span>  added</span><span class="markdown-diff-del"><span class="markdown-diff-sign">-</span>  &lt;gone&gt;</span><span class="markdown-diff-hunk"><span class="markdown-diff-sign"></span>@@ -1 +1 @@</span></code></pre><pre><code>plain</code></pre>');
+  assert.equal(html.replace(/<\/?mark[^>]*>/g, '').replace(/<div[^>]*>|<\/div>|<button[^>]*>[^<]*<\/button>/g, ''), '<pre class="markdown-diff"><code><span class="markdown-diff-ctx"><span class="markdown-diff-sign"></span>file.py</span><span class="markdown-diff-add"><span class="markdown-diff-sign">+</span>  added</span><span class="markdown-diff-del"><span class="markdown-diff-sign">-</span>  &lt;gone&gt;</span><span class="markdown-diff-hunk"><span class="markdown-diff-sign"></span>@@ -1 +1 @@</span></code></pre><pre><code>plain</code></pre>');
+  // Each fence carries its verbatim source and language for the copy and download buttons.
+  assert.match(html, /data-code-source=" file\.py\n\+  added\n-  &lt;gone&gt;\n@@ -1 \+1 @@" data-code-language="diff"/);
+  assert.match(html, /data-code-source="plain" data-code-language="py">/);
 });
 
 test('consecutive > lines render as one blockquote with Markdown inside', async () => {

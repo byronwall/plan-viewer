@@ -215,6 +215,8 @@ button { cursor: pointer; }
 .chunk-index { display: grid; place-items: center; min-width: 24px; height: 22px; border-radius: 6px; background: #edf0f5; color: #5f6a7e; font: 650 .66rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .chunk-heading h2 { margin: 0; overflow-wrap: anywhere; font-size: 1.05rem; line-height: 1.25; letter-spacing: -.016em; text-wrap: balance; }
 .handoff-button { border: 1px solid transparent; border-radius: 6px; background: transparent; padding: 3px 8px; color: var(--muted); font-size: .74rem; font-weight: 650; white-space: nowrap; }
+.chunk-actions { display: flex; gap: 2px; }
+.handoff-button.is-copied { animation: path-copy-confirmation 900ms ease-out; }
 .handoff-button:hover, .handoff-button[aria-expanded="true"] { border-color: var(--line); background: var(--hover-field); color: var(--ink); }
 .handoff-button:focus-visible, .send-button:focus-visible, .cancel-button:focus-visible, .popover-close:focus-visible, .document-link:focus-visible, .view-navigation-link:focus-visible, .week-controls button:focus-visible, .calendar-scroll:focus-visible { outline: 3px solid rgba(49, 87, 213, .26); outline-offset: 2px; }
 .markdown { margin: 8px 0 0 34px; color: #344055; font-size: .88rem; line-height: 1.55; }
@@ -253,8 +255,10 @@ button { cursor: pointer; }
 .markdown-table { position: relative; margin: 30px 0 22px; }
 .markdown > .markdown-table:first-child { margin-top: 30px; }
 .table-tools { display: flex; align-items: center; gap: 2px; font-size: .7rem; }
-.markdown-table > .table-tools { position: absolute; z-index: 1; bottom: calc(100% - 1px); right: 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 7px 7px 0 0; background: var(--paper); padding: 1px 2px 0; opacity: 0; pointer-events: none; transition: opacity 140ms ease-out; }
-.markdown-table:hover > .table-tools, .markdown-table:focus-within > .table-tools { opacity: 1; pointer-events: auto; }
+.markdown-code { position: relative; margin: 28px 0 12px; }
+.markdown-code > pre { margin: 0; }
+.markdown-table > .table-tools, .markdown-code > .table-tools { position: absolute; z-index: 1; bottom: calc(100% - 1px); right: 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 7px 7px 0 0; background: var(--paper); padding: 1px 2px 0; opacity: 0; pointer-events: none; transition: opacity 140ms ease-out; }
+.markdown-table:hover > .table-tools, .markdown-table:focus-within > .table-tools, .markdown-code:hover > .table-tools, .markdown-code:focus-within > .table-tools { opacity: 1; pointer-events: auto; }
 .table-tools > span { padding: 0 4px 0 5px; color: var(--muted); font-weight: 600; }
 .table-tools button { height: 22px; border: 0; border-radius: 5px; background: transparent; padding: 0 7px; color: var(--action-ink); font: inherit; font-weight: 600; transition: background-color 140ms ease-out, color 140ms ease-out; }
 .table-tools button:hover { background: var(--hover-field); color: var(--action-deep); }
@@ -273,7 +277,7 @@ button { cursor: pointer; }
 .table-viewer-body table { width: max-content; min-width: 100%; }
 .table-viewer-body td { max-width: 60ch; }
 .table-viewer-body th { position: sticky; z-index: 1; top: 0; box-shadow: inset 0 -1px 0 var(--line); }
-@media (prefers-reduced-motion: reduce) { .markdown-table > .table-tools, .table-tools button { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .markdown-table > .table-tools, .markdown-code > .table-tools, .table-tools button { transition: none; } }
 .markdown-table-scroll { overflow-x: auto; overscroll-behavior-inline: contain; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); scrollbar-width: thin; }
 .markdown-table-scroll:focus-visible { outline: 3px solid rgba(49, 87, 213, .26); outline-offset: 2px; }
 .markdown table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: .84rem; line-height: 1.48; }
@@ -602,7 +606,7 @@ button.task-list-id:hover { text-decoration: underline; }
   .document-header { align-items: start; }
   .document-tools { flex-direction: column; align-items: flex-end; gap: 8px; }
   .chunk-heading { grid-template-columns: auto minmax(0, 1fr); }
-  .handoff-button { grid-column: 2; justify-self: start; }
+  .chunk-actions { grid-column: 2; justify-self: start; }
   .markdown, .plain-text { margin-left: 0; }
   .weeks-toolbar { align-items: flex-start; }
   .weeks-toolbar p { max-width: 34ch; }

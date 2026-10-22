@@ -496,6 +496,10 @@ const htmlImages = (markdown) => markdown.replace(/<img\b[^>]*>/gi, (tag) => {
   return attr("src") ? `![${attr("alt").replace(/[[\]]/g, "")}](${attr("src")})` : "";
 });
 
+// Fenced blocks carry their source and language; app.js turns the tab's buttons into a copy and a download.
+const CODE_TOOLS = `<div class="table-tools" role="toolbar" aria-label="Code actions"><button type="button" data-code-copy>Copy</button><button type="button" data-code-download>Download</button></div>`;
+const fencedBlock = (lines, language) => `<div class="markdown-code" data-code-source="${escapeHtml(lines.join("\n"))}" data-code-language="${escapeHtml(language)}">${CODE_TOOLS}${codeBlock(lines, language)}</div>`;
+
 export function renderMarkdown(markdown, currentPath = "") {
   const lines = htmlImages(markdown).split(/\r?\n/);
   const html = [];
@@ -512,7 +516,7 @@ export function renderMarkdown(markdown, currentPath = "") {
     const line = lines[index];
     if (line.startsWith("```")) {
       flushParagraph();
-      if (inCode) { html.push(codeBlock(code, language)); code = []; }
+      if (inCode) { html.push(fencedBlock(code, language)); code = []; }
       else language = line.slice(3).trim().split(/\s/)[0];
       inCode = !inCode;
       continue;
@@ -585,6 +589,6 @@ export function renderMarkdown(markdown, currentPath = "") {
     }
   }
   flushParagraph();
-  if (inCode) html.push(codeBlock(code, language));
+  if (inCode) html.push(fencedBlock(code, language));
   return html.join("");
 }
