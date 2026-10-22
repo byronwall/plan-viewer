@@ -244,10 +244,11 @@ button { cursor: pointer; }
 .markdown-image { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
 .markdown-image-trigger:hover .markdown-image { border-color: #aeb8ca; }
 .markdown-unavailable-image { display: block; border: 1px dashed var(--line-strong); border-radius: 9px; background: var(--hover-field); padding: 14px 16px; color: var(--muted); font-size: .84rem; }
-/* Copy and expand float over the header row's right end while the table is hovered or focused, so nothing shifts. */
-.markdown-table { position: relative; margin: 18px 0 22px; }
+/* The tools sit like a tab on the table's top edge, in space the top margin always reserves, so they never cover headers or shift content. */
+.markdown-table { position: relative; margin: 30px 0 22px; }
+.markdown > .markdown-table:first-child { margin-top: 30px; }
 .table-tools { display: flex; align-items: center; gap: 2px; font-size: .7rem; }
-.markdown-table > .table-tools { position: absolute; z-index: 1; top: 4px; right: 5px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 2px; box-shadow: 0 2px 6px rgba(31, 42, 60, .08); opacity: 0; pointer-events: none; transition: opacity 140ms ease-out; }
+.markdown-table > .table-tools { position: absolute; z-index: 1; bottom: calc(100% - 1px); right: 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 7px 7px 0 0; background: var(--paper); padding: 1px 2px 0; opacity: 0; pointer-events: none; transition: opacity 140ms ease-out; }
 .markdown-table:hover > .table-tools, .markdown-table:focus-within > .table-tools { opacity: 1; pointer-events: auto; }
 .table-tools > span { padding: 0 4px 0 5px; color: var(--muted); font-weight: 600; }
 .table-tools button { height: 22px; border: 0; border-radius: 5px; background: transparent; padding: 0 7px; color: var(--action-ink); font: inherit; font-weight: 600; transition: background-color 140ms ease-out, color 140ms ease-out; }
