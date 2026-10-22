@@ -480,7 +480,7 @@ test("opens a Claude draft in the workspace folder when Claude is the agent", as
   await client.openDraft("/repo", "Ship it", "Do the work.", "claude");
   const url = new URL(commands[0][0]);
   assert.equal(url.protocol, "claude:");
-  assert.equal(url.searchParams.get("q"), "Do the work.");
+  assert.match(url.searchParams.get("q")!, /^Do the work\.\n\nThis session belongs in \/repo\. .*change_directory with \/repo/);
   assert.equal(url.searchParams.get("folder"), "/repo");
 });
 
