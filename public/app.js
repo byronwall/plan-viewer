@@ -2,7 +2,7 @@ import { searchDocuments, searchPrs } from "./search.js";
 import { renderActions, renderWorkBreakdown } from "./actions.js";
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock.js";
 import { documentHref, escapeHtml, markdownOutline, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
-import { TABS as CODE_TABS, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
+import { TABS as CODE_TABS, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { AGENTS, agentApp, agentName, config, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
@@ -1896,6 +1896,7 @@ const SEARCH_ICONS = {
   code: '<path d="m6 4.5-3.5 3.5L6 11.5M10 4.5l3.5 3.5-3.5 3.5"/>',
   list: '<path d="M6 4.5h7.5M6 8h7.5M6 11.5h7.5M2.75 4.5h.5M2.75 8h.5M2.75 11.5h.5"/>',
   issue: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.5"/>',
+  server: '<rect x="2.5" y="2.5" width="11" height="4.5" rx="1.25"/><rect x="2.5" y="9" width="11" height="4.5" rx="1.25"/><path d="M5 4.75h.5M5 11.25h.5"/>',
 };
 
 function searchIconKey(doc) {
@@ -1971,6 +1972,7 @@ const PAGES = [
   { title: "Tasks", detail: "All tasks", icon: "task", run: () => showTasks() },
   { title: "Weeks", detail: "Calendar of daily plans", icon: "plan", run: () => showWeeks() },
   ...Object.entries(LIBRARY_VIEWS).map(([view, { title, intro }]) => ({ title, detail: intro, icon: title === "Topics" ? "topic" : "reference", run: () => showLibrary(view) })),
+  { title: "Local servers", detail: "Dev servers the viewer started: URLs, output, restart, stop", icon: "server", run: () => openServers(showNotice) },
   ...Object.entries(CODE_TABS).map(([tab, title]) => ({ title, detail: `Code · ${title}`, icon: tab === "prs" ? "pr" : tab === "commits" ? "branch" : "code", run: () => showCode({ tab: tab === "prs" ? "" : tab }) })),
   ...Object.entries(ISSUE_TABS).map(([tab, title]) => ({ title: tab === "all" ? "Issues" : `${title} issues`, detail: `Issues · ${title}`, icon: "issue", issues: true, run: () => showIssues({ tab: tab === "all" ? "" : tab }) })),
 ];

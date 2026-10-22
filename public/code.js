@@ -2276,6 +2276,122 @@ async function stopRun(path) {
   if (diffDialog?.open) renderDiff();
 }
 
+// ---------- local servers overlay ----------
+
+// Every local server the viewer started (⌘K → Local servers): where it runs, its live output, restart and stop.
+let serversDialog = null;
+const servers = { list: null, sel: "", timer: 0, shown: "" };
+const runName = (run) => run.branch || repoName(run.path);
+const runState = (run) => run.state === "exited" ? `Exited ${run.exitCode}` : run.state === "running" ? `Up ${ago(run.startedAt)}` : `Starting · ${ago(run.startedAt)}`;
+const selectedServer = () => servers.list?.find((run) => run.path === servers.sel);
+
+export function openServers(showNotice) {
+  if (showNotice) notify = showNotice;
+  ensureServersDialog();
+  if (!serversDialog.open) serversDialog.showModal();
+  serversDialog.focus();
+  pollServers();
+}
+
+function ensureServersDialog() {
+  if (serversDialog) return;
+  serversDialog = Object.assign(document.body.appendChild(document.createElement("dialog")), { className: "viewer-dialog servers-dialog", tabIndex: -1 });
+  serversDialog.setAttribute("aria-label", "Local servers");
+  serversDialog.innerHTML = `<header class="viewer-dialog-heading"><h2>Local servers <span data-s="count"></span></h2><button type="button" data-dialog-close aria-label="Close local servers">×</button></header>
+    <div class="servers-split"><ul class="servers-list" data-s="list" role="listbox" aria-label="Local servers"></ul><section class="servers-detail" data-s="detail" aria-live="polite"></section></div>
+    <footer class="viewer-dialog-footer"><kbd>↑</kbd><kbd>↓</kbd> select · <kbd>↵</kbd> open in browser · <kbd>R</kbd> restart · <kbd>S</kbd> stop · <kbd>W</kbd> worktree overview · <kbd>Esc</kbd> close</footer>`;
+  serversDialog.addEventListener("close", () => { window.clearTimeout(servers.timer); servers.shown = ""; });
+  serversDialog.addEventListener("click", (event) => {
+    if (event.target === serversDialog || event.target.closest("[data-dialog-close]")) return serversDialog.close();
+    const row = event.target.closest("[data-server]");
+    if (row) { servers.sel = row.dataset.server; return renderServers(); }
+    const button = event.target.closest("button");
+    if (button?.dataset.codeCopy !== undefined) return copy(button, button.dataset.codeCopy);
+    if (button?.dataset.codeOpen) return post("open", { kind: button.dataset.codeOpen, path: button.dataset.path }).catch((error) => notify(error.message, true));
+    if (button?.dataset.serverAct) serverAction(button.dataset.serverAct);
+  });
+  serversDialog.addEventListener("keydown", (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey || event.target.matches("input, textarea")) return;
+    const list = servers.list || [];
+    const index = list.findIndex((run) => run.path === servers.sel);
+    const key = event.key.toLowerCase();
+    if (key === "arrowdown" || key === "arrowup") {
+      event.preventDefault();
+      if (list.length) { servers.sel = list[(index + (key === "arrowdown" ? 1 : -1) + list.length) % list.length].path; renderServers(); }
+    } else if (key === "enter" && !event.target.closest("button, a")) { event.preventDefault(); serverAction("open"); }
+    else if ({ r: "restart", s: "stop", w: "overview" }[key]) { event.preventDefault(); serverAction({ r: "restart", s: "stop", w: "overview" }[key]); }
+  });
+}
+
+async function serverAction(act) {
+  const run = selectedServer();
+  if (!run) return;
+  try {
+    if (act === "open") { if (run.url) window.open(run.url, "_blank", "noreferrer"); return; }
+    if (act === "overview") { serversDialog.close(); return openWorktreeOverlay(run.path); }
+    if (act === "restart") { notify(`Restarting the local server in ${shortPath(run.path)}…`); await post("restart-run", { path: run.path }); }
+    if (act === "stop") { await post("stop-run", { path: run.path }); if (run.state !== "exited") notify(`Stopped the local server in ${shortPath(run.path)}.`); }
+  } catch (error) {
+    notify(error.message, true);
+  }
+  pollServers();
+}
+
+// Polls while the overlay is open, and keeps the Code page's run buttons in step with what changed here.
+async function pollServers() {
+  window.clearTimeout(servers.timer);
+  try {
+    servers.list = (await fetch("/api/code/runs").then((response) => response.json())).runs;
+  } catch {
+    servers.list ||= [];
+  }
+  if (!serversDialog.open) return;
+  if (!selectedServer()) servers.sel = servers.list[0]?.path || "";
+  if (ui.data) {
+    ui.data.runs = Object.fromEntries(servers.list.map(({ log, command, repo, branch, ...run }) => [run.path, run]));
+    for (const run of servers.list) ui.runLogs.set(run.path, run.log);
+    render();
+  }
+  renderServers();
+  servers.timer = window.setTimeout(pollServers, servers.list.some((run) => run.state === "starting") ? 1000 : 2500);
+}
+
+function renderServers() {
+  const list = servers.list;
+  const live = list?.filter((run) => run.state !== "exited").length || 0;
+  serversDialog.querySelector('[data-s="count"]').textContent = list ? `${live} running${list.length > live ? ` · ${list.length - live} exited` : ""}` : "";
+  serversDialog.querySelector('[data-s="list"]').innerHTML = (list || []).map((run) => `<li role="option" aria-selected="${run.path === servers.sel}" data-server="${escapeHtml(run.path)}"><span class="servers-dot" data-run-state="${run.state}"></span><span class="servers-name"><b>${escapeHtml(runName(run))}</b><small>${escapeHtml(run.repo ? repoName(run.repo) : shortPath(run.path))} · ${escapeHtml(run.url ? run.url.replace(/^https?:\/\//, "") : run.state === "exited" ? `exited ${run.exitCode}` : "starting…")}</small></span><span class="servers-age">${run.state === "exited" ? "" : ago(run.startedAt)}</span></li>`).join("");
+  const detail = serversDialog.querySelector('[data-s="detail"]');
+  const run = selectedServer();
+  if (!run) {
+    servers.shown = "";
+    detail.innerHTML = list ? `<div class="servers-empty"><b>No local servers</b><span>Start one from the Code page with the ${icon("play")} button on a worktree or PR, or press <kbd>L</kbd> on a selected row.</span></div>` : `<div class="servers-empty"><span>Loading…</span></div>`;
+    return;
+  }
+  // The head and facts re-render only when the server's identity or state changes, so hover and log scroll survive polls.
+  const shown = [run.path, run.state, run.url, run.startedAt, run.exitCode].join("|");
+  if (shown !== servers.shown) {
+    servers.shown = shown;
+    const exited = run.state === "exited";
+    detail.innerHTML = `<header class="servers-head"><span class="servers-dot" data-run-state="${run.state}"></span><h3>${escapeHtml(runName(run))}</h3><span class="servers-state" data-run-state="${run.state}" data-s="state">${escapeHtml(runState(run))}</span>
+      <span class="servers-actions">${run.url && !exited ? `<button type="button" class="code-bar-button is-primary" data-server-act="open">${icon("external")}Open <kbd>↵</kbd></button>` : ""}<button type="button" class="code-bar-button" data-server-act="restart">${icon(exited ? "play" : "refresh")}${exited ? "Start again" : "Restart"} <kbd>R</kbd></button><button type="button" class="code-bar-button" data-server-act="stop">${icon(exited ? "fail" : "stop")}${exited ? "Dismiss" : "Stop"} <kbd>S</kbd></button></span></header>
+      <dl class="servers-facts">
+        <dt>URL</dt><dd>${run.url ? `<a href="${escapeHtml(run.url)}" target="_blank" rel="noreferrer">${escapeHtml(run.url)}</a>${copyButton(run.url, "Copy URL")}` : `<span class="code-muted">${exited ? "None" : "Waiting for a localhost URL…"}</span>`}</dd>
+        <dt>Folder</dt><dd><span class="servers-path">${escapeHtml(run.path.replace(/^\/Users\/[^/]+/, "~"))}</span>${copyButton(run.path, "Copy path")}${iconButton("vscode", "Open in VS Code", `data-code-open="vscode" data-path="${escapeHtml(run.path)}"`)}${iconButton("terminal", `Open in ${config().code.terminal.label}`, `data-code-open="terminal" data-path="${escapeHtml(run.path)}"`)}${iconButton("folder", "Reveal in Finder", `data-code-open="finder" data-path="${escapeHtml(run.path)}"`)}${iconButton("diff", "Worktree overview (W)", `data-server-act="overview"`)}</dd>
+        ${run.branch ? `<dt>Branch</dt><dd>${branchChip(run.branch, "servers-branch")}${run.repo ? `<span class="code-muted"> in ${escapeHtml(repoName(run.repo))}</span>` : ""}</dd>` : ""}
+        <dt>Command</dt><dd><code>${escapeHtml(run.command)}</code></dd>
+        <dt>Started</dt><dd>${escapeHtml(new Date(run.startedAt).toLocaleString())}</dd>
+      </dl>
+      <pre class="servers-log" data-s="log"></pre>`;
+  } else detail.querySelector('[data-s="state"]').textContent = runState(run);
+  const log = detail.querySelector('[data-s="log"]');
+  const text = run.log.join("\n");
+  if (log.textContent === text) return;
+  const pinned = !log.textContent || log.scrollHeight - log.scrollTop - log.clientHeight < 24; // follow the tail unless scrolled up
+  log.textContent = text;
+  if (pinned) log.scrollTop = log.scrollHeight;
+}
+
 function syncUrl() {
   const url = new URL(location.href);
   url.search = new URLSearchParams({ view: "code", ...(ui.tab === "prs" ? {} : { tab: ui.tab }), ...(ui.authors.size ? { author: [...ui.authors].join(",") } : {}) });

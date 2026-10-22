@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { setTimeout as sleep } from "node:timers/promises";
 
 // Long-running local servers started from the Code page, one per worktree path. Each runs in its own process
 // group so Stop (and the viewer exiting) takes down whatever the command spawned too.
@@ -49,9 +50,24 @@ export function createLocalRuns() {
     runs.delete(path);
   }
 
+  // Stops the run (SIGKILL if it ignores SIGTERM for 5s), then starts the same command again in the same place.
+  async function restart(path: string) {
+    const run = runs.get(path);
+    if (!run) throw new Error("No local server is running there.");
+    if (run.child && run.exitCode === null) {
+      const exited = new Promise((resolve) => run.child!.once("exit", resolve));
+      stopGroup(run);
+      if (await Promise.race([exited.then(() => true), sleep(5000, null, { ref: false }).then(() => false)]) === false) { try { process.kill(-run.child.pid!, "SIGKILL"); } catch {} }
+    }
+    runs.delete(path);
+    return start(path, run.command);
+  }
+
   const summary = (run: Run) => ({ path: run.path, state: run.exitCode === null ? (run.url ? "running" : "starting") : "exited", url: run.url, startedAt: run.startedAt, exitCode: run.exitCode });
   const list = () => Object.fromEntries([...runs.values()].map((run) => [run.path, summary(run)]));
   const log = (path: string) => { const run = runs.get(path); return run ? { ...summary(run), command: run.command.join(" "), log: run.log } : null; };
 
-  return { start, stop, list, log };
+  const all = () => [...runs.keys()].map((path) => log(path)!);
+
+  return { start, stop, restart, list, log, all };
 }

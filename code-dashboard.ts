@@ -404,6 +404,15 @@ export function createCodeDashboard(root: string) {
     return startRun(path);
   }
   const stopRun = (path: string) => runs.stop(path);
+  async function restartRun(path: string) {
+    await knownWorktree(path);
+    return runs.restart(path);
+  }
+  // Every server the viewer started, newest first, with the worktree's repo and branch for the servers overlay.
+  const allRuns = () => runs.all().sort((a, b) => b.startedAt - a.startedAt).map((run) => {
+    const tree = lastWorktrees.find((candidate) => candidate.path === run.path);
+    return { ...run, repo: tree?.repo || "", branch: tree?.branch || "" };
+  });
   const runLog = (path: string) => runs.log(path);
 
   async function open(kind: string, path: string) {
@@ -868,5 +877,5 @@ export function createCodeDashboard(root: string) {
     return { before: old, after: now };
   }
 
-  return { notes: prNotes, load, localDir, prIndex, worktreeIndex, startBackgroundRefresh, commits, commitDetail, commitSummary, diff, fileContent, fileSides, lineCounts, worktreeDetail, prDetail, launchSession, addRepo, removeRepo, open, openPreview, startRun, runPr, stopRun, runLog, launchAgent, removeWorktrees, cleanupPrompt, launchCleanup };
+  return { notes: prNotes, load, localDir, prIndex, worktreeIndex, startBackgroundRefresh, commits, commitDetail, commitSummary, diff, fileContent, fileSides, lineCounts, worktreeDetail, prDetail, launchSession, addRepo, removeRepo, open, openPreview, startRun, runPr, stopRun, restartRun, allRuns, runLog, launchAgent, removeWorktrees, cleanupPrompt, launchCleanup };
 }

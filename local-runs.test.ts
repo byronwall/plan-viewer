@@ -14,3 +14,18 @@ test("a local run reports its first localhost URL, keeps its output, and stops",
   runs.stop(path);
   assert.equal(runs.log(path), null);
 });
+
+test("restart stops the run and starts the same command again", async () => {
+  const runs = createLocalRuns();
+  const path = process.cwd();
+  runs.start(path, [process.execPath, "-e", "console.log('http://localhost:5201'); setInterval(() => {}, 1000)"]);
+  for (let i = 0; i < 50 && !runs.list()[path]?.url; i++) await sleep(50);
+  const first = runs.list()[path].startedAt;
+  await sleep(5);
+  const restarted = await runs.restart(path);
+  assert.ok(restarted.startedAt > first);
+  for (let i = 0; i < 50 && !runs.list()[path]?.url; i++) await sleep(50);
+  assert.equal(runs.all().length, 1);
+  assert.equal(runs.all()[0].state, "running");
+  runs.stop(path);
+});
