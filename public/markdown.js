@@ -373,6 +373,15 @@ function splitTableRow(line) {
   return cells.map((value) => value.replace(/\\\|/g, "|"));
 }
 
+// Every rendered table carries its Markdown source; app.js turns these buttons into copies and the table overlay.
+const TABLE_TOOLS = `<div class="table-tools" role="toolbar" aria-label="Table actions"><span>Copy</span>${["Markdown", "HTML", "CSV", "TSV"].map((label) => `<button type="button" data-table-copy="${label.toLowerCase()}">${label}</button>`).join("")}<button type="button" data-table-expand aria-label="Open table in an overlay">Expand</button></div>`;
+
+// CSV quotes fields holding a comma, quote or line break; TSV flattens tabs and line breaks so each row stays one line.
+export function delimitedTable(rows, delimiter) {
+  const field = delimiter === "\t" ? (value) => value.replace(/[\t\r\n]+/g, " ") : (value) => /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+  return rows.map((row) => row.map(field).join(delimiter)).join("\n");
+}
+
 function tableAlignments(line) {
   const cells = splitTableRow(line);
   if (!cells.length || cells.some((cell) => !/^:?-+:?$/.test(cell))) return null;
@@ -536,6 +545,7 @@ export function renderMarkdown(markdown, currentPath = "") {
     if (alignments && headerCells.length === alignments.length) {
       flushParagraph();
       const rows = [];
+      const start = index;
       index += 2;
       while (index < lines.length && lines[index].trim() && splitTableRow(lines[index]).length === headerCells.length) {
         rows.push(splitTableRow(lines[index]));
@@ -544,7 +554,7 @@ export function renderMarkdown(markdown, currentPath = "") {
       index -= 1;
       const header = headerCells.map((cell, cellIndex) => `<th class="align-${alignments[cellIndex]}" scope="col">${inlineMarkdown(cell, currentPath)}</th>`).join("");
       const body = rows.map((row) => `<tr>${row.map((cell, cellIndex) => `<td class="align-${alignments[cellIndex]}">${inlineMarkdown(cell, currentPath)}</td>`).join("")}</tr>`).join("");
-      html.push(`<div class="markdown-table-scroll" tabindex="0" role="region" aria-label="Scrollable table"><table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`);
+      html.push(`<div class="markdown-table" data-table-source="${escapeHtml(lines.slice(start, index + 1).join("\n"))}">${TABLE_TOOLS}<div class="markdown-table-scroll" tabindex="0" role="region" aria-label="Scrollable table"><table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div></div>`);
       continue;
     }
 

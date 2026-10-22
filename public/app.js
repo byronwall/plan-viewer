@@ -1,7 +1,7 @@
 import { searchDocuments, searchPrs } from "./search.js";
 import { renderActions, renderWorkBreakdown } from "./actions.js";
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock.js";
-import { documentHref, escapeHtml, markdownOutline, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
+import { delimitedTable, documentHref, escapeHtml, markdownOutline, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
@@ -18,6 +18,7 @@ const elements = {
   searchResults: document.querySelector("#search-results"),
   searchStatus: document.querySelector("#search-status"),
   shortcutsDialog: document.querySelector("#shortcuts-dialog"),
+  tableViewer: document.querySelector("#table-viewer"),
   tasksButton: document.querySelector("#open-tasks"),
   topicsButton: document.querySelector("#open-topics"),
   referenceButton: document.querySelector("#open-reference"),
@@ -2077,7 +2078,53 @@ elements.searchResults.addEventListener("click", event => {
   const result = event.target.closest("[data-search-index]");
   if (result) openSearchResult(Number(result.dataset.searchIndex), event.metaKey || event.ctrlKey);
 });
-for (const dialog of [elements.searchDialog, elements.shortcutsDialog]) {
+// Tables copy as their Markdown source, as HTML (rich for documents, source for editors), or as CSV/TSV of the visible text.
+const tableCellText = (cell) => {
+  const clone = cell.cloneNode(true);
+  for (const hidden of clone.querySelectorAll(".sr-only, [aria-hidden='true']")) hidden.remove();
+  return clone.textContent.replaceAll("\u2060", "").replace(/\s+/g, " ").trim();
+};
+async function copyTable(button) {
+  const host = button.closest("[data-table-source]");
+  const table = host.querySelector("table");
+  const format = button.dataset.tableCopy;
+  try {
+    if (format === "html") {
+      const clone = table.cloneNode(true);
+      for (const hidden of clone.querySelectorAll(".sr-only, [aria-hidden='true']")) hidden.remove();
+      for (const link of clone.querySelectorAll("a[href]")) link.setAttribute("href", link.href);
+      for (const element of [clone, ...clone.querySelectorAll("*")]) for (const { name } of [...element.attributes]) if (name !== "href") element.removeAttribute(name);
+      const html = clone.outerHTML.replaceAll("\u2060", "");
+      await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([html], { type: "text/plain" }) })]);
+    } else {
+      await navigator.clipboard.writeText(format === "markdown" ? host.dataset.tableSource : delimitedTable([...table.rows].map((row) => [...row.cells].map(tableCellText)), format === "csv" ? "," : "\t"));
+    }
+    button.classList.remove("is-copied");
+    void button.offsetWidth;
+    button.classList.add("is-copied");
+  } catch {
+    showNotice("Could not copy the table.", true);
+  }
+}
+function showTableViewer(wrapper) {
+  const dialog = elements.tableViewer;
+  const table = wrapper.querySelector("table");
+  const tools = wrapper.querySelector(".table-tools").cloneNode(true);
+  tools.querySelector("[data-table-expand]").remove();
+  dialog.dataset.tableSource = wrapper.dataset.tableSource;
+  dialog.innerHTML = `<header class="viewer-dialog-heading"><h2 id="table-viewer-title">Table <span>${table.tBodies[0].rows.length} rows × ${table.tHead.rows[0].cells.length} columns</span></h2>${tools.outerHTML}<button type="button" data-dialog-close aria-label="Close table">×</button></header><div class="table-viewer-body markdown" tabindex="0">${table.outerHTML}</div>`;
+  if (openViewerDialog(dialog, { stack: true })) dialog.querySelector(".table-viewer-body").focus();
+}
+document.addEventListener("click", (event) => {
+  const copy = event.target.closest("[data-table-copy]");
+  if (copy) return void copyTable(copy);
+  const expand = event.target.closest("[data-table-expand]");
+  if (expand) return showTableViewer(expand.closest(".markdown-table"));
+  // A link followed from the overlay lands on the page underneath.
+  if (event.target.closest(".table-viewer a[href]")) elements.tableViewer.close();
+});
+
+for (const dialog of [elements.searchDialog, elements.shortcutsDialog, elements.tableViewer]) {
   dialog.addEventListener("keydown", event => {
     if (event.key === "Escape" && !event.isComposing) {
       event.preventDefault();

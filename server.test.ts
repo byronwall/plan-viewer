@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { refreshSlackChannels } from "./link-metadata.ts";
 import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle, withImages } from "./codex-desktop.ts";
-import { inlineMarkdown, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
+import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
 import { buildWeeks, dateKey, parseDateKey, startOfWeek } from "./public/weeks.js";
 import { ROOT, buildCodexPrompt, saveHandoffImages, dailyDigest, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize } from "./server.ts";
 
@@ -325,6 +325,13 @@ test("renders GFM tables as semantic, scrollable tables", () => {
   assert.match(html, /<td class="align-right"><a class="markdown-external-link"/);
   assert.match(html, /<strong>Platform<\/strong>/);
   assert.doesNotMatch(html, /<p>\| Step \|/);
+  assert.match(html, /data-table-source="\| Step \| Owner \| Result \|\n\| --- \| :---: \| ---: \|\n/);
+});
+
+test("copies table rows as CSV and TSV", () => {
+  const rows = [["Name", "Note"], ["a,b", 'say "hi"\nthen\tgo']];
+  assert.equal(delimitedTable(rows, ","), 'Name,Note\n"a,b","say ""hi""\nthen\tgo"');
+  assert.equal(delimitedTable(rows, "\t"), "Name\tNote\na,b\tsay \"hi\" then go");
 });
 
 test("dispatch prompt identifies the source and preserves commentary", async () => {
