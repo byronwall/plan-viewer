@@ -254,7 +254,7 @@ button { cursor: pointer; }
 .table-tools button:hover { background: var(--hover-field); color: var(--action-deep); }
 .table-tools button:active { background: var(--selected); }
 .table-tools button.is-copied { animation: path-copy-confirmation 900ms ease-out; }
-.table-tools [data-table-expand] { margin-left: 3px; border-left: 1px solid var(--line); border-radius: 0 5px 5px 0; }
+.table-tools [data-table-download], .table-tools [data-table-expand] { margin-left: 3px; border-left: 1px solid var(--line); border-radius: 0 5px 5px 0; }
 .viewer-dialog.table-viewer { width: calc(100vw - 32px); max-width: none; height: calc(100dvh - 32px); max-height: none; }
 .table-viewer[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
 .table-viewer .viewer-dialog-heading { padding: 10px 12px 10px 18px; }

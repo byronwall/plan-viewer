@@ -2084,6 +2084,19 @@ const tableCellText = (cell) => {
   for (const hidden of clone.querySelectorAll(".sr-only, [aria-hidden='true']")) hidden.remove();
   return clone.textContent.replaceAll("\u2060", "").replace(/\s+/g, " ").trim();
 };
+const tableRows = (table) => [...table.rows].map((row) => [...row.cells].map(tableCellText));
+// Downloads are named for the heading the table sits under, falling back to the page title.
+function tableName(wrapper) {
+  const heading = [...document.querySelectorAll("main h1, main h2, main h3, main h4, main h5")].filter((h) => h.compareDocumentPosition(wrapper) & Node.DOCUMENT_POSITION_FOLLOWING).pop();
+  return (heading?.textContent || document.title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "table";
+}
+function downloadTable(button) {
+  const host = button.closest("[data-table-source]");
+  const csv = new Blob([`\ufeff${delimitedTable(tableRows(host.querySelector("table")), ",")}\n`], { type: "text/csv" });
+  const link = Object.assign(document.createElement("a"), { href: URL.createObjectURL(csv), download: `${host.dataset.tableName || tableName(host)}.csv` });
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
 async function copyTable(button) {
   const host = button.closest("[data-table-source]");
   const table = host.querySelector("table");
@@ -2098,10 +2111,10 @@ async function copyTable(button) {
       clone.setAttribute("style", "border-collapse: collapse");
       for (const cell of clone.querySelectorAll("th, td")) cell.setAttribute("style", `border: 1px solid #d0d7de; padding: 4px 8px; text-align: left; vertical-align: top${cell.tagName === "TH" ? "; font-weight: bold; background: #f6f8fa" : ""}`);
       const html = `<meta charset="utf-8">${clone.outerHTML.replaceAll("\u2060", "")}`;
-      const text = delimitedTable([...table.rows].map((row) => [...row.cells].map(tableCellText)), "\t");
+      const text = delimitedTable(tableRows(table), "\t");
       await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) })]);
     } else {
-      await navigator.clipboard.writeText(format === "markdown" ? host.dataset.tableSource : delimitedTable([...table.rows].map((row) => [...row.cells].map(tableCellText)), format === "csv" ? "," : "\t"));
+      await navigator.clipboard.writeText(format === "markdown" ? host.dataset.tableSource : delimitedTable(tableRows(table), format === "csv" ? "," : "\t"));
     }
     button.classList.remove("is-copied");
     void button.offsetWidth;
@@ -2116,12 +2129,15 @@ function showTableViewer(wrapper) {
   const tools = wrapper.querySelector(".table-tools").cloneNode(true);
   tools.querySelector("[data-table-expand]").remove();
   dialog.dataset.tableSource = wrapper.dataset.tableSource;
+  dialog.dataset.tableName = tableName(wrapper);
   dialog.innerHTML = `<header class="viewer-dialog-heading"><h2 id="table-viewer-title">Table <span>${table.tBodies[0].rows.length} rows × ${table.tHead.rows[0].cells.length} columns</span></h2>${tools.outerHTML}<button type="button" data-dialog-close aria-label="Close table">×</button></header><div class="table-viewer-body markdown" tabindex="0">${table.outerHTML}</div>`;
   if (openViewerDialog(dialog, { stack: true })) dialog.querySelector(".table-viewer-body").focus();
 }
 document.addEventListener("click", (event) => {
   const copy = event.target.closest("[data-table-copy]");
   if (copy) return void copyTable(copy);
+  const download = event.target.closest("[data-table-download]");
+  if (download) return downloadTable(download);
   const expand = event.target.closest("[data-table-expand]");
   if (expand) return showTableViewer(expand.closest(".markdown-table"));
   // A link followed from the overlay lands on the page underneath.
