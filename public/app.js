@@ -1825,7 +1825,7 @@ const shortcuts = [
   { keys: ["W"], description: "Open Weeks", run: () => showWeeks() },
   { keys: ["G"], description: "Open Code: worktrees, pull requests, cleanup", run: () => showCode() },
   { keys: ["I"], description: "Open Issues: Jira triage, epics, activity", run: () => config().issues.jql && showIssues() },
-  { keys: ["H"], description: "Recently viewed, from anywhere (even the PR overview): ↑↓ to move, Enter to go back, 1–9 to jump" },
+  { keys: ["H"], description: "Recently viewed, from anywhere (even the PR overview): type to filter, ↑↓ to move, Enter to go back, 1–9 to jump, Esc clears the filter" },
   { keys: ["J"], description: "Jump to the next document section", run: () => jumpSection(1) },
   { keys: ["K"], description: "Jump to the previous document section", run: () => jumpSection(-1) },
   { keys: ["?"], description: "Show keyboard shortcuts (Shift + /)", run: openShortcutGuide },
@@ -2406,10 +2406,12 @@ document.addEventListener("overview-closed", (event) => {
 });
 
 const historyMenu = document.querySelector("#history-menu");
-const historyRows = () => [...historyMenu.querySelectorAll("[data-visit-href]")];
+const historyRows = () => [...historyMenu.querySelectorAll("[data-visit-href]:not([hidden])")];
+const historyFilter = () => historyMenu.querySelector(".history-filter input");
 function selectHistoryRow(row) {
-  for (const candidate of historyRows()) candidate.setAttribute("aria-selected", String(candidate === row));
-  row?.focus({ preventScroll: true });
+  for (const candidate of historyMenu.querySelectorAll("[data-visit-href]")) candidate.setAttribute("aria-selected", String(candidate === row));
+  if (document.activeElement !== historyFilter()) row?.focus({ preventScroll: true }); // while typing, focus stays in the filter
+
   row?.scrollIntoView({ block: "nearest" });
 }
 historyMenu.addEventListener("beforetoggle", (event) => {
@@ -2425,8 +2427,23 @@ historyMenu.addEventListener("beforetoggle", (event) => {
   }));
   // The page you're on, pinned above the list, so it's clear what picking a row will replace.
   const here = resultRow({ ...visitResult(location.href), side: "", className: "history-here", marker: "" });
-  historyMenu.innerHTML = `<section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed"><div class="search-section" role="presentation">Recently viewed</div>${rows.join("") || '<div class="search-empty"><strong>Nothing yet</strong><span>Pages, PRs and worktrees you open will appear here.</span></div>'}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>H</kbd> close</span><span>${shown.length} ${shown.length === 1 ? "place" : "places"}</span></footer>`;
+  historyMenu.style.height = "";
+  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><span class="sr-only">Filter recently viewed</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed"><div class="search-section" role="presentation">Recently viewed</div>${rows.join("") || '<div class="search-empty"><strong>Nothing yet</strong><span>Pages, PRs and worktrees you open will appear here.</span></div>'}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>H</kbd> close</span><span class="history-count">${shown.length} ${shown.length === 1 ? "place" : "places"}</span></footer>`;
 });
+// Every word must appear in the row's title or detail; the 1–9 markers renumber over what's left.
+function filterHistory() {
+  const words = historyFilter().value.toLowerCase().split(/\s+/).filter(Boolean);
+  const all = [...historyMenu.querySelectorAll("[data-visit-href]")];
+  if (words.length && !historyMenu.style.height) historyMenu.style.height = `${historyMenu.offsetHeight}px`; // hold the size so the field doesn't jump
+  for (const row of all) row.hidden = !words.every((word) => row.textContent.toLowerCase().includes(word));
+  const rows = historyRows();
+  rows.forEach((row, index) => { row.querySelector(".result-marker").textContent = index < 9 ? index + 1 : ""; });
+  historyMenu.querySelector(".history-none")?.remove();
+  if (all.length && !rows.length) historyMenu.querySelector(".search-results").insertAdjacentHTML("beforeend", '<div class="search-empty history-none"><strong>No matches</strong><span>Esc clears the filter.</span></div>');
+  historyMenu.querySelector(".history-count").textContent = words.length ? `${rows.length} of ${all.length}` : `${all.length} ${all.length === 1 ? "place" : "places"}`;
+  selectHistoryRow(rows[0]);
+}
+historyMenu.addEventListener("input", filterHistory);
 historyMenu.addEventListener("click", (event) => {
   const row = event.target.closest("[data-visit-href]");
   if (!row) return;
@@ -2452,8 +2469,20 @@ function openHistoryMenu() {
 historyMenu.addEventListener("keydown", (event) => {
   event.stopPropagation(); // inside the PR overview, its J/K/arrow keys must not also fire
   const rows = historyRows();
-  if (/^[1-9]$/.test(event.key) && rows[event.key - 1]) { event.preventDefault(); rows[event.key - 1].click(); return; }
-  if (event.key.toLowerCase() === "h") { event.preventDefault(); historyMenu.hidePopover(); return; }
+  const filter = historyFilter();
+  const typing = !event.metaKey && !event.ctrlKey && !event.altKey;
+  if (/^[1-9]$/.test(event.key) && typing && rows[event.key - 1]) { event.preventDefault(); rows[event.key - 1].click(); return; }
+  if (event.key === "Escape" && filter.value) { event.preventDefault(); filter.value = ""; filterHistory(); return; } // a second Esc closes
+  if (event.key.toLowerCase() === "h" && typing && !filter.value) { event.preventDefault(); historyMenu.hidePopover(); return; }
+  if (event.key === "Enter" && event.target === filter) { event.preventDefault(); historyMenu.querySelector('[data-visit-href][aria-selected="true"]:not([hidden])')?.click(); return; }
+  // Letters typed anywhere in the menu go to the filter, so H then "snow" narrows the list.
+  if (event.target !== filter && typing && (event.key.length === 1 || (event.key === "Backspace" && filter.value))) {
+    event.preventDefault();
+    filter.value = event.key === "Backspace" ? filter.value.slice(0, -1) : filter.value + event.key;
+    filter.focus();
+    filterHistory();
+    return;
+  }
   if (!["ArrowDown", "ArrowUp"].includes(event.key) || !rows.length) return;
   event.preventDefault();
   selectHistoryRow(rows[(rows.indexOf(document.activeElement) + (event.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length]);
