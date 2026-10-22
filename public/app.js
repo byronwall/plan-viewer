@@ -2078,7 +2078,7 @@ elements.searchResults.addEventListener("click", event => {
   const result = event.target.closest("[data-search-index]");
   if (result) openSearchResult(Number(result.dataset.searchIndex), event.metaKey || event.ctrlKey);
 });
-// Tables copy as their Markdown source, as HTML (rich for documents, source for editors), or as CSV/TSV of the visible text.
+// Tables copy as their Markdown source, as an HTML table (what copying the selection would give), or as CSV/TSV of the visible text.
 const tableCellText = (cell) => {
   const clone = cell.cloneNode(true);
   for (const hidden of clone.querySelectorAll(".sr-only, [aria-hidden='true']")) hidden.remove();
@@ -2094,8 +2094,12 @@ async function copyTable(button) {
       for (const hidden of clone.querySelectorAll(".sr-only, [aria-hidden='true']")) hidden.remove();
       for (const link of clone.querySelectorAll("a[href]")) link.setAttribute("href", link.href);
       for (const element of [clone, ...clone.querySelectorAll("*")]) for (const { name } of [...element.attributes]) if (name !== "href") element.removeAttribute(name);
-      const html = clone.outerHTML.replaceAll("\u2060", "");
-      await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([html], { type: "text/plain" }) })]);
+      // Like a selection copied off the page: a styled table for rich editors, tab-separated text for plain ones.
+      clone.setAttribute("style", "border-collapse: collapse");
+      for (const cell of clone.querySelectorAll("th, td")) cell.setAttribute("style", `border: 1px solid #d0d7de; padding: 4px 8px; text-align: left; vertical-align: top${cell.tagName === "TH" ? "; font-weight: bold; background: #f6f8fa" : ""}`);
+      const html = `<meta charset="utf-8">${clone.outerHTML.replaceAll("\u2060", "")}`;
+      const text = delimitedTable([...table.rows].map((row) => [...row.cells].map(tableCellText)), "\t");
+      await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) })]);
     } else {
       await navigator.clipboard.writeText(format === "markdown" ? host.dataset.tableSource : delimitedTable([...table.rows].map((row) => [...row.cells].map(tableCellText)), format === "csv" ? "," : "\t"));
     }
