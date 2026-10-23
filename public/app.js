@@ -1036,6 +1036,8 @@ function workUpdates(doc) {
 }
 
 const workItemDialog = document.querySelector("#work-item-dialog");
+// "item" reads one item; "graph" shows the whole work stream with the item outlined. Sticky across opens; `&graph=1`.
+let workItemView = new URLSearchParams(location.search).get("graph") === "1" ? "graph" : "item";
 const glyph = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS[name]}</svg>`;
 
 // A dated update reads as a titled note; its nested bullets become the note's own list.
@@ -1074,6 +1076,19 @@ function workMentions(doc, id, own) {
 
 const markId = (html, id) => html.replace(new RegExp(`(?<![\\w.])(${id.replace(/\./g, "\\.")})(?![\\w]|\\.\\w)(?![^<]*>)`, "g"), "<mark>$1</mark>");
 
+// The same dependency graph as the task's Work breakdown section (honoring its completed toggle unless the item itself is
+// hidden there), with the open item outlined.
+function workItemGraph(doc, id, noteCount) {
+  const template = document.createElement("template");
+  template.innerHTML = renderWorkBreakdown(doc.work, doc.nextActions, "dialog", "", noteCount);
+  const graphs = template.content.querySelectorAll(".work-graph");
+  const live = template.content.querySelector(".work-graph.is-live");
+  const showDone = new URLSearchParams(location.search).get("done") === "1";
+  const graph = !showDone && live?.querySelector(`[data-work-item="${CSS.escape(id)}"]`) ? live : graphs[graphs.length - 1];
+  graph?.querySelector(`[data-work-item="${CSS.escape(id)}"]`)?.closest(".work-node, .work-group")?.classList.add("is-current");
+  return graph?.outerHTML || '<p class="work-item-empty">No graph for this task.</p>';
+}
+
 // The work item dialog reads like a small inspector for one item: the task it belongs to on top, the whole breakdown as a
 // rail on the left, and on the right the item's prerequisites, next action, updates filed under it, and other mentions.
 // It stays open until Esc or ×; J/K walk every item, ← → the ones with updates, and ?item= reopens it on refresh.
@@ -1107,11 +1122,12 @@ function openWorkItem(id) {
   workItemDialog.innerHTML = `<header class="work-item-task">
       ${task ? `<button type="button" class="work-item-task-link" data-dialog-close title="Back to the task"><code>${escapeHtml(task.id)}</code><span>${escapeHtml(task.title)}</span></button><span class="work-item-task-status">${escapeHtml(TASK_STATUS_LABELS[task.status] || task.status)}</span>` : `<span class="work-item-task-link"><span>${escapeHtml(doc.title)}</span></span>`}
       <span class="work-item-progress" title="${doneLeaves} of ${leaves.length} work items completed"><span style="--done:${leaves.length ? doneLeaves / leaves.length : 0}"></span>${doneLeaves}/${leaves.length} done</span>
+      <span class="work-item-views" role="tablist" aria-label="View">${[["item", "Item"], ["graph", "Graph"]].map(([view, label]) => `<button type="button" role="tab" data-work-view="${view}" aria-selected="${workItemView === view}" title="${label} (G)">${label}</button>`).join("")}</span>
       <span class="work-item-step">${stepper.length > 1 && at >= 0 ? `<span>${at + 1} of ${stepper.length} with updates</span>` : ""}${["prev", "next"].map(dir => { const n = at >= 0 ? stepper[at + (dir === "prev" ? -1 : 1)] : null; return `<button type="button" class="work-item-icon-button" ${n ? `data-work-item="${escapeHtml(n.id)}" data-work-step="${dir}" title="${escapeHtml(`${n.id} · ${n.title}`)}"` : "disabled"} aria-label="${dir === "prev" ? "Previous" : "Next"} item with updates">${glyph("arrow-right")}</button>`; }).join("")}</span>
       <button type="button" class="work-item-icon-button" data-dialog-close aria-label="Close">${glyph("x")}</button>
     </header>
-    <nav class="work-item-rail" aria-label="Work breakdown"><ol>${rail}</ol><p><kbd>J</kbd> <kbd>K</kbd> every item · <kbd>←</kbd> <kbd>→</kbd> with updates</p></nav>
-    <div class="work-item-main">
+    <nav class="work-item-rail" aria-label="Work breakdown"><ol>${rail}</ol><p><kbd>J</kbd> <kbd>K</kbd> every item · <kbd>←</kbd> <kbd>→</kbd> with updates · <kbd>G</kbd> graph</p></nav>
+    ${workItemView === "graph" ? `<div class="work-item-main is-graph"><div class="work-item-graph" tabindex="0" aria-label="Work stream graph">${workItemGraph(doc, id, (key) => updates.get(key)?.length || 0)}</div></div>` : `<div class="work-item-main">
       <header class="work-item-heading">
         <p class="work-item-kicker"><code>${escapeHtml(node.id)}</code>${workStatusIcon(node, nodes)}<span>${escapeHtml(label)}</span>${parent ? `<span class="work-item-in">in</span><button type="button" class="work-item-parent" data-work-item="${escapeHtml(parent.id)}">${escapeHtml(parent.id)} ${escapeHtml(parent.title)}</button>` : ""}</p>
         <h2 id="work-item-title">${escapeHtml(node.title)}</h2>
@@ -1124,11 +1140,13 @@ function openWorkItem(id) {
       ${action ? `<section class="work-item-section"><h3>Next action</h3><div class="work-item-action"><p class="work-item-action-title">${escapeHtml(action.title)}</p><p class="work-item-action-prompt">${escapeHtml(action.prompt.replace(/\s+/g, " "))}</p></div></section>` : ""}
       <section class="work-item-section"><h3>Updates <span>${notes.length}</span></h3>${notes.length ? notes.map(workItemNote).join("") : `<p class="work-item-empty">None filed yet. An update titled “… (${escapeHtml(id)}):” lands here.</p>`}</section>
       ${mentions.length ? `<section class="work-item-section"><h3>Also mentioned <span>${mentions.reduce((sum, m) => sum + m.lines.length, 0)}</span></h3><ul class="work-item-mentions">${mentionHtml}</ul></section>` : ""}
-    </div>`;
+    </div>`}`;
   workItemDialog.querySelector(".work-item-main").scrollTop = 0;
   workItemDialog.querySelector(".work-item-rail-row.is-current")?.scrollIntoView({ block: "nearest" });
+  workItemDialog.querySelector(".work-graph .is-current")?.scrollIntoView({ block: "center", inline: "center" });
   const url = new URL(location.href);
   url.searchParams.set("item", id);
+  if (workItemView === "graph") url.searchParams.set("graph", "1"); else url.searchParams.delete("graph");
   history.replaceState(null, "", url);
 }
 
@@ -1148,7 +1166,14 @@ workItemDialog.addEventListener("click", (event) => {
     event.stopPropagation(); // the document's outside-click handler would close the composer this click opens
     return openWorkComposer(workItemDialog.dataset.item, agent.dataset.workAgent);
   }
+  const view = event.target.closest("[data-work-view]");
+  if (view) {
+    workItemView = view.dataset.workView;
+    return openWorkItem(workItemDialog.dataset.item);
+  }
   const item = event.target.closest("[data-work-item]");
+  // Picking a node in the graph reads that item; the rail and stepper keep the current view.
+  if (item?.closest(".work-item-graph")) workItemView = "item";
   if (item) return openWorkItem(item.dataset.workItem);
   const jump = event.target.closest("[data-work-jump]");
   const documentLink = event.target.closest(".markdown-document-link");
@@ -1166,6 +1191,11 @@ workItemDialog.addEventListener("keydown", (event) => {
     event.preventDefault();
     workItemDialog.querySelector(`[data-work-step="${event.key === "ArrowLeft" ? "prev" : "next"}"]`)?.click();
   }
+  if (event.key.toLowerCase() === "g") {
+    event.preventDefault();
+    workItemView = workItemView === "graph" ? "item" : "graph";
+    return openWorkItem(workItemDialog.dataset.item);
+  }
   const walk = { j: 1, k: -1 }[event.key.toLowerCase()];
   if (!walk) return;
   event.preventDefault();
@@ -1176,6 +1206,7 @@ workItemDialog.addEventListener("keydown", (event) => {
 workItemDialog.addEventListener("close", () => {
   const url = new URL(location.href);
   url.searchParams.delete("item");
+  url.searchParams.delete("graph");
   history.replaceState(null, "", url);
   const previous = dialogReturnFocus.get(workItemDialog);
   if (previous?.isConnected && previous.getClientRects().length) previous.focus();

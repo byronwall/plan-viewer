@@ -237,7 +237,7 @@ export function renderWorkBreakdown(work, actions, key, repairChunkId = '', note
       const notes = noteCount(n.id);
       const head = `<span><code>${escapeHtml(n.id)}</code>${notes ? notesMark(n.id, notes) : ''}<small class="work-status ${statusClass(n)}">${escapeHtml(statusLabel(n))}</small></span><strong>${escapeHtml(n.title)}</strong>`;
       const completed = n.status === 'completed' ? ' is-completed' : '';
-      if (kids(n.id).length) return `<div class="work-group${completed}" style="${style}" title="${escapeHtml(n.title)}"><header><code>${escapeHtml(n.id)}</code><strong>${escapeHtml(n.title)}</strong><small class="work-status ${statusClass(n)}">${escapeHtml(statusLabel(n))}</small></header></div>`;
+      if (kids(n.id).length) return `<div class="work-group${completed}" style="${style}" title="${escapeHtml(n.title)}"><header data-work-item="${escapeHtml(n.id)}"><code>${escapeHtml(n.id)}</code><strong>${escapeHtml(n.title)}</strong><small class="work-status ${statusClass(n)}">${escapeHtml(statusLabel(n))}</small></header></div>`;
       return `<button type="button" class="work-node is-actionable${n.ready && index >= 0 ? ' is-ready' : ''}${completed}" style="${style}" title="${escapeHtml(n.title)}" ${itemAttrs(n)}>${head}</button>`;
     }).join('');
     return `<div class="work-graph is-${variant}" style="width:${width}px;height:${height}px"><svg width="${width}" height="${height}" aria-hidden="true"><defs><marker id="${marker}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8"/></marker></defs>${edges}</svg>${boxes}</div>`;
