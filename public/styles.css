@@ -808,7 +808,7 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .viewer-dialog-heading button { border: 0; border-radius: 5px; background: var(--quiet-field); color: var(--muted); width: 30px; height: 30px; font-size: 1.25rem; }
 .viewer-dialog-heading button:hover { background: #e3e7ed; color: var(--ink); }
 .viewer-dialog kbd, .search-launcher kbd, .history-menu kbd { display: inline-block; border: 1px solid var(--line); border-radius: 4px; background: var(--hover-field); padding: 2px 5px; font: .72rem/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
-.search-dialog { width: min(760px, calc(100vw - 32px)); height: min(560px, calc(100dvh - 64px)); margin-top: max(32px, 12dvh); overflow: hidden; }
+.search-dialog { width: min(760px, calc(100vw - 32px)); height: min(720px, calc(100dvh - 64px)); margin-top: max(32px, 8dvh); overflow: hidden; }
 .search-dialog[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
 .search-field { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); padding: 0 14px 0 18px; }
 .search-field svg { flex: none; width: 17px; height: 17px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
@@ -2081,7 +2081,7 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 .work-item-dialog[open] { display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
 .work-item-dialog svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .work-item-task { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; min-width: 0; border-bottom: 1px solid var(--line); padding: 8px 10px 8px 16px; font-size: .8rem; }
-.work-item-task-link { display: flex; align-items: baseline; gap: 8px; min-width: 0; border: 0; border-radius: 6px; background: transparent; margin-left: -6px; padding: 3px 6px; color: var(--ink); font: inherit; font-weight: 650; text-align: left; cursor: pointer; transition: background-color 140ms ease-out; }
+.work-item-task-link { flex: 0 1 auto; display: flex; align-items: baseline; gap: 8px; min-width: 0; border: 0; border-radius: 6px; background: transparent; margin-left: -6px; padding: 3px 6px; color: var(--ink); font: inherit; font-weight: 650; text-align: left; cursor: pointer; transition: background-color 140ms ease-out; }
 .work-item-task-link:hover { background: var(--quiet-field); }
 .work-item-task-link code { flex: none; color: var(--muted); font: 600 .74rem/1.2 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; }
 .work-item-task-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2090,25 +2090,26 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 .work-item-progress > span { position: relative; width: 72px; height: 4px; overflow: hidden; border-radius: 2px; background: var(--quiet-field); }
 .work-item-progress > span::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--done) * 100%); background: var(--success); }
 .work-item-views { display: flex; flex: none; gap: 2px; margin-left: auto; border-radius: 7px; background: var(--quiet-field); padding: 2px; }
-.work-item-views button { border: 0; border-radius: 5px; background: transparent; padding: 3px 10px; color: var(--muted); font: inherit; font-size: .76rem; font-weight: 600; cursor: pointer; transition: background-color 140ms ease-out, color 140ms ease-out; }
+.work-item-views button { height: 24px; border: 0; border-radius: 5px; background: transparent; padding: 0 10px; color: var(--muted); font: inherit; font-size: .76rem; font-weight: 600; cursor: pointer; transition: background-color 140ms ease-out, color 140ms ease-out; }
 .work-item-views button:hover { color: var(--ink); }
 .work-item-views button[aria-selected="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgba(24, 33, 47, .12); }
 .work-item-views + .work-item-step { margin-left: 8px; }
 .work-item-step { display: flex; align-items: center; gap: 2px; margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.work-item-step > span { margin-right: 6px; }
+.work-item-step-count { min-width: 16ch; margin-right: 6px; text-align: right; } /* reserved so the toggle never shifts while stepping */
 .work-item-icon-button { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; transition: background-color 140ms ease-out, color 140ms ease-out; }
 .work-item-icon-button:hover:not(:disabled) { background: var(--quiet-field); color: var(--ink); }
 .work-item-icon-button:disabled { opacity: .35; cursor: default; }
 .work-item-icon-button[data-work-step="prev"] svg { rotate: 180deg; }
 .work-item-rail { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; border-right: 1px solid var(--line); background: var(--hover-field); }
 .work-item-rail ol { margin: 0; overflow-y: auto; overscroll-behavior: contain; padding: 6px; list-style: none; scrollbar-width: thin; }
-.work-item-rail > p { margin: 0; border-top: 1px solid var(--line); padding: 7px 12px; color: var(--muted); font-size: .7rem; }
+.work-item-rail > p { display: flex; justify-content: space-between; gap: 8px; margin: 0; border-top: 1px solid var(--line); padding: 7px 12px; color: var(--muted); font-size: .7rem; white-space: nowrap; }
+.work-item-rail > p kbd + kbd { margin-left: 2px; }
 .work-item-rail-row, .work-item-ref { display: grid; grid-template-columns: auto 16px minmax(0, 1fr) auto; align-items: start; column-gap: 6px; width: 100%; border: 0; border-radius: 6px; background: transparent; padding: 3px 6px; color: var(--ink); font: inherit; font-size: .78rem; line-height: 18px; text-align: left; cursor: pointer; transition: background-color 140ms ease-out; }
 .work-item-rail-row { padding-left: calc(6px + var(--depth) * 12px); }
 .work-item-rail-row:hover, .work-item-ref:hover { background: var(--quiet-field); }
-.work-item-rail-row.is-current { background: var(--selected); box-shadow: inset 2px 0 0 var(--action-ink); }
+.work-item-rail-row.is-current { background: var(--selected); }
+.work-item-rail-row.is-current > code { color: var(--action-ink); }
 .work-item-rail-row.is-parent { font-weight: 650; }
-.work-item-rail-row.is-parent:not(:first-child) { margin-top: 0; }
 .work-item-rail li:has(> .is-parent):not(:first-child) { margin-top: 6px; }
 .work-item-rail-row.is-settled > span:not(.work-item-notes-count) { color: var(--muted); }
 .work-item-rail-row code, .work-item-ref code { min-width: 3.4em; color: var(--muted); font: 600 .7rem/18px ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; }
@@ -2163,17 +2164,27 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 @media (max-width: 860px) {
   .work-item-dialog[open] { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
   .work-item-rail { max-height: 132px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .work-item-rail > p, .work-item-progress, .work-item-step > span { display: none; }
+  .work-item-rail > p, .work-item-progress, .work-item-step-count, .work-item-task-status { display: none; }
+  .work-item-task { gap: 6px; padding-left: 12px; }
   .work-item-main { padding: 14px 16px 20px; }
 }
 /* Graph view: the task's dependency graph fills the item pane, the open item outlined and scrolled to the center. */
 .work-item-main.is-graph { display: grid; padding: 0; overflow: hidden; }
 .work-item-main.is-graph > * { max-width: none; }
 .work-item-graph { min-height: 0; overflow: auto; overscroll-behavior: contain; background: var(--hover-field); padding: 8px; scrollbar-width: thin; }
-.work-item-graph:focus-visible { outline: none; }
 .work-item-dialog .work-graph > svg { width: auto; height: auto; stroke: none; stroke-width: initial; }
 .work-item-graph .work-node.is-current { border-color: var(--action-ink); box-shadow: 0 0 0 2px var(--action-ink); }
 .work-item-graph .work-group.is-current { border-color: var(--action-ink); box-shadow: 0 0 0 2px var(--action-ink); }
 .work-group > header[data-work-item] { cursor: pointer; }
 .work-group > header[data-work-item]:hover strong { color: var(--action-ink); }
 .work-item-graph .work-notes-mark svg { width: 12px; height: 12px; }
+/* One focus ring for every control in the dialog, matching the app's action rows. */
+.work-item-dialog :is(button, [tabindex="0"]):focus-visible { outline: 2px solid rgba(49, 87, 213, .4); outline-offset: 1px; }
+.work-item-dialog .work-item-graph:focus-visible { outline: 2px solid rgba(49, 87, 213, .4); outline-offset: -2px; }
+@media (prefers-reduced-motion: no-preference) {
+  .work-item-dialog[open] { animation: work-item-in 160ms cubic-bezier(.16, 1, .3, 1); }
+  @keyframes work-item-in { from { opacity: .6; transform: translateY(6px) scale(.99); } }
+}
+/* At phone width the dock's buttons scroll inside the bar instead of widening the page (which also shifted dialogs). */
+@container doc-dock (max-width: 480px) { .doc-dock-buttons { flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; } }
+.work-item-main:focus { outline: none; }

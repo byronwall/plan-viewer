@@ -681,6 +681,8 @@ function requestComposerClose(returnFocus = false) {
 
 function closeComposer(returnFocus = false) {
   const trigger = handoffTrigger;
+  // Backing out of a work item draft (Cancel, Esc, ×) returns to that item's dialog; sending it does not.
+  const workItem = returnFocus && state.openComposer?.startsWith("work:") ? state.openComposer.split(":").slice(2).join(":") : "";
   if (elements.handoffPopover.matches(":popover-open")) elements.handoffPopover.hidePopover();
   state.openComposer = null;
   handoffTrigger = null;
@@ -689,7 +691,8 @@ function closeComposer(returnFocus = false) {
   elements.globalHandoff.setAttribute("aria-expanded", "false");
   elements.documentHandoff?.setAttribute("aria-expanded", "false");
   for (const button of elements.chunks.querySelectorAll(".handoff-button, [data-action-key]")) button.setAttribute("aria-expanded", "false");
-  if (returnFocus) trigger?.focus();
+  if (workItem) openWorkItem(workItem);
+  else if (returnFocus) trigger?.focus();
 }
 
 // Images in an open overlay (an issue's description) page among themselves; elsewhere among the document's.
@@ -1105,10 +1108,12 @@ function openWorkItem(id) {
   const depthOf = (n) => { let d = 0; for (let p = byId.get(n.parent); p; p = byId.get(p.parent)) d++; return d; };
   const leaves = nodes.filter(n => !kids(n.id).length);
   const doneLeaves = leaves.filter(n => n.status === "completed").length;
-  const stepper = nodes.filter(n => updates.has(n.id)), at = stepper.indexOf(node);
+  const stepper = nodes.filter(n => updates.has(n.id)), at = stepper.indexOf(node), position = nodes.indexOf(node);
+  // From an item without updates, ← → still go to the nearest items that have them.
+  const neighbors = { prev: [...stepper].reverse().find(n => nodes.indexOf(n) < position), next: stepper.find(n => nodes.indexOf(n) > position) };
   const noteCount = (n) => updates.get(n.id)?.length ? `<span class="work-item-notes-count">${glyph("message-square")}${updates.get(n.id).length}</span>` : "";
   const ref = (n) => `<button type="button" class="work-item-ref" data-work-item="${escapeHtml(n.id)}"><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${noteCount(n)}</button>`;
-  const rail = nodes.map(n => `<li><button type="button" class="work-item-rail-row${n === node ? " is-current" : ""}${isSettled(n.status) ? " is-settled" : ""}${kids(n.id).length ? " is-parent" : ""}" style="--depth:${depthOf(n)}" data-work-item="${escapeHtml(n.id)}"${n === node ? ' aria-current="true"' : ""}><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${noteCount(n)}</button></li>`).join("");
+  const rail = nodes.map(n => `<li><button type="button" class="work-item-rail-row${n === node ? " is-current" : ""}${isSettled(n.status) ? " is-settled" : ""}${kids(n.id).length ? " is-parent" : ""}" style="--depth:${depthOf(n)}" data-work-item="${escapeHtml(n.id)}"${n === node ? ' aria-current="true"' : ' tabindex="-1"'}><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${noteCount(n)}</button></li>`).join("");
   const relation = (label, list) => list.length ? `<dt>${label}</dt><dd>${list.map(ref).join("")}</dd>` : "";
   const relations = relation("After", node.deps.map(dep => byId.get(dep)).filter(Boolean)) + relation("Unblocks", nodes.filter(n => n.deps.includes(id))) + relation("Contains", kids(id));
   const actionIndex = doc.nextActions.findIndex(a => a.workItem === id);
@@ -1121,16 +1126,16 @@ function openWorkItem(id) {
   const mentionHtml = mentions.map(m => `<li><button type="button" class="work-item-mention-source" data-work-jump="${escapeHtml(m.chunkId)}">${escapeHtml(m.source)}</button>${m.date ? `<time datetime="${m.date}">${escapeHtml(formatDate(m.date))}</time>` : ""}${m.lines.map(line => `<p>${markId(inlineMarkdown(line, state.selectedPath), id)}</p>`).join("")}</li>`).join("");
   workItemDialog.dataset.item = id;
   workItemDialog.innerHTML = `<header class="work-item-task">
-      ${task ? `<button type="button" class="work-item-task-link" data-dialog-close title="Back to the task"><code>${escapeHtml(task.id)}</code><span>${escapeHtml(task.title)}</span></button><span class="work-item-task-status">${escapeHtml(TASK_STATUS_LABELS[task.status] || task.status)}</span>` : `<span class="work-item-task-link"><span>${escapeHtml(doc.title)}</span></span>`}
+      ${task ? `<button type="button" class="work-item-task-link" data-dialog-close title="${escapeHtml(`${task.id} · ${task.title} — back to the task`)}"><code>${escapeHtml(task.id)}</code><span>${escapeHtml(task.title)}</span></button><span class="work-item-task-status">${escapeHtml(TASK_STATUS_LABELS[task.status] || task.status)}</span>` : `<span class="work-item-task-link"><span>${escapeHtml(doc.title)}</span></span>`}
       <span class="work-item-progress" title="${doneLeaves} of ${leaves.length} work items completed"><span style="--done:${leaves.length ? doneLeaves / leaves.length : 0}"></span>${doneLeaves}/${leaves.length} done</span>
       <span class="work-item-views" role="tablist" aria-label="View">${[["item", "Item"], ["graph", "Graph"]].map(([view, label]) => `<button type="button" role="tab" data-work-view="${view}" aria-selected="${workItemView === view}" title="${label} (G)">${label}</button>`).join("")}</span>
-      <span class="work-item-step">${stepper.length > 1 && at >= 0 ? `<span>${at + 1} of ${stepper.length} with updates</span>` : ""}${["prev", "next"].map(dir => { const n = at >= 0 ? stepper[at + (dir === "prev" ? -1 : 1)] : null; return `<button type="button" class="work-item-icon-button" ${n ? `data-work-item="${escapeHtml(n.id)}" data-work-step="${dir}" title="${escapeHtml(`${n.id} · ${n.title}`)}"` : "disabled"} aria-label="${dir === "prev" ? "Previous" : "Next"} item with updates">${glyph("arrow-right")}</button>`; }).join("")}</span>
+      <span class="work-item-step"><span class="work-item-step-count">${at >= 0 ? `${at + 1} of ${stepper.length} with updates` : stepper.length ? `${stepper.length} with updates` : ""}</span>${["prev", "next"].map(dir => { const n = neighbors[dir]; return `<button type="button" class="work-item-icon-button" ${n ? `data-work-item="${escapeHtml(n.id)}" data-work-step="${dir}" title="${escapeHtml(`${n.id} · ${n.title}`)}"` : "disabled"} aria-label="${dir === "prev" ? "Previous" : "Next"} item with updates${n ? `: ${escapeHtml(n.id)}` : ""}" aria-keyshortcuts="${dir === "prev" ? "ArrowLeft" : "ArrowRight"}">${glyph("arrow-right")}</button>`; }).join("")}</span>
       <button type="button" class="work-item-icon-button" data-dialog-close aria-label="Close">${glyph("x")}</button>
     </header>
-    <nav class="work-item-rail" aria-label="Work breakdown"><ol>${rail}</ol><p><kbd>J</kbd> <kbd>K</kbd> every item · <kbd>←</kbd> <kbd>→</kbd> with updates · <kbd>G</kbd> graph</p></nav>
-    ${workItemView === "graph" ? `<div class="work-item-main is-graph"><div class="work-item-graph" tabindex="0" aria-label="Work stream graph">${workItemGraph(doc, id, (key) => updates.get(key)?.length || 0)}</div></div>` : `<div class="work-item-main">
+    <nav class="work-item-rail" aria-label="Work breakdown"><ol>${rail}</ol><p><span><kbd>J</kbd><kbd>K</kbd> items</span><span><kbd>←</kbd><kbd>→</kbd> updates</span><span><kbd>G</kbd> graph</span></p></nav>
+    ${workItemView === "graph" ? `<div class="work-item-main is-graph" tabindex="-1"><div class="work-item-graph" tabindex="0" aria-label="Work stream graph">${workItemGraph(doc, id, (key) => updates.get(key)?.length || 0)}</div></div>` : `<div class="work-item-main" tabindex="-1">
       <header class="work-item-heading">
-        <p class="work-item-kicker"><code>${escapeHtml(node.id)}</code>${workStatusIcon(node, nodes)}<span>${escapeHtml(label)}</span>${parent ? `<span class="work-item-in">in</span><button type="button" class="work-item-parent" data-work-item="${escapeHtml(parent.id)}">${escapeHtml(parent.id)} ${escapeHtml(parent.title)}</button>` : ""}</p>
+        <p class="work-item-kicker"><code>${escapeHtml(node.id)}</code>${workStatusIcon(node, nodes)}<span>${escapeHtml(label)}</span>${parent ? `<span class="work-item-in">in</span><button type="button" class="work-item-parent" data-work-item="${escapeHtml(parent.id)}" title="${escapeHtml(`${parent.id} · ${parent.title}`)}">${escapeHtml(parent.id)} ${escapeHtml(parent.title)}</button>` : ""}</p>
         <h2 id="work-item-title">${escapeHtml(node.title)}</h2>
         <div class="work-item-agent">
           <button type="button" class="work-item-agent-button${frontier}" data-work-agent="run"${offFrontier}>${glyph("play")}Send to agent</button>
@@ -1138,13 +1143,18 @@ function openWorkItem(id) {
         </div>
       </header>
       ${relations ? `<dl class="work-item-relations">${relations}</dl>` : ""}
-      ${action ? `<section class="work-item-section"><h3>Next action</h3><div class="work-item-action"><p class="work-item-action-title">${escapeHtml(action.title)}</p><p class="work-item-action-prompt">${escapeHtml(action.prompt.replace(/\s+/g, " "))}</p></div></section>` : ""}
+      ${action ? `<section class="work-item-section"><h3>Next action</h3><div class="work-item-action"><p class="work-item-action-title">${escapeHtml(action.title)}</p><p class="work-item-action-prompt">${inlineMarkdown(action.prompt.replace(/\s+/g, " "), state.selectedPath)}</p></div></section>` : ""}
       <section class="work-item-section"><h3>Updates <span>${notes.length}</span></h3>${notes.length ? notes.map(workItemNote).join("") : `<p class="work-item-empty">None filed yet. An update titled “… (${escapeHtml(id)}):” lands here.</p>`}</section>
       ${mentions.length ? `<section class="work-item-section"><h3>Also mentioned <span>${mentions.reduce((sum, m) => sum + m.lines.length, 0)}</span></h3><ul class="work-item-mentions">${mentionHtml}</ul></section>` : ""}
     </div>`}`;
-  workItemDialog.querySelector(".work-item-main").scrollTop = 0;
-  workItemDialog.querySelector(".work-item-rail-row.is-current")?.scrollIntoView({ block: "nearest" });
-  workItemDialog.querySelector(".work-graph .is-current")?.scrollIntoView({ block: "center", inline: "center" });
+  const main = workItemDialog.querySelector(".work-item-main");
+  main.scrollTop = 0;
+  // Keys (J/K, ← →, G, space to scroll) need focus inside; after the composer closes it would otherwise sit on the page.
+  if (!workItemDialog.contains(document.activeElement)) main.focus({ preventScroll: true });
+  // Scroll only the rail and graph panes; scrollIntoView would also nudge the page under the modal.
+  const centerIn = (pane, target) => { if (!pane || !target) return; const p = pane.getBoundingClientRect(), t = target.getBoundingClientRect(); pane.scrollTop += t.top - p.top - (p.height - t.height) / 2; pane.scrollLeft += t.left - p.left - (p.width - t.width) / 2; };
+  centerIn(workItemDialog.querySelector(".work-item-rail ol"), workItemDialog.querySelector(".work-item-rail-row.is-current"));
+  centerIn(workItemDialog.querySelector(".work-item-graph"), workItemDialog.querySelector(".work-graph .is-current"));
   const url = new URL(location.href);
   url.searchParams.set("item", id);
   if (workItemView === "graph") url.searchParams.set("graph", "1"); else url.searchParams.delete("graph");
@@ -1178,7 +1188,8 @@ workItemDialog.addEventListener("click", (event) => {
   if (item) return openWorkItem(item.dataset.workItem);
   const jump = event.target.closest("[data-work-jump]");
   const documentLink = event.target.closest(".markdown-document-link");
-  if (!jump && !documentLink && !event.target.closest("[data-dialog-close], a[href]")) return;
+  // A link that opens a new tab leaves the dialog where it was; one that navigates here closes it.
+  if (!jump && !documentLink && !event.target.closest("[data-dialog-close], a[href]:not([target=_blank])")) return;
   workItemDialog.close();
   if (jump) document.getElementById(jump.dataset.workJump)?.scrollIntoView({ block: "start", behavior: "instant" });
   if (documentLink) {
@@ -1332,6 +1343,7 @@ function renderDocument() {
     ${chunkBody(doc, chunk)}
   </article>`).join("");
   enhanceTaskReferences();
+  markDocumentChanges();
   renderDocumentDock(doc);
   state.activeChunkId = doc.chunks[0]?.id || "";
   state.activeOutlinePath = [];
@@ -1343,7 +1355,6 @@ function renderDocument() {
       if (node) heading.dataset.outlineKey = node.key;
     });
   }
-  markDocumentChanges();
   renderChunkNavigation();
   syncGlobalHandoff();
   if (state.openComposer === "global") {
@@ -1482,6 +1493,7 @@ async function selectDocument(path, { historyMode = "push", anchor = "" } = {}) 
     const response = await fetch(`/api/document?path=${encodeURIComponent(path)}`);
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || "Could not open that document.");
+    if (state.selectedPath !== path) changeMarks.delete(state.selectedPath); // you've seen what changed there
     state.selectedPath = path;
     state.document = body;
     closeComposer();
@@ -1493,7 +1505,6 @@ async function selectDocument(path, { historyMode = "push", anchor = "" } = {}) 
     const item = new URLSearchParams(location.search).get("item");
     if (item) openWorkItem(item);
     else if (workItemDialog.open) workItemDialog.close();
-    if (state.selectedPath !== path) changeMarks.delete(state.selectedPath); // you've seen what changed there
   } catch (error) {
     showNotice(error.message, true);
   } finally {
@@ -1628,17 +1639,6 @@ updateButton.addEventListener("click", async () => {
 checkViewerVersion();
 setInterval(checkViewerVersion, 5 * 60_000);
 
-function connectLiveUpdates() {
-  const events = new EventSource("/api/events");
-  events.addEventListener("markdown", (event) => {
-    try {
-      const update = JSON.parse(event.data);
-      if (update.path) scheduleMarkdownRefresh(update.path);
-    } catch {
-      // Ignore malformed live events; EventSource will keep the connection alive.
-    }
-  });
-}
 // Every document an agent (or an editor outside the viewer) changed since the server started, newest first.
 let documentChanges = [];
 fetch("/api/changes").then((response) => response.json()).then((body) => { documentChanges = body.changes || []; }).catch(() => {});
@@ -1691,12 +1691,23 @@ function announceChange(change) {
   changeToasts.set(change.path, showNotice(`${verb} “${change.title}”`, false, { kind: "info", description: changeSummary(change), action: open }));
 }
 
+function connectLiveUpdates() {
+  const events = new EventSource("/api/events");
+  events.addEventListener("markdown", (event) => {
+    try {
+      const update = JSON.parse(event.data);
+      if (update.change) announceChange(update.change);
+      if (update.path) scheduleMarkdownRefresh(update.path);
+    } catch {
+      // Ignore malformed live events; EventSource will keep the connection alive.
+    }
+  });
+}
 
 async function dispatch(form) {
   const button = form.querySelector(".send-button");
   const commentary = new FormData(form).get("commentary");
   if (button.disabled) return;
-      if (update.change) announceChange(update.change);
   button.disabled = true;
   button.textContent = "Opening draft…";
   try {
@@ -2352,7 +2363,7 @@ function rankedMatches(query, prs, me) {
 }
 
 const GROUP_CAPS = { "Work items": 8, Issues: 8, "Pull requests": 6, Initiatives: 6 };
-// With no query, PRs waiting on you lead. A query puts the best few matches of any kind on top, then the rest by kind,
+// With no query, PRs waiting on you lead. A query puts the best eight matches of any kind on top, then the rest by kind,
 // kinds ordered by their best remaining match.
 function searchGroups(query) {
   const index = cachedPrIndex();
@@ -2360,11 +2371,11 @@ function searchGroups(query) {
   if (query) {
     const ranked = rankedMatches(query, prs, index?.me);
     const groups = new Map();
-    for (const item of ranked.slice(5)) {
+    for (const item of ranked.slice(8)) {
       const list = groups.get(item.group) || groups.set(item.group, []).get(item.group);
       if (list.length < (GROUP_CAPS[item.group] || Infinity)) list.push(item);
     }
-    return [["Top results", ranked.slice(0, 5)], ...groups];
+    return [["Top results", ranked.slice(0, 8)], ...groups];
   }
   const open = prs.filter((pr) => pr.state === "OPEN").sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
   const wrap = (list) => list.map((pr) => ({ pr }));
@@ -2839,6 +2850,15 @@ historyMenu.addEventListener("beforetoggle", (event) => {
   if (event.newState !== "open") return;
   const current = visitKey(new URL(location.href));
   const shown = visits.filter((visit) => visit.key !== current);
+  const changed = documentChanges.filter((change, index) => change.kind !== "deleted" && documentChanges.findIndex((other) => other.path === change.path) === index).slice(0, 8);
+  const changeRows = changed.map((change, index) => resultRow({
+    ...visitResult(changeHref(change)),
+    detail: escapeHtml(changeSummary(change)),
+    marker: index < 9 ? index + 1 : "",
+    side: Date.now() - change.at < 60_000 ? "just now" : `${ago(change.at)} ago`,
+    tag: "button",
+    attrs: `type="button" role="option" aria-selected="false" data-visit-href="${escapeHtml(changeHref(change))}"`,
+  }));
   const rows = shown.map((visit, index) => resultRow({
     ...visitResult(visit.href),
     marker: index + changed.length < 9 ? index + changed.length + 1 : "", // the 1–9 jump key
@@ -2850,15 +2870,6 @@ historyMenu.addEventListener("beforetoggle", (event) => {
   const here = resultRow({ ...visitResult(location.href), side: "", className: "history-here", marker: "" });
   historyMenu.style.height = "";
   historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recently viewed</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed">${changeRows.length ? `<div class="search-section" role="presentation">Recently changed</div>${changeRows.join("")}` : ""}<div class="search-section" role="presentation">Recently viewed</div>${rows.join("") || '<div class="search-empty"><strong>Nothing yet</strong><span>Pages, PRs and worktrees you open will appear here.</span></div>'}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>H</kbd> close</span><span class="history-count">${shown.length + changed.length} ${shown.length + changed.length === 1 ? "place" : "places"}</span></footer>`;
-  const changed = documentChanges.filter((change, index) => change.kind !== "deleted" && documentChanges.findIndex((other) => other.path === change.path) === index).slice(0, 8);
-  const changeRows = changed.map((change, index) => resultRow({
-    ...visitResult(changeHref(change)),
-    detail: escapeHtml(changeSummary(change)),
-    marker: index < 9 ? index + 1 : "",
-    side: Date.now() - change.at < 60_000 ? "just now" : `${ago(change.at)} ago`,
-    tag: "button",
-    attrs: `type="button" role="option" aria-selected="false" data-visit-href="${escapeHtml(changeHref(change))}"`,
-  }));
 });
 // Every word must appear in the row's title or detail; the 1–9 markers renumber over what's left.
 function filterHistory() {
