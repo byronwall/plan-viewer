@@ -40,7 +40,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 
 ## Commands
 
-- `npm test` runs every `*.test.*` file against `fixtures/planning/` (set by `PLANNING_ROOT`), never live planning files. It should always be green; a failure is yours. New test files must be added to the `test` script in `package.json`.
+- `npm test` runs every `*.test.*` file against `fixtures/planning/` (set by `PLANNING_ROOT`), never live planning files. It should always be green; a failure is yours.
 - `npm run demo` serves `examples/workspace/` on 4173 (`PLAN_VIEWER_PORT` to change). `fixtures/` is for tests only; keep demo content in `examples/`. Against a real workspace, run `node /path/to/plan-viewer/cli.ts <serve|lint|links|move|task>` from that workspace.
 - `PLAN_VIEWER_DRY_RUN=1` makes agent handoffs validate and log without opening Codex or Claude, for testing the draft flow.
 - `npm install --no-save playwright-core && node scripts/screenshots.mjs [name,…]` regenerates `docs/images/` with installed Chrome; then `oxipng -o 4 --strip safe docs/images/*.png`.
