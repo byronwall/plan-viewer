@@ -537,7 +537,7 @@ test("work breakdown diagnostics explain unsupported statuses and how to repair 
   assert.match(work.warnings[1], /W2 depends on W1, which could not be parsed/);
   assert.equal(work.nodes[0].ready, false);
   const html = renderWorkBreakdown(work, [], 'actions', 'work-breakdown');
-  assert.match(html, /Actions are paused/);
+  assert.match(html, /Readiness may be wrong/);
   assert.match(html, /data-chunk-id="work-breakdown" data-repair-work/);
   const repaired = parseWorkBreakdown(source.replace('[done]', '[completed]'));
   assert.deepEqual(repaired.warnings, []);
@@ -574,7 +574,7 @@ test("action rendering escapes titles, prompts and graph labels", async () => {
   const { renderActions, renderWorkBreakdown, parseWorkBreakdown } = await import('./public/actions.js');
   const html = renderActions([{ title: '<script>bad</script>', prompt: '<img src=x onerror=bad>', sourcePath: 'tasks/TASK-0001.md' }], 'next');
   assert.doesNotMatch(html, /<script>|<img/);
-  assert.match(html, /Prepare action/);
+  assert.match(html, /Draft action/);
   const graph = renderWorkBreakdown(parseWorkBreakdown('- W1: <script>bad</script> [open]'), [], 'work');
   assert.doesNotMatch(graph, /<script>/);
 });
@@ -597,8 +597,20 @@ test("milestone documents retain actionable and scope sections", () => {
 test("renders readable prerequisites alongside the graph arrows", async () => {
   const { renderWorkBreakdown, parseWorkBreakdown } = await import('./public/actions.js');
   const html = renderWorkBreakdown(parseWorkBreakdown('- W1: Evidence [open]\n- W2: Fix [open] (after: W1)'), [], 'work');
-  assert.match(html, /After: W1/);
+  assert.match(html, /After W1/);
   assert.match(html, /Blocked/);
+});
+
+test("a waiting action stays openable and says what it waits on", async () => {
+  const { renderActions, renderWorkBreakdown, parseWorkBreakdown } = await import('./public/actions.js');
+  const action = { title: 'Fix it', prompt: 'Apply the fix.', sourcePath: 'tasks/TASK-0001.md', workItem: 'W2', blocked: true, blockedReason: 'After W1' };
+  const list = renderActions([action], 'next');
+  assert.doesNotMatch(list, /disabled/);
+  assert.match(list, /class="action-card is-waiting"[^>]*data-action-index="0"/);
+  assert.match(list, /After W1<\/span> · Apply the fix\./);
+  const tree = renderWorkBreakdown(parseWorkBreakdown('- W1: Evidence [open]\n- W2: Fix [open] (after: W1)'), [action], 'next');
+  assert.match(tree, /class="work-row is-actionable is-waiting"[^>]*data-action-index="0"/);
+  assert.match(tree, /class="work-node is-actionable"[^>]*data-action-index="0"/);
 });
 
 test("setTaskStatus rewrites only status and updated front matter", async () => {
@@ -676,6 +688,7 @@ test("Slack permalinks become desktop deep links that land on the message and it
 test("an active task with only blocked actions explains what it is waiting on", async () => {
   const task = await loadDocument("tasks/TASK-0002.md");
   assert.ok(task.nextActions.every(action => action.blocked));
+  assert.equal(task.nextActions[0].blockedReason, "After W1");
   assert.match(task.actionWarnings.join(" "), /no ready next action: “Compare released versions” \(W2 is open, after W1\)/);
   assert.deepEqual((await loadDocument("tasks/TASK-0015.md")).actionWarnings, []);
 });

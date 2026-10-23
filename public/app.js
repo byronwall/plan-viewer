@@ -551,7 +551,7 @@ function composerTemplate(target) {
   const heading = (meta) => `<header class="composer-heading"><div><h3>${escapeHtml(target.title)}</h3>${meta ? `<p class="composer-meta">${meta}</p>` : ""}</div>${close}</header>`;
   if (target.scope === "action") {
     const { action } = target;
-    const meta = `<span title="${escapeHtml(action.sourcePath)}">${escapeHtml(action.sourcePath.split("/").pop())}</span>${action.workItem ? ` · ${escapeHtml(action.workItem)}` : ""}`;
+    const meta = `<span title="${escapeHtml(action.sourcePath)}">${escapeHtml(action.sourcePath.split("/").pop())}</span>${action.workItem ? ` · ${escapeHtml(action.workItem)}` : ""}${action.blocked ? ` · <span class="action-waiting">${escapeHtml(action.blockedReason || "Waiting on prerequisites")}</span>` : ""}`;
     return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="action" data-source-path="${escapeHtml(action.sourcePath)}" data-action-id="${escapeHtml(action.id)}" data-expected-prompt="${escapeHtml(action.prompt)}">
       ${heading(meta)}
       <div class="composer-body">
@@ -1884,7 +1884,6 @@ function openCursorComposer() {
   const action = hovered?.closest("[data-action-key]")
     || hovered?.closest(".action-row")?.querySelector("[data-action-key]");
   if (action) {
-    if (action.disabled) { showNotice("This action is blocked. Resolve its prerequisites first."); return; }
     action.click();
     return;
   }

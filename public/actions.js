@@ -101,10 +101,15 @@ function actionPreview(action) {
   return text.startsWith(action.title.replace(/\s+/g, ' ').trim()) ? '' : text;
 }
 
+const icon = glyph => `<svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS[glyph]}</svg>`;
+
+// Every action opens its draft, including waiting ones: the lock and "After …" only advise.
 function actionRow(action, index, key) {
   const preview = actionPreview(action);
-  const note = action.blocked ? action.blockedReason || 'Blocked — resolve the work item dependencies first' : preview;
-  return `<div class="action-row" id="${escapeHtml(markdownHeadingId(action.title))}"><button class="action-card" type="button" data-action-key="${escapeHtml(key)}" data-action-index="${index}" aria-label="Prepare action: ${escapeHtml(action.title)}" aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false" ${action.blocked ? 'disabled' : ''}><span class="action-text"><span class="action-title">${action.workItem ? `<code>${escapeHtml(action.workItem)}</code>` : ''}${escapeHtml(action.title)}</span>${note ? `<span class="action-note${action.blocked ? ' is-blocked' : ''}">${escapeHtml(note)}</span>` : ''}</span><span class="action-go">${action.blocked ? 'Blocked' : 'Prepare <span aria-hidden="true">↗</span>'}</span></button></div>`;
+  const waiting = action.blocked ? `<span class="action-waiting">${escapeHtml(action.blockedReason || 'Waiting on prerequisites')}</span>` : '';
+  const note = waiting || preview ? `<span class="action-note">${waiting}${waiting && preview ? ' · ' : ''}${escapeHtml(preview)}</span>` : '';
+  const status = action.blocked ? 'Waiting' : 'Ready';
+  return `<div class="action-row" id="${escapeHtml(markdownHeadingId(action.title))}"><button class="action-card${action.blocked ? ' is-waiting' : ''}" type="button" data-action-key="${escapeHtml(key)}" data-action-index="${index}" aria-label="Draft action: ${escapeHtml(action.title)}${action.blocked ? ` (${escapeHtml(action.blockedReason || 'waiting')})` : ''}" aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false"><span class="action-label">${escapeHtml(action.workItem)}</span><span class="action-status is-${status.toLowerCase()}">${icon(action.blocked ? 'lock' : 'circle-check')}</span><span class="action-text"><span class="action-title">${escapeHtml(action.title)}</span>${note}</span><span class="action-go">${icon('pen-line')}Draft</span></button></div>`;
 }
 
 export function renderActions(actions, key) {
@@ -131,21 +136,21 @@ export function renderActions(actions, key) {
 
 export function renderWorkBreakdown(work, actions, key, repairChunkId = '') {
   const { nodes, warnings } = work;
-  const diagnostics = warnings.length ? `<section class="work-validation" aria-label="Work breakdown needs repair"><strong>Work breakdown needs repair</strong><p>Actions are paused until these issues are fixed in the task Markdown.</p><ul>${warnings.map(w => `<li class="work-warning">${escapeHtml(w)}</li>`).join('')}</ul>${repairChunkId ? `<button type="button" class="handoff-button" data-chunk-id="${escapeHtml(repairChunkId)}" data-repair-work aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false">Prepare fix ↗</button>` : ''}</section>` : '';
+  const diagnostics = warnings.length ? `<section class="work-validation" aria-label="Work breakdown needs repair"><strong>Work breakdown needs repair</strong><p>Readiness may be wrong until these issues are fixed in the task Markdown.</p><ul>${warnings.map(w => `<li class="work-warning">${escapeHtml(w)}</li>`).join('')}</ul>${repairChunkId ? `<button type="button" class="handoff-button" data-chunk-id="${escapeHtml(repairChunkId)}" data-repair-work aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false">Prepare fix ↗</button>` : ''}</section>` : '';
   if (!nodes.length) return `${diagnostics}${warnings.length ? '' : '<p class="action-empty">Add nested work items to this task to see its tree and dependencies.</p>'}`;
   const hasChildren = n => nodes.some(child => child.parent === n.id);
   const statusLabel = n => n.ready && !hasChildren(n) ? 'Ready' : ['open', 'active'].includes(n.status) && !n.ready && !hasChildren(n) ? 'Blocked' : n.status[0].toUpperCase() + n.status.slice(1);
-  const actionIndex = n => { const i = actions.findIndex(a => a.workItem === n.id); return i >= 0 && n.ready && !actions[i].blocked ? i : -1; };
+  const actionIndex = n => actions.findIndex(a => a.workItem === n.id);
   const actionAttrs = i => `data-action-key="${escapeHtml(key)}" data-action-index="${i}" aria-haspopup="dialog" aria-controls="handoff-popover"`;
   const statusClass = n => `is-${statusLabel(n).toLowerCase()}`;
   const statusIcons = {
-    Open: GLYPHS.circle,
-    Active: GLYPHS["circle-dot"],
-    Ready: GLYPHS["circle-check"],
-    Blocked: GLYPHS.lock,
-    Waiting: GLYPHS.clock,
-    Deferred: GLYPHS.pause,
-    Completed: GLYPHS.check,
+    Open: 'circle',
+    Active: 'circle-dot',
+    Ready: 'circle-check',
+    Blocked: 'lock',
+    Waiting: 'clock',
+    Deferred: 'pause',
+    Completed: 'check',
   };
   const depthOf = n => { let d = 0; for (let p = n.parent; p; p = nodes.find(x => x.id === p)?.parent) d++; return d; };
   const maxDepth = Math.max(0, ...nodes.map(depthOf));
@@ -153,10 +158,9 @@ export function renderWorkBreakdown(work, actions, key, repairChunkId = '') {
     return `<ul style="--work-depth:${depth}">${nodes.filter(n => n.parent === parent).map(n => {
       const i = actionIndex(n);
       const label = statusLabel(n);
-      const status = `${label}${i >= 0 ? ' — Prepare action' : ''}`;
-      const icon = i >= 0 ? GLYPHS["arrow-up-right"] : statusIcons[label];
-      const body = `<code>${escapeHtml(n.id)}</code><span class="work-status-icon ${statusClass(n)}" title="${escapeHtml(status)}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span class="sr-only">${escapeHtml(status)}</span></span><span class="work-title">${escapeHtml(n.title)}</span><small class="work-dependencies">${n.deps.length ? `After: ${n.deps.map(escapeHtml).join(', ')}` : ''}</small>`;
-      return `<li${isDone(n) ? ' class="is-done"' : ''}>${i >= 0 ? `<button type="button" class="work-row is-actionable" style="--work-depth:${depth}" ${actionAttrs(i)}>${body}</button>` : `<div class="work-row${hasChildren(n) ? ' is-parent' : ''}${n.status === 'completed' ? ' is-completed' : ''}" style="--work-depth:${depth}">${body}</div>`}${hasChildren(n) ? tree(n.id, depth + 1) : ''}</li>`;
+      const status = `${label}${i >= 0 ? ' — Draft action' : ''}`;
+      const body = `<code>${escapeHtml(n.id)}</code><span class="work-status-icon ${statusClass(n)}" title="${escapeHtml(status)}">${icon(statusIcons[label])}<span class="sr-only">${escapeHtml(status)}</span></span><span class="work-title">${escapeHtml(n.title)}</span><small class="work-dependencies">${n.deps.length ? `After ${n.deps.map(escapeHtml).join(', ')}` : ''}</small>${i >= 0 ? `<span class="action-go">${icon('pen-line')}Draft</span>` : ''}`;
+      return `<li${isDone(n) ? ' class="is-done"' : ''}>${i >= 0 ? `<button type="button" class="work-row is-actionable${n.ready ? '' : ' is-waiting'}" style="--work-depth:${depth}" ${actionAttrs(i)}>${body}</button>` : `<div class="work-row${hasChildren(n) ? ' is-parent' : ''}${n.status === 'completed' ? ' is-completed' : ''}" style="--work-depth:${depth}">${body}</div>`}${hasChildren(n) ? tree(n.id, depth + 1) : ''}</li>`;
     }).join('')}</ul>`;
   }
   // Dependency chains with nothing ready or blocked (all completed or deferred) are clutter: hide them from the list and graph by default; the "show completed or deferred" toggle brings them back.
@@ -218,7 +222,7 @@ export function renderWorkBreakdown(work, actions, key, repairChunkId = '') {
       const head = `<span><code>${escapeHtml(n.id)}</code><small class="work-status ${statusClass(n)}">${escapeHtml(statusLabel(n))}</small></span><strong>${escapeHtml(n.title)}</strong>`;
       const completed = n.status === 'completed' ? ' is-completed' : '';
       if (kids(n.id).length) return `<div class="work-group${completed}" style="${style}" title="${escapeHtml(n.title)}"><header><code>${escapeHtml(n.id)}</code><strong>${escapeHtml(n.title)}</strong><small class="work-status ${statusClass(n)}">${escapeHtml(statusLabel(n))}</small></header></div>`;
-      return index >= 0 ? `<button type="button" class="work-node is-ready" style="${style}" title="${escapeHtml(n.title)}" ${actionAttrs(index)}>${head}</button>` : `<div class="work-node${completed}" style="${style}" title="${escapeHtml(n.title)}">${head}</div>`;
+      return index >= 0 ? `<button type="button" class="work-node is-actionable${n.ready ? ' is-ready' : ''}${completed}" style="${style}" title="${escapeHtml(n.title)}" ${actionAttrs(index)}>${head}</button>` : `<div class="work-node${completed}" style="${style}" title="${escapeHtml(n.title)}">${head}</div>`;
     }).join('');
     return `<div class="work-graph is-${variant}" style="width:${width}px;height:${height}px"><svg width="${width}" height="${height}" aria-hidden="true"><defs><marker id="${marker}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8"/></marker></defs>${edges}</svg>${boxes}</div>`;
   }

@@ -435,7 +435,14 @@ export async function loadDocument(requested: string) {
     const node = work.nodes.find(node => node.id === action.workItem);
     const unavailable = ["completed", "deferred", "waiting"].includes(summary.task?.status || "");
     action.blocked = unavailable || Boolean(action.workItem && (!node || !node.ready));
-    action.blockedReason = unavailable ? `Task is ${summary.task?.status}. Update its state before starting work.` : action.blocked ? "Work item is unavailable. Check its status and prerequisites below." : "";
+    // Advisory only: a waiting action still opens its draft, and the reason says what it is waiting on.
+    const waitingOn = node?.deps.filter(id => work.nodes.find(dep => dep.id === id)?.status !== "completed") || [];
+    action.blockedReason = !action.blocked ? ""
+      : unavailable ? `Task is ${summary.task?.status}`
+      : !node ? `${action.workItem} is not in the work breakdown`
+      : work.warnings.length ? "Work breakdown needs repair"
+      : waitingOn.length ? `After ${waitingOn.join(", ")}`
+      : `${node.id} is ${node.status}`;
   }
   const scheduledActions = [];
   const actionWarnings: string[] = [];
@@ -501,7 +508,6 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
     const document = await loadDocument(path);
     const action = document.nextActions.find(action => action.id === actionId);
     if (!action || action.prompt !== expectedPrompt) throw new Error("This action changed. Reload the task and prepare it again.");
-    if (action.blocked || ["completed", "deferred", "waiting"].includes(document.task?.status || "")) throw new Error("This action is blocked or the task is no longer available to start. Reload the task.");
     if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Additional context is too long.");
     const prompt = buildActionPrompt(document, action, commentary);
     dispatchLog(requestId, "validated", { scope, path, actionId });
