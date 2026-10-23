@@ -877,5 +877,5 @@ export function createCodeDashboard(root: string) {
     return { before: old, after: now };
   }
 
-  return { notes: prNotes, load, localDir, prIndex, worktreeIndex, startBackgroundRefresh, commits, commitDetail, commitSummary, diff, fileContent, fileSides, lineCounts, worktreeDetail, prDetail, launchSession, addRepo, removeRepo, open, openPreview, startRun, runPr, stopRun, restartRun, allRuns, runLog, launchAgent, removeWorktrees, cleanupPrompt, launchCleanup };
+  return { notes: prNotes, readRepos, githubSlug, load, localDir, prIndex, worktreeIndex, startBackgroundRefresh, commits, commitDetail, commitSummary, diff, fileContent, fileSides, lineCounts, worktreeDetail, prDetail, launchSession, addRepo, removeRepo, open, openPreview, startRun, runPr, stopRun, restartRun, allRuns, runLog, launchAgent, removeWorktrees, cleanupPrompt, launchCleanup };
 }

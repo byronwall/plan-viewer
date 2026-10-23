@@ -12,6 +12,7 @@ import { CodexDesktopClient, taskTitle } from "./codex-desktop.ts";
 import { createLinkMetadataStore } from "./link-metadata.ts";
 import { createCodeDashboard, githubImage } from "./code-dashboard.ts";
 import { createIssueTracker } from "./issues.ts";
+import { createPlans } from "./plans.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig } from "./public/config.js";
 
@@ -35,6 +36,7 @@ const isExcluded = (path: string) => config().exclude.some((folder: string) => p
 const PUBLIC = fileURLToPath(new URL("public", import.meta.url));
 const lookupLinkMetadata = createLinkMetadataStore(ROOT);
 const codeDashboard = createCodeDashboard(ROOT);
+const plans = createPlans(ROOT, { repos: codeDashboard.readRepos, slug: codeDashboard.githubSlug });
 const issueTracker = createIssueTracker(ROOT, async () => ({ prs: (await codeDashboard.prIndex()).prs, worktrees: await codeDashboard.worktreeIndex() }));
 const PORT = Number(process.env.PLAN_VIEWER_PORT || process.env.PORT || config().port);
 const MAX_COMMENT_LENGTH = 12_000;
@@ -611,6 +613,9 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
     if (request.method === "GET" && url.pathname === "/api/config") return json(response, 200, config());
     if (request.method === "GET" && url.pathname === "/api/code") return json(response, 200, await codeDashboard.load(url.searchParams.has("refresh")));
+    if (request.method === "GET" && url.pathname === "/api/code/plans") return json(response, 200, await plans.load(url.searchParams.has("refresh")));
+    if (request.method === "GET" && url.pathname === "/api/code/plan-map") return json(response, 200, await plans.map(url.searchParams.get("id") || ""));
+    if (request.method === "GET" && url.pathname === "/api/code/plan-doc") return json(response, 200, await plans.doc(url.searchParams.get("repo") || "", url.searchParams.get("ref") || "", url.searchParams.get("path") || ""));
     if (request.method === "GET" && url.pathname === "/api/code/pr-index") return json(response, 200, await codeDashboard.prIndex());
     if (request.method === "GET" && url.pathname === "/api/code/local-dir") return json(response, 200, await codeDashboard.localDir(url.searchParams.get("path") || "", url.searchParams.get("dir") || ""));
     if (request.method === "GET" && url.pathname === "/api/code/worktree") return json(response, 200, await codeDashboard.worktreeDetail(url.searchParams.get("path") || ""));
@@ -628,6 +633,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request);
       const action = url.pathname.slice("/api/code/".length);
       if (action === "notes") return json(response, 200, await codeDashboard.notes.change(...checkedPr(body.slug, body.number), { op: body.op, id: String(body.id || ""), title: String(body.title || ""), note: body.note || {} }));
+      if (action === "plan-agent") return json(response, 200, await plans.launch(String(body.app || ""), String(body.id || ""), String(body.kind || ""), String(body.doc || "")).then(() => ({ opened: true })));
+      if (action === "plan-prompt") return json(response, 200, await plans.prompt(String(body.app || ""), String(body.id || ""), String(body.kind || ""), String(body.doc || "")));
       if (action === "add-repo") return json(response, 200, { repo: await codeDashboard.addRepo(String(body.path || "")) });
       if (action === "remove-repo") return json(response, 200, await codeDashboard.removeRepo(String(body.path || "")).then(() => ({ removed: true })));
       if (action === "preview") return json(response, 200, await codeDashboard.openPreview(String(body.repo || ""), String(body.number || "")).then(() => ({ opened: true })));

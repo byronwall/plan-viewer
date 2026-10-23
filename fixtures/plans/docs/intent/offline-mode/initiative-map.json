@@ -1,0 +1,10 @@
+{
+  "initiative": {
+    "title": "Offline mode",
+    "current_phase": "execution",
+    "summary": "Field teams keep working without a connection.",
+    "next_action": "Finish milestone 2."
+  },
+  "implementation": { "milestones": [{ "id": "M1", "status": "done" }, { "id": "M2", "status": "in_progress" }] },
+  "history": []
+}

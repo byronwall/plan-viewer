@@ -34,6 +34,8 @@ export const DEFAULT_CONFIG = {
     prSkills: [],
     // Skill file the "Post as review" notes prompt follows; empty asks the agent to post without one.
     postNotesSkill: "",
+    // Skill the Plans tab's Update and Retire drafts name (an initiative-planning skill); empty leaves it out.
+    planSkill: "",
     // Opens a PR preview from a repo that has every `requires` file; `{number}` is the PR. null hides the button.
     prPreview: null,
     // Starts a local server in a worktree from repos that have every `requires` file: { requires, command, worktree }.

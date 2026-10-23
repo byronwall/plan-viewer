@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "initiative": {
+    "title": "Ledger sync for Atlas",
+    "slug": "ledger-sync",
+    "scale": "capability",
+    "current_phase": "shape",
+    "status": "active",
+    "last_updated": "2026-10-20",
+    "summary": "Keep Atlas ledgers in step with the billing service without nightly exports.",
+    "next_action": "Pick between push webhooks and polling, then write the plan.",
+    "depends_on": ["offline-mode"]
+  },
+  "intent": { "problem": "Ledgers drift for a day between exports.", "outcomes": ["Same-minute balances"] },
+  "shape": { "chosen": "Webhook push with a nightly reconcile" },
+  "implementation": { "status": "not-started", "milestones": [{ "id": "M1", "title": "Webhook receiver", "status": "planned" }] },
+  "related_initiatives": ["offline-mode"],
+  "artifacts": {
+    "intent_brief": { "path": "intent-brief.md", "status": "current", "updated_at": "2026-10-18" },
+    "shape_brief": { "path": "shape-brief.md", "status": "current", "updated_at": "2026-10-20" },
+    "implementation_plan": { "path": "implementation-plan.md", "status": "not-created", "updated_at": null }
+  },
+  "history": [
+    { "date": "2026-10-18", "event": "intent-created", "reason": "Alex asked why balances lag." },
+    { "date": "2026-10-20", "event": "shape-created", "reason": "Two approaches compared." }
+  ]
+}
