@@ -10,7 +10,7 @@ const FINISHED = new Set(["completed", "cancelled"]);
 const SCOPES = { open: "Open", ...Object.fromEntries(STATUSES.map((status) => [status, status[0].toUpperCase() + status.slice(1)])), all: "All" };
 const SORTS = { edited: "Edited", title: "Title", status: "Status", phase: "Phase" };
 const PHASES = ["intent", "brainstorm", "shape", "plan", "execution", "reconciliation"];
-const ps = { data: null, loading: null, scope: "open", sort: "edited", withPr: false, maps: new Map(), docs: new Map() };
+const ps = { data: null, error: "", loading: null, scope: "open", sort: "edited", withPr: false, maps: new Map(), docs: new Map() };
 let notify = (message) => console.warn(message);
 export const setPlanNotice = (show) => { notify = show; };
 let code = null; // helpers from code.js: render, select, notify, matches, repoFilter, repoCell, repoHead, tableHead, resetFilters, host
@@ -26,7 +26,7 @@ export function initPlans(helpers) {
 
 // `refresh` rescans (R); `poll` only re-reads while the server's open-PR scan is still running.
 export function loadPlans(refresh = false, poll = false) {
-  if (ps.loading || (ps.data && !refresh && !poll)) return ps.loading || Promise.resolve(ps.data);
+  if (ps.loading || ((ps.data || ps.error) && !refresh && !poll)) return ps.loading || Promise.resolve(ps.data);
   if (code?.host()) code.host().dataset.plansState = "loading";
   ps.loading = (async () => {
     try {
@@ -34,8 +34,10 @@ export function loadPlans(refresh = false, poll = false) {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Could not load plans.");
       ps.data = body;
+      ps.error = "";
       if (refresh) { ps.maps.clear(); ps.docs.clear(); }
     } catch (error) {
+      ps.error = error.message;
       notify(error.message, true);
     } finally {
       ps.loading = null;
@@ -142,6 +144,7 @@ function emptyPlans() {
 }
 
 export function plansBody() {
+  if (!ps.data && ps.error) return `<div class="code-empty"><p>Could not load initiatives: ${escapeHtml(ps.error)}</p><p class="code-muted">${/not found|ENOENT|404/i.test(ps.error) ? "This server predates the Plans tab; restart the viewer. " : ""}<kbd>R</kbd> tries again.</p></div>`;
   if (!ps.data) return `<p class="code-empty">Loading initiatives from each repository's main…</p>`;
   const items = visible();
   if (!items.length) return emptyPlans();
