@@ -1830,6 +1830,7 @@ a.issue-link-row { text-decoration: none; }
 .code-detail-head > .issue-type { margin-top: 3px; }
 .code-detail-head h3 code { font-size: .8rem; color: var(--muted); }
 .search-icon.is-issue { color: #3157d5; } .search-icon.is-issue.is-done { color: var(--pass, #1f9d6b); } .search-icon.is-issue.is-indeterminate { color: #e8590c; }
+.search-icon.is-work.is-active { color: var(--action); } .search-icon.is-work.is-completed { color: var(--pass, #1f9d6b); }
 .issue-markdown :is(h1, h2, h3, h4, h5, h6) { margin: 12px 0 4px; color: var(--ink); font-size: .86rem; font-weight: 650; letter-spacing: 0; text-transform: none; }
 .issue-code-list li > :is(.code-pr-chip, .code-avatar, .issue-type, code) { flex: none; }
 .issue-type-linear { color: #5e6ad2; } .issue-type-project { color: #0f8a8a; }

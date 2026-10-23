@@ -103,6 +103,7 @@ export type TaskSummary = {
   created: string;
   updated: string;
   referencedBy?: string[];
+  work?: { id: string; title: string; status: string }[];
   chatLinks?: { href: string; provider: string; label: string }[];
 };
 
@@ -341,6 +342,13 @@ export async function listDocuments() {
   for (const [index, { contents }] of files.entries()) {
     const keys = [...new Set(contents.match(/\b[A-Z][A-Z0-9]+-\d+\b/g) || [])].filter((key) => !key.startsWith("TASK-"));
     if (keys.length) docs[index].issueKeys = keys;
+  }
+  // Work breakdown items, so ⌘K can find one without opening its task.
+  for (const [index, { path, contents }] of files.entries()) {
+    if (docs[index].kind !== "Task") continue;
+    const breakdown = parseChunks(parseTaskDocument(path, contents).body).find((chunk) => /^work breakdown$/i.test(chunk.title));
+    const nodes = breakdown ? parseWorkBreakdown(breakdown.markdown).nodes : [];
+    if (nodes.length) docs[index].task!.work = nodes.map(({ id, title, status }) => ({ id, title, status }));
   }
   for (const doc of docs) {
     const sources = [...(backlinks.get(doc.path) || [])];

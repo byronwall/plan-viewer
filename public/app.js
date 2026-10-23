@@ -1,4 +1,4 @@
-import { searchDocuments, searchPrs } from "./search.js";
+import { contextScore, searchDocuments, searchPrs, textScore } from "./search.js";
 import { isSettled, renderActions, renderWorkBreakdown, showDoneToggle, workStatusIcon, workStatusLabel } from "./actions.js";
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock.js";
 import { GLYPHS } from "./icons.js";
@@ -2122,20 +2122,23 @@ const planResult = (item, terms) => ({
   side: item.source === "pr" ? "Proposed" : escapeHtml(item.status[0].toUpperCase() + item.status.slice(1)),
 });
 const renderPlanResult = ({ plan }, index, terms) => resultRow({ ...planResult(plan, terms), attrs: searchAttrs(index) });
+const renderWorkResult = ({ work, doc }, index, terms) => resultRow({
+  icon: "list", tone: `work is-${escapeHtml(work.status)}`, attrs: searchAttrs(index),
+  title: `<span class="search-pr-number">${highlightTerms(work.id, terms)}</span> ${highlightTerms(work.title, terms)}`,
+  detail: `<code>${escapeHtml(doc.task.id)}</code> · ${escapeHtml(doc.task.title)}`, side: escapeHtml(work.status[0].toUpperCase() + work.status.slice(1)),
+});
+
 // A key (`OPS-12`, or a bare number matching the end of one), an old key it was imported from, or words from the title.
-function searchIssues(query) {
+function searchIssues(query, terms) {
   const data = cachedIssues();
-  if (!data?.enabled || !query) return [];
-  const upper = query.trim().toUpperCase().replace(/^#/, "");
+  if (!data?.enabled) return [];
+  const upper = query.toUpperCase().replace(/^#/, "");
   const alias = data.aliases[upper];
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const scored = data.issues.filter((issue) => !issue.bot && !issue.mirrorOf).map((issue) => {
+  return data.issues.filter((issue) => !issue.bot && !issue.mirrorOf).map((issue) => {
     const shown = issue.label || issue.key;
-    const key = shown === upper || issue.key === alias ? 3 : /^\d+$/.test(upper) && shown.endsWith(`-${upper}`) ? 2 : 0;
-    const words = terms.every((term) => `${shown} ${issue.summary}`.toLowerCase().includes(term)) ? 1 : 0;
-    return [issue, key || words];
-  }).filter(([, score]) => score);
-  return scored.sort((a, b) => b[1] - a[1] || b[0].updated.localeCompare(a[0].updated)).slice(0, 8).map(([issue]) => issue);
+    const match = shown === upper || issue.key === alias ? 100 : /^\d+$/.test(upper) && shown.endsWith(`-${upper}`) ? 50 : textScore(terms, issue.summary, "", shown);
+    return match && { issue, score: match + contextScore({ live: issue.category === "indeterminate", done: issue.category === "done", updated: issue.updated, mine: Boolean(data.me) && issue.assignee?.email === data.me }) };
+  }).filter(Boolean);
 }
 
 // Every top-level page and Code tab, so ⌘K jumps straight to e.g. Pull requests.
@@ -2151,30 +2154,69 @@ const PAGES = [
 const searchPages = (query) => { const terms = query.toLowerCase().split(/\s+/).filter(Boolean); return PAGES.filter((page) => (!page.issues || config().issues.jql) && terms.every((term) => `${page.title} ${page.detail}`.toLowerCase().includes(term))).map((page) => ({ page })); };
 const renderPageResult = ({ page }, index) => resultRow({ icon: page.icon, title: escapeHtml(page.title), detail: escapeHtml(page.detail), side: "Page", attrs: searchAttrs(index) });
 
-// With no query, PRs waiting on you lead; a query lists matching PRs (number, title, branch, author) above documents.
+const LIVE_TASK = new Set(["open", "active"]);
+const SETTLED_TASK = new Set(["completed", "deferred"]);
+// Every source scored on one scale (textScore + contextScore), so a recent open task outranks an old closed issue.
+function rankedMatches(query, prs, me) {
+  const terms = query.toLowerCase().replace(/^#/, "").split(/\s+/).filter(Boolean);
+  const numeric = /^(?:[a-z][\w.-]*\s*)?#?\d+$/i.test(query);
+  const docs = searchDocuments(state.documents, query).map((doc) => {
+    const task = doc.task;
+    const text = textScore(terms, doc.title, task ? `${doc.path} ${task.summary} ${task.project} ${task.status} ${task.tags.join(" ")}` : doc.path, task?.id) || 1;
+    const context = task ? contextScore({ live: LIVE_TASK.has(task.status), done: SETTLED_TASK.has(task.status), updated: task.updated, mine: true }) : contextScore({ updated: doc.date });
+    return { doc, group: task ? "Tasks" : "Documents", score: text + context };
+  });
+  const work = state.documents.flatMap((doc) => (doc.task?.work || []).map((work) => {
+    const text = textScore(terms, work.title, "", work.id);
+    const done = SETTLED_TASK.has(work.status) || SETTLED_TASK.has(doc.task.status);
+    return text && { work, doc, group: "Work items", score: text + contextScore({ live: !done && LIVE_TASK.has(work.status), done, updated: doc.task.updated, mine: true }) };
+  })).filter(Boolean);
+  return [
+    ...searchPages(query).map((item) => ({ ...item, group: "Pages", score: textScore(terms, item.page.title, item.page.detail) })),
+    ...docs, ...work,
+    ...searchIssues(query, terms).map((item) => ({ ...item, group: "Issues" })),
+    ...searchPrs(prs, query).map((pr, index) => ({ pr, group: "Pull requests", score: (numeric ? 80 - index * 5 : textScore(terms, pr.title || "", `${pr.branch} ${pr.author} ${pr.slug}`))
+      + contextScore({ live: pr.state === "OPEN", done: pr.state !== "OPEN", updated: pr.updatedAt, mine: pr.requestedOfMe || pr.author === me }) })),
+    ...searchPlans(query).map((plan) => ({ plan, group: "Initiatives", score: (textScore(terms, plan.title, `${plan.slug} ${plan.summary}`) || 1)
+      + contextScore({ live: plan.status === "active", done: ["completed", "retired"].includes(plan.status), updated: plan.edited }) })),
+  ].sort((a, b) => b.score - a.score);
+}
+
+const GROUP_CAPS = { "Work items": 8, Issues: 8, "Pull requests": 6, Initiatives: 6 };
+// With no query, PRs waiting on you lead. A query puts the best few matches of any kind on top, then the rest by kind,
+// kinds ordered by their best remaining match.
 function searchGroups(query) {
   const index = cachedPrIndex();
   const prs = index?.prs || [];
-  const docs = searchDocuments(state.documents, query);
-  if (query) return [["Pages", searchPages(query)], ["Issues", searchIssues(query)], ["Pull requests", searchPrs(prs, query)], ["Initiatives", searchPlans(query)], ["Documents", docs]];
+  if (query) {
+    const ranked = rankedMatches(query, prs, index?.me);
+    const groups = new Map();
+    for (const item of ranked.slice(5)) {
+      const list = groups.get(item.group) || groups.set(item.group, []).get(item.group);
+      if (list.length < (GROUP_CAPS[item.group] || Infinity)) list.push(item);
+    }
+    return [["Top results", ranked.slice(0, 5)], ...groups];
+  }
   const open = prs.filter((pr) => pr.state === "OPEN").sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
-  return [["Needs your review", open.filter((pr) => pr.requestedOfMe).slice(0, 5)], ["Your open PRs", open.filter((pr) => pr.author === index?.me && !pr.requestedOfMe).slice(0, 5)], ["Pages", searchPages("")], ["Documents", docs]];
+  const wrap = (list) => list.map((pr) => ({ pr }));
+  return [["Needs your review", wrap(open.filter((pr) => pr.requestedOfMe).slice(0, 5))], ["Your open PRs", wrap(open.filter((pr) => pr.author === index?.me && !pr.requestedOfMe).slice(0, 5))], ["Pages", searchPages("")], ["Documents", state.documents.map((doc) => ({ doc }))]];
 }
+
+const renderMatch = (item, index, terms) => item.pr ? renderPrResult(item, index, terms) : item.issue ? renderIssueResult(item, index, terms) : item.plan ? renderPlanResult(item, index, terms)
+  : item.page ? renderPageResult(item, index) : item.work ? renderWorkResult(item, index, terms) : renderSearchResult(item.doc, index, terms);
 
 function renderSearchResults() {
   const query = elements.searchInput.value.trim();
   const terms = query.toLowerCase().replace(/^#/, "").split(/\s+/).filter(Boolean);
-  const groups = searchGroups(query).map(([label, items]) => [label, items.map((item) => (label === "Documents" || item.page ? item : label === "Issues" ? { issue: item } : label === "Initiatives" ? { plan: item } : { pr: item }))]).filter(([, items]) => items.length);
+  const groups = searchGroups(query).filter(([, items]) => items.length);
   searchMatches = groups.flatMap(([, items]) => items);
   searchIndex = 0;
-  const prCount = searchMatches.filter((item) => item.pr).length;
-  const docCount = searchMatches.filter((item) => !item.pr && !item.page && !item.issue && !item.plan).length;
-  const planCount = searchMatches.filter((item) => item.plan).length;
-  elements.searchStatus.textContent = `${prCount ? `${prCount} ${prCount === 1 ? "PR" : "PRs"} · ` : ""}${planCount ? `${planCount} ${planCount === 1 ? "initiative" : "initiatives"} · ` : ""}${docCount} ${docCount === 1 ? "document" : "documents"}`;
+  const count = (key, one, many) => { const n = searchMatches.filter((item) => item[key]).length; return n ? `${n} ${n === 1 ? one : many}` : ""; };
+  elements.searchStatus.textContent = [count("work", "work item", "work items"), count("issue", "issue", "issues"), count("pr", "PR", "PRs"), count("plan", "initiative", "initiatives"), count("doc", "document", "documents")].filter(Boolean).join(" · ");
   let position = 0;
   elements.searchResults.innerHTML = searchMatches.length
-    ? groups.map(([label, items]) => `<div class="search-section" role="presentation">${label}</div>${items.map((item) => { const index = position++; return item.pr ? renderPrResult(item, index, terms) : item.issue ? renderIssueResult(item, index, terms) : item.plan ? renderPlanResult(item, index, terms) : item.page ? renderPageResult(item, index) : renderSearchResult(item, index, terms); }).join("")}`).join("")
-    : '<div class="search-empty"><strong>No matches</strong><span>Try a title, path, task ID, PR number or title, project, or tag.</span></div>';
+    ? groups.map(([label, items]) => `<div class="search-section" role="presentation">${label}</div>${items.map((item) => renderMatch(item, position++, terms)).join("")}`).join("")
+    : '<div class="search-empty"><strong>No matches</strong><span>Try a title, path, task ID, work item, PR number or title, project, or tag.</span></div>';
   elements.searchResults.scrollTop = 0;
   syncSearchSelection();
 }
@@ -2211,7 +2253,8 @@ function openSearchResult(index, external = false) {
   else if (doc.pr) openPrOverlay(doc.pr.slug, doc.pr.number);
   else if (doc.issue) openIssue(doc.issue.key);
   else if (doc.plan) openPlan(doc.plan.id);
-  else { closeOverview(); selectDocument(doc.path); }
+  else if (doc.work) { closeOverview(); selectDocument(doc.doc.path).then(() => openWorkItem(doc.work.id)); }
+  else { closeOverview(); selectDocument(doc.doc.path); }
 }
 
 elements.searchInput.addEventListener("input", renderSearchResults);
