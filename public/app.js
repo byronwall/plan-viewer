@@ -989,11 +989,42 @@ function holdNavigationSelection(target) {
   navigationScrollTimer = window.setTimeout(releaseNavigationScrollLock, 1400);
 }
 
+// An update whose bold title names a work item, as in `- **2026-10-23 — Delete list (W2.3):** …`, belongs to that item, nested lines included.
+function workNotes(doc) {
+  const updates = doc.chunks.find(c => /^updates$/i.test(c.title))?.markdown || "";
+  const entries = updates.split(/\n(?=[-*]\s)/).map(entry => ({ entry: entry.trim(), ids: new Set(entry.match(/^[-*]\s+\*\*(.+?)\*\*/)?.[1]?.match(/[\w.-]+/g)?.map(token => token.replace(/\.$/, ""))) }));
+  return id => {
+    const own = entries.filter(e => e.ids.has(id)).map(e => e.entry);
+    return own.length ? renderMarkdownSource(own.join("\n"), state.selectedPath) : "";
+  };
+}
+
+// The popover sits under the row, aligned with its title, and flips above when the row is near the bottom.
+function toggleWorkNotes(row) {
+  const pop = row.parentElement.querySelector(":scope > .work-notes-pop");
+  // Light dismiss closes an open popover on pointerdown, so this click would reopen it.
+  if (performance.now() - (Number(pop.dataset.closedAt) || 0) < 300) return;
+  pop.showPopover();
+  row.setAttribute("aria-expanded", "true");
+  const rect = row.getBoundingClientRect(), title = row.querySelector(".work-title").getBoundingClientRect();
+  const below = rect.bottom + 4, above = rect.top - 4 - pop.offsetHeight;
+  pop.style.top = `${below + pop.offsetHeight <= innerHeight - 8 || above < 8 ? below : above}px`;
+  pop.style.left = `${Math.max(8, Math.min(title.left - 14, innerWidth - pop.offsetWidth - 8))}px`;
+  pop.addEventListener("beforetoggle", (event) => {
+    if (event.newState !== "closed") return;
+    pop.dataset.closedAt = performance.now();
+    row.removeAttribute("aria-expanded");
+  }, { once: true });
+}
+document.addEventListener("scroll", (event) => {
+  if (!(event.target instanceof Element && event.target.closest(".work-notes-pop"))) document.querySelector(".work-notes-pop:popover-open")?.hidePopover();
+}, { capture: true, passive: true });
+
 function chunkBody(doc, chunk) {
   return actionGroups.has(chunk.id)
     ? `${(doc.actionWarnings || []).map(w => `<p class="work-warning">${escapeHtml(w)}</p>`).join("")}${renderActions(actionGroups.get(chunk.id), chunk.id)}`
     : /^work breakdown$/i.test(chunk.title)
-    ? renderWorkBreakdown(doc.work, doc.nextActions, doc.chunks.find(c => /^next actions$/i.test(c.title))?.id || "work", chunk.id)
+    ? renderWorkBreakdown(doc.work, doc.nextActions, doc.chunks.find(c => /^next actions$/i.test(c.title))?.id || "work", chunk.id, workNotes(doc))
     : doc.format === "text"
     ? `<pre class="plain-text">${escapeHtml(chunk.markdown)}</pre>`
     : (/^updates$/i.test(chunk.title) && renderUpdates(chunk.markdown, state.selectedPath))
@@ -1749,6 +1780,11 @@ elements.chunks.addEventListener("click", (event) => {
   if (documentLink) {
     event.preventDefault();
     selectDocument(documentLink.dataset.documentPath, { historyMode: "push", anchor: documentLink.dataset.documentAnchor });
+    return;
+  }
+  const notesTrigger = event.target.closest("[data-work-notes]");
+  if (notesTrigger) {
+    toggleWorkNotes(notesTrigger.closest(".work-row"));
     return;
   }
   const actionButton = event.target.closest("[data-action-key]");

@@ -713,6 +713,16 @@ button.task-list-id:hover { text-decoration: underline; }
 .work-row.is-actionable:is(:hover, :focus-visible, [aria-expanded="true"]) .work-dependencies { opacity: 0; }
 .work-dependencies s { color: var(--quiet-text); text-decoration: none; }
 .work-row.is-actionable:hover, .work-row.is-actionable[aria-expanded="true"] { background: var(--quiet-field); }
+.work-row.has-notes { cursor: pointer; transition: background-color 140ms ease-out; }
+.work-row.has-notes:hover, .work-row.has-notes[aria-expanded="true"] { background: var(--quiet-field); }
+.work-notes-mark { display: inline-flex; vertical-align: -2px; margin-left: 6px; border-radius: 4px; padding: 1px 3px; color: var(--action-ink); cursor: pointer; transition: background-color 140ms ease-out; }
+.work-notes-mark:hover, [aria-expanded="true"] > .work-title > .work-notes-mark { background: var(--selected); }
+.work-notes-mark svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.work-notes-pop { position: fixed; inset: auto; width: min(560px, calc(100vw - 32px)); max-height: min(60vh, 520px); margin: 0; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 10px 14px; color: var(--ink); font-size: .84rem; font-weight: 400; box-shadow: 0 12px 32px rgba(24, 33, 47, .16); }
+.work-notes-pop ul { padding-left: 1.2em; list-style: disc; }
+.work-notes-pop ul ul { list-style: circle; }
+.work-notes-pop > :first-child { margin-top: 0; }
+.work-notes-pop > :last-child { margin-bottom: 0; }
 .work-title { min-width: 0; font-size: .86rem; line-height: 20px; overflow-wrap: anywhere; }
 .work-dependencies { max-width: 180px; justify-self: end; color: var(--muted); font-size: .72rem; font-weight: 400; line-height: 20px; text-align: right; overflow-wrap: anywhere; }
 .work-status { justify-self: end; border-radius: 999px; background: var(--quiet-field); padding: 2px 8px; color: var(--muted); font-size: .68rem; font-weight: 650; white-space: nowrap; }

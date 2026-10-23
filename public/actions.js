@@ -138,7 +138,8 @@ export function renderActions(actions, key) {
   }).join('');
 }
 
-export function renderWorkBreakdown(work, actions, key, repairChunkId = '') {
+// notesFor(id) returns rendered HTML for the updates that name a work item, or ''.
+export function renderWorkBreakdown(work, actions, key, repairChunkId = '', notesFor = () => '') {
   const { nodes, warnings } = work;
   const diagnostics = warnings.length ? `<section class="work-validation" aria-label="Work breakdown needs repair"><strong>Work breakdown needs repair</strong><p>Readiness may be wrong until these issues are fixed in the task Markdown.</p><ul>${warnings.map(w => `<li class="work-warning">${escapeHtml(w)}</li>`).join('')}</ul>${repairChunkId ? `<button type="button" class="handoff-button" data-chunk-id="${escapeHtml(repairChunkId)}" data-repair-work aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false">${icon('pen-line')}Draft fix</button>` : ''}</section>` : '';
   if (!nodes.length) return `${diagnostics}${warnings.length ? '' : '<p class="action-empty">Add nested work items to this task to see its tree and dependencies.</p>'}`;
@@ -162,18 +163,22 @@ export function renderWorkBreakdown(work, actions, key, repairChunkId = '') {
       const i = actionIndex(n);
       const label = statusLabel(n);
       const status = `${label}${i >= 0 ? ' — Draft action' : ''}`;
-      const body = `<code>${escapeHtml(n.id)}</code><span class="work-status-icon ${statusClass(n)}" title="${escapeHtml(status)}">${icon(statusIcons[label])}<span class="sr-only">${escapeHtml(status)}</span></span><span class="work-title">${escapeHtml(n.title)}</span><small class="work-dependencies">${n.deps.length ? `After ${n.deps.map(id => byId.get(id)?.status === 'completed' ? `<s>${escapeHtml(id)}</s>` : escapeHtml(id)).join(', ')}` : ''}</small>${i >= 0 ? `<span class="action-go">${icon('pen-line')}Draft</span>` : ''}`;
-      return `<li${isDone(n) ? ' class="is-done"' : ''}>${i >= 0 ? `<button type="button" class="work-row is-actionable${n.ready ? '' : ' is-waiting'}" style="--work-depth:${depth}" ${actionAttrs(i)}>${body}</button>` : `<div class="work-row${hasChildren(n) ? ' is-parent' : ''}${n.status === 'completed' ? ' is-completed' : ''}" style="--work-depth:${depth}">${body}</div>`}${hasChildren(n) ? tree(n.id, depth + 1) : ''}</li>`;
+      const body = `<code>${escapeHtml(n.id)}</code><span class="work-status-icon ${statusClass(n)}" title="${escapeHtml(status)}">${icon(statusIcons[label])}<span class="sr-only">${escapeHtml(status)}</span></span><span class="work-title">${escapeHtml(n.title)}${notesFor(n.id) ? `<span class="work-notes-mark" data-work-notes aria-label="Show updates">${icon('message-square')}</span>` : ''}</span><small class="work-dependencies">${n.deps.length ? `After ${n.deps.map(id => byId.get(id)?.status === 'completed' ? `<s>${escapeHtml(id)}</s>` : escapeHtml(id)).join(', ')}` : ''}</small>${i >= 0 ? `<span class="action-go">${icon('pen-line')}Draft</span>` : ''}`;
+      const notes = notesFor(n.id);
+      const plainClass = `work-row${hasChildren(n) ? ' is-parent' : ''}${n.status === 'completed' ? ' is-completed' : ''}`;
+      // Notes open in a popover beside the row so the tree never grows. A row with an action drafts on click, so only its icon opens them.
+      const row = i >= 0
+        ? `<button type="button" class="work-row is-actionable${n.ready ? '' : ' is-waiting'}" style="--work-depth:${depth}" ${actionAttrs(i)}>${body}</button>`
+        : notes ? `<button type="button" class="${plainClass} has-notes" style="--work-depth:${depth}" data-work-notes aria-haspopup="dialog">${body}</button>`
+        : `<div class="${plainClass}" style="--work-depth:${depth}">${body}</div>`;
+      const pop = notes ? `<div class="work-notes-pop markdown" popover role="dialog" aria-label="${escapeHtml(`${n.id} updates`)}">${notes}</div>` : '';
+      return `<li${isDone(n) ? ' class="is-done"' : ''}>${row}${pop}${hasChildren(n) ? tree(n.id, depth + 1) : ''}</li>`;
     }).join('')}</ul>`;
   }
-  // Dependency chains with nothing ready or blocked (all completed or deferred) are clutter: hide them from the list and graph by default; the "show completed or deferred" toggle brings them back.
-  const component = new Map(nodes.map(n => [n.id, n.id]));
-  const root = id => component.get(id) === id ? id : root(component.get(id));
-  nodes.forEach(n => n.deps.filter(id => component.has(id)).forEach(id => component.set(root(id), root(n.id))));
-  const liveRoots = new Set(nodes.filter(n => ['open', 'active', 'waiting'].includes(n.status)).map(n => root(n.id)));
+  // An item that is completed or deferred, with everything under it, is clutter: the list and graph hide it by default and the "show completed or deferred" toggle brings it back.
   const byId = new Map(nodes.map(n => [n.id, n]));
   const isUnder = (n, id) => { for (let p = n; p; p = byId.get(p.parent)) if (p.id === id) return true; return false; };
-  const isDone = n => nodes.every(m => !isUnder(m, n.id) || !liveRoots.has(root(m.id)));
+  const isDone = n => nodes.every(m => !isUnder(m, n.id) || ['completed', 'deferred'].includes(m.status));
   const liveNodes = nodes.filter(n => !isDone(n));
   const doneCount = nodes.length - liveNodes.length;
 
