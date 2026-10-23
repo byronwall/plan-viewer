@@ -3,7 +3,7 @@ import { renderActions, renderWorkBreakdown } from "./actions.js";
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock.js";
 import { delimitedTable, documentHref, escapeHtml, markdownOutline, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
-import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
+import { TABS as ISSUE_TABS, cachedIssues, connectPlanning, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
@@ -1478,6 +1478,7 @@ elements.referenceButton.addEventListener("click", () => showLibrary("reference"
 elements.weeksButton.addEventListener("click", () => showWeeks());
 elements.codeButton.addEventListener("click", () => showCode());
 elements.issuesButton.addEventListener("click", () => showIssues());
+connectPlanning({ documents: () => state.documents, open: (path) => selectDocument(path, { historyMode: "push" }) });
 elements.meta.addEventListener("click", async (event) => {
   const plainClick = !(event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
   const view = event.target.closest("[data-crumb-view]");

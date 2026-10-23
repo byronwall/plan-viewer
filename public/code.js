@@ -30,6 +30,7 @@ let host = null;
 export const codeTab = (value) => (value in TABS ? value : "prs");
 
 const ICONS = {
+  doc: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
   vscode: '<path d="m8 6-6 6 6 6M16 6l6 6-6 6"/>',
   terminal: '<path d="m4 17 6-5-6-5M12 19h8"/>',
   folder: '<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/>',

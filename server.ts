@@ -125,6 +125,7 @@ type DocumentSummary = {
   kind: string;
   isToday: boolean;
   backlinks?: string[];
+  issueKeys?: string[];
   task?: TaskSummary;
   digest?: DailyDigest;
 };
@@ -335,6 +336,11 @@ export async function listDocuments() {
     for (const [, n] of contents.matchAll(/TASK-(\d{4})/gi)) addBacklink(`tasks/TASK-${n}.md`, path);
     for (const [, target] of contents.matchAll(/\]\(([^)\s#]+)/g)) addBacklink(repositoryLinkPath(path, target), path);
     for (const [, target] of contents.matchAll(/`((?:daily|tasks|plans|reference)\/[^`\s]+)`/g)) addBacklink(target, path);
+  }
+  // Tracker keys (ACME-123, ENG-45, bare or inside a URL) each document mentions, so an issue can list its planning docs.
+  for (const [index, { contents }] of files.entries()) {
+    const keys = [...new Set(contents.match(/\b[A-Z][A-Z0-9]+-\d+\b/g) || [])].filter((key) => !key.startsWith("TASK-"));
+    if (keys.length) docs[index].issueKeys = keys;
   }
   for (const doc of docs) {
     const sources = [...(backlinks.get(doc.path) || [])];

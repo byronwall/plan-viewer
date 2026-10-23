@@ -1,4 +1,4 @@
-import { escapeHtml, renderMarkdown } from "./markdown.js";
+import { SERVICE_ICONS, documentHref, escapeHtml, renderMarkdown } from "./markdown.js";
 import { agentApp, agentName as appName, config } from "./config.js";
 import { ago, avatar, ciBadge, copied, fadeIn, heat, hideTip, icon, iconButton, isSummonKey, openPrOverlay, openWorktreeOverlay, showTip, sideFacts, sideHead, sideStatus, when } from "./code.js";
 
@@ -19,6 +19,9 @@ let seen = {};
 try { seen = JSON.parse(storage.get("issues-seen", "{}")); } catch {}
 let host = null;
 let notify = () => {};
+// The app shell hands over its document library and how to open a document, for the "In planning" section.
+let planning = { documents: () => [], open: () => {} };
+export const connectPlanning = (next) => { planning = next; };
 
 // ---------- marks ----------
 
@@ -303,11 +306,18 @@ function codeSection(issue) {
 }
 
 const linkRow = (key, summary, status, category, label = "") => `<li><button type="button" class="issue-link-row" data-issue-open="${escapeHtml(key)}">${label ? `<span class="code-muted">${escapeHtml(label)}</span>` : ""}${byKey().has(key) ? typeIcon(byKey().get(key)) : ""}<code>${escapeHtml(keyLabel(key))}</code><span>${escapeHtml(summary)}</span><span class="code-tag issue-status issue-status-${escapeHtml(category)}">${escapeHtml(status)}</span></button></li>`;
+// Tasks first, then every other planning document that mentions this key (or a key it used to have).
+function planningSection(issue) {
+  const keys = [issue.key, ...aliasesFor(issue.key)].map((key) => key.replace(/^linear:/, ""));
+  const docs = planning.documents().filter((doc) => doc.issueKeys?.some((key) => keys.includes(key))).sort((a, b) => !!b.task - !!a.task);
+  if (!docs.length) return "";
+  return `<section>${sideHead("In planning", String(docs.length))}<ul class="issue-code-list">${docs.map((doc) => `<li><a class="issue-link-row" href="${escapeHtml(documentHref(doc.path, ""))}" data-planning-path="${escapeHtml(doc.path)}" data-tip="${escapeHtml(doc.path)}">${doc.task ? SERVICE_ICONS.task : icon("doc")}<code>${escapeHtml(doc.task?.id || doc.date || doc.kind)}</code><span>${escapeHtml(doc.task?.title || doc.title)}</span>${doc.task ? `<span class="code-tag">${escapeHtml(doc.task.status)}</span>` : ""}</a></li>`).join("")}</ul></section>`;
+}
 function relationsSection(issue, overlay = false) {
   const children = childrenOf(issue.key).sort((a, b) => a.category.localeCompare(b.category) || byUpdated(a, b));
   const kids = children.length && !overlay ? `<section>${sideHead("Children", `${children.filter((child) => child.category === "done").length}/${children.length} done`)}${progress(children)}<ul class="issue-code-list">${children.map((child) => linkRow(child.key, child.summary, child.status, child.category)).join("")}</ul></section>` : "";
   const links = issue.links.length ? `<section>${sideHead("Links", String(issue.links.length))}<ul class="issue-code-list">${issue.links.map((link) => linkRow(link.key, link.summary, link.status, link.category, link.label)).join("")}</ul></section>` : "";
-  return counterpartsSection(issue) + kids + links;
+  return planningSection(issue) + counterpartsSection(issue) + kids + links;
 }
 
 // ---------- migration: the same work in Linear and Jira ----------
@@ -644,6 +654,12 @@ async function handleClick(event) {
   const opener = event.target.closest("tr[data-issue-open]");
   if (!target && opener) return openIssue(opener.dataset.issueOpen, opener.dataset.issueList.split(","));
   if (!target) { if (row && host?.contains(row)) select(row.dataset.issueRow); return; }
+  if (target.matches("a[data-planning-path]") && !event.metaKey && !event.ctrlKey) {
+    event.preventDefault();
+    event.stopPropagation();
+    dialog?.close();
+    return planning.open(target.dataset.planningPath);
+  }
   if (target.matches("a")) return;
   const { dataset } = target;
   try {

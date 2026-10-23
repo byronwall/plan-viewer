@@ -1768,6 +1768,7 @@ button.code-pr-chip { border: 0; background: none; font: inherit; cursor: pointe
 .issue-code-list .issue-progress-wrap { margin-bottom: 4px; }
 section > .issue-progress-wrap { margin-bottom: 6px; }
 .issue-link-row { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; border: 0; border-radius: 6px; background: none; padding: 2px 4px; margin-left: -4px; color: var(--ink); font: inherit; text-align: left; transition: background-color 140ms; }
+a.issue-link-row { text-decoration: none; }
 .issue-link-row:hover { background: var(--hover-field); }
 .issue-link-row > span:not(.code-tag):not(.issue-type) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .issue-link-row > .code-muted { flex: none !important; }
