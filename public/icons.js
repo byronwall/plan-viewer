@@ -1,6 +1,7 @@
 // Icon bodies for a 24-unit viewBox. Glyphs are Lucide 0.460 (ISC, lucide.dev), drawn with a stroke; brand marks are
 // Simple Icons 13.21 (CC0, simpleicons.org), drawn with a fill. Add a glyph by copying its inner markup from lucide.dev.
 export const GLYPHS = {
+  "arrow-up": '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
   "arrow-right": '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
   "arrow-up-right": '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
   "book": '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>',

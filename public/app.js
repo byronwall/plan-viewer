@@ -2,6 +2,7 @@ import { contextScore, searchDocuments, searchPrs, textScore } from "./search.js
 import { isSettled, renderActions, renderWorkBreakdown, showDoneToggle, workStatusIcon, workStatusLabel } from "./actions.js";
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock.js";
 import { GLYPHS } from "./icons.js";
+import { enhanceTable } from "./table-viewer.js";
 import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, connectPlanning, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
@@ -2576,7 +2577,8 @@ const tableCellText = (cell) => {
   for (const hidden of clone.querySelectorAll(".sr-only, [aria-hidden='true']")) hidden.remove();
   return clone.textContent.replaceAll("\u2060", "").replace(/\s+/g, " ").trim();
 };
-const tableRows = (table) => [...table.rows].map((row) => [...row.cells].map(tableCellText));
+// Only the rows showing, in their current order: the expanded table's sorting and filtering carry into copies and downloads.
+const tableRows = (table) => [...table.rows].filter((row) => !row.hidden && !row.closest("[data-table-ui]")).map((row) => [...row.cells].map(tableCellText));
 // Downloads are named for the heading the table sits under, falling back to the page title.
 function tableName(wrapper) {
   const heading = [...document.querySelectorAll("main h1, main h2, main h3, main h4, main h5")].filter((h) => h.compareDocumentPosition(wrapper) & Node.DOCUMENT_POSITION_FOLLOWING).pop();
@@ -2596,7 +2598,8 @@ async function copyTable(button) {
   try {
     if (format === "html") {
       const clone = table.cloneNode(true);
-      for (const hidden of clone.querySelectorAll(".sr-only, [aria-hidden='true']")) hidden.remove();
+      for (const hidden of clone.querySelectorAll(".sr-only, [aria-hidden='true'], [data-table-ui], tr[hidden]")) hidden.remove();
+      for (const sort of clone.querySelectorAll(".table-sort")) sort.replaceWith(...sort.firstElementChild.childNodes);
       for (const link of clone.querySelectorAll("a[href]")) link.setAttribute("href", link.href);
       for (const element of [clone, ...clone.querySelectorAll("*")]) for (const { name } of [...element.attributes]) if (name !== "href") element.removeAttribute(name);
       // Like a selection copied off the page: a styled table for rich editors, tab-separated text for plain ones.
@@ -2623,7 +2626,9 @@ function showTableViewer(wrapper) {
   dialog.dataset.tableSource = wrapper.dataset.tableSource;
   dialog.dataset.tableName = tableName(wrapper);
   dialog.innerHTML = `<header class="viewer-dialog-heading"><h2 id="table-viewer-title">Table <span>${table.tBodies[0].rows.length} rows × ${table.tHead.rows[0].cells.length} columns</span></h2>${tools.outerHTML}<button type="button" data-dialog-close aria-label="Close table">×</button></header><div class="table-viewer-body markdown" tabindex="0">${table.outerHTML}</div>`;
-  if (openViewerDialog(dialog, { stack: true })) dialog.querySelector(".table-viewer-body").focus();
+  if (!openViewerDialog(dialog, { stack: true })) return;
+  enhanceTable(dialog, tableCellText);
+  dialog.querySelector(".table-viewer-body").focus();
 }
 // Code blocks copy and download their fenced source verbatim; the file extension follows the fence's language.
 const CODE_EXTENSIONS = { javascript: "js", typescript: "ts", python: "py", bash: "sh", shell: "sh", zsh: "sh", markdown: "md", text: "txt", yaml: "yml" };

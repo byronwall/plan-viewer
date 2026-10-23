@@ -290,9 +290,26 @@ button { cursor: pointer; }
 .table-viewer .viewer-dialog-heading .table-tools button:hover { background: var(--hover-field); color: var(--action-deep); }
 .table-viewer-body { margin: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .table-viewer-body:focus-visible { outline: none; }
-.table-viewer-body table { width: max-content; min-width: 100%; }
-.table-viewer-body td { max-width: 60ch; }
-.table-viewer-body th { position: sticky; z-index: 1; top: 0; box-shadow: inset 0 -1px 0 var(--line); }
+.table-viewer .viewer-dialog-heading { justify-content: flex-start; gap: 10px; }
+@media (max-width: 1100px) {
+  .table-viewer .viewer-dialog-heading { position: relative; flex-wrap: wrap; row-gap: 6px; padding-right: 50px; }
+  .table-viewer .viewer-dialog-heading > [data-dialog-close] { position: absolute; top: 10px; right: 12px; }
+  .table-viewer-filter, .table-viewer .viewer-dialog-heading .table-viewer-clear { order: 1; }
+  .table-viewer-filter { flex: 1 1 200px; }
+  .table-viewer .table-tools { order: 2; margin-left: 0; flex-wrap: wrap; }
+}
+.table-viewer h2 { white-space: nowrap; }
+.table-viewer h2 span { font-variant-numeric: tabular-nums; }
+.table-viewer-filter { display: flex; align-items: center; gap: 6px; width: 260px; height: 26px; border: 1px solid var(--line); border-radius: 6px; padding: 0 4px 0 8px; color: var(--quiet-text); transition: border-color 140ms ease-out; }
+.table-viewer-filter:focus-within { border-color: var(--action); }
+.table-viewer-filter .glyph { width: 13px; height: 13px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.table-viewer-filter input { flex: 1; min-width: 0; border: 0; background: none; padding: 0; color: var(--ink); font: inherit; font-size: .78rem; outline: none; }
+.table-viewer-filter kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font: .68rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.table-viewer-filter:focus-within kbd { visibility: hidden; }
+.table-viewer .viewer-dialog-heading .table-viewer-clear { width: auto; height: 26px; background: transparent; padding: 0 8px; color: var(--action-ink); font-size: .74rem; font-weight: 600; transition: background-color 140ms ease-out; }
+.table-viewer .viewer-dialog-heading .table-viewer-clear:hover { background: var(--hover-field); color: var(--action-deep); }
+.table-viewer .viewer-dialog-heading > [data-dialog-close] { flex: none; }
+.table-viewer.is-resizing, .table-viewer.is-resizing * { cursor: col-resize !important; user-select: none; }
 @media (prefers-reduced-motion: reduce) { .markdown-table > .table-tools, .markdown-code > .table-tools, .table-tools button { transition: none; } }
 .markdown-table-scroll { overflow-x: auto; overscroll-behavior-inline: contain; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); scrollbar-width: thin; }
 .markdown-table-scroll:focus-visible { outline: 3px solid rgba(49, 87, 213, .26); outline-offset: 2px; }
@@ -304,6 +321,45 @@ button { cursor: pointer; }
 .markdown tbody tr:nth-child(even) td { background: #fafbfc; }
 .markdown .align-center { text-align: center; }
 .markdown .align-right { text-align: right; }
+/* The expanded table: separate borders so sticky header, footer and first column carry their own lines. */
+.table-viewer-body table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: .8rem; line-height: 1.38; }
+.table-viewer-body table.is-sized { table-layout: fixed; min-width: 0; }
+.table-viewer-body :is(th, td) { min-width: 0; padding: 3px 8px; }
+.table-viewer-body td { max-width: 60ch; }
+.table-viewer-body tbody tr td { background: var(--paper); }
+.table-viewer-body tbody tr:hover td { background: #f3f6fd; }
+.table-viewer-body :is(th, td):first-child { position: sticky; z-index: 1; left: 0; box-shadow: inset -1px 0 var(--line); border-right: 0; }
+.table-viewer-body .align-right { font-variant-numeric: tabular-nums; }
+.table-viewer-body thead { position: sticky; z-index: 2; top: 0; }
+.table-viewer-body thead th { position: relative; padding: 0; white-space: nowrap; }
+.table-viewer-body thead th:first-child { position: sticky; }
+.table-sort { display: flex; align-items: center; gap: 4px; width: 100%; height: 26px; border: 0; background: none; padding: 0 8px; color: inherit; font: inherit; text-align: inherit; cursor: pointer; transition: background-color 140ms ease-out; }
+.table-sort:hover { background: #eef1f6; }
+.table-sort:focus-visible { outline: 2px solid var(--action); outline-offset: -2px; }
+.align-right .table-sort { flex-direction: row-reverse; }
+.align-center .table-sort { justify-content: center; }
+.table-sort-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.table-sort-mark { display: inline-flex; flex: none; align-items: center; color: var(--action); opacity: 0; transition: opacity 140ms ease-out; }
+.table-sort-mark .glyph { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; transition: transform 140ms ease-out; }
+.table-sort-mark b { display: inline-block; min-width: .7em; font-size: .62rem; font-variant-numeric: tabular-nums; }
+.table-sort:hover .table-sort-mark { opacity: .4; }
+[aria-sort="ascending"] .table-sort-mark, [aria-sort="descending"] .table-sort-mark { opacity: 1; }
+[aria-sort="descending"] .table-sort-mark .glyph { transform: rotate(180deg); }
+.table-resize { position: absolute; z-index: 1; top: 0; right: -4px; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; }
+.table-resize::after { content: ""; position: absolute; top: 5px; bottom: 5px; left: 3px; width: 2px; border-radius: 1px; background: transparent; transition: background-color 140ms ease-out; }
+.table-resize:hover::after, .table-viewer.is-resizing .table-resize:active::after { background: var(--action); }
+.table-viewer-body thead tr:first-child th:last-child .table-resize { right: 0; }
+.table-filter-row th { padding: 2px 3px; background: var(--paper); font-weight: 400; }
+.table-filter-row input { width: 100%; height: 22px; border: 1px solid transparent; border-radius: 4px; background: var(--hover-field); padding: 0 5px; color: var(--ink); font: inherit; font-size: .74rem; text-align: inherit; outline: none; transition: border-color 140ms ease-out, background-color 140ms ease-out; }
+.table-filter-row input::placeholder, .table-viewer-filter input::placeholder { color: var(--quiet-text); }
+.table-filter-row input:hover { border-color: var(--line); }
+.table-filter-row input:focus { border-color: var(--action); background: var(--paper); }
+.table-filter-row input:not(:placeholder-shown) { background: var(--selected); }
+.table-viewer-body tfoot { position: sticky; z-index: 2; bottom: 0; }
+.table-viewer-body tfoot td { border-top: 1px solid var(--line); border-bottom: 0; background: #f7f8fa; color: var(--muted); font-size: .72rem; font-variant-numeric: tabular-nums; }
+.table-viewer-body table.is-measuring :is(td, td *, .table-sort-label) { white-space: nowrap !important; }
+::highlight(table-match) { background: #ffe38a; color: var(--ink); }
+@media (prefers-reduced-motion: reduce) { .table-sort, .table-sort-mark, .table-resize::after, .table-filter-row input, .table-viewer-filter { transition: none; } }
 /* Blue is the link cue: body weight, no underline until hover. */
 .markdown a { border-radius: 5px; color: var(--action-ink); font-weight: inherit; text-decoration: none; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .markdown a:hover { color: var(--action-deep); text-decoration: underline; }
