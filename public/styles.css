@@ -1065,9 +1065,15 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-repo-button:hover { box-shadow: 0 0 0 1px var(--line-strong); }
 .code-repo-button.is-filtered .code-repo-mark { box-shadow: 0 0 0 1.5px var(--action); }
 .code-repo-stack { display: inline-flex; gap: 2px; }
-.code-repo-list-pick li { grid-template-columns: auto minmax(0, 1fr) 2.6em 3em; }
+.code-branch-pop.code-repo-pop { width: min(420px, calc(100vw - 16px)); outline: none; }
+.code-repo-list-pick li { grid-template-columns: auto minmax(0, 1fr) 2.2em 3em; }
+.code-repo-name { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.code-repo-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .code-repo-list-pick li.is-empty { color: var(--muted); }
+.code-repo-list-pick li.is-empty b { font-weight: 500; }
 .code-repo-list-pick li.is-empty .code-repo-mark { opacity: .55; }
+.code-repo-list-pick li.code-repo-sep { display: block; margin-top: 4px; border-top: 1px solid var(--line); border-radius: 0; padding: 8px 6px 3px; color: var(--muted); font-size: .68rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; cursor: default; }
+.code-repo-list-pick li.code-repo-sep:hover { background: none; }
 [data-code-repo-trigger] { anchor-name: --code-repos; }
 #code-repos { position-anchor: --code-repos; }
 .code-author-name { display: flex; align-items: center; gap: 7px; min-width: 0; white-space: nowrap; }

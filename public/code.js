@@ -91,6 +91,8 @@ const heat = (time) => { const age = Date.now() - new Date(time).getTime(); retu
 const dayKey = (time) => { const d = new Date(time); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const shortPath = (path) => path.replace(/^\/Users\/[^/]+\/repos\//, "").replace(/^\/Users\/[^/]+/, "~");
 const repoName = (path) => path.split("/").pop();
+// Beside a repo mark the repo's own folder is noise, so a worktree inside it shows only the rest of its path.
+const treePath = (tree) => manyRepos() && tree.path.startsWith(`${tree.repo}/`) ? tree.path.slice(tree.repo.length + 1) : shortPath(tree.path);
 const worktreeFor = (pr) => ui.data.worktrees.find((tree) => tree.repo === pr.repo && tree.branch === pr.branch && !ui.removed.has(tree.path));
 const prFor = (tree) => ui.data.prs.find((pr) => pr.repo === tree.repo && pr.branch === tree.branch);
 const matches = (text) => !ui.filter || ui.filter.toLowerCase().split(/\s+/).every((word) => text.toLowerCase().includes(word));
@@ -220,7 +222,7 @@ function treeRow(tree) {
     <td class="code-col-pr">${pr ? prChip(pr) : historyChip(tree)}</td>
     <td class="code-col-ab">${aheadBehind(tree)}</td>
     <td class="code-col-when code-heat-${heat(tree.activity)}">${when(tree.activity)}</td>
-    <td class="code-col-path"><button type="button" class="code-path" data-code-copy="${escapeHtml(tree.path)}" data-tip="Copy path (Y)">${escapeHtml(shortPath(tree.path))}</button></td>
+    <td class="code-col-path"><button type="button" class="code-path" data-code-copy="${escapeHtml(tree.path)}" data-tip="${escapeHtml(shortPath(tree.path))} · copy path (Y)">${escapeHtml(treePath(tree))}</button></td>
     <td class="code-col-actions">${treeActions(tree)}</td></tr>`;
 }
 
@@ -485,13 +487,14 @@ function repoStats() {
   return [...counts].map(([repo, count]) => ({ repo, name: repoName(repo), count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
+// Sized like the Authors trigger: a folder until something is picked, then the picked repos' marks.
 function repoTrigger() {
   if (!manyRepos()) return "";
   const stats = repoStats();
   const picked = stats.filter((entry) => ui.repos.has(entry.name));
-  const label = picked.length === 1 ? picked[0].name : picked.length ? `${picked.length} repos` : "Repos";
-  const shown = (picked.length ? picked : stats.filter((entry) => entry.count)).slice(0, 4);
-  return `<button type="button" class="code-branch-trigger code-repo-trigger${picked.length ? " is-active" : ""}" popovertarget="code-repos" data-code-repo-trigger><i class="code-repo-stack">${shown.map((entry) => repoBadge(entry.repo)).join("")}</i><span class="code-trigger-label">${escapeHtml(label)}</span><span class="code-count">${stats.filter((entry) => entry.count).length}</span><kbd>G</kbd></button>`
+  const label = picked.length === 1 ? picked[0].name : picked.length ? "" : "Repos"; // several picks: their marks are the label
+  const marks = picked.length ? `<i class="code-repo-stack">${picked.slice(0, 3).map((entry) => repoBadge(entry.repo)).join("")}</i>` : icon("folder");
+  return `<button type="button" class="code-branch-trigger code-author-trigger code-repo-trigger${picked.length ? " is-active" : ""}" popovertarget="code-repos" data-code-repo-trigger${picked.length > 1 ? ` aria-label="${escapeHtml(picked.map((entry) => entry.name).join(", "))}"` : ""}>${marks}${label ? `<span class="code-trigger-label">${escapeHtml(label)}</span>` : ""}${picked.length ? "" : `<span class="code-count" data-tip="Repositories with rows on this tab">${stats.filter((entry) => entry.count).length}</span>`}<kbd>G</kbd></button>`
     + (picked.length ? `<button type="button" class="code-more" data-code-repo-clear>Clear</button>` : "");
 }
 
@@ -503,16 +506,31 @@ function toggleRepo(name, only = false) {
   renderRepoList();
 }
 
+// Repos with rows on this tab come first; the rest sit under a quiet heading with no count, still pickable so the
+// legend stays complete and a pick carries to the tab where that repo does have rows.
 function renderRepoList() {
   const panel = host?.querySelector("#code-repos");
   if (!panel?.matches(":popover-open")) return;
   const noun = { prs: "open PRs", worktrees: "worktrees", commits: "commits", cleanup: "cleanup candidates" }[ui.tab];
-  panel.querySelector("[data-repo-list]").innerHTML = repoStats().map((entry) => `<li data-repo-row="${escapeHtml(entry.name)}" class="${entry.count ? "" : "is-empty"}">
+  const stats = repoStats();
+  ui.repoActive = Math.max(0, Math.min(stats.length - 1, ui.repoActive || 0));
+  const row = (entry, index) => `<li data-repo-row="${escapeHtml(entry.name)}" class="${entry.count ? "" : "is-empty"}" aria-selected="${index === ui.repoActive}">
       <input type="checkbox" tabindex="-1" ${ui.repos.has(entry.name) ? "checked" : ""} aria-label="Show ${escapeHtml(entry.name)}">
-      <span class="code-author-name">${repoBadge(entry.repo)}<b>${escapeHtml(entry.name)}</b></span>
-      <span class="code-count" data-tip="${entry.count} ${noun}">${entry.count}</span>
-      <button type="button" class="code-more" data-repo-only="${escapeHtml(entry.name)}">Only</button></li>`).join("");
+      <span class="code-repo-name">${repoBadge(entry.repo)}<b>${escapeHtml(entry.name)}</b></span>
+      <span class="code-count"${entry.count ? ` data-tip="${entry.count} ${noun}"` : ""}>${entry.count || ""}</span>
+      <button type="button" class="code-more" data-repo-only="${escapeHtml(entry.name)}">Only</button></li>`;
+  const split = stats.findIndex((entry) => !entry.count);
+  panel.querySelector("[data-repo-list]").innerHTML = stats.map((entry, index) => (index === split ? `<li class="code-repo-sep" role="presentation">No ${noun} here</li>` : "") + row(entry, index)).join("");
   panel.querySelector("[data-repo-actions]").innerHTML = ui.repos.size ? `<button type="button" class="code-more" data-code-repo-clear>Clear ${ui.repos.size} picked</button>` : "";
+  panel.querySelector('li[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+}
+
+function repoKeys(event) {
+  const rows = [...host.querySelectorAll("#code-repos [data-repo-row]")];
+  const step = { ArrowDown: 1, ArrowUp: -1, j: 1, k: -1 }[event.key];
+  if (step) { ui.repoActive += step; renderRepoList(); event.preventDefault(); return; }
+  const active = rows[ui.repoActive]?.dataset.repoRow;
+  if ((event.key === "Enter" || event.key === " ") && active) { event.preventDefault(); toggleRepo(active, event.shiftKey); if (event.shiftKey) host.querySelector("#code-repos").hidePopover(); }
 }
 
 // ---------- authors ----------
@@ -591,7 +609,7 @@ function authorKeys(event) {
 function commitRow(commit, repeat = false) {
   const key = `commit:${commit.sha}`;
   return `<tr class="code-row" data-code-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">
-    <td class="code-col-when code-heat-${heat(commit.time)}">${when(commit.time)}</td>${repoCell(commit.repo)}
+    ${repoCell(commit.repo)}<td class="code-col-when code-heat-${heat(commit.time)}">${when(commit.time)}</td>
     <td class="code-col-author">${authorButton(authorOf(commit), commit.login, `${commit.author} <${commit.email}>`)}</td>
     <td class="code-col-branch">${branchPill(commit.branch, repeat)}</td>
     <td class="code-col-main"><div class="code-pr-title" data-tip="${escapeHtml(commit.subject)}">${escapeHtml(commit.subject)}</div></td>
@@ -614,7 +632,7 @@ function commitsBody() {
     start = end;
     return rows.length ? `<tbody><tr class="code-group-row"><th colspan="${7 + repoHead().length}">${label} <span>${rows.length}</span></th></tr>${rows.map((commit, index) => commitRow(commit, rows[index - 1]?.branch === commit.branch)).join("")}</tbody>` : "";
   }).join("");
-  return `<table class="code-table code-commit-table">${tableHead([["code-col-when", "When"], ...repoHead(), ["code-col-author", ""], ["code-col-branch", "Branch"], ["code-col-main", "Subject"], ["code-col-files", "Files"], ["code-col-num", "SHA"], ["code-col-actions", ""]])}${sections}</table>`;
+  return `<table class="code-table code-commit-table">${tableHead([...repoHead(), ["code-col-when", "When"], ["code-col-author", ""], ["code-col-branch", "Branch"], ["code-col-main", "Subject"], ["code-col-files", "Files"], ["code-col-num", "SHA"], ["code-col-actions", ""]])}${sections}</table>`;
 }
 
 // Branch filtering: prefix facets (codex/, alex/…) and picked branches combine with OR, so "codex/ plus my one
@@ -2025,7 +2043,7 @@ function cleanupBody() {
         <td class="code-col-reason"><span class="code-tag code-tag-${cleanupTone(tree.cleanup.reason)}">${escapeHtml(tree.cleanup.reason)}</span></td>
         <td class="code-col-ab">${aheadBehind(tree)}</td>
         <td class="code-col-when">${when(tree.activity)}</td>
-        <td class="code-col-path"><button type="button" class="code-path" data-code-copy="${escapeHtml(tree.path)}" data-tip="Copy path">${escapeHtml(shortPath(tree.path))}</button></td>
+        <td class="code-col-path"><button type="button" class="code-path" data-code-copy="${escapeHtml(tree.path)}" data-tip="${escapeHtml(shortPath(tree.path))} · copy path">${escapeHtml(treePath(tree))}</button></td>
         <td class="code-col-actions">${removed ? "" : treeActions(tree)}</td></tr>`;
     }).join("")}</tbody>`;
   }).join("");
@@ -2266,7 +2284,7 @@ function patch(region, html) {
 function render({ animate = false } = {}) {
   if (!host || !ui.data || !host.querySelector(".code-surface, .code-loading")) return;
   if (!host.querySelector(".code-surface")) {
-    host.innerHTML = `<section class="code-surface" aria-label="Code dashboard"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="code-settings" class="code-settings" popover data-region="repos" aria-label="Code dashboard settings"></div><div id="code-branches" class="code-settings code-branch-pop" popover aria-label="Filter by branch"><label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-branch-query placeholder="Find a branch" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list" data-branch-list></ul><div class="code-branch-actions" data-branch-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only this · <kbd>Esc</kbd> close</p></div><div id="code-authors" class="code-settings code-branch-pop code-author-pop" popover aria-label="Filter by author"><label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-author-query placeholder="Find an author" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list code-author-list" data-author-list></ul><div class="code-branch-actions" data-author-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only · <kbd>Esc</kbd> close</p></div><div id="code-repos" class="code-settings code-branch-pop code-author-pop code-repo-pop" popover aria-label="Filter by repository"><ul class="code-branch-list code-repo-list-pick" data-repo-list></ul><div class="code-branch-actions" data-repo-actions></div></div></section>`;
+    host.innerHTML = `<section class="code-surface" aria-label="Code dashboard"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="code-settings" class="code-settings" popover data-region="repos" aria-label="Code dashboard settings"></div><div id="code-branches" class="code-settings code-branch-pop" popover aria-label="Filter by branch"><label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-branch-query placeholder="Find a branch" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list" data-branch-list></ul><div class="code-branch-actions" data-branch-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only this · <kbd>Esc</kbd> close</p></div><div id="code-authors" class="code-settings code-branch-pop code-author-pop" popover aria-label="Filter by author"><label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-author-query placeholder="Find an author" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list code-author-list" data-author-list></ul><div class="code-branch-actions" data-author-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only · <kbd>Esc</kbd> close</p></div><div id="code-repos" class="code-settings code-branch-pop code-repo-pop" popover tabindex="-1" aria-label="Filter by repository"><ul class="code-branch-list code-repo-list-pick" data-repo-list></ul><div class="code-branch-actions" data-repo-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only · <kbd>Esc</kbd> close</p></div></section>`;
     animate = true;
     // The toolbar stays stuck at the top; table headers and the inspector stick just below its live height.
     new ResizeObserver(([entry]) => host.style.setProperty("--code-bar-h", `${Math.ceil(entry.borderBoxSize[0].blockSize)}px`)).observe(host.querySelector('[data-region="toolbar"]'));
@@ -2885,6 +2903,7 @@ export function renderCodePage(container, { tab, showNotice }) {
       renderAuthorList();
     });
     container.addEventListener("keydown", (event) => { if (event.target.matches("[data-author-query]")) authorKeys(event); });
+    container.addEventListener("keydown", (event) => { if (event.target.matches("#code-repos")) repoKeys(event); });
     container.addEventListener("submit", async (event) => {
       if (!event.target.matches("[data-code-add-repo]")) return;
       event.preventDefault();
@@ -2901,6 +2920,8 @@ export function renderCodePage(container, { tab, showNotice }) {
       if (event.newState !== "open" || !["code-settings", "code-branches", "code-authors", "code-repos"].includes(event.target.id)) return;
       if (event.target.id === "code-repos") {
         if (!CSS.supports("anchor-name: --a")) { const at = container.querySelector("[data-code-repo-trigger]").getBoundingClientRect(); Object.assign(event.target.style, { top: `${at.bottom + 6}px`, left: `${at.left}px` }); }
+        event.target.focus();
+        ui.repoActive = 0;
         return renderRepoList();
       }
       const authors = event.target.id === "code-authors";
