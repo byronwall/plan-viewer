@@ -48,7 +48,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 
 ## Gotchas
 
-- Server changes (`*.ts`) need a server restart; client changes in `public/` need only a reload.
+- `plan-viewer serve` and `npm run demo` restart themselves when a `*.ts` file changes (`node --watch`); client changes in `public/` need only a reload.
 - Byron's own viewer runs on 4173; leave it alone. Preview with `.claude/launch.json`: `demo` (4176) or `workspace` (4177, the real planning workspace whose path is in the ignored `.claude/workspace`, or `PLAN_VIEWER_WORKSPACE`). Never edit `launch.json`; parallel sessions share it, and `preview_start` reuses a running server.
 - `html` has `scroll-behavior: smooth`, so a plain `window.scrollTo(0, y)` animates and may not move at all in a background preview pane. Use `window.scrollTo({ top: y, behavior: "instant" })`. The library rail (`nav.documents`) scrolls on its own.
 - `/api/issues` answers from cache; the first live sync takes about two minutes. Wait for `[data-issues-state="ready"]`. `acli jira workitem search --fields key` returns nulls, so searches ask for `status`.

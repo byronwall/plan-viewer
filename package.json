@@ -9,7 +9,7 @@
   "engines": { "node": ">=22.6" },
   "scripts": {
     "test": "PLANNING_ROOT=fixtures/planning node --experimental-strip-types --test --test-reporter=dot server.test.ts code-dashboard.test.ts search.test.js code-diff.test.js pr-notes.test.ts check-planning.test.ts config.test.js issues.test.ts local-runs.test.ts plans.test.ts",
-    "demo": "PLANNING_ROOT=examples/workspace node --experimental-strip-types server.ts",
+    "demo": "PLANNING_ROOT=examples/workspace node --experimental-strip-types cli.ts serve",
     "hooks:install": "git config core.hooksPath .githooks",
     "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true"
   }
