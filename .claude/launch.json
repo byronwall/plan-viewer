@@ -1,6 +1,12 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "demo", "runtimeExecutable": "sh", "runtimeArgs": ["-c", "PLAN_VIEWER_PORT=4176 npm run demo"], "port": 4176 }
+    { "name": "demo", "runtimeExecutable": "sh", "runtimeArgs": ["-c", "PLAN_VIEWER_PORT=4176 npm run demo"], "port": 4176 },
+    {
+      "name": "workspace",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "V=$PWD; W=${PLAN_VIEWER_WORKSPACE:-$(cat .claude/workspace 2>/dev/null)}; [ -n \"$W\" ] || { echo 'Write the planning workspace path to .claude/workspace (or set PLAN_VIEWER_WORKSPACE)' >&2; exit 1; }; cd \"$W\" && PLAN_VIEWER_PORT=4177 node \"$V/cli.ts\" serve"],
+      "port": 4177
+    }
   ]
 }
