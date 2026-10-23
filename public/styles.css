@@ -1058,6 +1058,18 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-branch-trigger.code-author-trigger > span:first-of-type { font-family: inherit; }
 .code-author-trigger svg { width: 14px; height: 14px; }
 .code-author-list li { grid-template-columns: auto minmax(0, 1fr) 2.6em 3em 3em; }
+/* Repo marks: rounded squares in monospace so they never read as the round author avatars beside them. */
+.code-repo-mark { display: inline-grid; place-items: center; flex: none; width: 22px; height: 16px; border-radius: 4px; background: hsl(var(--hue) 55% 91%); color: hsl(var(--hue) 50% 30%); font: 700 .6rem/1 ui-monospace, Menlo, monospace; font-style: normal; letter-spacing: .02em; }
+.code-table td.code-col-repo, .code-table th.code-col-repo { width: 30px; padding-right: 0; }
+.code-repo-button { display: inline-grid; border: 0; border-radius: 6px; background: none; padding: 2px; cursor: pointer; transition: box-shadow 140ms; }
+.code-repo-button:hover { box-shadow: 0 0 0 1px var(--line-strong); }
+.code-repo-button.is-filtered .code-repo-mark { box-shadow: 0 0 0 1.5px var(--action); }
+.code-repo-stack { display: inline-flex; gap: 2px; }
+.code-repo-list-pick li { grid-template-columns: auto minmax(0, 1fr) 2.6em 3em; }
+.code-repo-list-pick li.is-empty { color: var(--muted); }
+.code-repo-list-pick li.is-empty .code-repo-mark { opacity: .55; }
+[data-code-repo-trigger] { anchor-name: --code-repos; }
+#code-repos { position-anchor: --code-repos; }
 .code-author-name { display: flex; align-items: center; gap: 7px; min-width: 0; white-space: nowrap; }
 .code-author-name b { font-weight: 600; }
 .code-author-name .code-muted { overflow: hidden; text-overflow: ellipsis; font-size: .72rem; }

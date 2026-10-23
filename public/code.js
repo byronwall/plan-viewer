@@ -11,7 +11,7 @@ const ui = {
   tab: "prs", data: null, filter: "", day: "", treeScope: "all", prScope: "all", prSort: "updated", hideDrafts: false, failingOnly: false,
   showKeep: false, openDescriptions: new Set(), selected: new Set(), removed: new Set(), removing: null, poll: 0, sel: "", detail: new Map(),
   commitScope: "local", commits: new Map(), detailErrors: new Map(), branches: new Set(), prefixes: new Set(), branchQuery: "", branchActive: 0,
-  authors: new Set(), authorQuery: "", authorActive: 0, runLogs: new Map(),
+  authors: new Set(), authorQuery: "", authorActive: 0, repos: new Set(), runLogs: new Map(),
 };
 const storage = { get: (key, fallback) => { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }, set: (key, value) => { try { localStorage.setItem(key, value); } catch {} } };
 // Cleanup never offers a worktree created or touched more recently than this; a fresh one may be about to get used.
@@ -207,6 +207,7 @@ function visibleTrees() {
     .filter((tree) => !ui.removed.has(tree.path))
     .filter(scopes[ui.treeScope] || scopes.all)
     .filter((tree) => !ui.day || dayKey(tree.activity) === ui.day)
+    .filter(repoFilter)
     .filter((tree) => matches(`${tree.branch} ${tree.path} ${prFor(tree)?.title || ""}`));
 }
 
@@ -214,7 +215,7 @@ function treeRow(tree) {
   const pr = prFor(tree);
   const key = `tree:${tree.path}`;
   return `<tr class="code-row" data-code-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">
-    <td class="code-col-main"><div class="code-line">${branchChip(tree.branch, "code-branch")}${tree.main ? '<span class="code-tag">main checkout</span>' : ""}${tree.dirty ? `<span class="code-tag code-tag-dirty">${tree.dirty} changed</span>` : ""}</div>
+    ${repoCell(tree.repo)}<td class="code-col-main"><div class="code-line">${branchChip(tree.branch, "code-branch")}${tree.main ? '<span class="code-tag">main checkout</span>' : ""}${tree.dirty ? `<span class="code-tag code-tag-dirty">${tree.dirty} changed</span>` : ""}</div>
       ${pr ? `<div class="code-sub">${escapeHtml(pr.title)}</div>` : ""}</td>
     <td class="code-col-pr">${pr ? prChip(pr) : historyChip(tree)}</td>
     <td class="code-col-ab">${aheadBehind(tree)}</td>
@@ -233,6 +234,7 @@ function emptyState(noun) {
     ui.tab === "worktrees" && ui.treeScope !== "all" && scopes[ui.treeScope],
     ui.tab === "worktrees" && ui.day && new Date(`${ui.day}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     ui.tab === "commits" && (ui.branches.size || ui.prefixes.size) && "picked branches",
+    ui.repos.size && (ui.repos.size === 1 ? [...ui.repos][0] : "picked repos"),
     ui.tab !== "worktrees" && ui.authors.size && (ui.authors.size === 1 ? `${authorName([...ui.authors][0])}'s` : "picked authors"),
   ].filter(Boolean);
   if (!ui.filter && !narrowing.length) return `<div class="code-empty"><p>No ${noun} yet.</p></div>`;
@@ -251,9 +253,9 @@ function worktreesBody() {
   const sections = groups.map(([label, test]) => {
     const rows = trees.filter((tree) => !seen.has(tree.path) && test(tree));
     rows.forEach((tree) => seen.add(tree.path));
-    return rows.length ? `<tbody><tr class="code-group-row"><th colspan="6">${label} <span>${rows.length}</span></th></tr>${rows.map(treeRow).join("")}</tbody>` : "";
+    return rows.length ? `<tbody><tr class="code-group-row"><th colspan="${6 + repoHead().length}">${label} <span>${rows.length}</span></th></tr>${rows.map(treeRow).join("")}</tbody>` : "";
   }).join("");
-  return `<table class="code-table">${tableHead([["code-col-main", "Branch"], ["code-col-pr", "PR"], ["code-col-ab", "vs main"], ["code-col-when", "Changed"], ["code-col-path", "Path"], ["code-col-actions", "Open"]])}${sections}</table>`;
+  return `<table class="code-table">${tableHead([...repoHead(), ["code-col-main", "Branch"], ["code-col-pr", "PR"], ["code-col-ab", "vs main"], ["code-col-when", "Changed"], ["code-col-path", "Path"], ["code-col-actions", "Open"]])}${sections}</table>`;
 }
 
 // ---------- pull requests ----------
@@ -267,6 +269,7 @@ function visiblePrs() {
   return ui.data.prs
     .filter((pr) => ui.prScope === "all" || pr.requestedOfMe)
     .filter(authorFilter)
+    .filter(repoFilter)
     .filter((pr) => !(ui.hideDrafts && pr.draft))
     .filter((pr) => !ui.failingOnly || ["FAILURE", "ERROR"].includes(pr.ci))
     .filter((pr) => matches(`#${pr.number} ${pr.number} ${pr.title} ${pr.author} ${pr.branch} ${(pr.labels || []).map((label) => label.name).join(" ")}`))
@@ -349,7 +352,7 @@ function prRow(pr, rail) {
   const workspace = tree?.path || pr.repo;
   const key = `pr:${pr.slug}#${pr.number}`;
   return `<tr class="code-row" data-code-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">
-    ${railCell(pr, rail)}<td class="code-col-num"><a class="code-pr-link" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">${ciBadge(pr)}#${pr.number}</a></td>
+    ${railCell(pr, rail)}${repoCell(pr.repo)}<td class="code-col-num"><a class="code-pr-link" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">${ciBadge(pr)}#${pr.number}</a></td>
     <td class="code-col-main"><div class="code-pr-title">${escapeHtml(pr.title)}</div>
       <div class="code-sub">${authorButton(pr.author, pr.author, authorName(pr.author), true)}${stackNote(pr, rail)}${branchChip(pr.branch)}</div></td>
     <td class="code-col-flags">${prFlags(pr, tree)}</td>
@@ -373,7 +376,7 @@ const prFlags = (pr, tree) => flag("local", Boolean(tree), tree ? `Local worktre
 function prsBody() {
   const prs = visiblePrs();
   if (!prs.length) return emptyState("pull requests");
-  return `<table class="code-table">${tableHead([["code-col-stack", ""], ["code-col-num", "PR"], ["code-col-main", "Title · author · branch"], ["code-col-flags", "Flags"], ["code-col-labels", "Labels"], ["code-col-state", "State"], ["code-col-size", "Size"], ["code-col-when", "Updated"], ["code-col-skills", `Send to ${appName()}`], ["code-col-actions", "Open"]])}<tbody>${stackOrder(prs).map(({ pr, rail }) => prRow(pr, rail)).join("")}</tbody></table>`;
+  return `<table class="code-table">${tableHead([["code-col-stack", ""], ...repoHead(), ["code-col-num", "PR"], ["code-col-main", "Title · author · branch"], ["code-col-flags", "Flags"], ["code-col-labels", "Labels"], ["code-col-state", "State"], ["code-col-size", "Size"], ["code-col-when", "Updated"], ["code-col-skills", `Send to ${appName()}`], ["code-col-actions", "Open"]])}<tbody>${stackOrder(prs).map(({ pr, rail }) => prRow(pr, rail)).join("")}</tbody></table>`;
 }
 
 // ---------- commits ----------
@@ -404,6 +407,7 @@ function visibleCommits() {
   return (commitsInScope() || [])
     .filter(branchFilter)
     .filter(authorFilter)
+    .filter(repoFilter)
     .filter((commit) => matches(`${commit.sha} ${commit.subject} ${commit.author} ${commit.branch}`));
 }
 
@@ -440,6 +444,75 @@ function branchPill(branch, repeat = false) {
   const filtered = ui.branches.has(branch);
   const prefix = prefixOf(branch);
   return `<button type="button" class="code-branch-tag${filtered ? " is-filtered" : ""}${repeat ? " is-repeat" : ""}" data-code-branch-filter="${escapeHtml(branch)}" data-tip="${escapeHtml(branch)} · click to ${filtered ? "stop filtering" : "filter to this branch"}">${branchGlyph(branch)}${prefix ? `<em>${escapeHtml(prefix)}</em>` : ""}<span>${escapeHtml(middleTrim(branch.slice(prefix.length)))}</span></button>`;
+}
+
+// ---------- repos ----------
+// With more than one tracked repo, every row carries a two-letter mark on the repo's own hue: initials of its name's
+// words, else its first letters, shifted until unique. The Repos picker is the legend and the filter (names in ?repo=).
+const manyRepos = () => ui.data.repos.length > 1;
+let marks = { repos: null, map: new Map() };
+function repoMark(repo) {
+  if (marks.repos !== ui.data.repos) {
+    const used = new Set();
+    marks = { repos: ui.data.repos, map: new Map() };
+    ui.data.repos.forEach((path, index) => {
+      const name = repoName(path);
+      const words = name.split(/[-_.\s]+/).filter(Boolean);
+      const letters = name.replace(/[^a-z0-9]/gi, "");
+      const label = [words.length > 1 ? words[0][0] + words[1][0] : letters.slice(0, 2), ...[...letters.slice(1)].map((char) => letters[0] + char), String(index + 1)]
+        .map((text) => text.toUpperCase()).find((text) => !used.has(text));
+      used.add(label);
+      marks.map.set(path, { label, name, hue: Math.round((index * 137.508 + 215) % 360) });
+    });
+  }
+  return marks.map.get(repo) || { label: "?", name: repoName(repo || "?"), hue: 0 };
+}
+const repoBadge = (repo) => { const mark = repoMark(repo); return `<i class="code-repo-mark" style="--hue:${mark.hue}" aria-hidden="true">${escapeHtml(mark.label)}</i>`; };
+const repoFilter = (item) => !ui.repos.size || ui.repos.has(repoName(item.repo || ""));
+const repoHead = () => manyRepos() ? [["code-col-repo", ""]] : [];
+function repoCell(repo) {
+  if (!manyRepos()) return "";
+  const name = repoName(repo);
+  const filtered = ui.repos.has(name);
+  return `<td class="code-col-repo"><button type="button" class="code-repo-button${filtered ? " is-filtered" : ""}" data-code-repo-filter="${escapeHtml(name)}" data-tip="${escapeHtml(`${name} · click to ${filtered ? "stop filtering" : "show only this repo"}`)}">${repoBadge(repo)}</button></td>`;
+}
+
+// Repos with items on the current tab, busiest first; every tracked repo stays listed so the legend is complete.
+function repoStats() {
+  const items = ui.tab === "prs" ? ui.data.prs : ui.tab === "commits" ? commitsInScope() || [] : ui.data.worktrees.filter((tree) => !ui.removed.has(tree.path) && (ui.tab === "worktrees" || (tree.cleanup && !tree.main)));
+  const counts = new Map(ui.data.repos.map((repo) => [repo, 0]));
+  for (const item of items) if (counts.has(item.repo)) counts.set(item.repo, counts.get(item.repo) + 1);
+  return [...counts].map(([repo, count]) => ({ repo, name: repoName(repo), count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+function repoTrigger() {
+  if (!manyRepos()) return "";
+  const stats = repoStats();
+  const picked = stats.filter((entry) => ui.repos.has(entry.name));
+  const label = picked.length === 1 ? picked[0].name : picked.length ? `${picked.length} repos` : "Repos";
+  const shown = (picked.length ? picked : stats.filter((entry) => entry.count)).slice(0, 4);
+  return `<button type="button" class="code-branch-trigger code-repo-trigger${picked.length ? " is-active" : ""}" popovertarget="code-repos" data-code-repo-trigger><i class="code-repo-stack">${shown.map((entry) => repoBadge(entry.repo)).join("")}</i><span class="code-trigger-label">${escapeHtml(label)}</span><span class="code-count">${stats.filter((entry) => entry.count).length}</span><kbd>G</kbd></button>`
+    + (picked.length ? `<button type="button" class="code-more" data-code-repo-clear>Clear</button>` : "");
+}
+
+function toggleRepo(name, only = false) {
+  if (only) ui.repos = new Set([name]);
+  else ui.repos.has(name) ? ui.repos.delete(name) : ui.repos.add(name);
+  syncUrl();
+  render({ animate: true });
+  renderRepoList();
+}
+
+function renderRepoList() {
+  const panel = host?.querySelector("#code-repos");
+  if (!panel?.matches(":popover-open")) return;
+  const noun = { prs: "open PRs", worktrees: "worktrees", commits: "commits", cleanup: "cleanup candidates" }[ui.tab];
+  panel.querySelector("[data-repo-list]").innerHTML = repoStats().map((entry) => `<li data-repo-row="${escapeHtml(entry.name)}" class="${entry.count ? "" : "is-empty"}">
+      <input type="checkbox" tabindex="-1" ${ui.repos.has(entry.name) ? "checked" : ""} aria-label="Show ${escapeHtml(entry.name)}">
+      <span class="code-author-name">${repoBadge(entry.repo)}<b>${escapeHtml(entry.name)}</b></span>
+      <span class="code-count" data-tip="${entry.count} ${noun}">${entry.count}</span>
+      <button type="button" class="code-more" data-repo-only="${escapeHtml(entry.name)}">Only</button></li>`).join("");
+  panel.querySelector("[data-repo-actions]").innerHTML = ui.repos.size ? `<button type="button" class="code-more" data-code-repo-clear>Clear ${ui.repos.size} picked</button>` : "";
 }
 
 // ---------- authors ----------
@@ -517,12 +590,11 @@ function authorKeys(event) {
 
 function commitRow(commit, repeat = false) {
   const key = `commit:${commit.sha}`;
-  const many = ui.data.repos.length > 1;
   return `<tr class="code-row" data-code-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">
-    <td class="code-col-when code-heat-${heat(commit.time)}">${when(commit.time)}</td>
+    <td class="code-col-when code-heat-${heat(commit.time)}">${when(commit.time)}</td>${repoCell(commit.repo)}
     <td class="code-col-author">${authorButton(authorOf(commit), commit.login, `${commit.author} <${commit.email}>`)}</td>
     <td class="code-col-branch">${branchPill(commit.branch, repeat)}</td>
-    <td class="code-col-main"><div class="code-pr-title" data-tip="${escapeHtml(commit.subject)}">${many ? `<span class="code-muted">${escapeHtml(repoName(commit.repo))}</span> ` : ""}${escapeHtml(commit.subject)}</div></td>
+    <td class="code-col-main"><div class="code-pr-title" data-tip="${escapeHtml(commit.subject)}">${escapeHtml(commit.subject)}</div></td>
     <td class="code-col-files" data-tip="+${commit.additions} −${commit.deletions}">${commit.files}</td>
     <td class="code-col-num"><button type="button" class="code-path" data-code-copy="${commit.sha}" data-tip="Copy SHA">${commit.sha.slice(0, 8)}</button></td>
     <td class="code-col-actions">${iconButton("diff", "View diff (Enter)", `data-code-row-diff="${escapeHtml(key)}"`)}${commit.worktree ? iconButton("vscode", "Open worktree in VS Code", `data-code-open="vscode" data-path="${escapeHtml(commit.worktree)}"`) : `<span class="code-icon-button is-blank"></span>`}</td></tr>`;
@@ -540,9 +612,9 @@ function commitsBody() {
     while (end < commits.length && Date.now() - commits[end].time < age) end++;
     const rows = commits.slice(start, end);
     start = end;
-    return rows.length ? `<tbody><tr class="code-group-row"><th colspan="7">${label} <span>${rows.length}</span></th></tr>${rows.map((commit, index) => commitRow(commit, rows[index - 1]?.branch === commit.branch)).join("")}</tbody>` : "";
+    return rows.length ? `<tbody><tr class="code-group-row"><th colspan="${7 + repoHead().length}">${label} <span>${rows.length}</span></th></tr>${rows.map((commit, index) => commitRow(commit, rows[index - 1]?.branch === commit.branch)).join("")}</tbody>` : "";
   }).join("");
-  return `<table class="code-table code-commit-table">${tableHead([["code-col-when", "When"], ["code-col-author", ""], ["code-col-branch", "Branch"], ["code-col-main", "Subject"], ["code-col-files", "Files"], ["code-col-num", "SHA"], ["code-col-actions", ""]])}${sections}</table>`;
+  return `<table class="code-table code-commit-table">${tableHead([["code-col-when", "When"], ...repoHead(), ["code-col-author", ""], ["code-col-branch", "Branch"], ["code-col-main", "Subject"], ["code-col-files", "Files"], ["code-col-num", "SHA"], ["code-col-actions", ""]])}${sections}</table>`;
 }
 
 // Branch filtering: prefix facets (codex/, alex/…) and picked branches combine with OR, so "codex/ plus my one
@@ -1938,17 +2010,17 @@ function cleanupBody() {
   const all = ui.data.worktrees.filter((tree) => tree.cleanup && !tree.main);
   const bar = "";
   const groups = Object.keys(CLEANUP_LEVELS).filter((name) => name !== "keep" || ui.showKeep);
-  const candidates = all.filter((tree) => matches(`${tree.branch} ${tree.path} ${tree.cleanup.reason}`));
+  const candidates = all.filter(repoFilter).filter((tree) => matches(`${tree.branch} ${tree.path} ${tree.cleanup.reason}`));
   const body = groups.map((group) => {
     const rows = candidates.filter((tree) => level(tree) === group).sort((a, b) => a.activity - b.activity);
     if (!rows.length) return "";
     const selectable = group === "safe" || group === "review";
     const live = rows.filter((tree) => !ui.removed.has(tree.path));
     const allSelected = selectable && live.length && live.every((tree) => ui.selected.has(tree.path));
-    return `<tbody><tr class="code-group-row"><th colspan="7">${selectable ? `<label class="code-group-toggle"><input type="checkbox" data-code-select-group="${group}" ${allSelected ? "checked" : ""}>${CLEANUP_LEVELS[group]} <span>${live.length}</span></label>` : `${CLEANUP_LEVELS[group]}${group === "fresh" ? ` <em>created or touched within ${cleanupGuard === "week" ? "a week" : "a day"}</em>` : ""} <span>${live.length}</span>`}</th></tr>${rows.map((tree) => {
+    return `<tbody><tr class="code-group-row"><th colspan="${7 + repoHead().length}">${selectable ? `<label class="code-group-toggle"><input type="checkbox" data-code-select-group="${group}" ${allSelected ? "checked" : ""}>${CLEANUP_LEVELS[group]} <span>${live.length}</span></label>` : `${CLEANUP_LEVELS[group]}${group === "fresh" ? ` <em>created or touched within ${cleanupGuard === "week" ? "a week" : "a day"}</em>` : ""} <span>${live.length}</span>`}</th></tr>${rows.map((tree) => {
       const removed = ui.removed.has(tree.path);
       return `<tr class="code-row${removed ? " is-removed" : ""}" data-code-row="tree:${escapeHtml(tree.path)}" aria-selected="${ui.sel === `tree:${tree.path}`}">
-        <td class="code-col-check">${selectable && !removed ? `<input type="checkbox" data-code-select="${escapeHtml(tree.path)}" ${ui.selected.has(tree.path) ? "checked" : ""} aria-label="Select ${escapeHtml(tree.branch)}">` : ""}</td>
+        <td class="code-col-check">${selectable && !removed ? `<input type="checkbox" data-code-select="${escapeHtml(tree.path)}" ${ui.selected.has(tree.path) ? "checked" : ""} aria-label="Select ${escapeHtml(tree.branch)}">` : ""}</td>${repoCell(tree.repo)}
         <td class="code-col-main"><div class="code-line">${branchChip(tree.branch, "code-branch")}${removed ? '<span class="code-tag code-tag-removed">removed</span>' : ""}</div></td>
         <td class="code-col-reason"><span class="code-tag code-tag-${cleanupTone(tree.cleanup.reason)}">${escapeHtml(tree.cleanup.reason)}</span></td>
         <td class="code-col-ab">${aheadBehind(tree)}</td>
@@ -1957,7 +2029,7 @@ function cleanupBody() {
         <td class="code-col-actions">${removed ? "" : treeActions(tree)}</td></tr>`;
     }).join("")}</tbody>`;
   }).join("");
-  return `${bar}${body ? `<table class="code-table">${tableHead([["code-col-check", ""], ["code-col-main", "Branch"], ["code-col-reason", "Why"], ["code-col-ab", "vs main"], ["code-col-when", "Changed"], ["code-col-path", "Path"], ["code-col-actions", "Open"]])}${body}</table>` : `<p class="code-empty">Nothing to clean up.</p>`}`;
+  return `${bar}${body ? `<table class="code-table">${tableHead([["code-col-check", ""], ...repoHead(), ["code-col-main", "Branch"], ["code-col-reason", "Why"], ["code-col-ab", "vs main"], ["code-col-when", "Changed"], ["code-col-path", "Path"], ["code-col-actions", "Open"]])}${body}</table>` : `<p class="code-empty">Nothing to clean up.</p>`}`;
 }
 
 // ---------- detail pane ----------
@@ -2159,6 +2231,7 @@ function toolbar() {
     + `<label class="code-check"><input type="checkbox" data-code-drafts ${ui.hideDrafts ? "checked" : ""}> No drafts</label><label class="code-check"><input type="checkbox" data-code-failing ${ui.failingOnly ? "checked" : ""}> Failing CI${count(ui.data.prs.filter((pr) => ["FAILURE", "ERROR"].includes(pr.ci)).length)}</label>`;
   if (ui.tab === "commits") controls = commitControls();
   if (ui.tab === "cleanup") controls = cleanupControls();
+  controls = repoTrigger() + controls;
   const day = ui.day ? `<button type="button" class="code-day-chip" data-code-day="${ui.day}">${new Date(`${ui.day}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })} ×</button>` : "";
   // Sized to its content, with the activity strip spanning both rows; scanning shows as the spinning refresh icon, so nothing shifts.
   return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-code-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span>${iconButton("refresh", ui.data.scanning ? "Scanning worktrees, CI, and PR history…" : "Refresh everything  (R)", `data-code-refresh class="code-icon-button${ui.data.scanning ? " is-spinning" : ""}"`)}${iconButton("settings", `Tracked repositories (${ui.data.repos.length})`, 'popovertarget="code-settings" data-code-settings')}</div>${controls || day ? `<div class="code-controls">${day}${controls}</div>` : ""}</div>${activityStrip(trees)}</div>`;
@@ -2193,7 +2266,7 @@ function patch(region, html) {
 function render({ animate = false } = {}) {
   if (!host || !ui.data || !host.querySelector(".code-surface, .code-loading")) return;
   if (!host.querySelector(".code-surface")) {
-    host.innerHTML = `<section class="code-surface" aria-label="Code dashboard"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="code-settings" class="code-settings" popover data-region="repos" aria-label="Code dashboard settings"></div><div id="code-branches" class="code-settings code-branch-pop" popover aria-label="Filter by branch"><label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-branch-query placeholder="Find a branch" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list" data-branch-list></ul><div class="code-branch-actions" data-branch-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only this · <kbd>Esc</kbd> close</p></div><div id="code-authors" class="code-settings code-branch-pop code-author-pop" popover aria-label="Filter by author"><label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-author-query placeholder="Find an author" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list code-author-list" data-author-list></ul><div class="code-branch-actions" data-author-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only · <kbd>Esc</kbd> close</p></div></section>`;
+    host.innerHTML = `<section class="code-surface" aria-label="Code dashboard"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="code-settings" class="code-settings" popover data-region="repos" aria-label="Code dashboard settings"></div><div id="code-branches" class="code-settings code-branch-pop" popover aria-label="Filter by branch"><label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-branch-query placeholder="Find a branch" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list" data-branch-list></ul><div class="code-branch-actions" data-branch-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only this · <kbd>Esc</kbd> close</p></div><div id="code-authors" class="code-settings code-branch-pop code-author-pop" popover aria-label="Filter by author"><label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-author-query placeholder="Find an author" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list code-author-list" data-author-list></ul><div class="code-branch-actions" data-author-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only · <kbd>Esc</kbd> close</p></div><div id="code-repos" class="code-settings code-branch-pop code-author-pop code-repo-pop" popover aria-label="Filter by repository"><ul class="code-branch-list code-repo-list-pick" data-repo-list></ul><div class="code-branch-actions" data-repo-actions></div></div></section>`;
     animate = true;
     // The toolbar stays stuck at the top; table headers and the inspector stick just below its live height.
     new ResizeObserver(([entry]) => host.style.setProperty("--code-bar-h", `${Math.ceil(entry.borderBoxSize[0].blockSize)}px`)).observe(host.querySelector('[data-region="toolbar"]'));
@@ -2394,13 +2467,13 @@ function renderServers() {
 
 function syncUrl() {
   const url = new URL(location.href);
-  url.search = new URLSearchParams({ view: "code", ...(ui.tab === "prs" ? {} : { tab: ui.tab }), ...(ui.authors.size ? { author: [...ui.authors].join(",") } : {}) });
+  url.search = new URLSearchParams({ view: "code", ...(ui.tab === "prs" ? {} : { tab: ui.tab }), ...(ui.authors.size ? { author: [...ui.authors].join(",") } : {}), ...(ui.repos.size ? { repo: [...ui.repos].join(",") } : {}) });
   history.replaceState(null, "", url);
 }
 
 function resetFilters() {
   Object.assign(ui, { filter: "", day: "", treeScope: "all", prScope: "all", hideDrafts: false, failingOnly: false });
-  ui.branches.clear(); ui.prefixes.clear(); ui.authors.clear(); syncUrl();
+  ui.branches.clear(); ui.prefixes.clear(); ui.authors.clear(); ui.repos.clear(); syncUrl();
   const input = host?.querySelector("[data-code-filter]");
   if (input) input.value = "";
 }
@@ -2464,6 +2537,8 @@ async function removeSelected() {
 async function handleClick(event) {
   const branchRow = event.target.closest("[data-branch-row]");
   if (branchRow && !event.target.closest("[data-branch-only]")) { event.preventDefault(); return toggleBranch(branchRow.dataset.branchRow); }
+  const repoRow = event.target.closest("[data-repo-row]");
+  if (repoRow && !event.target.closest("[data-repo-only]")) { event.preventDefault(); return toggleRepo(repoRow.dataset.repoRow); }
   const authorRow = event.target.closest("[data-author-row]");
   if (authorRow && !event.target.closest("[data-author-only]")) { event.preventDefault(); return toggleAuthor(authorRow.dataset.authorRow); }
   const target = event.target.closest("button, input[type=checkbox], a");
@@ -2497,6 +2572,9 @@ async function handleClick(event) {
     if (dataset.codeCommitScope) { ui.commitScope = dataset.codeCommitScope; return render({ animate: true }); }
     if (dataset.codeBranchFilter) return toggleBranch(dataset.codeBranchFilter);
     if (dataset.codeAuthorFilter) return toggleAuthor(dataset.codeAuthorFilter);
+    if (dataset.codeRepoFilter) return toggleRepo(dataset.codeRepoFilter);
+    if (dataset.repoOnly) { toggleRepo(dataset.repoOnly, true); return host.querySelector("#code-repos").hidePopover(); }
+    if ("codeRepoClear" in dataset) { ui.repos.clear(); syncUrl(); render({ animate: true }); return renderRepoList(); }
     if (dataset.authorOnly) { toggleAuthor(dataset.authorOnly, true); return host.querySelector("#code-authors").hidePopover(); }
     if ("codeAuthorClear" in dataset) { ui.authors.clear(); syncUrl(); render({ animate: true }); return renderAuthorList(); }
     if (dataset.branchOnly) { toggleBranch(dataset.branchOnly, true); return host.querySelector("#code-branches").hidePopover(); }
@@ -2594,6 +2672,7 @@ function handleKey(event) {
     escape: () => { if (!host.querySelector("[data-code-reset]")) return; resetFilters(); render({ animate: true }); },
     b: () => ui.tab === "commits" && host.querySelector("#code-branches")?.showPopover(),
     a: () => host.querySelector("#code-authors")?.showPopover(),
+    g: () => host.querySelector("#code-repos")?.showPopover(),
     enter: () => item.commit ? openDiff() : item.pr ? openPrOverlay(item.pr.slug, item.pr.number) : item.tree && openWorktreeOverlay(item.tree.path),
     e: () => tree && post("open", { kind: "vscode", path: tree.path }),
     x: () => tree && post("open", { kind: "terminal", path: tree.path }),
@@ -2610,7 +2689,7 @@ function handleKey(event) {
     },
     1: () => skill(0), 2: () => skill(1), 3: () => skill(2), 4: () => skill(3),
   };
-  const always = ["arrowdown", "arrowup", "j", "k", "f", "r", "a", "b", "escape"];
+  const always = ["arrowdown", "arrowup", "j", "k", "f", "r", "a", "b", "g", "escape"];
   if (key === "a" && !["prs", "commits"].includes(ui.tab)) return; // elsewhere A stays the global Tasks shortcut
   if (!actions[key] || (!always.includes(key) && !item.tree && !item.pr && !item.commit)) return;
   event.preventDefault();
@@ -2774,6 +2853,7 @@ export function renderCodePage(container, { tab, showNotice }) {
   if (host !== container) {
     host = container;
     ui.authors = new Set((new URLSearchParams(location.search).get("author") || "").split(",").filter(Boolean));
+    ui.repos = new Set((new URLSearchParams(location.search).get("repo") || "").split(",").filter(Boolean));
     container.addEventListener("click", (event) => { if (container.querySelector(".code-surface")) handleClick(event); });
     // Double-click a row to open what Enter opens: the PR or worktree overview, or a commit's diff.
     container.addEventListener("dblclick", (event) => {
@@ -2818,7 +2898,11 @@ export function renderCodePage(container, { tab, showNotice }) {
     });
     window.addEventListener("keydown", handleKey, true);
     container.addEventListener("toggle", (event) => {
-      if (event.newState !== "open" || !["code-settings", "code-branches", "code-authors"].includes(event.target.id)) return;
+      if (event.newState !== "open" || !["code-settings", "code-branches", "code-authors", "code-repos"].includes(event.target.id)) return;
+      if (event.target.id === "code-repos") {
+        if (!CSS.supports("anchor-name: --a")) { const at = container.querySelector("[data-code-repo-trigger]").getBoundingClientRect(); Object.assign(event.target.style, { top: `${at.bottom + 6}px`, left: `${at.left}px` }); }
+        return renderRepoList();
+      }
       const authors = event.target.id === "code-authors";
       const branches = authors || event.target.id === "code-branches";
       const anchor = container.querySelector(authors ? "[data-code-author-trigger]" : branches ? "[data-code-branch-trigger]" : "[data-code-settings]").getBoundingClientRect();
