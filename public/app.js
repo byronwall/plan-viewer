@@ -569,6 +569,21 @@ function composerTemplate(target) {
   const hint = `<p class="composer-hint"><kbd>Enter</kbd> to open · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · paste images</p>`;
   const close = `<button class="popover-close" type="button" aria-label="Close dialog">×</button>`;
   const heading = (meta) => `<header class="composer-heading"><div><h3>${escapeHtml(target.title)}</h3>${meta ? `<p class="composer-meta">${meta}</p>` : ""}</div>${close}</header>`;
+  if (target.scope === "work") {
+    const { node, nodes, action, mode } = target;
+    const label = workStatusLabel(node, nodes);
+    const waiting = node.deps.filter((id) => nodes.find((n) => n.id === id)?.status !== "completed");
+    const meta = `<span title="${escapeHtml(state.selectedPath)}">${escapeHtml(state.selectedPath.split("/").pop())}</span> · ${escapeHtml(node.id)} · ${node.ready ? escapeHtml(label) : `<span class="action-waiting">${escapeHtml(label)}${waiting.length ? ` · after ${escapeHtml(waiting.join(", "))}` : ""}</span>`}`;
+    const preview = mode === "run" && action ? `<div class="action-prompt-preview" aria-label="Stored action prompt"><div class="markdown">${renderMarkdownSource(action.prompt, state.selectedPath)}</div></div>` : "";
+    const field = mode === "update"
+      ? `<label for="work-context">What should change? <span class="optional-label">optional</span></label><textarea id="work-context" name="commentary" placeholder="Split it, reword it, mark it done, add or drop a prerequisite… Leave empty to bring it in line with the latest updates."></textarea>`
+      : `<label for="work-context">Add context <span class="optional-label">optional</span></label><textarea id="work-context" name="commentary" placeholder="${node.ready ? "A constraint, recent finding, or where to start…" : "Say whether the prerequisites are done, or what can safely start now…"}"></textarea>`;
+    return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="work" data-work-item="${escapeHtml(node.id)}" data-work-mode="${mode}">
+      ${heading(meta)}
+      <div class="composer-body">${preview}<div class="composer-field">${field}<div class="composer-images" hidden></div></div></div>
+      <footer class="composer-actions">${hint}<button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open in ${agentName()}</button></footer>
+    </form>`;
+  }
   if (target.scope === "action") {
     const { action } = target;
     const meta = `<span title="${escapeHtml(action.sourcePath)}">${escapeHtml(action.sourcePath.split("/").pop())}</span>${action.workItem ? ` · ${escapeHtml(action.workItem)}` : ""}${action.blocked ? ` · <span class="action-waiting">${escapeHtml(action.blockedReason || "Waiting on prerequisites")}</span>` : ""}`;
@@ -1029,12 +1044,39 @@ function workItemNote(entry) {
   if (!title) return `<article class="work-item-note"><div class="markdown">${renderMarkdownSource(entry, state.selectedPath)}</div></article>`;
   const [first, ...nested] = rest.split("\n");
   const body = [first, "", ...nested.map(line => line.replace(/^ {2}/, ""))].join("\n");
-  const when = date ? `<time datetime="${date}" title="${escapeHtml(formatDate(date, true))}">${escapeHtml(relativeDate(date).replace(/^\p{Ll}/u, letter => letter.toUpperCase()))}</time>` : "";
-  return `<article class="work-item-note"><header><h3>${inlineMarkdown(title, state.selectedPath)}</h3>${when}</header><div class="markdown">${renderMarkdownSource(body, state.selectedPath)}</div></article>`;
+  const when = date ? `<time datetime="${date}">${escapeHtml(formatDate(date))} · ${escapeHtml(relativeDate(date))}</time>` : "";
+  return `<article class="work-item-note"><header><h4>${inlineMarkdown(title, state.selectedPath)}</h4>${when}</header><div class="markdown">${renderMarkdownSource(body, state.selectedPath)}</div></article>`;
 }
 
-// A reading dialog for one work item: its updates, what it sits in and depends on, and its action. Only Esc or × close it,
-// ← → step through the items that have updates, and ?item= keeps it open across reloads.
+// Lines elsewhere in the task that mention a work item without being filed under it (an update about something else, a
+// finding), as the sentences that name it, grouped by where they appear. Fenced prompts and `Work item:` lines are skipped.
+function workMentions(doc, id, own) {
+  const token = new RegExp(`(?<![\\w.])${id.replace(/\./g, "\\.")}(?![\\w]|\\.\\w)`);
+  const mentions = [];
+  for (const chunk of doc.chunks) {
+    if (/^work breakdown$/i.test(chunk.title)) continue;
+    const updates = /^updates$/i.test(chunk.title);
+    let source = chunk.title, skip = false, fenced = false;
+    for (const line of chunk.markdown.split("\n")) {
+      if (/^\s*```/.test(line)) { fenced = !fenced; continue; }
+      if (fenced) continue;
+      const entry = updates && line.match(/^[-*]\s+\*\*(?:(\d{4}-\d{2}-\d{2})\s*[—–-]\s*)?(.+?):?\*\*/);
+      if (entry) { source = entry[2]; skip = own.some((note) => note.startsWith(line.trim())); }
+      if (skip || !token.test(line) || /^\s*Work item:/i.test(line)) continue;
+      const text = line.replace(/^\s*(?:[-*]|\d+\.|#{1,6})\s+/, "").replace(/^\*\*[^*]+\*\*:?\s*/, "");
+      const sentences = text.split(/(?<=[.;!?])\s+(?=[A-Z(`])/).filter((sentence) => token.test(sentence));
+      const group = mentions.find((m) => m.source === source && m.chunkId === chunk.id) || mentions[mentions.push({ source, chunkId: chunk.id, date: entry?.[1] || mentions.at(-1)?.date || "", lines: [] }) - 1];
+      group.lines.push(...sentences);
+    }
+  }
+  return mentions.filter((m) => m.lines.length);
+}
+
+const markId = (html, id) => html.replace(new RegExp(`(?<![\\w.])(${id.replace(/\./g, "\\.")})(?![\\w]|\\.\\w)(?![^<]*>)`, "g"), "<mark>$1</mark>");
+
+// The work item dialog reads like a small inspector for one item: the task it belongs to on top, the whole breakdown as a
+// rail on the left, and on the right the item's prerequisites, next action, updates filed under it, and other mentions.
+// It stays open until Esc or ×; J/K walk every item, ← → the ones with updates, and ?item= reopens it on refresh.
 function openWorkItem(id) {
   const doc = state.document, nodes = doc?.work?.nodes || [];
   const node = nodes.find(n => n.id === id);
@@ -1042,54 +1084,94 @@ function openWorkItem(id) {
   if (!openViewerDialog(workItemDialog)) return;
   const byId = new Map(nodes.map(n => [n.id, n]));
   const updates = workUpdates(doc), notes = updates.get(id) || [];
+  const mentions = workMentions(doc, id, notes);
+  const kids = (parent) => nodes.filter(n => n.parent === parent);
+  const depthOf = (n) => { let d = 0; for (let p = byId.get(n.parent); p; p = byId.get(p.parent)) d++; return d; };
+  const leaves = nodes.filter(n => !kids(n.id).length);
+  const doneLeaves = leaves.filter(n => n.status === "completed").length;
   const stepper = nodes.filter(n => updates.has(n.id)), at = stepper.indexOf(node);
-  const step = (n, dir) => `<button type="button" ${n ? `data-work-item="${escapeHtml(n.id)}" data-work-step="${dir}" aria-label="${dir === "prev" ? "Previous" : "Next"} item with updates: ${escapeHtml(n.id)}" title="${escapeHtml(`${n.id} · ${n.title}`)}"` : "disabled"}>${glyph("arrow-right")}</button>`;
-  const ref = n => `<li><button type="button" class="work-item-ref" data-work-item="${escapeHtml(n.id)}"><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${updates.has(n.id) ? `<span class="work-item-ref-notes">${glyph("message-square")}${updates.get(n.id).length}</span>` : ""}</button></li>`;
-  const relation = (label, list) => list.length ? `<section><h4>${label}</h4><ul>${list.map(ref).join("")}</ul></section>` : "";
-  const relations = [
-    relation("Part of", [byId.get(node.parent)].filter(Boolean)),
-    relation("After", node.deps.map(dep => byId.get(dep)).filter(Boolean)),
-    relation("Unblocks", nodes.filter(n => n.deps.includes(id))),
-    relation("Contains", nodes.filter(n => n.parent === id)),
-  ].join("");
+  const noteCount = (n) => updates.get(n.id)?.length ? `<span class="work-item-notes-count">${glyph("message-square")}${updates.get(n.id).length}</span>` : "";
+  const ref = (n) => `<button type="button" class="work-item-ref" data-work-item="${escapeHtml(n.id)}"><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${noteCount(n)}</button>`;
+  const rail = nodes.map(n => `<li><button type="button" class="work-item-rail-row${n === node ? " is-current" : ""}${isSettled(n.status) ? " is-settled" : ""}${kids(n.id).length ? " is-parent" : ""}" style="--depth:${depthOf(n)}" data-work-item="${escapeHtml(n.id)}"${n === node ? ' aria-current="true"' : ""}><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${noteCount(n)}</button></li>`).join("");
+  const relation = (label, list) => list.length ? `<dt>${label}</dt><dd>${list.map(ref).join("")}</dd>` : "";
+  const relations = relation("After", node.deps.map(dep => byId.get(dep)).filter(Boolean)) + relation("Unblocks", nodes.filter(n => n.deps.includes(id))) + relation("Contains", kids(id));
   const actionIndex = doc.nextActions.findIndex(a => a.workItem === id);
-  const actionKey = doc.chunks.find(c => /^next actions$/i.test(c.title))?.id || "work";
-  const draft = actionIndex >= 0 ? `<button type="button" class="handoff-button" data-action-key="${escapeHtml(actionKey)}" data-action-index="${actionIndex}" aria-haspopup="dialog" aria-controls="handoff-popover">${glyph("pen-line")}Draft: ${escapeHtml(doc.nextActions[actionIndex].title)}</button>` : "";
+  const action = doc.nextActions[actionIndex];
+  const task = doc.task;
   const label = workStatusLabel(node, nodes);
+  const frontier = node.ready ? "" : " is-off-frontier";
+  const offFrontier = node.ready ? "" : ` title="${escapeHtml(`${id} is ${label.toLowerCase()}, not ready: the draft says what it still waits on`)}"`;
+  const parent = byId.get(node.parent);
+  const mentionHtml = mentions.map(m => `<li><button type="button" class="work-item-mention-source" data-work-jump="${escapeHtml(m.chunkId)}">${escapeHtml(m.source)}</button>${m.date ? `<time datetime="${m.date}">${escapeHtml(formatDate(m.date))}</time>` : ""}${m.lines.map(line => `<p>${markId(inlineMarkdown(line, state.selectedPath), id)}</p>`).join("")}</li>`).join("");
   workItemDialog.dataset.item = id;
-  workItemDialog.innerHTML = `<header class="viewer-dialog-heading work-item-heading">
-      <div><p class="work-item-kicker"><code>${escapeHtml(node.id)}</code>${workStatusIcon(node, nodes)}<span>${escapeHtml(label)}</span></p><h2 id="work-item-title">${escapeHtml(node.title)}</h2></div>
-      <div class="work-item-tools">${stepper.length > 1 && at >= 0 ? `<span class="work-item-count">${at + 1} of ${stepper.length}</span>${step(stepper[at - 1], "prev")}${step(stepper[at + 1], "next")}` : ""}<button type="button" data-dialog-close aria-label="Close">×</button></div>
+  workItemDialog.innerHTML = `<header class="work-item-task">
+      ${task ? `<button type="button" class="work-item-task-link" data-dialog-close title="Back to the task"><code>${escapeHtml(task.id)}</code><span>${escapeHtml(task.title)}</span></button><span class="work-item-task-status">${escapeHtml(TASK_STATUS_LABELS[task.status] || task.status)}</span>` : `<span class="work-item-task-link"><span>${escapeHtml(doc.title)}</span></span>`}
+      <span class="work-item-progress" title="${doneLeaves} of ${leaves.length} work items completed"><span style="--done:${leaves.length ? doneLeaves / leaves.length : 0}"></span>${doneLeaves}/${leaves.length} done</span>
+      <span class="work-item-step">${stepper.length > 1 && at >= 0 ? `<span>${at + 1} of ${stepper.length} with updates</span>` : ""}${["prev", "next"].map(dir => { const n = at >= 0 ? stepper[at + (dir === "prev" ? -1 : 1)] : null; return `<button type="button" class="work-item-icon-button" ${n ? `data-work-item="${escapeHtml(n.id)}" data-work-step="${dir}" title="${escapeHtml(`${n.id} · ${n.title}`)}"` : "disabled"} aria-label="${dir === "prev" ? "Previous" : "Next"} item with updates">${glyph("arrow-right")}</button>`; }).join("")}</span>
+      <button type="button" class="work-item-icon-button" data-dialog-close aria-label="Close">${glyph("x")}</button>
     </header>
-    <div class="work-item-body">
-      <div class="work-item-notes">${notes.length ? notes.map(workItemNote).join("") : `<p class="task-detail-empty">No update names ${escapeHtml(id)} yet. Title an update “… (${escapeHtml(id)}):” to file it here.</p>`}</div>
-      ${relations ? `<aside class="work-item-relations">${relations}</aside>` : ""}
-    </div>
-    <footer class="viewer-dialog-footer work-item-footer">${draft}<span><kbd>←</kbd> <kbd>→</kbd> items with updates · <kbd>Esc</kbd> closes</span></footer>`;
-  workItemDialog.querySelector(".work-item-body").scrollTop = 0;
+    <nav class="work-item-rail" aria-label="Work breakdown"><ol>${rail}</ol><p><kbd>J</kbd> <kbd>K</kbd> every item · <kbd>←</kbd> <kbd>→</kbd> with updates</p></nav>
+    <div class="work-item-main">
+      <header class="work-item-heading">
+        <p class="work-item-kicker"><code>${escapeHtml(node.id)}</code>${workStatusIcon(node, nodes)}<span>${escapeHtml(label)}</span>${parent ? `<span class="work-item-in">in</span><button type="button" class="work-item-parent" data-work-item="${escapeHtml(parent.id)}">${escapeHtml(parent.id)} ${escapeHtml(parent.title)}</button>` : ""}</p>
+        <h2 id="work-item-title">${escapeHtml(node.title)}</h2>
+        <div class="work-item-agent">
+          <button type="button" class="work-item-agent-button${frontier}" data-work-agent="run"${offFrontier}>${glyph("play")}Send to agent</button>
+          <button type="button" class="work-item-agent-button is-secondary${frontier}" data-work-agent="update"${offFrontier}>${glyph("pen-line")}Update with agent</button>
+        </div>
+      </header>
+      ${relations ? `<dl class="work-item-relations">${relations}</dl>` : ""}
+      ${action ? `<section class="work-item-section"><h3>Next action</h3><div class="work-item-action"><p class="work-item-action-title">${escapeHtml(action.title)}</p><p class="work-item-action-prompt">${escapeHtml(action.prompt.replace(/\s+/g, " "))}</p></div></section>` : ""}
+      <section class="work-item-section"><h3>Updates <span>${notes.length}</span></h3>${notes.length ? notes.map(workItemNote).join("") : `<p class="work-item-empty">None filed yet. An update titled “… (${escapeHtml(id)}):” lands here.</p>`}</section>
+      ${mentions.length ? `<section class="work-item-section"><h3>Also mentioned <span>${mentions.reduce((sum, m) => sum + m.lines.length, 0)}</span></h3><ul class="work-item-mentions">${mentionHtml}</ul></section>` : ""}
+    </div>`;
+  workItemDialog.querySelector(".work-item-main").scrollTop = 0;
+  workItemDialog.querySelector(".work-item-rail-row.is-current")?.scrollIntoView({ block: "nearest" });
   const url = new URL(location.href);
   url.searchParams.set("item", id);
   history.replaceState(null, "", url);
 }
 
+// Send and Update open the composer for the item; the dialog closes first so the composer is not inert behind it.
+function openWorkComposer(id, mode) {
+  const nodes = state.document?.work?.nodes || [];
+  const node = nodes.find(n => n.id === id);
+  if (!node) return;
+  workItemDialog.close();
+  const trigger = elements.chunks.querySelector(`.work-tree [data-work-item="${CSS.escape(id)}"]`);
+  openComposer({ key: `work:${mode}:${id}`, scope: "work", mode, node, nodes, action: state.document.nextActions.find(a => a.workItem === id), title: `${mode === "update" ? "Update" : "Advance"} ${id}: ${node.title}` }, trigger);
+}
+
 workItemDialog.addEventListener("click", (event) => {
+  const agent = event.target.closest("[data-work-agent]");
+  if (agent) {
+    event.stopPropagation(); // the document's outside-click handler would close the composer this click opens
+    return openWorkComposer(workItemDialog.dataset.item, agent.dataset.workAgent);
+  }
   const item = event.target.closest("[data-work-item]");
   if (item) return openWorkItem(item.dataset.workItem);
-  // Draft goes through the item's own row so the composer returns focus there; links land on the page underneath.
-  const action = event.target.closest("[data-action-key]");
+  const jump = event.target.closest("[data-work-jump]");
   const documentLink = event.target.closest(".markdown-document-link");
-  if (!action && !documentLink && !event.target.closest("[data-dialog-close], a[href]")) return;
+  if (!jump && !documentLink && !event.target.closest("[data-dialog-close], a[href]")) return;
   workItemDialog.close();
-  if (action) elements.chunks.querySelector(`.work-tree [data-action-key="${action.dataset.actionKey}"][data-action-index="${action.dataset.actionIndex}"]`)?.click();
+  if (jump) document.getElementById(jump.dataset.workJump)?.scrollIntoView({ block: "start", behavior: "instant" });
   if (documentLink) {
     event.preventDefault();
     selectDocument(documentLink.dataset.documentPath, { historyMode: "push", anchor: documentLink.dataset.documentAnchor });
   }
 });
 workItemDialog.addEventListener("keydown", (event) => {
-  if (!["ArrowLeft", "ArrowRight"].includes(event.key) || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (event.metaKey || event.ctrlKey || event.altKey || event.target.closest("input, textarea")) return;
+  if (["ArrowLeft", "ArrowRight"].includes(event.key)) {
+    event.preventDefault();
+    workItemDialog.querySelector(`[data-work-step="${event.key === "ArrowLeft" ? "prev" : "next"}"]`)?.click();
+  }
+  const walk = { j: 1, k: -1 }[event.key.toLowerCase()];
+  if (!walk) return;
   event.preventDefault();
-  workItemDialog.querySelector(`[data-work-step="${event.key === "ArrowLeft" ? "prev" : "next"}"]`)?.click();
+  const nodes = state.document?.work?.nodes || [];
+  const next = nodes[nodes.findIndex(n => n.id === workItemDialog.dataset.item) + walk];
+  if (next) openWorkItem(next.id);
 });
 workItemDialog.addEventListener("close", () => {
   const url = new URL(location.href);
@@ -1534,7 +1616,7 @@ async function dispatch(form) {
     const response = await fetch("/api/dispatch", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ app: agentApp(), path: form.dataset.sourcePath || state.selectedPath, scope: form.dataset.scope, chunkId: form.dataset.chunkId, actionId: form.dataset.actionId, expectedPrompt: form.dataset.expectedPrompt, commentary, images: [...form.querySelectorAll(".composer-images img")].map((img) => img.src) }),
+      body: JSON.stringify({ app: agentApp(), path: form.dataset.sourcePath || state.selectedPath, scope: form.dataset.scope, chunkId: form.dataset.chunkId, actionId: form.dataset.actionId, expectedPrompt: form.dataset.expectedPrompt, workItem: form.dataset.workItem, mode: form.dataset.workMode, commentary, images: [...form.querySelectorAll(".composer-images img")].map((img) => img.src) }),
     });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || `${agentName()} could not open the draft.`);
@@ -1546,7 +1628,7 @@ async function dispatch(form) {
     showNotice(`Draft loaded in ${agentName()}. Review or edit it there, then send it.`);
   } catch (error) {
     button.disabled = false;
-    button.textContent = form.dataset.scope === "action" ? `Open in ${agentName()}` : `Open draft in ${agentName()}`;
+    button.textContent = ["action", "work"].includes(form.dataset.scope) ? `Open in ${agentName()}` : `Open draft in ${agentName()}`;
     showNotice(error.message, true);
   }
 }
@@ -2002,7 +2084,7 @@ window.addEventListener("blur", () => { cursorPosition = null; });
 function openCursorComposer() {
   const hovered = cursorPosition && document.elementFromPoint(cursorPosition.x, cursorPosition.y);
   const action = hovered?.closest("[data-action-key]")
-    || hovered?.closest(".action-row")?.querySelector("[data-action-key]");
+    || hovered?.closest(".action-row, .work-line")?.querySelector("[data-action-key]");
   if (action) {
     action.click();
     return;

@@ -491,6 +491,26 @@ export function buildActionPrompt(document: Awaited<ReturnType<typeof loadDocume
   return `Advance this next action: ${action.title}\n\nPlanning workspace: ${ROOT}\nSource file: ${document.absolutePath}\nRead the source file and the workspace AGENTS.md before acting. Follow the applicable target repository instructions and preserve unrelated work.\n\n${commentary.trim() ? `${config().user}'s direction for this run (takes precedence over the stored prompt where they differ):\n${commentary.trim()}\n\n` : ""}Stored action prompt:\n${action.prompt}\n\nCarry out the bounded action and verify its result. Record evidence and any remaining blocker in the authoritative task file. Update task state and the work breakdown only when supported by the result. Do not treat drafting a message as authorization to send it.\n\n${CHAT_LINK_INSTRUCTION}`;
 }
 
+type WorkNode = { id: string; title: string; status: string; deps: string[]; parent: string; ready: boolean };
+
+// One work breakdown item, either carried out ("run") or rewritten in the task file ("update"). Items that are not ready
+// can be sent too; the prompt says what they still wait on so the agent confirms before acting.
+export function buildWorkItemPrompt(document: Awaited<ReturnType<typeof loadDocument>>, node: WorkNode, mode: "run" | "update", commentary: string) {
+  const nodes = document.work.nodes as WorkNode[];
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const line = (n: WorkNode) => `${n.id}: ${n.title} [${n.status}]`;
+  const parent = byId.get(node.parent);
+  const waiting = node.deps.filter((id) => byId.get(id)?.status !== "completed");
+  const action = document.nextActions.find((a) => a.workItem === node.id);
+  const direction = commentary.trim() ? `${config().user}'s direction${mode === "run" ? " for this run (takes precedence over the stored prompt where they differ)" : ""}:\n${commentary.trim()}\n\n` : "";
+  const facts = `Planning workspace: ${ROOT}\nSource file: ${document.absolutePath}\nTask: ${document.task?.id || document.title} · ${document.task?.title || document.title}\nWork item: ${line(node)}${parent ? `\nPart of: ${line(parent)}` : ""}${node.deps.length ? `\nAfter: ${node.deps.map((id) => byId.get(id) ? line(byId.get(id)!) : id).join("; ")}` : ""}${action ? `\nLinked next action: ${action.title}` : ""}`;
+  if (mode === "update") {
+    return `Update work item ${node.id} in its task file. Do not carry out the work itself.\n\n${facts}\n\nRead the source file and the workspace AGENTS.md first.\n\n${direction}Revise ${node.id} so the work breakdown matches current understanding: its title, status, nesting, (after: ...) prerequisites, and its linked next action and prompt where one exists. Use the task's Findings and Updates as evidence. Keep IDs stable unless a rename is asked for, and update every reference when one changes. Add a dated update whose bold title names (${node.id}) saying what changed and why. Run the workspace lint on the task and fix what it reports.\n\n${CHAT_LINK_INSTRUCTION}`;
+  }
+  const frontier = node.ready ? "" : `\nThis item is not ready: ${waiting.length ? `it waits on ${waiting.map((id) => byId.get(id) ? line(byId.get(id)!) : id).join("; ")}` : `its status is ${node.status}`}. Check whether that still holds before acting. If it does, do only the preparation that is safe now and report what remains blocked.\n`;
+  return `Advance work item ${node.id}: ${node.title}\n\n${facts}\n${frontier}\nRead the source file and the workspace AGENTS.md before acting. Follow the applicable target repository instructions and preserve unrelated work.\n\n${direction}${action ? `Stored action prompt:\n${action.prompt}\n\n` : ""}Carry out the bounded work and verify its result. Record evidence and any remaining blocker in the authoritative task file. Update the item's status in the work breakdown only when supported by the result. Do not treat drafting a message as authorization to send it.\n\n${CHAT_LINK_INSTRUCTION}`;
+}
+
 const MAX_IMAGES = 6;
 
 // Pasted images arrive as data URLs and land in the workspace's ignored tmp/ so either agent can open them by path.
@@ -510,7 +530,7 @@ export async function saveHandoffImages(images: unknown[]) {
   return paths;
 }
 
-async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex", images: string[] = []) {
+async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex", images: string[] = [], workItem = "", mode = "") {
   const openDraft = (title: string, prompt: string) => getCodexApp().openDraft(ROOT, title, prompt, app, images);
   if (scope === "action") {
     const document = await loadDocument(path);
@@ -521,6 +541,17 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
     dispatchLog(requestId, "validated", { scope, path, actionId });
     if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true };
     return { accepted: true, ...await openDraft(action.title, prompt) };
+  }
+  if (scope === "work") {
+    const document = await loadDocument(path);
+    const node = (document.work.nodes as WorkNode[]).find((n) => n.id === workItem);
+    if (!node) throw new Error(`Work item ${workItem} is no longer in this task. Reload it and try again.`);
+    if (mode !== "run" && mode !== "update") throw new Error("Choose to run or update the work item.");
+    if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Additional context is too long.");
+    const prompt = buildWorkItemPrompt(document, node, mode, commentary);
+    dispatchLog(requestId, "validated", { scope, path, workItem, mode });
+    if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true };
+    return { accepted: true, ...await openDraft(`${mode === "update" ? "Update" : "Advance"} ${node.id}: ${node.title}`, prompt) };
   }
   if (!commentary.trim()) throw new Error("Add a request before opening a draft.");
   if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Commentary is too long for this first version.");
@@ -718,7 +749,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request, 50_000_000);
       dispatchLog(requestId, "received", { path: String(body.path || ""), scope: String(body.scope || ""), chunkId: String(body.chunkId || "") });
       try {
-        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex"), await saveHandoffImages(Array.isArray(body.images) ? body.images : [])));
+        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex"), await saveHandoffImages(Array.isArray(body.images) ? body.images : []), String(body.workItem || ""), String(body.mode || "")));
       } catch (error) {
         dispatchLog(requestId, "failed", { error: error instanceof Error ? error.message : String(error) });
         throw error;

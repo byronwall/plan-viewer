@@ -609,8 +609,23 @@ test("a waiting action stays openable and says what it waits on", async () => {
   assert.match(list, /class="action-card is-waiting"[^>]*data-action-index="0"/);
   assert.match(list, /After W1<\/span> · Apply the fix\./);
   const tree = renderWorkBreakdown(parseWorkBreakdown('- W1: Evidence [open]\n- W2: Fix [open] (after: W1)'), [action], 'next');
-  assert.match(tree, /class="work-row is-actionable is-waiting"[^>]*data-action-index="0"/);
-  assert.match(tree, /class="work-node is-actionable"[^>]*data-action-index="0"/);
+  assert.match(tree, /class="action-go work-row-draft is-waiting"[^>]*data-action-index="0"/);
+  assert.match(tree, /class="work-row has-action"[^>]*data-work-item="W2"/);
+  assert.match(tree, /class="work-node is-actionable"[^>]*data-work-item="W2"/);
+});
+
+test("work item handoffs run or update any item and say when it is not ready", async () => {
+  const { buildWorkItemPrompt } = await import("./server.ts");
+  const task = await loadDocument("tasks/TASK-0015.md");
+  const node = { ...task.work.nodes[0], ready: false, deps: [] };
+  const run = buildWorkItemPrompt(task, node, "run", "");
+  assert.match(run, /^Advance work item W1: Compare released versions/);
+  assert.match(run, /This item is not ready/);
+  assert.ok(run.includes(task.absolutePath));
+  const update = buildWorkItemPrompt(task, { ...node, ready: true }, "update", "Split it by version.");
+  assert.match(update, /^Update work item W1 in its task file\. Do not carry out the work itself\./);
+  assert.match(update, /Split it by version\./);
+  assert.doesNotMatch(update, /not ready/);
 });
 
 test("setTaskStatus rewrites only status and updated front matter", async () => {
