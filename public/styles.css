@@ -219,6 +219,14 @@ button { cursor: pointer; }
 .chunk-stack { min-width: 0; max-width: 1050px; display: grid; gap: 10px; }
 .chunk-card { min-width: 0; position: relative; scroll-margin-top: 64px; background: var(--paper); border-radius: 10px; padding: 14px clamp(14px, 2vw, 22px) 16px; border: 1px solid var(--line); }
 .chunk-card:target, .chunk-card.link-target { border-color: var(--action-muted); box-shadow: 0 0 0 2px rgba(49, 87, 213, .2); }
+/* Lines an agent just changed keep a quiet tint until you leave the document; they and their sections flash once. */
+#chunks .is-changed-line { background: var(--success-field); box-shadow: 0 0 0 2px var(--success-field); border-radius: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  #chunks .chunk-card.is-changed-flash { animation: changed-card 1.8s ease-out; }
+  #chunks .is-changed-line.is-changed-flash { animation: changed-line 1.8s ease-out; }
+}
+@keyframes changed-card { 0%, 35% { border-color: var(--success); box-shadow: 0 0 0 2px rgba(23, 114, 91, .2); } }
+@keyframes changed-line { 0%, 35% { background: #b5e2cf; box-shadow: 0 0 0 2px #b5e2cf; } }
 .chunk-heading { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; }
 .chunk-index { display: grid; place-items: center; min-width: 24px; height: 22px; border-radius: 6px; background: #edf0f5; color: #5f6a7e; font: 650 .66rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .chunk-heading h2 { margin: 0; overflow-wrap: anywhere; font-size: 1.05rem; line-height: 1.25; letter-spacing: -.016em; text-wrap: balance; }

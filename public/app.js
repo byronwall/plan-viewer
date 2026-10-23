@@ -1343,6 +1343,7 @@ function renderDocument() {
       if (node) heading.dataset.outlineKey = node.key;
     });
   }
+  markDocumentChanges();
   renderChunkNavigation();
   syncGlobalHandoff();
   if (state.openComposer === "global") {
@@ -1492,6 +1493,7 @@ async function selectDocument(path, { historyMode = "push", anchor = "" } = {}) 
     const item = new URLSearchParams(location.search).get("item");
     if (item) openWorkItem(item);
     else if (workItemDialog.open) workItemDialog.close();
+    if (state.selectedPath !== path) changeMarks.delete(state.selectedPath); // you've seen what changed there
   } catch (error) {
     showNotice(error.message, true);
   } finally {
@@ -1642,14 +1644,50 @@ let documentChanges = [];
 fetch("/api/changes").then((response) => response.json()).then((body) => { documentChanges = body.changes || []; }).catch(() => {});
 const changeSummary = (change) => [change.sections.map((section) => section.title).join(", "), change.kind === "changed" ? `+${change.added}\u00a0−${change.removed}` : change.kind].filter(Boolean).join(" · ");
 const changeHref = (change) => documentHref(change.path, change.sections[0]?.anchor || "");
+// What agents changed in each document, marked whenever it renders: lines keep a quiet tint until you leave the
+// document, and the first render after a change (or Show/Open from its toast) flashes them and their sections.
+const changeMarks = new Map();
+// A Markdown source line reduced to the text it renders as, for matching against the page.
+const plainLine = (line) => line
+  .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+  .replace(/^\s*(?:(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?|#{1,6}\s+|>\s?)/, "")
+  .replace(/[`*_~|↗]/g, " ")
+  .replace(/\s+/g, " ")
+  .trim()
+  .toLowerCase();
+// ponytail: matches rendered blocks by text, so a line rewritten by enhancement (task references) goes unmarked.
+function markDocumentChanges() {
+  const marks = changeMarks.get(state.selectedPath);
+  if (!marks) return;
+  const flash = marks.flash ? " is-changed-flash" : "";
+  marks.flash = false;
+  for (const element of elements.chunks.querySelectorAll(".markdown li, .markdown p, .markdown tr, .markdown h3, .markdown h4, .markdown pre")) {
+    // Read it as the source would: no nested lists, screen-reader-only text, or word joiners around links.
+    const copy = element.cloneNode(true);
+    copy.querySelectorAll(":scope > ul, :scope > ol, .sr-only").forEach((extra) => extra.remove());
+    const text = plainLine((copy.matches("tr") ? [...copy.cells].map((cell) => cell.textContent).join(" ") : copy.textContent).replaceAll("\u2060", ""));
+    if (!text || element.closest(".is-changed-line")) continue;
+    if ([...marks.lines].some((line) => line && (line === text || (line.length >= 12 && text.includes(line))))) element.className += ` is-changed-line${flash}`;
+  }
+  if (!flash) return;
+  for (const anchor of marks.sections) {
+    const card = (document.getElementById(anchor) || elements.chunks.querySelector(`[data-source-anchor="${CSS.escape(anchor)}"]`))?.closest(".chunk-card");
+    card?.classList.add("is-changed-flash");
+  }
+}
 // One toast per document: a burst of writes to the same file replaces its toast instead of stacking.
 const changeToasts = new Map();
 function announceChange(change) {
   documentChanges = [change, ...documentChanges].slice(0, 50);
   if (change.source !== "agent") return;
+  const marks = changeMarks.get(change.path) || { sections: new Set(), lines: new Set() };
+  change.sections.forEach((section) => marks.sections.add(section.anchor));
+  change.lines.forEach((line) => marks.lines.add(plainLine(line)));
+  marks.flash = true;
+  changeMarks.set(change.path, marks);
   dismissToast(changeToasts.get(change.path));
   const verb = { created: "Created", changed: "Updated", deleted: "Deleted" }[change.kind];
-  const open = change.kind === "deleted" ? null : { label: change.path === state.selectedPath ? "Show" : "Open", run: () => selectDocument(change.path, { historyMode: change.path === state.selectedPath ? "replace" : "push", anchor: change.sections[0]?.anchor || "" }) };
+  const open = change.kind === "deleted" ? null : { label: change.path === state.selectedPath ? "Show" : "Open", run: () => { marks.flash = true; selectDocument(change.path, { historyMode: change.path === state.selectedPath ? "replace" : "push", anchor: change.sections[0]?.anchor || "" }); } };
   changeToasts.set(change.path, showNotice(`${verb} “${change.title}”`, false, { kind: "info", description: changeSummary(change), action: open }));
 }
 

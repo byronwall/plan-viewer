@@ -714,6 +714,7 @@ test("summarizes a document edit by lines and the headings they sit under", () =
   assert.deepEqual(describeChange("plans/x.md", before, after), {
     path: "plans/x.md", title: "Plan", kind: "changed", added: 2, removed: 1,
     sections: [{ title: "Goals", anchor: "goals" }, { title: "Notes", anchor: "notes" }],
+    lines: ["- Test it", "Found the bug"],
   });
   assert.equal(describeChange("plans/x.md", undefined, after).kind, "created");
   assert.equal(describeChange("plans/x.md", before, undefined).kind, "deleted");

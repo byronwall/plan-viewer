@@ -291,6 +291,7 @@ export type DocumentChange = {
   added: number;
   removed: number;
   sections: { title: string; anchor: string }[];
+  lines: string[];
   source: "agent" | "viewer";
 };
 
@@ -299,7 +300,8 @@ export type DocumentChange = {
 export function describeChange(path: string, before: string | undefined, after: string | undefined): Omit<DocumentChange, "at" | "source"> {
   const kind = before === undefined ? "created" : after === undefined ? "deleted" : "changed";
   const sections = new Map<string, string>();
-  const count = (from: string, against: string) => {
+  const lines: string[] = [];
+  const count = (from: string, against: string, collect = false) => {
     const remaining = new Map<string, number>();
     for (const line of against.split("\n")) remaining.set(line, (remaining.get(line) || 0) + 1);
     let heading = "";
@@ -310,15 +312,16 @@ export function describeChange(path: string, before: string | undefined, after: 
       if (remaining.get(line)) { remaining.set(line, remaining.get(line)! - 1); continue; }
       if (!line.trim()) continue;
       changed++;
+      if (collect && lines.length < 40) lines.push(line.slice(0, 400));
       if (heading && sections.size < 3) sections.set(markdownHeadingId(heading), heading.replace(/[`*_~]/g, ""));
     }
     return changed;
   };
-  const added = count(after || "", before || "");
+  const added = count(after || "", before || "", true);
   const removed = count(before || "", after || "");
   const text = after ?? before ?? "";
   const title = extname(path) === ".md" ? titleFromMarkdown(text, basename(path)) : basename(path);
-  return { path, title, kind, added, removed, sections: [...sections].map(([anchor, title]) => ({ title, anchor })) };
+  return { path, title, kind, added, removed, sections: [...sections].map(([anchor, title]) => ({ title, anchor })), lines };
 }
 
 async function seedSnapshots() {
