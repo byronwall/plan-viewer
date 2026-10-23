@@ -950,7 +950,9 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-segment button, .code-bar-button, .code-icon-button, .code-segment button:active, .code-bar-button:active:not(:disabled), .code-icon-button:active, .code-row td { transition: background-color 120ms ease; }
 
 /* split */
-.code-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: start; container-type: inline-size; }
+/* without the inspector the list hugs its table, so no empty band runs down the right; an empty list keeps the full width */
+.code-split { display: grid; grid-template-columns: fit-content(100%); gap: 10px; align-items: start; container-type: inline-size; }
+.code-split:has(> .code-list > .code-empty) { grid-template-columns: minmax(0, 1fr); }
 .code-detail { display: none; }
 @media (min-width: 1600px) {
   .code-split { grid-template-columns: fit-content(calc(100% - 470px)) minmax(460px, 1fr); } .code-detail { display: block; }
