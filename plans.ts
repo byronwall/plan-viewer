@@ -14,7 +14,7 @@ const exec = promisify(execFile);
 const MAP_FILE = "initiative-map.json";
 const SKIPPED = new Set(["node_modules", "dist", "build", "vendor"]);
 const PR_TTL_MS = 2 * 60_000;
-const CACHE_VERSION = 2; // bump when what a scan extracts from a map changes, so cached scans are redone
+const CACHE_VERSION = 3; // bump when what a scan extracts from a map changes, so cached scans are redone
 const MAX_DOC_BYTES = 2_000_000;
 const DONE = new Set(["closed", "done", "complete", "completed"]);
 const STARTED = new Set(["in_progress", "in-progress", "started", "partially_implemented", "partial", "active"]);
@@ -29,6 +29,7 @@ export type Initiative = {
   slug: string; title: string; summary: string; status: string; inferred: boolean; evidence: string; phase: string; scale: string;
   nextAction: string; lastUpdated: string; dependsOn: string[]; related: string[]; history: { date: string; event: string; reason: string }[]; historyCount: number;
   docs: Doc[]; edited: number; error?: string; prs: PrTouch[];
+  briefs: Record<string, string>; milestones: { id: string; title: string; status: string }[];
 };
 
 const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
@@ -81,10 +82,17 @@ export const historyEntry = (entry: any) => {
   return { date: text(entry?.date), event, reason: text(entry?.reason) || [entry?.summary, entry?.notes].map(text).find((value) => value && value !== event) || "" };
 };
 
+// The lifecycle briefs' recorded states ("current", "not-created", "stale", …), keyed by artifact role.
+export function briefStates(artifacts: unknown) {
+  const states: Record<string, string> = {};
+  for (const [role, value] of Object.entries(artifacts && typeof artifacts === "object" ? artifacts : {})) if (role in ARTIFACT_LABELS) states[role] = text((value as any)?.status).toLowerCase() || "current";
+  return states;
+}
+
 // One initiative from its map's JSON text; a map that doesn't parse becomes an error row, not a missing one.
 export function initiativeFrom(repo: string, mapPath: string, source: string | null, ref: string, files: string[], folders: string[]): Initiative {
   const folder = folderOf(mapPath);
-  const base = { id: `${repo}:${folder || "."}`, repo, folder, ref, source: "main" as const, slug: folder.split("/").pop() || repo.split("/").pop() || "", summary: "", phase: "", scale: "", nextAction: "", lastUpdated: "", dependsOn: [], related: [], history: [], historyCount: 0, edited: 0, prs: [], evidence: "", inferred: false };
+  const base = { id: `${repo}:${folder || "."}`, repo, folder, ref, source: "main" as const, slug: folder.split("/").pop() || repo.split("/").pop() || "", summary: "", phase: "", scale: "", nextAction: "", lastUpdated: "", dependsOn: [], related: [], history: [], historyCount: 0, edited: 0, prs: [], evidence: "", inferred: false, briefs: {}, milestones: [] };
   let map: any;
   try {
     map = JSON.parse(source ?? "");
@@ -103,6 +111,8 @@ export function initiativeFrom(repo: string, mapPath: string, source: string | n
     dependsOn: list(info.depends_on).map(text).filter(Boolean), related,
     history: history.slice(-3).reverse().map(historyEntry), historyCount: history.length,
     docs: folderDocs(folder, files, folders, map.artifacts),
+    briefs: briefStates(map.artifacts),
+    milestones: list(map.implementation?.milestones).filter((item: any) => item && typeof item === "object").map((item: any, index: number) => ({ id: text(item.id) || `M${index + 1}`, title: text(item.title) || text(item.name) || text(item.goal) || text(item.outcome), status: text(item.status).toLowerCase() })),
   };
 }
 

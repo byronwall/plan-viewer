@@ -8,9 +8,9 @@ const DAY = 24 * 3_600_000;
 const STATUSES = ["planned", "active", "paused", "completed", "cancelled"];
 const FINISHED = new Set(["completed", "cancelled"]);
 const SCOPES = { open: "Open", ...Object.fromEntries(STATUSES.map((status) => [status, status[0].toUpperCase() + status.slice(1)])), all: "All" };
-const SORTS = { edited: "Edited", title: "Title", status: "Status", phase: "Phase" };
-const PHASES = ["intent", "brainstorm", "shape", "plan", "execution", "reconciliation"];
-const ps = { data: null, error: "", loading: null, scope: "open", sort: "edited", withPr: false, maps: new Map(), docs: new Map() };
+const ps = { data: null, error: "", loading: null, scope: "open", group: "edited", withPr: false, maps: new Map(), docs: new Map() };
+// The grouping is a per-browser preference, like the diff layout.
+const storage = (key, value) => { try { if (value === undefined) return localStorage.getItem(key); localStorage.setItem(key, value); } catch {} return null; };
 let notify = (message) => console.warn(message);
 export const setPlanNotice = (show) => { notify = show; };
 let code = null; // helpers from code.js: render, select, notify, matches, repoFilter, repoCell, repoHead, tableHead, resetFilters, host
@@ -20,6 +20,7 @@ export function initPlans(helpers) {
   notify = helpers.notify;
   const params = new URLSearchParams(location.search);
   if (params.get("plans") in SCOPES) ps.scope = params.get("plans");
+  if (storage("plans-group") in GROUPS) ps.group = storage("plans-group");
 }
 
 // ---------- data ----------
@@ -73,18 +74,72 @@ export function plansCount() {
 }
 
 function visible() {
-  const scoped = all().filter((item) => ps.scope === "all" || (ps.scope === "open" ? isOpen(item) : item.status === ps.scope))
+  return all().filter((item) => ps.scope === "all" || (ps.scope === "open" ? isOpen(item) : item.status === ps.scope))
     .filter((item) => !ps.withPr || item.prs.length)
     .filter(code.repoFilter)
-    .filter((item) => code.matches(`${item.title} ${item.slug} ${item.summary} ${item.nextAction} ${item.folder} ${item.phase} ${item.prs.map((pr) => `#${pr.number}`).join(" ")}`));
-  const rank = (list, value) => { const index = list.indexOf(value); return index < 0 ? list.length : index; };
-  const sorts = {
-    edited: (a, b) => b.edited - a.edited,
-    title: (a, b) => a.title.localeCompare(b.title),
-    status: (a, b) => rank(STATUSES, a.status) - rank(STATUSES, b.status) || b.edited - a.edited,
-    phase: (a, b) => rank(PHASES, a.phase) - rank(PHASES, b.phase) || b.edited - a.edited,
-  };
-  return scoped.sort(sorts[ps.sort] || sorts.edited);
+    .filter((item) => code.matches(`${item.title} ${item.slug} ${item.summary} ${item.nextAction} ${item.folder} ${item.phase} ${repoName(item.repo)} ${item.prs.map((pr) => `#${pr.number}`).join(" ")}`))
+    .sort((a, b) => b.edited - a.edited);
+}
+
+// ---------- lifecycle ----------
+
+// Five stages every initiative moves through. The first three are briefs (filled once written), Build is the
+// milestones, Done is the recorded status; the map's current_phase marks where the initiative sits now.
+const STAGES = [
+  { id: "intent", label: "Intent", brief: "intent_brief" },
+  { id: "shape", label: "Shape", brief: "shape_brief" },
+  { id: "plan", label: "Plan", brief: "implementation_plan" },
+  { id: "build", label: "Build" },
+  { id: "done", label: "Done" },
+];
+const PHASE_STAGE = { intent: 0, brainstorm: 0, shape: 1, plan: 2, planning: 2, execution: 3, implementation: 3, build: 3, verify: 3, reconciliation: 4 };
+const DONE_STATES = new Set(["completed", "complete", "done", "closed", "proven"]);
+const ACTIVE_STATES = /progress|start|partial|active|gated/;
+const milestoneState = (status) => (DONE_STATES.has(status) ? "done" : ACTIVE_STATES.test(status) ? "active" : status === "deferred" || status === "cancelled" ? "skipped" : "todo");
+const milestoneCounts = (item) => ({ done: item.milestones.filter((m) => milestoneState(m.status) === "done").length, total: item.milestones.filter((m) => milestoneState(m.status) !== "skipped").length });
+export const stageIndex = (item) => (item.status === "completed" ? 4 : PHASE_STAGE[item.phase] ?? 0);
+
+function stageStates(item) {
+  const { done, total } = milestoneCounts(item);
+  return STAGES.map((stage, index) => {
+    let state = "empty";
+    let detail = "not written";
+    if (stage.brief) {
+      const recorded = item.briefs?.[stage.brief];
+      const doc = item.docs.find((candidate) => candidate.role === stage.brief);
+      if (doc && (!recorded || !/not-|removed/.test(recorded))) { state = /stale|draft/.test(recorded || "") ? "partial" : "full"; detail = recorded || "written"; }
+      else if (recorded) detail = recorded.replace(/-/g, " ");
+    } else if (stage.id === "build") {
+      state = total && done === total ? "full" : done || item.milestones.some((m) => milestoneState(m.status) === "active") ? "partial" : "empty";
+      detail = total ? `${done} of ${total} milestones done` : "no milestones";
+    } else {
+      state = item.status === "completed" ? "full" : item.status === "cancelled" ? "cancelled" : "empty";
+      detail = item.status;
+    }
+    return { ...stage, state, detail, current: index === stageIndex(item) };
+  });
+}
+
+// The track: one segment per stage, filled as briefs and milestones land, the current stage ringed.
+function stageTrack(item, { label = true } = {}) {
+  const stages = stageStates(item);
+  const now = stages.find((stage) => stage.current);
+  const tip = `${stages.map((stage) => `${stage.current ? "▸ " : ""}${stage.label}: ${stage.detail}`).join(" · ")}${item.phase && !(item.phase in PHASE_STAGE) ? ` · phase "${item.phase}"` : ""}`;
+  return `<span class="plan-track" data-tip="${escapeHtml(tip)}">${stages.map((stage) => `<i class="is-${stage.state}${stage.current ? " is-current" : ""}"></i>`).join("")}${label ? `<b>${escapeHtml(now.label)}</b>` : ""}</span>`;
+}
+
+function progress(item) {
+  const { done, total } = milestoneCounts(item);
+  if (!total) return "";
+  const next = item.milestones.find((m) => milestoneState(m.status) !== "done" && milestoneState(m.status) !== "skipped");
+  const tip = `${done} of ${total} milestones done${next ? ` · next: ${next.id} ${next.title}` : ""}`;
+  return `<span class="plan-progress" data-tip="${escapeHtml(tip)}"><span class="plan-progress-bar"><span style="width:${Math.round((done / total) * 100)}%"></span></span><span>${done}/${total}</span></span>`;
+}
+
+function links(item) {
+  const up = item.dependsOn.map((slug) => bySlug(item.repo, slug)?.title || slug);
+  const down = neededBy(item).map((other) => other.title);
+  return [up.length && `<span data-tip="${escapeHtml(`Depends on: ${up.join(" · ")}`)}">↑${up.length}</span>`, down.length && `<span data-tip="${escapeHtml(`Needed by: ${down.join(" · ")}`)}">↓${down.length}</span>`].filter(Boolean).join("");
 }
 
 // ---------- pieces ----------
@@ -112,29 +167,31 @@ function prMark(item, pr) {
   return `<button type="button" class="code-pr-chip code-pr-${pr.draft ? "draft" : "open"} plan-pr plan-pr-${pr.change}" data-plan-pr="${pr.number}" data-slug="${escapeHtml(slug)}" data-tip="${escapeHtml(tip)}">#${pr.number}</button>`;
 }
 
-function phaseText(item) {
-  return item.phase ? `<span class="plan-phase">${escapeHtml(item.phase)}</span>` : "";
-}
-
+// Two lines per initiative: the title with its facts in fixed columns, then the next action in one line.
+// The inspector holds the full next action and the summary; no hover here, so the list is safe to rest a mouse on.
 function planRow(item) {
   const key = `plan:${item.id}`;
   const proposed = proposal(item);
+  const sub = item.error ? `<div class="plan-next-line plan-error">${escapeHtml(item.error)}</div>`
+    : item.nextAction ? `<div class="plan-next-line"><span>Next</span>${escapeHtml(item.nextAction)}</div>` : "";
   return `<tr class="code-row plan-row" data-code-row="${escapeHtml(key)}" aria-selected="${code.selected() === key}">
     ${code.repoCell(item.repo)}<td class="plan-col-status">${statusMark(item)}</td>
-    <td class="code-col-main plan-col-title"><div class="plan-title">${escapeHtml(item.title)}${proposed ? `<span class="code-tag code-tag-open">proposed</span>` : ""}</div>${item.summary ? `<div class="plan-summary">${escapeHtml(item.summary)}</div>` : item.error ? `<div class="plan-summary plan-error">${escapeHtml(item.error)}</div>` : ""}</td>
-    <td class="plan-col-phase">${phaseText(item)}</td>
-    <td class="plan-col-next">${escapeHtml(item.nextAction)}</td>
+    <td class="code-col-main plan-col-title"><div class="plan-title"><span>${escapeHtml(item.title)}</span>${proposed ? `<span class="code-tag code-tag-open">proposed</span>` : ""}</div>${sub}</td>
+    <td class="plan-col-stage">${stageTrack(item)}</td>
+    <td class="plan-col-progress">${progress(item)}</td>
+    <td class="plan-col-links">${links(item)}</td>
     <td class="plan-col-prs">${item.prs.map((pr) => prMark(item, pr)).join("")}</td>
     <td class="code-col-when ${item.edited ? `code-heat-${heat(item.edited)}` : ""}">${item.edited ? when(item.edited) : ""}</td></tr>`;
 }
 
+const GROUPS = { edited: "Edited", repo: "Repo", stage: "Stage", status: "Status" };
 export function plansControls(segment, count) {
   if (!ps.data) return "";
   const counts = (status) => all().filter((item) => status === "all" || (status === "open" ? isOpen(item) : item.status === status)).length;
   const scopes = Object.fromEntries(Object.entries(SCOPES).map(([id, label]) => [id, `${label}${count(counts(id))}`]));
   return segment("data-plan-scope", ps.scope, scopes)
     + `<label class="code-check"><input type="checkbox" data-plan-with-pr ${ps.withPr ? "checked" : ""}> In open PRs${count(all().filter((item) => item.prs.length).length)}</label>`
-    + segment("data-plan-sort", ps.sort, SORTS);
+    + `<span class="plan-group-label">Group</span>${segment("data-plan-group", ps.group, GROUPS)}`;
 }
 
 function emptyPlans() {
@@ -143,29 +200,37 @@ function emptyPlans() {
   return `<div class="code-empty"><p>No initiatives match${code.filterText() ? ` <b>“${escapeHtml(code.filterText())}”</b>` : ""}${ps.scope === "all" ? "" : ` in ${SCOPES[ps.scope]}`}.</p>${narrowed ? `<button type="button" class="code-bar-button" data-plan-reset data-code-reset>Show all initiatives <kbd>Esc</kbd></button>` : ""}</div>`;
 }
 
+// Group headers name the bucket and count it; repo headers carry the repo's mark.
+function groups(items) {
+  if (ps.group === "repo") {
+    const repos = [...new Set(items.map((item) => item.repo))];
+    return repos.map((repo) => [`${code.repoBadge(repo)}${escapeHtml(repoName(repo))}`, items.filter((item) => item.repo === repo)]).sort((a, b) => b[1].length - a[1].length);
+  }
+  if (ps.group === "stage") return STAGES.map((stage, index) => [stage.label, items.filter((item) => stageIndex(item) === index)]);
+  if (ps.group === "status") return [...STATUSES, "invalid"].map((status) => [`${statusMark({ status, inferred: false, evidence: "" })}${status[0].toUpperCase()}${status.slice(1)}`, items.filter((item) => item.status === status)]);
+  const buckets = [["Last 24 hours", DAY], ["This week", 7 * DAY], ["This month", 30 * DAY], ["Older", Infinity]];
+  let start = 0;
+  return buckets.map(([label, age]) => {
+    let end = start;
+    while (end < items.length && Date.now() - items[end].edited < age) end++;
+    const rows = items.slice(start, end);
+    start = end;
+    return [label, rows];
+  });
+}
+
 export function plansBody() {
   if (!ps.data && ps.error) return `<div class="code-empty"><p>Could not load initiatives: ${escapeHtml(ps.error)}</p><p class="code-muted">${/not found|ENOENT|404/i.test(ps.error) ? "This server predates the Plans tab; restart the viewer. " : ""}<kbd>R</kbd> tries again.</p></div>`;
   if (!ps.data) return `<p class="code-empty">Loading initiatives from each repository's main…</p>`;
   const items = visible();
   if (!items.length) return emptyPlans();
-  const columns = [...code.repoHead(), ["plan-col-status", ""], ["code-col-main plan-col-title", "Initiative"], ["plan-col-phase", "Phase"], ["plan-col-next", "Next action"], ["plan-col-prs", "PRs"], ["code-col-when", "Edited"]];
-  const span = columns.length;
-  let sections;
-  if (ps.sort === "edited") {
-    const groups = [["Last 24 hours", DAY], ["This week", 7 * DAY], ["This month", 30 * DAY], ["Older", Infinity]];
-    let start = 0;
-    sections = groups.map(([label, age]) => {
-      let end = start;
-      while (end < items.length && Date.now() - items[end].edited < age) end++;
-      const rows = items.slice(start, end);
-      start = end;
-      return rows.length ? `<tbody><tr class="code-group-row"><th colspan="${span}">${label} <span>${rows.length}</span></th></tr>${rows.map(planRow).join("")}</tbody>` : "";
-    }).join("");
-  } else sections = `<tbody>${items.map(planRow).join("")}</tbody>`;
+  const columns = [...code.repoHead(), ["plan-col-status", ""], ["code-col-main plan-col-title", "Initiative"], ["plan-col-stage", "Stage"], ["plan-col-progress", "Milestones"], ["plan-col-links", "Deps"], ["plan-col-prs", "PRs"], ["code-col-when", "Edited"]];
+  const sections = groups(items).filter(([, rows]) => rows.length)
+    .map(([label, rows]) => `<tbody><tr class="code-group-row plan-group-row"><th colspan="${columns.length}">${label} <span>${rows.length}</span></th></tr>${rows.map(planRow).join("")}</tbody>`).join("");
   return `<table class="code-table plan-table">${code.tableHead(columns)}${sections}</table>`;
 }
 
-// ---------- inspector ----------
+// ---------- inspector (and the reader's side column) ----------
 
 const shortSha = (sha) => sha.slice(0, 7);
 function whereText(item) {
@@ -174,39 +239,103 @@ function whereText(item) {
   return proposed ? `PR #${proposed.number} · ${proposed.branch}` : `${info?.base || "origin/main"} @ ${shortSha(item.ref)}`;
 }
 
-function linkList(items, empty = "") {
-  if (!items.length) return empty;
-  return `<span class="plan-links">${items.map(({ slug, item }) => item
-    ? `<button type="button" class="plan-link" data-plan-goto="${escapeHtml(item.id)}" data-tip="${escapeHtml(`${item.status} · ${item.summary || item.title}`)}">${statusMark(item)}<span>${escapeHtml(item.title)}</span></button>`
-    : `<code class="plan-link-missing" data-tip="No initiative with this slug on main">${escapeHtml(slug)}</code>`).join("")}</span>`;
+function linkRows(items) {
+  return items.map(({ slug, item }) => item
+    ? `<li><button type="button" class="plan-link" data-plan-goto="${escapeHtml(item.id)}" data-tip="${escapeHtml(item.summary || item.title)}">${statusMark(item)}<span>${escapeHtml(item.title)}</span>${stageTrack(item, { label: false })}</button></li>`
+    : `<li><code class="plan-link-missing" data-tip="No initiative with this slug on main">${escapeHtml(slug)}</code></li>`).join("");
+}
+
+// Update, Retire (finished work only), and copy-prompt, in the header beside the title.
+export function planActions(item) {
+  const finished = FINISHED.has(item.status) && !item.error;
+  return `${iconButton("draft", `Draft an update in ${appName()} (U)`, `data-plan-agent="update" data-id="${escapeHtml(item.id)}"`)}${finished ? iconButton("trash", `Draft retirement in ${appName()} (Shift+U)`, `data-plan-agent="retire" data-id="${escapeHtml(item.id)}"`) : ""}${iconButton("copy", "Copy the update prompt", `data-plan-copy-prompt="update" data-id="${escapeHtml(item.id)}"`)}`;
 }
 
 function planFacts(item) {
   const fetched = repoInfo(item.repo)?.fetchedAt;
   const folder = `${item.repo}/${item.folder}`;
-  const finished = FINISHED.has(item.status) && !item.error;
-  const agent = `<span class="code-side-skills">${iconButton("draft", `Draft an update in ${appName()} (U)`, `data-plan-agent="update" data-id="${escapeHtml(item.id)}"`)}${finished ? iconButton("trash", `Draft retirement in ${appName()} (Shift+U)`, `data-plan-agent="retire" data-id="${escapeHtml(item.id)}"`) : ""}${iconButton("copy", "Copy the update prompt", `data-plan-copy-prompt="update" data-id="${escapeHtml(item.id)}"`)}</span>`;
   return sideFacts([
-    ["Status", `${statusMark(item, true)}${item.inferred ? `<span class="code-muted">${escapeHtml(item.evidence)}</span>` : ""}`],
-    ["Phase", [item.phase && `<span>${escapeHtml(item.phase)}</span>`, item.scale && `<span class="code-muted">${escapeHtml(item.scale)}</span>`].filter(Boolean).join("")],
+    ["Status", `${statusMark(item, true)}${item.scale ? `<span class="code-muted">${escapeHtml(item.scale)}</span>` : ""}${item.inferred ? `<span class="code-muted">${escapeHtml(item.evidence)}</span>` : ""}`],
+    ["Stage", `${stageTrack(item)}${item.phase && !(item.phase in PHASE_STAGE) ? `<span class="code-muted">${escapeHtml(item.phase)}</span>` : ""}`],
     ["Next", item.nextAction ? `<span class="plan-next">${escapeHtml(item.nextAction)}</span>` : ""],
-    ["Where", `<span>${escapeHtml(repoName(item.repo))}</span><span class="code-muted" data-tip="${fetched ? `Last fetched ${escapeHtml(new Date(fetched).toLocaleString())}` : "Never fetched"}">${escapeHtml(whereText(item))}</span>`],
-    ["Folder", `<button type="button" class="code-path code-side-path" data-code-copy="${escapeHtml(folder)}" data-tip="${escapeHtml(folder)} · click to copy">${escapeHtml(item.folder || ".")}</button>`],
-    ["Edited", [item.edited && `<span class="code-muted" data-tip="${escapeHtml(new Date(item.edited).toLocaleString())}">${proposal(item) ? "PR updated" : "committed"} ${ago(item.edited)} ago</span>`, item.lastUpdated && `<span class="code-muted">map says ${escapeHtml(item.lastUpdated)}</span>`].filter(Boolean).join("")],
-    ["Depends on", linkList(item.dependsOn.map((slug) => ({ slug, item: bySlug(item.repo, slug) })))],
-    ["Needed by", linkList(neededBy(item).map((other) => ({ slug: other.slug, item: other })))],
-    ["Related", linkList(item.related.filter((slug) => !item.dependsOn.includes(slug)).map((slug) => ({ slug, item: bySlug(item.repo, slug) })))],
-    [appName(), agent],
+    ["Repo", `<span>${escapeHtml(repoName(item.repo))}</span><span class="code-muted" data-tip="${fetched ? `Last fetched ${escapeHtml(new Date(fetched).toLocaleString())}` : "Never fetched"}">${escapeHtml(whereText(item))}</span>`],
+    ["Folder", `<button type="button" class="code-path code-side-path" data-code-copy="${escapeHtml(folder)}" data-tip="${escapeHtml(folder)} · click to copy (Y)">${escapeHtml(item.folder || ".")}</button>`],
+    ["Edited", [item.edited && `<span data-tip="${escapeHtml(new Date(item.edited).toLocaleString())}">${proposal(item) ? "PR updated" : "committed"} ${ago(item.edited)} ago</span>`, item.lastUpdated && `<span class="code-muted">map says ${escapeHtml(item.lastUpdated)}</span>`].filter(Boolean).join("")],
   ]);
+}
+
+// The lifecycle briefs, with their recorded state, in stage order.
+const isBrief = (doc) => STAGES.some((stage) => stage.brief === doc.role);
+function briefRows(item, current = "") {
+  return STAGES.filter((stage) => stage.brief).map((stage) => {
+    const doc = item.docs.find((candidate) => candidate.role === stage.brief);
+    const state = stageStates(item).find((candidate) => candidate.id === stage.id);
+    return doc
+      ? `<li><button type="button" class="plan-doc-link${current === doc.path ? " is-current" : ""}" data-plan-open="${escapeHtml(item.id)}" data-doc="${escapeHtml(doc.path)}"><i class="plan-doc-dot is-${state.state}"></i><b>${stage.label}</b><span class="code-muted">${escapeHtml(doc.name)}</span>${state.detail !== "current" && state.detail !== "written" ? `<em>${escapeHtml(state.detail)}</em>` : ""}</button></li>`
+      : `<li><span class="plan-doc-link is-missing"><i class="plan-doc-dot is-empty"></i><b>${stage.label}</b><span class="code-muted">${escapeHtml(state.detail)}</span></span></li>`;
+  }).join("");
+}
+
+// Every other Markdown file as a folder tree: folders fold (only the open file's ancestors start open), and
+// single-child folder chains read as one row, so a research dump stays one line until you want it.
+const openFolders = new Set();
+const forcedClosed = new Set();
+function fileTree(item, current = "") {
+  const root = { dirs: new Map(), files: [] };
+  for (const doc of item.docs.filter((candidate) => !isBrief(candidate))) {
+    const parts = doc.name.split("/");
+    const file = parts.pop();
+    let node = root;
+    for (const part of parts) node = node.dirs.get(part) || node.dirs.set(part, { dirs: new Map(), files: [] }).get(part);
+    node.files.push({ doc, file });
+  }
+  const count = (node) => node.files.length + [...node.dirs.values()].reduce((sum, child) => sum + count(child), 0);
+  const currentName = item.docs.find((doc) => doc.path === current)?.name || "";
+  const walk = (node, prefix) => {
+    const folders = [...node.dirs].sort(([a], [b]) => a.localeCompare(b)).map(([name, child]) => {
+      let label = name;
+      let path = `${prefix}${name}/`;
+      while (!child.files.length && child.dirs.size === 1) { const [[next, grand]] = child.dirs; label += `/${next}`; path += `${next}/`; child = grand; }
+      const key = `${item.id}\n${path}`;
+      const open = openFolders.has(key) || (currentName.startsWith(path) && !forcedClosed.has(key));
+      return `<li><button type="button" class="plan-tree-folder" data-plan-folder="${escapeHtml(key)}" aria-expanded="${open}" data-tip="${escapeHtml(path)}"><i class="plan-tree-caret"></i><span>${escapeHtml(label)}</span><em>${count(child)}</em></button>${open ? `<ul>${walk(child, path)}</ul>` : ""}</li>`;
+    });
+    const files = node.files.sort((a, b) => (a.file === "README.md" ? -1 : b.file === "README.md" ? 1 : a.file.localeCompare(b.file)))
+      .map(({ doc, file }) => `<li><button type="button" class="plan-tree-file${current === doc.path ? " is-current" : ""}" data-plan-open="${escapeHtml(item.id)}" data-doc="${escapeHtml(doc.path)}" data-tip="${escapeHtml(doc.name)}">${escapeHtml(file.replace(/\.md$/i, ""))}</button></li>`);
+    return [...files, ...folders].join("");
+  };
+  return walk(root, "");
+}
+
+function docsSection(item, current = "", { reader = false } = {}) {
+  const others = item.docs.filter((doc) => !isBrief(doc)).length;
+  const files = others ? `<ul class="plan-tree">${fileTree(item, current)}</ul>` : "";
+  if (reader) return others ? `<section data-plan-files><h4>Files <span>${others}</span></h4>${files}</section>` : "";
+  const map = `<li><button type="button" class="plan-doc-link" data-plan-open="${escapeHtml(item.id)}" data-doc="map"><i class="plan-doc-dot is-file"></i><b>Map</b><span class="code-muted">initiative-map.json</span></button></li>`;
+  return `<section><h4>Documents</h4><ul class="plan-docs">${briefRows(item)}${map}</ul>${others ? `<h5>Files <span>${others}</span></h5>${files}` : ""}</section>`;
+}
+
+function milestonesSection(item) {
+  if (!item.milestones.length) return "";
+  const { done, total } = milestoneCounts(item);
+  return `<section><h4>Milestones <span>${done} of ${total} done</span></h4><ol class="plan-ms">${item.milestones.map((m) => {
+    const state = milestoneState(m.status);
+    return `<li class="is-${state}"><i class="plan-doc-dot is-${state === "done" ? "full" : state === "active" ? "partial" : "empty"}"></i><code>${escapeHtml(m.id)}</code><span>${escapeHtml(m.title || "Untitled")}</span>${state === "done" || state === "todo" ? "" : `<em>${escapeHtml(m.status)}</em>`}</li>`;
+  }).join("")}</ol></section>`;
+}
+
+function depsSection(item) {
+  const up = item.dependsOn.map((slug) => ({ slug, item: bySlug(item.repo, slug) }));
+  const down = neededBy(item).map((other) => ({ slug: other.slug, item: other }));
+  const related = item.related.filter((slug) => !item.dependsOn.includes(slug)).map((slug) => ({ slug, item: bySlug(item.repo, slug) }));
+  if (!up.length && !down.length && !related.length) return "";
+  const block = (label, rows) => (rows.length ? `<h5>${label} <span>${rows.length}</span></h5><ul class="plan-links">${linkRows(rows)}</ul>` : "");
+  return `<section class="plan-deps"><h4>Dependencies</h4>${block("Depends on", up)}${block("Needed by", down)}${block("Related", related)}</section>`;
 }
 
 function prSection(item) {
   if (!item.prs.length) return "";
   return `<section><h4>Open pull requests <span>${item.prs.length}</span></h4><ul class="plan-pr-list">${item.prs.map((pr) => `<li>${prMark(item, pr)}<span class="plan-pr-title">${escapeHtml(pr.title)}</span><span class="code-muted">${CHANGE_WORDS[pr.change]} ${pr.files.length} ${pr.files.length === 1 ? "file" : "files"}${pr.draft ? " · draft" : ""} · ${ago(pr.updatedAt)}</span></li>`).join("")}</ul></section>`;
-}
-
-function docsSection(item) {
-  return `<section><h4>Documents <span>${item.docs.length}</span></h4>${item.docs.length ? `<ul class="plan-docs">${item.docs.map((doc) => `<li><button type="button" class="plan-doc-link" data-plan-open="${escapeHtml(item.id)}" data-doc="${escapeHtml(doc.path)}"><b>${escapeHtml(doc.label)}</b><span class="code-muted">${escapeHtml(doc.name)}</span></button></li>`).join("")}<li><button type="button" class="plan-doc-link" data-plan-open="${escapeHtml(item.id)}" data-doc="map"><b>Map</b><span class="code-muted">initiative-map.json</span></button></li></ul>` : `<p class="code-muted">Only the map.</p>`}</section>`;
 }
 
 function historySection(item, full = null) {
@@ -215,11 +344,14 @@ function historySection(item, full = null) {
   return `<section><h4>Activity <span>${full ? entries.length : `${entries.length} of ${item.historyCount}`}</span></h4><ol class="plan-history">${entries.map((entry) => `<li><time>${escapeHtml(entry.date || "")}</time><b>${escapeHtml(/\s/.test(entry.event || "") ? entry.event : String(entry.event || "").replace(/[-_]/g, " "))}</b>${entry.reason ? `<span>${escapeHtml(entry.reason)}</span>` : ""}</li>`).join("")}</ol></section>`;
 }
 
+// Shared by the inspector and the reader: facts, then what's left to do, then what it connects to.
+function planPanel(item, { reader = false } = {}) {
+  return `${item.summary ? `<p class="plan-detail-summary">${escapeHtml(item.summary)}</p>` : ""}${item.error ? `<p class="work-warning">${escapeHtml(item.error)}</p>` : ""}
+    ${planFacts(item)}${reader ? docsSection(item, reader.doc, { reader: true }) : docsSection(item)}${milestonesSection(item)}${depsSection(item)}${prSection(item)}${historySection(item)}`;
+}
+
 export function planDetail(item) {
-  return `<header class="code-detail-head">${statusMark(item)}<h3>${escapeHtml(item.title)}</h3><span class="code-side-tools">${iconButton("expand", "Open the reader (Enter)", `data-plan-open="${escapeHtml(item.id)}"`)}</span></header>
-    ${item.summary ? `<p class="plan-detail-summary">${escapeHtml(item.summary)}</p>` : ""}
-    ${item.error ? `<p class="work-warning">${escapeHtml(item.error)}</p>` : ""}
-    ${planFacts(item)}${prSection(item)}${docsSection(item)}${historySection(item)}`;
+  return `<header class="code-detail-head">${statusMark(item)}<h3>${escapeHtml(item.title)}</h3><span class="code-side-tools">${planActions(item)}${iconButton("expand", "Open the reader (Enter)", `data-plan-open="${escapeHtml(item.id)}"`)}</span></header>${planPanel(item)}`;
 }
 
 export const planEmptyHint = () => `<kbd>J</kbd><kbd>K</kbd> move · <kbd>Enter</kbd> read · <kbd>U</kbd> draft an update · <kbd>Y</kbd> copy folder · <kbd>F</kbd> filter · <kbd>G</kbd> repos · <kbd>R</kbd> rescan`;
@@ -246,10 +378,19 @@ const openDoc = () => (dialog?.open && reader.doc !== "map" ? reader.doc : "");
 // Handles plan-only clicks from the Code page and the reader; returns true when it did.
 export function planClick(dataset, target) {
   if (dataset.planScope) { ps.scope = dataset.planScope; syncScope(); code.render({ animate: true }); return true; }
-  if (dataset.planSort) { ps.sort = dataset.planSort; code.render({ animate: true }); return true; }
+  if (dataset.planGroup) { ps.group = dataset.planGroup; storage("plans-group", ps.group); code.render({ animate: true }); return true; }
   if ("planWithPr" in dataset) { ps.withPr = target.checked; code.render({ animate: true }); return true; }
   if ("planReset" in dataset) { resetPlans(); code.render({ animate: true }); return true; }
-  if (dataset.planOpen) { openPlan(dataset.planOpen, dataset.doc || ""); return true; }
+  if (dataset.planFolder) {
+    const open = target.getAttribute("aria-expanded") === "true";
+    if (open) openFolders.delete(dataset.planFolder); else openFolders.add(dataset.planFolder);
+    // Closing an ancestor of the open file has to stick, so the open file's path stops forcing it open.
+    if (open) forcedClosed.add(dataset.planFolder); else forcedClosed.delete(dataset.planFolder);
+    if (dialog?.open) renderTabs(byId(reader.id));
+    code?.render();
+    return true;
+  }
+  if (dataset.planOpen) { if (dialog?.open && dataset.planOpen === reader.id) showDoc(dataset.doc || "map"); else openPlan(dataset.planOpen, dataset.doc || ""); return true; }
   if (dataset.planGoto) {
     if (dialog?.open) openPlan(dataset.planGoto);
     else { if (!code.host()?.querySelector(`[data-code-row="${CSS.escape(`plan:${dataset.planGoto}`)}"]`)) { resetPlans(); code.render(); } code.select(`plan:${dataset.planGoto}`, true); }
@@ -325,7 +466,8 @@ function readerMarkdown(source, path) {
     title = line.replace(/^#\s+/, "").replace(/\s+#*$/, "");
     return false;
   }).map((line) => (/^#\s+/.test(line) ? `#${line}` : line));
-  const head = `${title ? `<h2 class="plan-doc-title">${escapeHtml(title)}</h2>` : ""}${facts.length ? `<dl class="plan-map-facts plan-front-matter">${facts.map(([key, value]) => `<dt>${escapeHtml(label(key))}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>` : ""}`;
+  const meta = facts.length ? `<p class="plan-front-matter">${facts.map(([key, value]) => `<span data-tip="${escapeHtml(label(key))}">${escapeHtml(value)}</span>`).join("")}</p>` : "";
+  const head = `${title ? `<h2 class="plan-doc-title">${escapeHtml(title)}</h2>` : ""}${meta}`;
   return head + linkedMarkdown(lines.join("\n"), path);
 }
 
@@ -432,7 +574,7 @@ function ensureDialog() {
     const link = event.target.closest("a[href]");
     if (link?.href.startsWith(READER_LINK)) { event.preventDefault(); return followLink(link.href); }
     const outline = event.target.closest("[data-outline]");
-    if (outline) { dialog.querySelector(`[data-o="main"] [id="${CSS.escape(outline.dataset.outline)}"]`)?.scrollIntoView({ block: "start", behavior: "instant" }); return; }
+    if (outline) return scrollToHeading(outline.dataset.outline);
     const target = event.target.closest("button, input[type=checkbox]");
     if (!target) return;
     if ("planClose" in target.dataset) return dialog.close();
@@ -443,6 +585,8 @@ function ensureDialog() {
   });
   dialog.addEventListener("pointerover", (event) => { const target = event.target.closest("[data-tip]"); if (target) showTip(target); else hideTip(); });
   dialog.addEventListener("pointerleave", hideTip);
+  let spying = 0;
+  dialog.querySelector(".plan-reader-body").addEventListener("scroll", () => { cancelAnimationFrame(spying); spying = requestAnimationFrame(spyOutline); }, { passive: true });
   dialog.addEventListener("keydown", (event) => {
     if (isSummonKey(event)) return;
     event.stopPropagation();
@@ -450,7 +594,7 @@ function ensureDialog() {
     const key = event.key.toLowerCase();
     const item = byId(reader.id);
     const step = { j: 1, k: -1 }[key];
-    const tabs = ["map", ...(item?.docs || []).map((doc) => doc.path)];
+    const tabs = item ? [...STAGES.map((stage) => item.docs.find((doc) => doc.role === stage.brief)?.path).filter(Boolean), ...[...dialog.querySelectorAll(".plan-tree-file")].map((button) => button.dataset.doc), "map"] : [];
     if (step) stepOverview(step);
     else if ((key === "[" || key === "]") && item) showDoc(tabs[(tabs.indexOf(reader.doc) + (key === "]" ? 1 : -1) + tabs.length) % tabs.length]);
     else if (key === "m" && item) showDoc("map");
@@ -492,15 +636,20 @@ function renderOverview() {
   if (!item || !dialog) return;
   const position = reader.list.indexOf(item.id);
   const walk = position >= 0 && reader.list.length > 1 ? `<span class="code-muted">${position + 1} of ${reader.list.length} · <kbd>J</kbd><kbd>K</kbd> walk · <kbd>[</kbd><kbd>]</kbd> documents</span>` : `<span class="code-muted"><kbd>[</kbd><kbd>]</kbd> documents</span>`;
-  dialog.querySelector('[data-o="head"]').innerHTML = `${statusMark(item)}<div class="issue-overview-title"><h3>${escapeHtml(item.title)}</h3><p class="code-muted">${escapeHtml(repoName(item.repo))} · ${escapeHtml(item.folder || ".")} · ${escapeHtml(whereText(item))}</p></div><span class="code-spacer"></span>${walk}${iconButton("fail", "Close (Esc)", "data-plan-close")}`;
-  dialog.querySelector('[data-o="side"]').innerHTML = `${item.summary ? `<p class="plan-detail-summary">${escapeHtml(item.summary)}</p>` : ""}${planFacts(item)}${prSection(item)}${historySection(item)}`;
+  dialog.querySelector('[data-o="head"]').innerHTML = `${statusMark(item)}<div class="issue-overview-title"><h3>${escapeHtml(item.title)}</h3><p class="code-muted">${escapeHtml(repoName(item.repo))} · ${escapeHtml(item.folder || ".")} · ${escapeHtml(whereText(item))}</p></div><span class="code-spacer"></span>${walk}<span class="code-side-tools">${planActions(item)}</span>${iconButton("fail", "Close (Esc)", "data-plan-close")}`;
+  dialog.querySelector('[data-o="side"]').innerHTML = planPanel(item, { reader: { doc: reader.doc } });
   renderTabs(item);
 }
 
+// Tabs are the lifecycle briefs and the map; any other open file shows as its folder path after them.
 function renderTabs(item) {
-  const known = item.docs.some((doc) => doc.path === reader.doc) || reader.doc === "map";
-  const tabs = [...item.docs.map((doc) => [doc.path, doc.label, doc.name]), ...(known ? [] : [[reader.doc, reader.doc.split("/").pop(), reader.doc]]), ["map", "Map", "initiative-map.json"]];
-  dialog.querySelector('[data-o="tabs"]').innerHTML = `${reader.back.length ? `<button type="button" class="plan-reader-back" data-plan-back data-tip="Back (B)">← Back</button>` : ""}${tabs.map(([path, name, tip]) => `<button type="button" data-reader-doc="${escapeHtml(path)}" aria-pressed="${reader.doc === path}" data-tip="${escapeHtml(tip)}">${escapeHtml(name)}</button>`).join("")}`;
+  const briefs = STAGES.map((stage) => [stage, item.docs.find((doc) => doc.role === stage.brief)]).filter(([, doc]) => doc);
+  const tabs = [...briefs.map(([stage, doc]) => [doc.path, stage.label, doc.name]), ["map", "Map", "initiative-map.json"]];
+  const open = !tabs.some(([path]) => path === reader.doc) ? item.docs.find((doc) => doc.path === reader.doc)?.name || reader.doc : "";
+  const crumb = open ? `<span class="plan-reader-crumb" aria-current="page">${open.split("/").map((part, index, parts) => index === parts.length - 1 ? `<b>${escapeHtml(part.replace(/\.md$/i, ""))}</b>` : `<span>${escapeHtml(part)}</span>`).join("<i>/</i>")}</span>` : "";
+  dialog.querySelector('[data-o="tabs"]').innerHTML = `${reader.back.length ? `<button type="button" class="plan-reader-back" data-plan-back data-tip="Back (B)">← Back</button>` : ""}${tabs.map(([path, name, tip]) => `<button type="button" data-reader-doc="${escapeHtml(path)}" aria-pressed="${reader.doc === path}" data-tip="${escapeHtml(tip)}">${escapeHtml(name)}</button>`).join("")}${crumb}`;
+  const files = dialog.querySelector("[data-plan-files]");
+  if (files) files.outerHTML = docsSection(item, reader.doc, { reader: true });
 }
 
 async function showDoc(path, { keepBack = false, anchor = "" } = {}) {
@@ -536,10 +685,34 @@ async function showDoc(path, { keepBack = false, anchor = "" } = {}) {
     link.querySelectorAll(".external-mark, .sr-only").forEach((mark) => mark.remove());
   }
   outline.innerHTML = headings.length > 2 ? `<h4>On this page</h4>${headings.map((heading) => `<button type="button" class="plan-outline-${heading.level}" data-outline="${escapeHtml(heading.anchor)}">${escapeHtml(heading.title)}</button>`).join("")}` : "";
-  const scroller = dialog.querySelector(".plan-reader-body");
-  const target = anchor && main.querySelector(`[id="${CSS.escape(anchor)}"]`);
-  if (target) target.scrollIntoView({ block: "start", behavior: "instant" }); else scroller.scrollTop = 0;
+  if (!anchor || !scrollToHeading(anchor)) dialog.querySelector(".plan-reader-body").scrollTop = 0;
+  spyOutline();
   fadeIn(main, 140);
+}
+
+// scrollIntoView would also scroll the dialog's own grid (sliding the header and side column out of view), so the
+// reader body is scrolled by hand.
+function scrollToHeading(id) {
+  const scroller = dialog.querySelector(".plan-reader-body");
+  const target = dialog.querySelector(`[data-o="main"] [id="${CSS.escape(id)}"]`);
+  if (!target) return false;
+  scroller.scrollTo({ top: target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 12, behavior: "instant" });
+  spyOutline();
+  return true;
+}
+
+// The outline marks the section the top of the reader is in.
+function spyOutline() {
+  const scroller = dialog?.querySelector(".plan-reader-body");
+  const buttons = [...(dialog?.querySelectorAll(".plan-outline [data-outline]") || [])];
+  if (!scroller || !buttons.length) return;
+  const top = scroller.getBoundingClientRect().top + 24;
+  let active = buttons[0];
+  for (const button of buttons) {
+    const heading = dialog.querySelector(`[data-o="main"] [id="${CSS.escape(button.dataset.outline)}"]`);
+    if (heading && heading.getBoundingClientRect().top <= top) active = button;
+  }
+  for (const button of buttons) button.classList.toggle("is-active", button === active);
 }
 
 const flatten = (nodes) => nodes.flatMap((node) => [node, ...flatten(node.children)]);

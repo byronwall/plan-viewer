@@ -69,6 +69,8 @@ test("plans come from origin/main, with invalid maps as error rows and briefs re
   assert.deepEqual(ledger.dependsOn, ["offline-mode"]);
   assert.deepEqual(ledger.docs.map((doc) => doc.label), ["Intent", "Shape"]);
   assert.equal(ledger.history[0].event, "shape-created");
+  assert.deepEqual(ledger.briefs, { intent_brief: "current", shape_brief: "current", implementation_plan: "not-created" });
+  assert.deepEqual(ledger.milestones, [{ id: "M1", title: "Webhook receiver", status: "planned" }]);
   assert.ok(ledger.edited > 0);
   const offline = initiatives.find((item) => item.slug === "offline-mode")!;
   assert.equal(offline.inferred, true);
