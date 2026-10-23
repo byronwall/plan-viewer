@@ -1,5 +1,6 @@
 import { decorate, lineClasses, markWords } from "./word-diff.js";
 import { escapeRegExp, githubSlug, referenceConfig } from "./config.js";
+import { brandMark, glyph } from "./icons.js";
 
 export function escapeHtml(value = "") {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -175,11 +176,11 @@ export function resolveMarkdownAttachment(href, currentPath) {
 }
 
 export const SERVICE_ICONS = {
-  github: '<svg class="service-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.49c-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 8 0Z"/></svg>',
-  linear: '<svg class="service-icon" viewBox="0 0 100 100" aria-hidden="true"><path d="M1.2 61.5c-.2-1 1-1.6 1.7-.9l36.5 36.5c.7.7.1 1.9-.9 1.7A50 50 0 0 1 1.2 61.5ZM0 46.9c0 .4.1.7.4 1l51.7 51.7c.3.3.6.4 1 .4 2.3-.1 4.6-.4 6.8-.9.8-.2 1-1.1.5-1.6L2.5 39.6c-.5-.5-1.4-.3-1.6.5-.5 2.2-.8 4.5-.9 6.8Zm4.2-17.2c-.2.4-.1.9.2 1.2l64.7 64.7c.3.3.8.4 1.2.2 1.8-.8 3.5-1.7 5.1-2.7.5-.4.6-1.1.2-1.6L8.5 24.4c-.5-.5-1.2-.4-1.6.1-1 1.6-1.9 3.3-2.7 5.2Zm8.4-11.6c-.4-.4-.4-1 0-1.4A50 50 0 1 1 83.3 87.4c-.4.4-1 .4-1.4 0L12.6 18.1Z"/></svg>',
-  jira: '<svg class="service-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M15.5 7.5 8.6.6 8 0 2.8 5.2.5 7.5a.7.7 0 0 0 0 1l4.7 4.7L8 16l5.2-5.2.1-.1 2.2-2.2a.7.7 0 0 0 0-1ZM8 10.3 5.7 8 8 5.7 10.3 8 8 10.3Z"/></svg>',
-  slack: '<svg class="service-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 1.5a1.5 1.5 0 0 0 0 3h1.5V3A1.5 1.5 0 0 0 6 1.5Zm0 4H2.5a1.5 1.5 0 0 0 0 3H6a1.5 1.5 0 0 0 0-3Zm8.5 1.5a1.5 1.5 0 0 0-3 0v1.5H13A1.5 1.5 0 0 0 14.5 7Zm-4 0V3.5a1.5 1.5 0 0 0-3 0V7a1.5 1.5 0 0 0 3 0ZM10 14.5a1.5 1.5 0 0 0 0-3H8.5V13a1.5 1.5 0 0 0 1.5 1.5Zm0-4h3.5a1.5 1.5 0 0 0 0-3H10a1.5 1.5 0 0 0 0 3ZM1.5 9a1.5 1.5 0 0 0 3 0V7.5H3A1.5 1.5 0 0 0 1.5 9Zm4 0v3.5a1.5 1.5 0 0 0 3 0V9a1.5 1.5 0 0 0-3 0Z"/></svg>',
-  task: '<svg class="service-icon is-stroke" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="m5.6 8.2 1.7 1.7 3.2-3.5"/></svg>',
+  github: brandMark("github"),
+  linear: brandMark("linear"),
+  jira: brandMark("jira"),
+  slack: brandMark("slack"),
+  task: glyph("square-check", "service-icon is-stroke"),
 };
 
 // Slack permalinks open in the desktop app (see /api/open-slack) instead of leaving a dead browser tab behind.

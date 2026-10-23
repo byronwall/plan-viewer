@@ -1,4 +1,5 @@
 import { escapeHtml, renderMarkdown, SERVICE_ICONS } from "./markdown.js";
+import { GLYPHS } from "./icons.js";
 import { agentApp, agentName as appName, config, escapeRegExp } from "./config.js";
 import { decorate, lineClasses, markWords } from "./word-diff.js";
 import { mapHtml, mapSvg, moveGroups, svgToPng, tileCard } from "./diff-map.js";
@@ -29,41 +30,42 @@ let host = null;
 
 export const codeTab = (value) => (value in TABS ? value : "prs");
 
+// Names here are the viewer's own (skills in viewer.config.json pick one by `icon`); glyphs come from icons.js.
 const ICONS = {
-  doc: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
-  vscode: '<path d="m8 6-6 6 6 6M16 6l6 6-6 6"/>',
-  terminal: '<path d="m4 17 6-5-6-5M12 19h8"/>',
-  folder: '<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/>',
-  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
-  check: '<path d="m5 12 5 5 9-10"/>',
-  download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
-  expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
-  shrink: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
-  external: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
-  session: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
-  shakedown: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
-  "adversarial-pr-review": '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M12 11.5v1"/>',
-  discuss: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/>',
-  "ruthless-simplify": '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.1 8.1 20 20M8.1 15.9 20 4"/>',
-  refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',
-  trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
-  comment: '<path d="M4 5h16v11H9l-5 4z"/>',
-  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.5 1.5M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.5-1.5"/>',
-  conflict: '<path d="M12 3 2 20h20zM12 10v4M12 17v.5"/>',
-  review: '<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/>',
-  pass: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
-  approved: '<circle cx="12" cy="12" r="9"/><path d="m8 12.3 2.8 2.8L16.2 9.5"/>',
-  fail: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
-  pending: '<circle cx="12" cy="12" r="7.5"/><path d="M12 8v4.5l3 1.8"/>',
-  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
-  local: '<rect x="3" y="4.5" width="18" height="11.5" rx="1.5"/><path d="M1.5 19.5h21"/>',
-  draft: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
-  preview: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.7 5.6 3.7 9s-1.2 6.4-3.7 9c-2.5-2.6-3.7-5.6-3.7-9S9.5 5.6 12 3z"/>',
-  diff: '<path d="M8 3v8M4 7h8M5 17h6M14 4h6v16h-6M18 9v6"/>',
-  play: '<path d="M8 5.5v13l10.5-6.5z"/>',
-  stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/>',
-  person: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
-  branch: '<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9c0 5-6 4-11 8"/>',
+  doc: GLYPHS["file-text"],
+  vscode: GLYPHS["code"],
+  terminal: GLYPHS["terminal"],
+  folder: GLYPHS["folder"],
+  copy: GLYPHS["copy"],
+  check: GLYPHS["check"],
+  download: GLYPHS["download"],
+  expand: GLYPHS["maximize"],
+  shrink: GLYPHS["minimize"],
+  external: GLYPHS["external-link"],
+  session: GLYPHS["sparkles"],
+  shakedown: GLYPHS["zap"],
+  "adversarial-pr-review": GLYPHS["crosshair"],
+  discuss: GLYPHS["messages-square"],
+  "ruthless-simplify": GLYPHS["scissors"],
+  refresh: GLYPHS["refresh-cw"],
+  trash: GLYPHS["trash-2"],
+  comment: GLYPHS["message-square"],
+  link: GLYPHS["link"],
+  conflict: GLYPHS["triangle-alert"],
+  review: GLYPHS["eye"],
+  pass: GLYPHS["check"],
+  approved: GLYPHS["circle-check"],
+  fail: GLYPHS["x"],
+  pending: GLYPHS["clock"],
+  settings: GLYPHS["settings"],
+  local: GLYPHS["laptop"],
+  draft: GLYPHS["pen-line"],
+  preview: GLYPHS["globe"],
+  diff: GLYPHS["file-diff"],
+  play: GLYPHS["play"],
+  stop: GLYPHS["square"],
+  person: GLYPHS["user"],
+  branch: GLYPHS["git-branch"],
 };
 const icon = (name) => `<svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ICONS.review}</svg>`;
 const iconButton = (name, tip, attrs) => `<button type="button" class="code-icon-button" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}" ${attrs}>${icon(name)}</button>`;
@@ -459,13 +461,13 @@ function branchHue(branch) {
 }
 
 // Shape × hue gives ~80 distinguishable marks, enough that two of 70 branches rarely look alike.
-const GLYPHS = [
+const BRANCH_SHAPES = [
   '<circle cx="5" cy="5" r="4"/>', '<rect x="1.2" y="1.2" width="7.6" height="7.6" rx="1"/>', '<path d="M5 .8 9.4 9H.6z"/>', '<path d="M5 .5 9.5 5 5 9.5.5 5z"/>',
   '<path d="M5 .6 9.2 3.7 7.6 8.9H2.4L.8 3.7z"/>', '<path d="M5 .5l1.3 3h3.2L7 5.6l1 3.6L5 7.1 2 9.2l1-3.6L.5 3.5h3.2z"/>', '<path d="M3.4 .8h3.2v2.6h2.6v3.2H6.6v2.6H3.4V6.6H.8V3.4h2.6z"/>', '<path d="M5 .8 9.2 5 5 9.2.8 5z" fill="none" stroke-width="1.6"/>',
 ];
 const branchGlyph = (branch) => {
   const hue = branchHue(branch);
-  const shape = GLYPHS[(hue * 7 + branch.length) % GLYPHS.length];
+  const shape = BRANCH_SHAPES[(hue * 7 + branch.length) % BRANCH_SHAPES.length];
   return `<svg class="code-branch-glyph" viewBox="0 0 10 10" style="--hue:${hue}" aria-hidden="true">${shape}</svg>`;
 };
 // Long names keep a short head and their distinctive tail in whole words: "concurrency-05-build-reuse" → "concu…05-build-reuse".
@@ -896,7 +898,7 @@ function syncViewUrl() {
 function ensureDiffDialog() {
   if (diffDialog) return;
   diffDialog = Object.assign(document.body.appendChild(document.createElement("dialog")), { className: "code-diff", tabIndex: -1 });
-  diffDialog.innerHTML = `<header class="code-diff-head" data-d="head"></header><div class="code-diff-split"><aside class="code-diff-pr" data-d="pr"></aside><div class="code-diff-files"><div class="code-diff-filter-row"><label class="code-filter code-diff-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-diff-filter placeholder="Filter files  /" spellcheck="false" autocomplete="off"></label><button type="button" class="code-diff-hide" data-diff-hide></button><span data-d="listmode"></span></div><div data-d="files"></div></div><div class="code-diff-main"><div data-d="filehead"></div><div class="code-diff-body" data-d="body"></div></div></div><button type="button" class="code-note-add" data-note-new hidden>${icon("comment")}Comment <kbd>C</kbd></button><div class="code-note-composer" hidden><div class="code-note-where"><b data-composer-where></b><span class="code-muted">saved to plans/pr-notes</span></div><blockquote></blockquote><textarea rows="2" placeholder="Note for this PR" spellcheck="true"></textarea><div class="code-note-buttons"><button type="button" class="code-bar-button" data-note-cancel>Cancel</button><button type="button" class="code-bar-button is-primary" data-note-save>Save <kbd>⌘↵</kbd></button></div></div>`;
+  diffDialog.innerHTML = `<header class="code-diff-head" data-d="head"></header><div class="code-diff-split"><aside class="code-diff-pr" data-d="pr"></aside><div class="code-diff-files"><div class="code-diff-filter-row"><label class="code-filter code-diff-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-diff-filter placeholder="Filter files  /" spellcheck="false" autocomplete="off"></label><button type="button" class="code-diff-hide" data-diff-hide></button><span data-d="listmode"></span></div><div data-d="files"></div></div><div class="code-diff-main"><div data-d="filehead"></div><div class="code-diff-body" data-d="body"></div></div></div><button type="button" class="code-note-add" data-note-new hidden>${icon("comment")}Comment <kbd>C</kbd></button><div class="code-note-composer" hidden><div class="code-note-where"><b data-composer-where></b><span class="code-muted">saved to plans/pr-notes</span></div><blockquote></blockquote><textarea rows="2" placeholder="Note for this PR" spellcheck="true"></textarea><div class="code-note-buttons"><button type="button" class="code-bar-button" data-note-cancel>Cancel</button><button type="button" class="code-bar-button is-primary" data-note-save>Save <kbd>⌘↵</kbd></button></div></div>`;
   const body = diffDialog.querySelector('[data-d="body"]');
   // While selecting, the other side of a split diff can't be selected, so a drag down one column stays in it.
   body.addEventListener("mousedown", (event) => {
@@ -2301,7 +2303,7 @@ function toolbar() {
   if (ui.tab === "plans") controls = plansControls(segment, count);
   controls = repoTrigger() + controls;
   // Tabs and the filter on top, this tab's controls below; scanning shows as the spinning refresh icon, so nothing shifts.
-  return `<div class="code-toolbar"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-code-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span>${iconButton("refresh", ui.data.scanning ? "Scanning worktrees, CI, and PR history…" : "Refresh everything  (R)", `data-code-refresh class="code-icon-button${ui.data.scanning ? " is-spinning" : ""}"`)}${iconButton("settings", `Tracked repositories (${ui.data.repos.length})`, 'popovertarget="code-settings" data-code-settings')}</div><div class="code-controls">${controls}</div></div>`;
+  return `<div class="code-toolbar"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-code-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span>${iconButton("refresh", ui.data.scanning ? "Scanning worktrees, CI, and PR history…" : "Refresh everything  (R)", `data-code-refresh class="code-icon-button${ui.data.scanning ? " is-spinning" : ""}"`)}${iconButton("settings", `Tracked repositories (${ui.data.repos.length})`, 'popovertarget="code-settings" data-code-settings')}</div><div class="code-controls">${controls}</div></div>`;
 }
 
 // Tracked repositories live in a settings popover opened from the toolbar gear.
@@ -2333,7 +2335,7 @@ function patch(region, html) {
 function render({ animate = false } = {}) {
   if (!host || !ui.data || !host.querySelector(".code-surface, .code-loading")) return;
   if (!host.querySelector(".code-surface")) {
-    host.innerHTML = `<section class="code-surface" aria-label="Code dashboard"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="code-settings" class="code-settings" popover data-region="repos" aria-label="Code dashboard settings"></div><div id="code-branches" class="code-settings code-branch-pop" popover aria-label="Filter by branch"><label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-branch-query placeholder="Find a branch" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list" data-branch-list></ul><div class="code-branch-actions" data-branch-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only this · <kbd>Esc</kbd> close</p></div><div id="code-authors" class="code-settings code-branch-pop code-author-pop" popover aria-label="Filter by author"><label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-author-query placeholder="Find an author" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list code-author-list" data-author-list></ul><div class="code-branch-actions" data-author-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only · <kbd>Esc</kbd> close</p></div><div id="code-repos" class="code-settings code-branch-pop code-repo-pop" popover tabindex="-1" aria-label="Filter by repository"><ul class="code-branch-list code-repo-list-pick" data-repo-list></ul><div class="code-branch-actions" data-repo-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only · <kbd>Esc</kbd> close</p></div></section>`;
+    host.innerHTML = `<section class="code-surface" aria-label="Code dashboard"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="code-settings" class="code-settings" popover data-region="repos" aria-label="Code dashboard settings"></div><div id="code-branches" class="code-settings code-branch-pop" popover aria-label="Filter by branch"><label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-branch-query placeholder="Find a branch" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list" data-branch-list></ul><div class="code-branch-actions" data-branch-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only this · <kbd>Esc</kbd> close</p></div><div id="code-authors" class="code-settings code-branch-pop code-author-pop" popover aria-label="Filter by author"><label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-author-query placeholder="Find an author" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list code-author-list" data-author-list></ul><div class="code-branch-actions" data-author-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only · <kbd>Esc</kbd> close</p></div><div id="code-repos" class="code-settings code-branch-pop code-repo-pop" popover tabindex="-1" aria-label="Filter by repository"><ul class="code-branch-list code-repo-list-pick" data-repo-list></ul><div class="code-branch-actions" data-repo-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only · <kbd>Esc</kbd> close</p></div></section>`;
     animate = true;
     // The toolbar stays stuck at the top; table headers and the inspector stick just below its live height.
     new ResizeObserver(([entry]) => host.style.setProperty("--code-bar-h", `${Math.ceil(entry.borderBoxSize[0].blockSize)}px`)).observe(host.querySelector('[data-region="toolbar"]'));
