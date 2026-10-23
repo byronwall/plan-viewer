@@ -460,7 +460,7 @@ button.task-list-id:hover { text-decoration: underline; }
 .task-detail .ref-chip::after, .task-detail .ref-row::after { content: none; }
 .task-detail-empty { margin: 0; color: var(--muted); font-size: .8rem; }
 /* One quiet style in the detail pane: ink text, muted IDs, blue only on hover and the Open button. */
-.task-detail .action-card { --label-width: 2.4rem; margin-inline: -8px; width: calc(100% + 16px); }
+.task-detail .action-card { margin-inline: -8px; width: calc(100% + 16px); }
 .task-detail .action-title { font-size: .8rem; }
 .task-detail .action-note { display: none; }
 .task-detail .ref-row code { color: var(--quiet-text); font-weight: 600; }
@@ -657,19 +657,21 @@ button.task-list-id:hover { text-decoration: underline; }
 .action-list { display: grid; }
 .action-row { scroll-margin-top: 64px; }
 /* One row grammar for next actions, the day's next steps and their task headers: label · status icon · text · aside. */
-.action-card, .daily-action-task { --label-width: 3.2rem; display: grid; grid-template-columns: var(--label-width) 18px minmax(0, 1fr) auto; align-items: start; column-gap: 10px; }
+:root { --label-char: .47rem; }
+.action-card, .daily-action-task { --label-width: calc(var(--label-chars, 4) * var(--label-char)); display: grid; grid-template-columns: var(--label-width) 18px minmax(0, 1fr) auto; align-items: start; column-gap: 10px; }
 .action-card { width: 100%; margin: 0; border: 0; border-radius: 6px; background: transparent; padding: 5px 8px; color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease-out; }
 .action-card:hover, .action-card[aria-expanded="true"] { background: var(--quiet-field); }
 .action-label { color: var(--muted); font: 600 .74rem/20px ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .action-status { display: grid; place-items: center; height: 20px; color: var(--action-ink); }
-.action-status svg, .action-go svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.action-status svg, .action-go svg, .daily-action-day svg, .work-validation .handoff-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .action-status.is-waiting { color: var(--status-waiting-ink); }
 .action-text { min-width: 0; display: grid; gap: 1px; }
 .action-title { font-size: .86rem; line-height: 20px; overflow-wrap: anywhere; }
 .action-note { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; color: var(--muted); font-size: .78rem; line-height: 1.5; }
 .action-waiting { color: var(--status-waiting-ink); font-weight: 600; white-space: nowrap; }
 .action-go { display: inline-flex; align-items: center; gap: 4px; height: 20px; color: var(--action-ink); font-size: .74rem; font-weight: 650; white-space: nowrap; opacity: 0; transition: opacity 140ms ease-out; }
-.action-go svg { width: 13px; height: 13px; }
+.action-go svg, .work-validation .handoff-button svg { width: 13px; height: 13px; }
+.work-validation .handoff-button { display: inline-flex; align-items: center; gap: 5px; }
 :is(.action-card, .work-row.is-actionable):is(:hover, :focus-visible, [aria-expanded="true"]) .action-go { opacity: 1; }
 @media (hover: none) { .action-go { opacity: 1; } }
 .action-source { display: block; margin: 6px 0; color: var(--muted); font-size: .76rem; line-height: 1.5; overflow-wrap: anywhere; }
@@ -677,7 +679,9 @@ button.task-list-id:hover { text-decoration: underline; }
 .chunk-heading + .daily-action-group, .chunk-heading + .action-list { margin-top: 8px; }
 .daily-action-group + .daily-action-group { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 6px; }
 .daily-action-task { margin: 0; padding: 5px 8px 1px; color: var(--ink); font-size: .88rem; font-weight: 600; line-height: 20px; }
-h3.daily-action-task { display: block; }
+.daily-action-day { grid-column: 2; display: grid; place-items: center; height: 20px; color: var(--muted); }
+.daily-action-day svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.daily-action-day + span { grid-column: 3; }
 /* The task link spans the label, icon and text columns so its number and title line up with the action below. */
 /* grid-auto-rows: 0 parks the word joiner that enhanceTaskReferences puts after the icon. */
 .daily-action-task .task-reference-item { grid-column: 1 / 4; display: grid; grid-template-columns: subgrid; grid-template-rows: auto; grid-auto-rows: 0; align-items: start; font-size: .88rem; }
@@ -689,10 +693,10 @@ h3.daily-action-task { display: block; }
 .markdown-document-link.daily-action-more:hover { color: var(--action-ink); }
 .composer[data-scope="action"] .composer-heading h3 { white-space: normal; overflow-wrap: anywhere; }
 .work-row code, .work-node code, .work-group code { flex: none; color: var(--muted); font: 600 .74rem/1.2 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; }
-.work-tree { --work-indent: 14px; --work-id-col: calc(34px + var(--work-max-depth, 0) * var(--work-indent)); }
+.work-tree { --work-indent: 14px; }
 .work-tree ul { margin: 0; padding: 0; list-style: none; }
 .work-tree > ul > li + li { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 6px; }
-.work-row { width: 100%; display: grid; grid-template-columns: var(--work-id-col) 18px minmax(0, 1fr) minmax(0, auto) 3.4rem; align-items: start; column-gap: 10px; margin: 0; border: 0; border-radius: 6px; background: transparent; padding: 5px 8px; color: var(--ink); font: inherit; text-align: left; }
+.work-row { width: 100%; display: grid; grid-template-columns: var(--work-id-col) 18px minmax(0, 1fr) minmax(0, auto); align-items: start; column-gap: 10px; margin: 0; border: 0; border-radius: 6px; background: transparent; padding: 5px 8px; color: var(--ink); font: inherit; text-align: left; }
 .work-row > code { line-height: 20px; white-space: nowrap; padding-left: calc(var(--work-depth, 0) * var(--work-indent)); }
 .work-row.is-parent > code { color: var(--ink); }
 .work-row.is-completed .work-title { color: var(--muted); }
@@ -703,10 +707,14 @@ h3.daily-action-task { display: block; }
 .work-status-icon.is-completed { color: var(--success); }
 .work-row.is-parent { font-weight: 650; }
 .work-row.is-actionable { cursor: pointer; transition: background-color 140ms ease-out; }
-.work-row .action-go { justify-self: end; }
+/* On rows with an action, Draft takes the dependencies' cell on hover, so nothing reserves an empty column. */
+.work-row .action-go { grid-column: 4; grid-row: 1; justify-self: end; }
+.work-row .work-dependencies { grid-column: 4; grid-row: 1; transition: opacity 140ms ease-out; }
+.work-row.is-actionable:is(:hover, :focus-visible, [aria-expanded="true"]) .work-dependencies { opacity: 0; }
+.work-dependencies s { color: var(--quiet-text); text-decoration: none; }
 .work-row.is-actionable:hover, .work-row.is-actionable[aria-expanded="true"] { background: var(--quiet-field); }
-.work-title { min-width: 0; font-size: .86rem; line-height: 1.45; overflow-wrap: anywhere; }
-.work-dependencies { max-width: 180px; justify-self: end; color: var(--muted); font-size: .72rem; font-weight: 400; line-height: 1.45; text-align: right; overflow-wrap: anywhere; }
+.work-title { min-width: 0; font-size: .86rem; line-height: 20px; overflow-wrap: anywhere; }
+.work-dependencies { max-width: 180px; justify-self: end; color: var(--muted); font-size: .72rem; font-weight: 400; line-height: 20px; text-align: right; overflow-wrap: anywhere; }
 .work-status { justify-self: end; border-radius: 999px; background: var(--quiet-field); padding: 2px 8px; color: var(--muted); font-size: .68rem; font-weight: 650; white-space: nowrap; }
 .work-status.is-ready, .work-status.is-active { background: var(--selected); color: var(--action-ink); }
 .work-status.is-blocked, .work-status.is-waiting { background: var(--status-waiting-field); color: var(--status-waiting-ink); }
@@ -727,7 +735,7 @@ h3.daily-action-task { display: block; }
 .work-graph-expand:hover { color: var(--ink); }
 .image-viewer-graph { border-radius: 8px; background: var(--paper); padding: 12px; }
 .image-viewer-graph .work-node { cursor: inherit; }
-.work-graph-show-done { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; width: fit-content; color: var(--muted); font-size: .76rem; cursor: pointer; }
+.work-graph-show-done { display: flex; align-items: center; gap: 6px; margin: 0 0 6px 8px; width: fit-content; color: var(--muted); font-size: .76rem; cursor: pointer; }
 .work-breakdown:not(:has(.work-graph-show-done input:checked)) :is(.work-graph.is-full, .work-tree li.is-done), .work-breakdown:has(.work-graph-show-done input:checked) .work-graph.is-live { display: none; }
 .work-graph svg { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
 .work-graph svg > path { fill: none; stroke: var(--muted); stroke-width: 1.3; }
@@ -744,13 +752,12 @@ h3.daily-action-task { display: block; }
 .work-node.is-ready { background: var(--selected); border-color: var(--action-muted); }
 .work-node.is-actionable:hover { border-color: var(--action); }
 .work-node.is-completed { background: var(--quiet-field); color: var(--muted); }
-.action-card:focus-visible, .work-row:focus-visible, .work-node:focus-visible, .work-graph-scroll:focus-visible, .work-graph-disclosure > summary:focus-visible, .daily-action-group a:focus-visible { outline: 3px solid rgba(49, 87, 213, .26); outline-offset: 2px; }
+.action-card:focus-visible, .work-row:focus-visible, .work-node:focus-visible, .work-graph-scroll:focus-visible, .work-graph-disclosure > summary:focus-visible, .daily-action-group a:focus-visible { outline: 2px solid rgba(49, 87, 213, .4); outline-offset: 1px; }
 @media (max-width: 600px) {
   .action-go { display: none; }
-  .work-row { grid-template-columns: var(--work-id-col) 18px minmax(0, 1fr) minmax(0, auto); }
   .work-tree { --work-indent: 10px; }
   .work-dependencies { max-width: 76px; }
-  .work-graph-disclosure > summary span { display: block; margin: 6px 0 0; }
+  .work-graph-disclosure > summary span { display: none; }
 }
 @media (max-width: 760px) {
   .task-col-project, .task-col-refs { display: none; }

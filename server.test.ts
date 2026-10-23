@@ -544,7 +544,7 @@ test("work breakdown diagnostics explain unsupported statuses and how to repair 
   assert.equal(repaired.nodes[1].ready, true);
   const entirelyInvalid = renderWorkBreakdown(parseWorkBreakdown('- W1: Prepare [unknown]'), [], 'actions', 'work-breakdown');
   assert.match(entirelyInvalid, /Use one of: open, active, waiting, deferred, completed/);
-  assert.match(entirelyInvalid, /Prepare fix ↗/);
+  assert.match(entirelyInvalid, /Draft fix/);
   assert.doesNotMatch(entirelyInvalid, /Add nested work items/);
 });
 

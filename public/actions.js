@@ -112,9 +112,13 @@ function actionRow(action, index, key) {
   return `<div class="action-row" id="${escapeHtml(markdownHeadingId(action.title))}"><button class="action-card${action.blocked ? ' is-waiting' : ''}" type="button" data-action-key="${escapeHtml(key)}" data-action-index="${index}" aria-label="Draft action: ${escapeHtml(action.title)}${action.blocked ? ` (${escapeHtml(action.blockedReason || 'waiting')})` : ''}" aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false"><span class="action-label">${escapeHtml(action.workItem)}</span><span class="action-status is-${status.toLowerCase()}">${icon(action.blocked ? 'lock' : 'circle-check')}</span><span class="action-text"><span class="action-title">${escapeHtml(action.title)}</span>${note}</span><span class="action-go">${icon('pen-line')}Draft</span></button></div>`;
 }
 
+// The label column fits the longest ID in the list (task numbers are four digits), so deep IDs never crowd their icon.
+const labelWidth = labels => `--label-chars:${Math.max(4, ...labels.map(label => label.length))}`;
+
 export function renderActions(actions, key) {
   if (!actions.length) return '<p class="action-empty">No next actions recorded yet.</p>';
-  if (!actions.some(action => action.taskTitle)) return `<div class="action-list">${actions.map((action, index) => actionRow(action, index, key)).join('')}</div>`;
+  const width = labelWidth(actions.map(action => action.workItem || ''));
+  if (!actions.some(action => action.taskTitle)) return `<div class="action-list" style="${width}">${actions.map((action, index) => actionRow(action, index, key)).join('')}</div>`;
   const groups = new Map();
   actions.forEach((action, index) => {
     const groupKey = action.taskTitle ? action.sourcePath : 'day';
@@ -125,18 +129,18 @@ export function renderActions(actions, key) {
   return [...groups.values()].map(group => {
     const first = group.find(item => !item.action.blocked) || group[0];
     const { taskTitle, sourcePath } = first.action;
-    if (!taskTitle) return `<section class="daily-action-group"><h3 class="daily-action-task">Day-specific steps</h3><div class="action-list">${group.map(item => actionRow(item.action, item.index, key)).join('')}</div></section>`;
+    if (!taskTitle) return `<section class="daily-action-group" style="${width}"><h3 class="daily-action-task"><span class="daily-action-day">${icon('calendar')}</span><span>Day-specific steps</span></h3>${group.map(item => actionRow(item.action, item.index, key)).join('')}</section>`;
     const [id, ...rest] = taskTitle.split(' · ');
     const href = documentHref(sourcePath, 'next-actions');
     const link = (cls, body) => `<a class="markdown-document-link ${cls}" href="${escapeHtml(href)}" data-document-path="${escapeHtml(sourcePath)}" data-document-anchor="next-actions">${body}</a>`;
     const more = group.length - 1;
-    return `<section class="daily-action-group"><header class="daily-action-task">${link('daily-action-task-link', `${escapeHtml(id)} · ${escapeHtml(rest.join(' · '))}`)}${more ? link('daily-action-more', `+${more} more`) : ''}</header>${actionRow(first.action, first.index, key)}</section>`;
+    return `<section class="daily-action-group" style="${width}"><header class="daily-action-task">${link('daily-action-task-link', `${escapeHtml(id)} · ${escapeHtml(rest.join(' · '))}`)}${more ? link('daily-action-more', `+${more} more`) : ''}</header>${actionRow(first.action, first.index, key)}</section>`;
   }).join('');
 }
 
 export function renderWorkBreakdown(work, actions, key, repairChunkId = '') {
   const { nodes, warnings } = work;
-  const diagnostics = warnings.length ? `<section class="work-validation" aria-label="Work breakdown needs repair"><strong>Work breakdown needs repair</strong><p>Readiness may be wrong until these issues are fixed in the task Markdown.</p><ul>${warnings.map(w => `<li class="work-warning">${escapeHtml(w)}</li>`).join('')}</ul>${repairChunkId ? `<button type="button" class="handoff-button" data-chunk-id="${escapeHtml(repairChunkId)}" data-repair-work aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false">Prepare fix ↗</button>` : ''}</section>` : '';
+  const diagnostics = warnings.length ? `<section class="work-validation" aria-label="Work breakdown needs repair"><strong>Work breakdown needs repair</strong><p>Readiness may be wrong until these issues are fixed in the task Markdown.</p><ul>${warnings.map(w => `<li class="work-warning">${escapeHtml(w)}</li>`).join('')}</ul>${repairChunkId ? `<button type="button" class="handoff-button" data-chunk-id="${escapeHtml(repairChunkId)}" data-repair-work aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false">${icon('pen-line')}Draft fix</button>` : ''}</section>` : '';
   if (!nodes.length) return `${diagnostics}${warnings.length ? '' : '<p class="action-empty">Add nested work items to this task to see its tree and dependencies.</p>'}`;
   const hasChildren = n => nodes.some(child => child.parent === n.id);
   const statusLabel = n => n.ready && !hasChildren(n) ? 'Ready' : ['open', 'active'].includes(n.status) && !n.ready && !hasChildren(n) ? 'Blocked' : n.status[0].toUpperCase() + n.status.slice(1);
@@ -153,13 +157,12 @@ export function renderWorkBreakdown(work, actions, key, repairChunkId = '') {
     Completed: 'check',
   };
   const depthOf = n => { let d = 0; for (let p = n.parent; p; p = nodes.find(x => x.id === p)?.parent) d++; return d; };
-  const maxDepth = Math.max(0, ...nodes.map(depthOf));
   function tree(parent, depth = 0) {
     return `<ul style="--work-depth:${depth}">${nodes.filter(n => n.parent === parent).map(n => {
       const i = actionIndex(n);
       const label = statusLabel(n);
       const status = `${label}${i >= 0 ? ' — Draft action' : ''}`;
-      const body = `<code>${escapeHtml(n.id)}</code><span class="work-status-icon ${statusClass(n)}" title="${escapeHtml(status)}">${icon(statusIcons[label])}<span class="sr-only">${escapeHtml(status)}</span></span><span class="work-title">${escapeHtml(n.title)}</span><small class="work-dependencies">${n.deps.length ? `After ${n.deps.map(escapeHtml).join(', ')}` : ''}</small>${i >= 0 ? `<span class="action-go">${icon('pen-line')}Draft</span>` : ''}`;
+      const body = `<code>${escapeHtml(n.id)}</code><span class="work-status-icon ${statusClass(n)}" title="${escapeHtml(status)}">${icon(statusIcons[label])}<span class="sr-only">${escapeHtml(status)}</span></span><span class="work-title">${escapeHtml(n.title)}</span><small class="work-dependencies">${n.deps.length ? `After ${n.deps.map(id => byId.get(id)?.status === 'completed' ? `<s>${escapeHtml(id)}</s>` : escapeHtml(id)).join(', ')}` : ''}</small>${i >= 0 ? `<span class="action-go">${icon('pen-line')}Draft</span>` : ''}`;
       return `<li${isDone(n) ? ' class="is-done"' : ''}>${i >= 0 ? `<button type="button" class="work-row is-actionable${n.ready ? '' : ' is-waiting'}" style="--work-depth:${depth}" ${actionAttrs(i)}>${body}</button>` : `<div class="work-row${hasChildren(n) ? ' is-parent' : ''}${n.status === 'completed' ? ' is-completed' : ''}" style="--work-depth:${depth}">${body}</div>`}${hasChildren(n) ? tree(n.id, depth + 1) : ''}</li>`;
     }).join('')}</ul>`;
   }
@@ -226,5 +229,5 @@ export function renderWorkBreakdown(work, actions, key, repairChunkId = '') {
     }).join('');
     return `<div class="work-graph is-${variant}" style="width:${width}px;height:${height}px"><svg width="${width}" height="${height}" aria-hidden="true"><defs><marker id="${marker}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8"/></marker></defs>${edges}</svg>${boxes}</div>`;
   }
-  return `${diagnostics}<div class="work-breakdown">${doneCount ? `<label class="work-graph-show-done"><input type="checkbox"> Show ${doneCount} completed or deferred</label>` : ''}<div class="work-tree" style="--work-max-depth:${maxDepth}">${tree('')}</div><details class="work-graph-disclosure" open><summary>Dependency graph <span>Prerequisite → dependent</span><button type="button" class="work-graph-expand" data-graph-expand aria-label="Expand dependency graph" title="Expand"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9"/></svg></button></summary><div class="work-graph-scroll" tabindex="0" aria-label="Scrollable work dependency graph">${graph(liveNodes, 'live')}${doneCount ? graph(nodes, 'full') : ''}</div></details></div>`;
+  return `${diagnostics}<div class="work-breakdown">${doneCount ? `<label class="work-graph-show-done"><input type="checkbox"> Show ${doneCount} completed or deferred</label>` : ''}<div class="work-tree" style="--work-id-col:max(calc(3 * var(--label-char)), ${[...new Set(nodes.map(n => `${depthOf(n)}, ${n.id.length}`))].map(pair => { const [d, c] = pair.split(', '); return `calc(${d} * var(--work-indent) + ${c} * var(--label-char))`; }).join(', ')})">${tree('')}</div><details class="work-graph-disclosure" open><summary>Dependency graph <span>Prerequisite → dependent</span><button type="button" class="work-graph-expand" data-graph-expand aria-label="Expand dependency graph" title="Expand"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9"/></svg></button></summary><div class="work-graph-scroll" tabindex="0" aria-label="Scrollable work dependency graph">${graph(liveNodes, 'live')}${doneCount ? graph(nodes, 'full') : ''}</div></details></div>`;
 }
