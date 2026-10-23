@@ -60,7 +60,9 @@ async function viewerVersion() {
 // mtime changes, so touching this file restarts the server even when the pull only changed client files.
 async function updateViewer() {
   const version = await viewerVersion();
-  if (version.behind) await viewerGit("pull", "--ff-only");
+  if (version.behind) await viewerGit("pull", "--ff-only").catch((error) => {
+    throw new Error(String(error.stderr || error.message).split("\n").filter((line) => line && !line.startsWith("hint:")).join(" "));
+  });
   const head = await viewerGit("rev-parse", "HEAD");
   if (version.watched && head !== runningHead) setTimeout(() => utimes(fileURLToPath(import.meta.url), new Date(), new Date()), 200);
   return { ...version, head, behind: 0 };
