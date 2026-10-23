@@ -983,7 +983,20 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-group-row input { margin: 0 8px 0 0; vertical-align: -2px; }
 .code-col-actions { text-align: right; white-space: nowrap; }
 .code-col-main { min-width: 220px; max-width: 380px; }
-.code-col-path { max-width: 260px; }
+.code-col-path { width: 240px; max-width: 240px; }
+/* A folder is one line: where it sits (quiet), then the segment that names it, cut with an ellipsis. */
+.code-col-path .code-path { display: inline-flex; gap: 5px; overflow: hidden; white-space: nowrap; }
+.code-where-root { flex: none; color: var(--quiet-text); }
+.code-where-name { overflow: hidden; text-overflow: ellipsis; color: var(--body-ink); }
+.code-path:hover .code-where-root { color: var(--muted); }
+.code-group-row .code-where-root { font: .72rem ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0; text-transform: none; color: var(--label-text); }
+.code-branch-prefix { font-size: inherit; font-weight: 500; color: var(--quiet-text); }
+.code-branch-detached { font-variant-numeric: tabular-nums; }
+.code-group-pick { display: inline-flex; align-items: center; gap: 6px; }
+/* Narrow: the folder gives way to the branch; the inspector still shows the full path. */
+@media (max-width: 1100px) { .code-col-path { width: 150px; max-width: 150px; } }
+@media (max-width: 900px) { .code-table .code-col-path { display: none; } }
+.code-sub-commit { display: block; overflow: hidden; color: var(--quiet-text); text-overflow: ellipsis; white-space: nowrap; }
 .code-col-reason { white-space: nowrap; }
 .code-col-author { max-width: 150px; }
 .code-line { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }

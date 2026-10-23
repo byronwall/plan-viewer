@@ -35,7 +35,7 @@ const NOTE_PROMPTS = {
 
 type HistoryPr = { number: number; branch: string; state: string; title: string; author: string };
 type Cleanup = { level: "safe" | "review" | "keep" | "pending"; reason: string };
-type Worktree = { repo: string; path: string; branch: string; head: string; commitTime: number; created: number; ownCommits?: number; dirty: number | null; files?: string[]; ahead?: number; behind?: number; editTime: number; activity: number; main: boolean; prState?: string; prNumber?: number; cleanup?: Cleanup };
+type Worktree = { repo: string; path: string; branch: string; head: string; commitTime: number; subject?: string; created: number; ownCommits?: number; dirty: number | null; files?: string[]; ahead?: number; behind?: number; editTime: number; activity: number; main: boolean; prState?: string; prNumber?: number; cleanup?: Cleanup };
 
 // Removing a clean worktree keeps its branch and commits; only ignored files (node_modules, local config) go.
 // So "safe" means clean and finished, "review" means clean but merely old, and anything dirty or open stays.
@@ -139,21 +139,22 @@ export function createCodeDashboard(root: string) {
       return { repo, path: field("worktree"), head: field("HEAD"), branch: field("branch").replace(/^refs\/heads\//, "") || "(detached)", main: index === 0, prunable: /^prunable/m.test(block) };
     }).filter((tree) => tree.path && !tree.prunable && existsSync(tree.path));
     const heads = [...new Set(trees.map((tree) => tree.head).filter(Boolean))];
-    const times = new Map((await git(repo, ["show", "-s", "--format=%H %ct", ...heads])).trim().split("\n").map((line) => {
-      const [sha, time] = line.split(" ");
-      return [sha, Number(time) * 1000] as const;
+    // Each head's commit time and subject; the subject names a detached worktree and says what a branch last did.
+    const commits = new Map((await git(repo, ["show", "-s", "--format=%H %ct %s", ...heads])).trim().split("\n").map((line) => {
+      const [sha, time, ...subject] = line.split(" ");
+      return [sha, { time: Number(time) * 1000, subject: subject.join(" ") }] as const;
     }));
     const counts = new Map((await git(repo, ["for-each-ref", "--format=%(refname:short) %(ahead-behind:origin/main)", "refs/heads"]).catch(() => "")).trim().split("\n").map((line) => {
       const [branch, ahead, behind] = line.split(" ");
       return [branch, { ahead: Number(ahead), behind: Number(behind) }] as const;
     }));
     return trees.map(({ prunable, ...tree }) => {
-      const commitTime = times.get(tree.head) || 0;
+      const commitTime = commits.get(tree.head)?.time || 0;
       const cached = statusCache.get(tree.path);
       const editTime = cached?.editTime || 0;
       // A new worktree points at an old main commit, so its creation time also counts as activity.
       const created = tree.main ? 0 : statSync(join(tree.path, ".git"), { throwIfNoEntry: false })?.birthtimeMs || 0;
-      return { ...tree, ...counts.get(tree.branch), commitTime, created, ownCommits: cached?.ownCommits, dirty: cached ? cached.dirty : null, files: cached?.files, editTime, activity: Math.max(commitTime, editTime, created) };
+      return { ...tree, ...counts.get(tree.branch), commitTime, subject: commits.get(tree.head)?.subject || "", created, ownCommits: cached?.ownCommits, dirty: cached ? cached.dirty : null, files: cached?.files, editTime, activity: Math.max(commitTime, editTime, created) };
     });
   }
 

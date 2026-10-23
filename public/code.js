@@ -9,7 +9,7 @@ export const TABS = { prs: "Pull requests", worktrees: "Worktrees", commits: "Co
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const ui = {
-  tab: "prs", data: null, filter: "", treeScope: "all", prScope: "all", prSort: "updated", hideDrafts: false, failingOnly: false,
+  tab: "prs", data: null, filter: "", treeScope: "all", treeGroup: "changed", prScope: "all", prSort: "updated", hideDrafts: false, failingOnly: false,
   showKeep: false, openDescriptions: new Set(), selected: new Set(), removed: new Set(), removing: null, poll: 0, sel: "", detail: new Map(),
   commitScope: "local", commits: new Map(), detailErrors: new Map(), branches: new Set(), prefixes: new Set(), branchQuery: "", branchActive: 0,
   authors: new Set(), authorQuery: "", authorActive: 0, repos: new Set(), runLogs: new Map(),
@@ -18,6 +18,7 @@ const storage = { get: (key, fallback) => { try { return localStorage.getItem(ke
 // Cleanup never offers a worktree created or touched more recently than this; a fresh one may be about to get used.
 const GUARDS = { off: 0, day: DAY, week: 7 * DAY };
 let cleanupGuard = storage.get("code-cleanup-guard", "day");
+ui.treeGroup = storage.get("code-tree-group", "changed");
 const level = (tree) => {
   const base = tree.cleanup?.level;
   return (base === "safe" || base === "review") && Date.now() - tree.activity < GUARDS[cleanupGuard] ? "fresh" : base;
@@ -77,7 +78,9 @@ function runButton(repo, tree, branch) {
   if (run && run.state !== "exited") return iconButton("stop", run.url ? `Stop local server at ${run.url} (L)` : "Stop local server · starting (L)", `data-code-stop-run="${escapeHtml(tree.path)}" data-run-state="${run.state}"`);
   return iconButton("play", tree ? "Run local server (L)" : "Check out a worktree and run local server (L)", `data-code-run data-path="${escapeHtml(tree?.path || "")}" data-repo="${escapeHtml(repo)}" data-branch="${escapeHtml(branch)}"`);
 }
-const branchChip = (branch, className = "code-sub-branch") => `<button type="button" class="${className}" data-code-copy="${escapeHtml(branch)}" data-tip="${escapeHtml(branch)} · click to copy">${className === "code-sub-branch" ? icon("branch") : ""}<span>${escapeHtml(branch)}</span></button>`;
+// In a table the prefix (`claude/`, `codex/`) is quieter than the name after it.
+const branchLabel = (branch, className) => { const cut = className === "code-branch" ? branch.lastIndexOf("/") + 1 : 0; return cut ? `<span><small class="code-branch-prefix">${escapeHtml(branch.slice(0, cut))}</small>${escapeHtml(branch.slice(cut))}</span>` : `<span>${escapeHtml(branch)}</span>`; };
+const branchChip = (branch, className = "code-sub-branch") => `<button type="button" class="${className}" data-code-copy="${escapeHtml(branch)}" data-tip="${escapeHtml(branch)} · click to copy">${className === "code-sub-branch" ? icon("branch") : ""}${branchLabel(branch, className)}</button>`;
 
 export function ago(time) {
   const minutes = Math.round((Date.now() - new Date(time).getTime()) / 60_000);
@@ -91,8 +94,38 @@ const when = (time) => `<time datetime="${new Date(time).toISOString()}" title="
 const heat = (time) => { const age = Date.now() - new Date(time).getTime(); return age < 2 * HOUR ? "hot" : age < DAY ? "warm" : age < 7 * DAY ? "week" : "cold"; };
 const shortPath = (path) => path.replace(/^\/Users\/[^/]+\/repos\//, "").replace(/^\/Users\/[^/]+/, "~");
 const repoName = (path) => path.split("/").pop();
-// Beside a repo mark the repo's own folder is noise, so a worktree inside it shows only the rest of its path.
-const treePath = (tree) => manyRepos() && tree.path.startsWith(`${tree.repo}/`) ? tree.path.slice(tree.repo.length + 1) : shortPath(tree.path);
+// A worktree's folder in two parts: where it sits (`.claude`, `.codex`, `tmp`, the folder beside the repo) and the one
+// segment that names it. Repo names, `worktrees` and UUIDs are dropped, and so is a name that only repeats the branch.
+// A temp copy whose path embeds another worktree's path (dashes for slashes) is named after that worktree.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const dashed = (path) => path.replace(/[^a-zA-Z0-9]/g, "-");
+const whereCache = new WeakMap();
+function treeWhere(tree) {
+  if (whereCache.has(tree)) return whereCache.get(tree);
+  const parent = (path) => path.slice(0, path.lastIndexOf("/"));
+  const temp = tree.path.match(/^\/(?:private\/)?(?:tmp|var\/folders)\/(.+)$/);
+  const home = tree.path.match(/^\/(?:Users|home)\/[^/]+\/(.+)$/);
+  let root, rest;
+  if (tree.main) [root, rest] = ["main checkout", []];
+  else if (tree.path.startsWith(`${tree.repo}/`)) { const parts = tree.path.slice(tree.repo.length + 1).split("/"); [root, rest] = parts.length > 1 ? [parts[0], parts.slice(1)] : ["in repo", parts]; }
+  else if (parent(tree.path) === parent(tree.repo)) [root, rest] = [shortPath(parent(tree.path)), [repoName(tree.path)]];
+  else if (temp) [root, rest] = ["tmp", temp[1].split("/")];
+  else if (home) { const parts = home[1].split("/"); [root, rest] = [parts[0], parts.slice(1)]; }
+  else { const parts = tree.path.split("/").filter(Boolean); [root, rest] = [`/${parts[0]}`, parts.slice(1)]; }
+  const from = temp && ui.data?.worktrees.find((other) => other !== tree && !other.main && rest.includes(dashed(other.path)));
+  const named = rest.filter((part) => part !== repoName(tree.repo) && part !== "worktrees" && !UUID.test(part));
+  let name = from ? treeWhere(from).name || from.branch.split("/").pop() : named.at(-1) || "";
+  const tail = dashed(tree.branch.split("/").pop());
+  if (!from && name && (dashed(tree.branch).endsWith(dashed(name)) || dashed(name).endsWith(tail))) name = "";
+  const where = { root, name, from };
+  whereCache.set(tree, where);
+  return where;
+}
+// One line, click to copy the full path; the tip shows it in full.
+function folderCell(tree, key = "") {
+  const { root, name, from } = treeWhere(tree);
+  return `<td class="code-col-path"><button type="button" class="code-path" data-code-copy="${escapeHtml(tree.path)}" data-tip="${escapeHtml(shortPath(tree.path))}${from ? ` · a temp copy made from ${escapeHtml(from.branch)}` : ""} · copy path${key}"><span class="code-where-root">${escapeHtml(root)}</span>${name ? `<span class="code-where-name">${from ? "↳ " : ""}${escapeHtml(name)}</span>` : ""}</button></td>`;
+}
 const worktreeFor = (pr) => ui.data.worktrees.find((tree) => tree.repo === pr.repo && tree.branch === pr.branch && !ui.removed.has(tree.path));
 const prFor = (tree) => ui.data.prs.find((pr) => pr.repo === tree.repo && pr.branch === tree.branch);
 const matches = (text) => !ui.filter || ui.filter.toLowerCase().split(/\s+/).every((word) => text.toLowerCase().includes(word));
@@ -191,19 +224,33 @@ function visibleTrees() {
     .filter((tree) => !ui.removed.has(tree.path))
     .filter(scopes[ui.treeScope] || scopes.all)
     .filter(repoFilter)
-    .filter((tree) => matches(`${tree.branch} ${tree.path} ${prFor(tree)?.title || ""}`));
+    .filter((tree) => matches(`${tree.branch} ${tree.path} ${tree.subject || ""} ${prFor(tree)?.title || ""}`));
+}
+
+const detached = (tree) => tree.branch === "(detached)";
+// Names the row: the branch, or for a detached HEAD its short SHA (click to copy).
+function treeName(tree) {
+  if (!detached(tree)) return branchChip(tree.branch, "code-branch");
+  return `<button type="button" class="code-branch code-branch-detached" data-code-copy="${escapeHtml(tree.head)}" data-tip="Detached HEAD at ${escapeHtml(tree.head.slice(0, 12))} · click to copy the SHA"><span><small class="code-branch-prefix">detached at </small>${escapeHtml(tree.head.slice(0, 7))}</span></button>`;
+}
+// The second line says what the row is about: its PR, else the head commit when it belongs to this row (a commit
+// made on the branch, a detached HEAD, or the main checkout). A new branch's inherited head would only mislead.
+function treeSub(tree, pr) {
+  if (pr) return `<div class="code-sub">${escapeHtml(pr.title)}</div>`;
+  if (!tree.subject || !(tree.main || detached(tree) || tree.ownCommits > 0)) return "";
+  return `<div class="code-sub code-sub-commit">${escapeHtml(tree.subject)}</div>`;
 }
 
 function treeRow(tree) {
   const pr = prFor(tree);
   const key = `tree:${tree.path}`;
   return `<tr class="code-row" data-code-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">
-    ${repoCell(tree.repo)}<td class="code-col-main"><div class="code-line">${branchChip(tree.branch, "code-branch")}${tree.main ? '<span class="code-tag">main checkout</span>' : ""}${tree.dirty ? `<span class="code-tag code-tag-dirty">${tree.dirty} changed</span>` : ""}</div>
-      ${pr ? `<div class="code-sub">${escapeHtml(pr.title)}</div>` : ""}</td>
+    ${repoCell(tree.repo)}<td class="code-col-main"><div class="code-line">${treeName(tree)}${tree.dirty ? `<span class="code-tag code-tag-dirty">${tree.dirty} changed</span>` : ""}</div>
+      ${treeSub(tree, pr)}</td>
     <td class="code-col-pr">${pr ? prChip(pr) : historyChip(tree)}</td>
     <td class="code-col-ab">${aheadBehind(tree)}</td>
     <td class="code-col-when code-heat-${heat(tree.activity)}">${when(tree.activity)}</td>
-    <td class="code-col-path"><button type="button" class="code-path" data-code-copy="${escapeHtml(tree.path)}" data-tip="${escapeHtml(shortPath(tree.path))} · copy path (Y)">${escapeHtml(treePath(tree))}</button></td>
+    ${folderCell(tree, " (Y)")}
     <td class="code-col-actions">${treeActions(tree)}</td></tr>`;
 }
 
@@ -227,17 +274,27 @@ function emptyState(noun) {
 
 const tableHead = (columns) => `<thead><tr>${columns.map(([className, label]) => `<th class="${className}">${label}</th>`).join("")}</tr></thead>`;
 
+// Rows stay newest first inside every group. Repo and folder groups put the biggest first, main checkouts on top.
+const TREE_GROUPS = { changed: "Changed", repo: "Repo", folder: "Folder" };
+function treeGroups(trees) {
+  const by = (keyOf, label) => [...new Set(trees.map(keyOf))].map((key) => [label(key), trees.filter((tree) => keyOf(tree) === key)]).sort((a, b) => b[1].length - a[1].length);
+  if (ui.treeGroup === "repo") return by((tree) => tree.repo, (repo) => `${repoBadge(repo)}${escapeHtml(repoName(repo))}`);
+  if (ui.treeGroup === "folder") return by((tree) => treeWhere(tree).root, (root) => root === "main checkout" ? "Main checkouts" : `<span class="code-where-root">${escapeHtml(root)}</span>`).sort((a, b) => (b[0] === "Main checkouts") - (a[0] === "Main checkouts"));
+  const buckets = [["Last 24 hours", DAY], ["This week", 7 * DAY], ["This month", 30 * DAY], ["Older", Infinity]];
+  const seen = new Set();
+  return buckets.map(([label, age]) => {
+    const rows = trees.filter((tree) => !seen.has(tree.path) && Date.now() - tree.activity < age);
+    rows.forEach((tree) => seen.add(tree.path));
+    return [label, rows];
+  });
+}
+
 function worktreesBody() {
   const trees = visibleTrees();
   if (!trees.length) return emptyState("worktrees");
-  const groups = [["Last 24 hours", (tree) => Date.now() - tree.activity < DAY], ["This week", (tree) => Date.now() - tree.activity < 7 * DAY], ["This month", (tree) => Date.now() - tree.activity < 30 * DAY], ["Older", () => true]];
-  const seen = new Set();
-  const sections = groups.map(([label, test]) => {
-    const rows = trees.filter((tree) => !seen.has(tree.path) && test(tree));
-    rows.forEach((tree) => seen.add(tree.path));
-    return rows.length ? `<tbody><tr class="code-group-row"><th colspan="${6 + repoHead().length}">${label} <span>${rows.length}</span></th></tr>${rows.map(treeRow).join("")}</tbody>` : "";
-  }).join("");
-  return `<table class="code-table">${tableHead([...repoHead(), ["code-col-main", "Branch"], ["code-col-pr", "PR"], ["code-col-ab", "vs main"], ["code-col-when", "Changed"], ["code-col-path", "Path"], ["code-col-actions", "Open"]])}${sections}</table>`;
+  const sections = treeGroups(trees).filter(([, rows]) => rows.length)
+    .map(([label, rows]) => `<tbody><tr class="code-group-row"><th colspan="${6 + repoHead().length}">${label} <span>${rows.length}</span></th></tr>${rows.map(treeRow).join("")}</tbody>`).join("");
+  return `<table class="code-table">${tableHead([...repoHead(), ["code-col-main", "Branch"], ["code-col-pr", "PR"], ["code-col-ab", "vs main"], ["code-col-when", "Changed"], ["code-col-path", "Folder"], ["code-col-actions", "Open"]])}${sections}</table>`;
 }
 
 // ---------- pull requests ----------
@@ -2019,15 +2076,15 @@ function cleanupBody() {
       const removed = ui.removed.has(tree.path);
       return `<tr class="code-row${removed ? " is-removed" : ""}" data-code-row="tree:${escapeHtml(tree.path)}" aria-selected="${ui.sel === `tree:${tree.path}`}">
         <td class="code-col-check">${selectable && !removed ? `<input type="checkbox" data-code-select="${escapeHtml(tree.path)}" ${ui.selected.has(tree.path) ? "checked" : ""} aria-label="Select ${escapeHtml(tree.branch)}">` : ""}</td>${repoCell(tree.repo)}
-        <td class="code-col-main"><div class="code-line">${branchChip(tree.branch, "code-branch")}${removed ? '<span class="code-tag code-tag-removed">removed</span>' : ""}</div></td>
+        <td class="code-col-main"><div class="code-line">${treeName(tree)}${removed ? '<span class="code-tag code-tag-removed">removed</span>' : ""}</div></td>
         <td class="code-col-reason"><span class="code-tag code-tag-${cleanupTone(tree.cleanup.reason)}">${escapeHtml(tree.cleanup.reason)}</span></td>
         <td class="code-col-ab">${aheadBehind(tree)}</td>
         <td class="code-col-when">${when(tree.activity)}</td>
-        <td class="code-col-path"><button type="button" class="code-path" data-code-copy="${escapeHtml(tree.path)}" data-tip="${escapeHtml(shortPath(tree.path))} · copy path">${escapeHtml(treePath(tree))}</button></td>
+        ${folderCell(tree)}
         <td class="code-col-actions">${removed ? "" : treeActions(tree)}</td></tr>`;
     }).join("")}</tbody>`;
   }).join("");
-  return `${bar}${body ? `<table class="code-table">${tableHead([["code-col-check", ""], ...repoHead(), ["code-col-main", "Branch"], ["code-col-reason", "Why"], ["code-col-ab", "vs main"], ["code-col-when", "Changed"], ["code-col-path", "Path"], ["code-col-actions", "Open"]])}${body}</table>` : `<p class="code-empty">Nothing to clean up.</p>`}`;
+  return `${bar}${body ? `<table class="code-table">${tableHead([["code-col-check", ""], ...repoHead(), ["code-col-main", "Branch"], ["code-col-reason", "Why"], ["code-col-ab", "vs main"], ["code-col-when", "Changed"], ["code-col-path", "Folder"], ["code-col-actions", "Open"]])}${body}</table>` : `<p class="code-empty">Nothing to clean up.</p>`}`;
 }
 
 // ---------- detail pane ----------
@@ -2066,10 +2123,12 @@ function treeDetail(tree) {
   const extra = ui.detail.get(`tree:${tree.path}`);
   const ages = [tree.created && `created ${ago(tree.created)} ago`, tree.commitTime && `last commit ${ago(tree.commitTime)} ago`, tree.ownCommits !== undefined && `${tree.ownCommits} own ${tree.ownCommits === 1 ? "commit" : "commits"}`].filter(Boolean).join(" · ");
   const review = pr && REVIEW[pr.reviewDecision];
-  return `<header class="code-detail-head"><h3>${escapeHtml(tree.branch)}</h3><span class="code-side-tools">${iconButton("expand", "Worktree overview (Enter)", "data-code-wt-overlay")}${copyButton(tree.branch, "Copy branch")}</span></header>
+  const { from } = treeWhere(tree);
+  return `<header class="code-detail-head"><h3>${detached(tree) ? `Detached at ${escapeHtml(tree.head.slice(0, 7))}` : escapeHtml(tree.branch)}</h3><span class="code-side-tools">${iconButton("expand", "Worktree overview (Enter)", "data-code-wt-overlay")}${detached(tree) ? copyButton(tree.head, "Copy SHA") : copyButton(tree.branch, "Copy branch")}</span></header>
     ${sideFacts([
-      ["Path", `<button type="button" class="code-path code-side-path" data-code-copy="${escapeHtml(tree.path)}" data-tip="${escapeHtml(tree.path)} · click to copy">${escapeHtml(shortPath(tree.path))}</button>`],
-      ["Status", `${tree.main ? "Main checkout" : `<span data-tip="Commits ahead of and behind origin/main">↑${tree.ahead ?? "?"} ↓${tree.behind ?? "?"} vs main</span>`}<span class="${tree.dirty ? "code-side-pending" : "code-muted"}">${tree.dirty === null ? "checking…" : tree.dirty ? `${tree.dirty} uncommitted` : "clean"}</span><span class="code-muted">changed ${ago(tree.activity)} ago</span>`],
+      ["Path", `<button type="button" class="code-path code-side-path" data-code-copy="${escapeHtml(tree.path)}" data-tip="${escapeHtml(tree.path)} · click to copy">${escapeHtml(shortPath(tree.path))}</button>${from ? `<span class="code-muted">a temp copy made from ${escapeHtml(from.branch)}</span>` : ""}`],
+      ["Head", detached(tree) && tree.subject ? escapeHtml(tree.subject) : ""],
+      ["Status", `${tree.main ? "Main checkout" : tree.ahead === undefined ? "" : `<span data-tip="Commits ahead of and behind origin/main">↑${tree.ahead ?? "?"} ↓${tree.behind ?? "?"} vs main</span>`}<span class="${tree.dirty ? "code-side-pending" : "code-muted"}">${tree.dirty === null ? "checking…" : tree.dirty ? `${tree.dirty} uncommitted` : "clean"}</span><span class="code-muted">changed ${ago(tree.activity)} ago</span>`],
       ["History", ages && `<span class="code-muted">${ages}</span>`],
       ["PR", pr ? `<button type="button" class="code-side-pr" data-code-goto-pr="${escapeHtml(`pr:${pr.slug}#${pr.number}`)}" data-tip="Inspect the pull request">${ciBadge(pr)}<b>#${pr.number}</b><span>${escapeHtml(pr.title || "")}</span></button>${review ? `<span class="code-muted">${review[1]}</span>` : ""}` : historyChip(tree)],
       ["Cleanup", tree.cleanup ? `<span class="code-side-cleanup code-side-${{ safe: "pass", review: "pending", keep: "quiet", pending: "quiet" }[tree.cleanup.level] || "quiet"}">${escapeHtml(tree.cleanup.reason)}</span>` : ""],
@@ -2228,7 +2287,7 @@ function toolbar() {
     week: `Week${count(trees.filter((tree) => Date.now() - tree.activity < 7 * DAY).length)}`,
     dirty: `Uncommitted${count(pending ? "…" : trees.filter((tree) => tree.dirty > 0).length)}`,
     pr: `Open PR${count(trees.filter((tree) => prFor(tree)).length)}`,
-  });
+  }) + `<span class="code-group-pick"><span class="plan-group-label">Group</span>${segment("data-code-tree-group", ui.treeGroup, TREE_GROUPS)}</span>`;
   if (ui.tab === "prs") controls = segment("data-code-scope", ui.prScope, {
     all: `All${count(ui.data.prs.length)}`,
     requested: `Review requested${count(ui.data.prs.filter((pr) => pr.requestedOfMe).length)}`,
@@ -2577,6 +2636,7 @@ async function handleClick(event) {
     }
     if ("codeReset" in dataset) { resetFilters(); return render({ animate: true }); }
     if (dataset.codeTreeScope) { ui.treeScope = dataset.codeTreeScope; return render({ animate: true }); }
+    if (dataset.codeTreeGroup) { ui.treeGroup = dataset.codeTreeGroup; storage.set("code-tree-group", ui.treeGroup); return render({ animate: true }); }
     if (dataset.codeCommitScope) { ui.commitScope = dataset.codeCommitScope; return render({ animate: true }); }
     if (dataset.codeBranchFilter) return toggleBranch(dataset.codeBranchFilter);
     if (dataset.codeAuthorFilter) return toggleAuthor(dataset.codeAuthorFilter);
