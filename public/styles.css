@@ -321,7 +321,7 @@ button { cursor: pointer; }
 .markdown tbody tr:nth-child(even) td { background: #fafbfc; }
 .markdown .align-center { text-align: center; }
 .markdown .align-right { text-align: right; }
-/* The expanded table: separate borders so sticky header, footer and first column carry their own lines. */
+/* The expanded table: separate borders so the sticky header and first column carry their own lines. */
 .table-viewer-body table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: .8rem; line-height: 1.38; }
 .table-viewer-body table.is-sized { table-layout: fixed; min-width: 0; }
 .table-viewer-body :is(th, td) { min-width: 0; padding: 3px 8px; }
@@ -355,8 +355,6 @@ button { cursor: pointer; }
 .table-filter-row input:hover { border-color: var(--line); }
 .table-filter-row input:focus { border-color: var(--action); background: var(--paper); }
 .table-filter-row input:not(:placeholder-shown) { background: var(--selected); }
-.table-viewer-body tfoot { position: sticky; z-index: 2; bottom: 0; }
-.table-viewer-body tfoot td { border-top: 1px solid var(--line); border-bottom: 0; background: #f7f8fa; color: var(--muted); font-size: .72rem; font-variant-numeric: tabular-nums; }
 .table-viewer-body table.is-measuring :is(td, td *, .table-sort-label) { white-space: nowrap !important; }
 ::highlight(table-match) { background: #ffe38a; color: var(--ink); }
 @media (prefers-reduced-motion: reduce) { .table-sort, .table-sort-mark, .table-resize::after, .table-filter-row input, .table-viewer-filter { transition: none; } }

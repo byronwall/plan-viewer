@@ -35,7 +35,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 | Issues page: Jira sync through `acli`, Linear issues and projects, `tmp/issues-cache.json`, activity diffs, issue ↔ PR joins, Jira ↔ Linear pairs, issue agent drafts | `issues.ts` (server), `linear.ts` (Linear GraphQL reads in the Jira issue shape), `public/issues.js` (client), `fixtures/jira/` (fictional corpus and the `fake-acli.js` the fixtures config runs) |
 | GitHub, Linear, Jira and Slack titles cached in `tmp/link-metadata.json` | `link-metadata.ts` |
 | Codex Desktop deep links | `codex-desktop.ts` |
-| Expanded table: sort, column filters, resize, totals | `public/table-viewer.js` (opened by `showTableViewer` in `app.js`) |
+| Expanded table: sort, column filters, resize | `public/table-viewer.js` (opened by `showTableViewer` in `app.js`) |
 | Search and the Weeks calendar | `public/search.js`, `public/weeks.js` |
 | Icons: Lucide glyphs and Simple Icons brand marks, vendored as path strings | `public/icons.js` |
 | Styles | `public/styles.css` |

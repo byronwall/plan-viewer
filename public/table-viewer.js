@@ -1,6 +1,6 @@
 import { glyph } from "./icons.js";
 
-// The expanded table: click a header to sort (Shift-click adds a tiebreak), filter one column or every column, drag a header edge to resize (double-click fits it), and read totals for the rows showing.
+// The expanded table: click a header to sort (Shift-click adds a tiebreak), filter one column or every column, and drag a header edge to resize (double-click fits it).
 const EMPTY = /^(|—|–|-|n\/a)$/i;
 const toNumber = (text) => {
   const value = text.replace(/[,$%\s]/g, "");
@@ -8,7 +8,6 @@ const toNumber = (text) => {
 };
 const toDate = (text) => /\d/.test(text) && /[a-z]{3}|\d{4}-\d/i.test(text) ? Date.parse(text) : NaN;
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
-const format = (value) => value.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 export function columnKind(cells) {
   const values = cells.filter((cell) => !cell.empty).map((cell) => cell.text);
@@ -34,21 +33,6 @@ export function cellTest(raw, kind) {
 function compare(a, b, kind, dir) {
   if (a.empty || b.empty) return a.empty === b.empty ? 0 : a.empty ? 1 : -1; // blanks sort last either way
   return (kind === "text" ? collator.compare(a.text, b.text) : a.key - b.key) * dir;
-}
-
-function summary(cells, kind) {
-  const values = cells.filter((cell) => !cell.empty);
-  if (!values.length) return "";
-  if (kind === "number") {
-    const sum = values.reduce((total, cell) => total + cell.key, 0);
-    const average = format(sum / values.length);
-    return values.some((cell) => cell.text.includes("%")) ? `avg ${average}%` : `Σ ${format(sum)} · avg ${average}`;
-  }
-  if (kind === "date") {
-    const sorted = [...values].sort((a, b) => a.key - b.key);
-    return `${sorted[0].text} – ${sorted.at(-1).text}`;
-  }
-  return `${new Set(values.map((cell) => cell.text.toLowerCase())).size} distinct`;
 }
 
 // Matches are painted with the CSS Custom Highlight API, so the cells' markup never changes.
@@ -97,7 +81,7 @@ export function enhanceTable(dialog, cellText) {
   const filters = Array(columns).fill("");
   let query = "";
 
-  // Header: each label becomes a sort button with a resize grip; a filter row and a totals footer follow.
+  // Header: each label becomes a sort button with a resize grip, over a row of column filters.
   [...head.cells].forEach((th, column) => {
     if (kinds[column] === "number" && !th.classList.contains("align-center")) {
       th.classList.add("align-right");
@@ -112,8 +96,6 @@ export function enhanceTable(dialog, cellText) {
     const datalist = kinds[column] === "text" && list.length < rows.length && list.length <= 40 ? `<datalist id="table-values-${column}">${list.sort(collator.compare).map((value) => `<option value="${value.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"></option>`).join("")}</datalist>` : "";
     return `<th><input type="search" size="1" spellcheck="false" autocomplete="off" data-filter-column="${column}" placeholder="${placeholder(column)}" aria-label="Filter ${cellText(th)}"${datalist ? ` list="table-values-${column}"` : ""}>${datalist}</th>`;
   }).join("")}</tr>`);
-  table.insertAdjacentHTML("beforeend", `<tfoot data-table-ui><tr>${Array(columns).fill("<td></td>").join("")}</tr></tfoot>`);
-  const foot = table.tFoot.rows[0];
   dialog.querySelector(".viewer-dialog-heading h2").insertAdjacentHTML("afterend", `<label class="table-viewer-filter">${glyph("search")}<input type="search" spellcheck="false" autocomplete="off" placeholder="Filter all columns" aria-label="Filter all columns" aria-keyshortcuts="/" data-filter-all><kbd>/</kbd></label><button type="button" class="table-viewer-clear" data-table-clear hidden>Clear</button>`);
   const all = dialog.querySelector("[data-filter-all]");
   const clear = dialog.querySelector("[data-table-clear]");
@@ -138,8 +120,6 @@ export function enhanceTable(dialog, cellText) {
       const at = sorts.findIndex((sort) => sort.column === column);
       th.setAttribute("aria-sort", at < 0 ? "none" : sorts[at].dir > 0 ? "ascending" : "descending");
       th.querySelector(".table-sort-mark b").textContent = sorts.length > 1 && at >= 0 ? at + 1 : "";
-      foot.cells[column].textContent = summary(visible.map((row) => row.cells[column]), kinds[column]);
-      foot.cells[column].className = th.classList.contains("align-right") ? "align-right" : "";
     });
     const filtered = visible.length < rows.length;
     count.textContent = `${filtered ? `${visible.length} of ` : ""}${rows.length} rows × ${columns} columns`;
@@ -162,7 +142,7 @@ export function enhanceTable(dialog, cellText) {
     const label = button.querySelector(".table-sort-label");
     const style = getComputedStyle(button);
     const range = new Range();
-    const cells = [...rows.filter((row) => !row.tr.hidden).map((row) => row.tr.cells[column]), foot.cells[column]].filter(Boolean);
+    const cells = [...rows.filter((row) => !row.tr.hidden).map((row) => row.tr.cells[column])].filter(Boolean);
     const padding = cells.length ? parseFloat(getComputedStyle(cells[0]).paddingLeft) + parseFloat(getComputedStyle(cells[0]).paddingRight) : 0;
     const natural = Math.max(label.scrollWidth + button.querySelector(".table-sort-mark").offsetWidth + parseFloat(style.columnGap) + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight), ...cells.map((cell) => {
       range.selectNodeContents(cell);
