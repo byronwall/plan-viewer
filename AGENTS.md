@@ -60,4 +60,4 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 - Keep the viewer generic. Anything that names a person, organization, repository, tracker, tool path, or skill belongs in `viewer.config.json` with a neutral default in `public/config.js`, documented in `docs/configuration.md`. Fixtures, examples, and tests use the fictional `acme` organization.
 - Document behavior changes in `docs/guide.md` in the same commit, not in the README.
 - The workspace layout (`daily/`, `tasks/TASK-NNNN.md`, `plans/`, `reference/`) is the content format, not configuration.
-- Commit completed changes as you go on the existing branch, after `npm test` passes.
+- Commit completed changes as you go on the existing branch, after `npm test` passes. Stage your files by name, never `git add -A` or `git add .`, and never `git checkout`/`git restore` a file you did not change: another session may be editing this checkout.
