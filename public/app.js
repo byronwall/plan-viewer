@@ -71,6 +71,7 @@ function showNotice(message, error = false, { description = "", action = null, k
   toasts.slice(3).forEach(dismissToast);
   layoutToasts();
   if (!elements.toaster.matches(":hover, :focus-within")) startToast(entry);
+  return entry;
 }
 setPlanNotice(showNotice);
 function startToast(entry) {
@@ -1636,11 +1637,28 @@ function connectLiveUpdates() {
     }
   });
 }
+// Every document an agent (or an editor outside the viewer) changed since the server started, newest first.
+let documentChanges = [];
+fetch("/api/changes").then((response) => response.json()).then((body) => { documentChanges = body.changes || []; }).catch(() => {});
+const changeSummary = (change) => [change.sections.map((section) => section.title).join(", "), change.kind === "changed" ? `+${change.added}\u00a0−${change.removed}` : change.kind].filter(Boolean).join(" · ");
+const changeHref = (change) => documentHref(change.path, change.sections[0]?.anchor || "");
+// One toast per document: a burst of writes to the same file replaces its toast instead of stacking.
+const changeToasts = new Map();
+function announceChange(change) {
+  documentChanges = [change, ...documentChanges].slice(0, 50);
+  if (change.source !== "agent") return;
+  dismissToast(changeToasts.get(change.path));
+  const verb = { created: "Created", changed: "Updated", deleted: "Deleted" }[change.kind];
+  const open = change.kind === "deleted" ? null : { label: change.path === state.selectedPath ? "Show" : "Open", run: () => selectDocument(change.path, { historyMode: change.path === state.selectedPath ? "replace" : "push", anchor: change.sections[0]?.anchor || "" }) };
+  changeToasts.set(change.path, showNotice(`${verb} “${change.title}”`, false, { kind: "info", description: changeSummary(change), action: open }));
+}
+
 
 async function dispatch(form) {
   const button = form.querySelector(".send-button");
   const commentary = new FormData(form).get("commentary");
   if (button.disabled) return;
+      if (update.change) announceChange(update.change);
   button.disabled = true;
   button.textContent = "Opening draft…";
   try {
@@ -2785,7 +2803,7 @@ historyMenu.addEventListener("beforetoggle", (event) => {
   const shown = visits.filter((visit) => visit.key !== current);
   const rows = shown.map((visit, index) => resultRow({
     ...visitResult(visit.href),
-    marker: index < 9 ? index + 1 : "", // the 1–9 jump key
+    marker: index + changed.length < 9 ? index + changed.length + 1 : "", // the 1–9 jump key
     side: Date.now() - visit.at < 60_000 ? "just now" : `${ago(visit.at)} ago`,
     tag: "button",
     attrs: `type="button" role="option" aria-selected="false" data-visit-href="${escapeHtml(visit.href)}"`,
@@ -2793,7 +2811,16 @@ historyMenu.addEventListener("beforetoggle", (event) => {
   // The page you're on, pinned above the list, so it's clear what picking a row will replace.
   const here = resultRow({ ...visitResult(location.href), side: "", className: "history-here", marker: "" });
   historyMenu.style.height = "";
-  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recently viewed</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed"><div class="search-section" role="presentation">Recently viewed</div>${rows.join("") || '<div class="search-empty"><strong>Nothing yet</strong><span>Pages, PRs and worktrees you open will appear here.</span></div>'}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>H</kbd> close</span><span class="history-count">${shown.length} ${shown.length === 1 ? "place" : "places"}</span></footer>`;
+  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recently viewed</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed">${changeRows.length ? `<div class="search-section" role="presentation">Recently changed</div>${changeRows.join("")}` : ""}<div class="search-section" role="presentation">Recently viewed</div>${rows.join("") || '<div class="search-empty"><strong>Nothing yet</strong><span>Pages, PRs and worktrees you open will appear here.</span></div>'}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>H</kbd> close</span><span class="history-count">${shown.length + changed.length} ${shown.length + changed.length === 1 ? "place" : "places"}</span></footer>`;
+  const changed = documentChanges.filter((change, index) => change.kind !== "deleted" && documentChanges.findIndex((other) => other.path === change.path) === index).slice(0, 8);
+  const changeRows = changed.map((change, index) => resultRow({
+    ...visitResult(changeHref(change)),
+    detail: escapeHtml(changeSummary(change)),
+    marker: index < 9 ? index + 1 : "",
+    side: Date.now() - change.at < 60_000 ? "just now" : `${ago(change.at)} ago`,
+    tag: "button",
+    attrs: `type="button" role="option" aria-selected="false" data-visit-href="${escapeHtml(changeHref(change))}"`,
+  }));
 });
 // Every word must appear in the row's title or detail; the 1–9 markers renumber over what's left.
 function filterHistory() {

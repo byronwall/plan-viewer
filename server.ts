@@ -42,6 +42,11 @@ const PORT = Number(process.env.PLAN_VIEWER_PORT || process.env.PORT || config()
 const MAX_COMMENT_LENGTH = 12_000;
 const ASSET_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".dot"]);
 const liveClients = new Set<ServerResponse>();
+// Recent document changes, newest first, so a page opened later still sees what agents changed since the server started.
+const recentChanges: DocumentChange[] = [];
+const snapshots = new Map<string, string>();
+// Paths the viewer itself just wrote (task status), so their change isn't announced as an agent's.
+const viewerWrites = new Set<string>();
 
 // The viewer's own checkout: what it runs, what is on disk, and how far origin is ahead (fetched at most every five minutes).
 const VIEWER = fileURLToPath(new URL(".", import.meta.url));
@@ -276,6 +281,61 @@ export function watchMarkdownSources(onChange: (path: string) => void, root = RO
     for (const timer of pending.values()) clearTimeout(timer);
     for (const watcher of watchers) watcher.close();
   };
+}
+
+export type DocumentChange = {
+  path: string;
+  title: string;
+  at: number;
+  kind: "created" | "changed" | "deleted";
+  added: number;
+  removed: number;
+  sections: { title: string; anchor: string }[];
+  source: "agent" | "viewer";
+};
+
+// A line-level summary of an edit: how many lines came and went, and the headings they sit under.
+// ponytail: multiset line comparison, not a real diff; moved lines count as unchanged, which suits a notification.
+export function describeChange(path: string, before: string | undefined, after: string | undefined): Omit<DocumentChange, "at" | "source"> {
+  const kind = before === undefined ? "created" : after === undefined ? "deleted" : "changed";
+  const sections = new Map<string, string>();
+  const count = (from: string, against: string) => {
+    const remaining = new Map<string, number>();
+    for (const line of against.split("\n")) remaining.set(line, (remaining.get(line) || 0) + 1);
+    let heading = "";
+    let changed = 0;
+    for (const line of from.split("\n")) {
+      const match = /^#{1,6}\s+(.+?)\s*#*$/.exec(line);
+      if (match) heading = match[1];
+      if (remaining.get(line)) { remaining.set(line, remaining.get(line)! - 1); continue; }
+      if (!line.trim()) continue;
+      changed++;
+      if (heading && sections.size < 3) sections.set(markdownHeadingId(heading), heading.replace(/[`*_~]/g, ""));
+    }
+    return changed;
+  };
+  const added = count(after || "", before || "");
+  const removed = count(before || "", after || "");
+  const text = after ?? before ?? "";
+  const title = extname(path) === ".md" ? titleFromMarkdown(text, basename(path)) : basename(path);
+  return { path, title, kind, added, removed, sections: [...sections].map(([anchor, title]) => ({ title, anchor })) };
+}
+
+async function seedSnapshots() {
+  const paths = (await Promise.all(["daily", "tasks", "plans", "reference"].map(walkDocuments))).flat().filter(isViewableDocumentPath);
+  await Promise.all(paths.map(async (path) => snapshots.set(path, await readFile(join(ROOT, path), "utf8").catch(() => ""))));
+}
+
+async function recordChange(path: string) {
+  const after = await readFile(join(ROOT, path), "utf8").catch(() => undefined);
+  const before = snapshots.get(path);
+  if (after === before) return null;
+  if (after === undefined) snapshots.delete(path);
+  else snapshots.set(path, after);
+  const change: DocumentChange = { ...describeChange(path, before, after), at: Date.now(), source: viewerWrites.delete(path) ? "viewer" : "agent" };
+  recentChanges.unshift(change);
+  recentChanges.splice(50);
+  return change;
 }
 
 function titleFromMarkdown(markdown: string, fallback: string) {
@@ -637,8 +697,9 @@ function serveLiveEvents(request: IncomingMessage, response: ServerResponse) {
   });
 }
 
-function broadcastMarkdownChange(path: string) {
-  const message = `event: markdown\ndata: ${JSON.stringify({ path })}\n\n`;
+async function broadcastMarkdownChange(path: string) {
+  const change = await recordChange(path);
+  const message = `event: markdown\ndata: ${JSON.stringify({ path, change })}\n\n`;
   for (const client of liveClients) client.write(message);
 }
 
@@ -740,8 +801,10 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const keys = Array.isArray(body.keys) ? body.keys.map(String).slice(0, 1000) : [];
       return json(response, 200, { metadata: { ...await lookupLinkMetadata(keys), ...issueTracker.aliasMetadata(keys) } });
     }
+    if (request.method === "GET" && url.pathname === "/api/changes") return json(response, 200, { changes: recentChanges });
     if (request.method === "POST" && url.pathname === "/api/task-status") {
       const body = await readJson(request);
+      viewerWrites.add(String(body.path || ""));
       return json(response, 200, { task: await setTaskStatus(String(body.path || ""), String(body.status || "")) });
     }
     if (request.method === "POST" && url.pathname === "/api/dispatch") {
@@ -770,6 +833,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
 export function startServer(port = PORT) {
   const server = createServer(handleRequest);
+  seedSnapshots().catch(() => {});
   const closeWatchers = watchMarkdownSources(broadcastMarkdownChange);
   codeDashboard.startBackgroundRefresh();
   issueTracker.startBackgroundRefresh();

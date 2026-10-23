@@ -7,7 +7,7 @@ import { createLinkMetadataStore, refreshSlackChannels } from "./link-metadata.t
 import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle, withImages } from "./codex-desktop.ts";
 import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
 import { buildWeeks, dateKey, parseDateKey, startOfWeek } from "./public/weeks.js";
-import { ROOT, buildCodexPrompt, saveHandoffImages, dailyDigest, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize } from "./server.ts";
+import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, dailyDigest, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
   const previous = process.env.SLACK_TOKEN;
@@ -706,4 +706,15 @@ test("an active task with only blocked actions explains what it is waiting on", 
   assert.equal(task.nextActions[0].blockedReason, "After W1");
   assert.match(task.actionWarnings.join(" "), /no ready next action: “Compare released versions” \(W2 is open, after W1\)/);
   assert.deepEqual((await loadDocument("tasks/TASK-0015.md")).actionWarnings, []);
+});
+
+test("summarizes a document edit by lines and the headings they sit under", () => {
+  const before = "# Plan\n\n## Goals\n\n- Ship it\n\n## Notes\n\nNothing yet\n";
+  const after = "# Plan\n\n## Goals\n\n- Ship it\n- Test it\n\n## Notes\n\nFound the bug\n";
+  assert.deepEqual(describeChange("plans/x.md", before, after), {
+    path: "plans/x.md", title: "Plan", kind: "changed", added: 2, removed: 1,
+    sections: [{ title: "Goals", anchor: "goals" }, { title: "Notes", anchor: "notes" }],
+  });
+  assert.equal(describeChange("plans/x.md", undefined, after).kind, "created");
+  assert.equal(describeChange("plans/x.md", before, undefined).kind, "deleted");
 });
