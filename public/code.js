@@ -2708,21 +2708,41 @@ function handleKey(event) {
 // One tooltip element on <body>, clamped to the viewport, so tips escape scrolling panes and never cause overflow.
 let tip = null;
 let tipHiddenAt = 0;
+let tipTimer = 0;
+let tipTarget = null;
+// A tip waits for the pointer to rest on its target, so sweeping across a dense table opens nothing. Once one is
+// showing (or just closed), neighbours open at once with no animation, so reading along a row stays fast.
+const TIP_DELAY_MS = 450;
+const TIP_WARM_MS = 400;
 function showTip(target) {
+  if (target === tipTarget) return;
+  tipTarget = target;
+  window.clearTimeout(tipTimer);
+  const warm = tip?.classList.contains("is-visible") || Date.now() - tipHiddenAt < TIP_WARM_MS;
+  if (warm) revealTip(target, true);
+  else tipTimer = window.setTimeout(() => { if (tipTarget === target && target.isConnected) revealTip(target, false); }, TIP_DELAY_MS);
+}
+function revealTip(target, instant) {
   tip ||= Object.assign(document.body.appendChild(document.createElement("div")), { className: "code-tip", role: "tooltip", popover: "manual" });
   // A popover sits in the top layer; reopening it puts it above any overlay opened since.
   if (!tip.classList.contains("is-visible")) { if (tip.matches(":popover-open")) tip.hidePopover(); tip.showPopover(); }
-  tip.classList.toggle("is-instant", tip.classList.contains("is-visible") || Date.now() - tipHiddenAt < 300);
+  tip.classList.toggle("is-instant", instant);
   tip.textContent = target.dataset.tip;
-  tip.classList.add("is-visible");
   const anchor = target.getBoundingClientRect();
   const box = tip.getBoundingClientRect();
   const left = Math.max(8, Math.min(innerWidth - box.width - 8, anchor.left + anchor.width / 2 - box.width / 2));
   const above = anchor.top - box.height - 6;
   tip.style.left = `${left}px`;
   tip.style.top = `${above >= 8 ? above : anchor.bottom + 6}px`;
+  // Scale from the edge nearest the target, toward its center.
+  tip.style.transformOrigin = `${Math.round(anchor.left + anchor.width / 2 - left)}px ${above >= 8 ? "100%" : "0"}`;
+  tip.classList.add("is-visible");
 }
-const hideTip = () => { if (tip?.classList.contains("is-visible")) { tip.classList.remove("is-visible"); tipHiddenAt = Date.now(); } };
+const hideTip = () => {
+  window.clearTimeout(tipTimer);
+  tipTarget = null;
+  if (tip?.classList.contains("is-visible")) { tip.classList.remove("is-visible"); tipHiddenAt = Date.now(); }
+};
 
 // ---------- hover cards (whole app) ----------
 
