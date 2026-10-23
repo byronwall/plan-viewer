@@ -907,16 +907,8 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-empty p { margin: 0; }
 .code-empty b { color: var(--ink); font-weight: 600; }
 
-/* summary: one flat strip, numbers carry the color */
-.code-activity { flex: 0 0 210px; display: grid; grid-template-columns: repeat(30, 1fr); gap: 2px; align-items: end; padding-left: 12px; border-left: 1px solid #edf0f4; }
-.code-bar { display: flex; flex-direction: column-reverse; height: 100%; border: 0; border-radius: 2px; background: #f3f5f8; padding: 0; transition: background-color 140ms; }
-.code-bar:hover { background: #e7ebf2; }
-.code-bar.is-active { background: var(--selected); outline: 1.5px solid var(--action); }
-.code-bar-clean { background: #7d97e8; }
-.code-bar-dirty { background: var(--heat-warm); }
-
 /* toolbar */
-.code-toolbar { display: flex; align-items: stretch; gap: 12px; width: fit-content; max-width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 5px 8px; }
+.code-toolbar { display: grid; gap: 5px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 5px 8px; }
 .code-toolbar-rows { display: grid; gap: 5px; min-width: 0; }
 .code-toolbar-row { display: flex; align-items: center; gap: 8px; }
 .code-toolbar-row > :not(.code-filter, .code-spacer), .code-controls > * { flex: none; }
@@ -933,7 +925,6 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-filter svg { width: 13px; height: 13px; fill: none; stroke: var(--quiet-text); stroke-width: 1.6; flex: none; }
 .code-filter input { width: 100%; border: 0; outline: 0; padding: 5px 0; font-size: .8rem; background: none; }
 .code-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 5px; border-top: 1px solid #edf0f4; }
-.code-day-chip { border: 1px solid var(--action); border-radius: 8px; background: var(--selected); color: var(--action-ink); padding: 4px 9px; font-size: .78rem; font-weight: 600; }
 .code-check { white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: .78rem; }
 .code-guard-label, .agent-picker > span { color: var(--label-text); font-size: .66rem; font-weight: 650; line-height: 1.2; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
 @keyframes code-pulse { 50% { opacity: .25; } }

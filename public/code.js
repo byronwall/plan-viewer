@@ -8,7 +8,7 @@ export const TABS = { prs: "Pull requests", worktrees: "Worktrees", commits: "Co
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const ui = {
-  tab: "prs", data: null, filter: "", day: "", treeScope: "all", prScope: "all", prSort: "updated", hideDrafts: false, failingOnly: false,
+  tab: "prs", data: null, filter: "", treeScope: "all", prScope: "all", prSort: "updated", hideDrafts: false, failingOnly: false,
   showKeep: false, openDescriptions: new Set(), selected: new Set(), removed: new Set(), removing: null, poll: 0, sel: "", detail: new Map(),
   commitScope: "local", commits: new Map(), detailErrors: new Map(), branches: new Set(), prefixes: new Set(), branchQuery: "", branchActive: 0,
   authors: new Set(), authorQuery: "", authorActive: 0, repos: new Set(), runLogs: new Map(),
@@ -88,7 +88,6 @@ export function ago(time) {
 const bytes = (size) => size < 1024 ? `${size} B` : size < 1048576 ? `${(size / 1024).toFixed(size < 10240 ? 1 : 0)} KB` : size < 1073741824 ? `${(size / 1048576).toFixed(1)} MB` : `${(size / 1073741824).toFixed(1)} GB`;
 const when = (time) => `<time datetime="${new Date(time).toISOString()}" title="${escapeHtml(new Date(time).toLocaleString())}">${ago(time)}</time>`;
 const heat = (time) => { const age = Date.now() - new Date(time).getTime(); return age < 2 * HOUR ? "hot" : age < DAY ? "warm" : age < 7 * DAY ? "week" : "cold"; };
-const dayKey = (time) => { const d = new Date(time); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const shortPath = (path) => path.replace(/^\/Users\/[^/]+\/repos\//, "").replace(/^\/Users\/[^/]+/, "~");
 const repoName = (path) => path.split("/").pop();
 // Beside a repo mark the repo's own folder is noise, so a worktree inside it shows only the rest of its path.
@@ -177,24 +176,6 @@ const prState = (pr) => {
 };
 const labelDots = (pr) => (pr.labels || []).map((label) => `<span class="code-label" style="--label:#${escapeHtml(label.color.replace(/[^0-9a-f]/gi, ""))}">${escapeHtml(label.name)}</span>`).join("");
 
-// Worktrees by the day of their last activity, 30 days back; click a bar to filter to that day.
-function activityStrip(trees) {
-  const days = Array.from({ length: 30 }, (_, index) => dayKey(Date.now() - (29 - index) * DAY));
-  const counts = new Map(days.map((day) => [day, { dirty: 0, clean: 0 }]));
-  for (const tree of trees) {
-    const bucket = counts.get(dayKey(tree.activity));
-    if (bucket) bucket[tree.dirty > 0 ? "dirty" : "clean"]++;
-  }
-  const max = Math.max(1, ...[...counts.values()].map((count) => count.dirty + count.clean));
-  const bars = days.map((day) => {
-    const { dirty, clean } = counts.get(day);
-    const total = dirty + clean;
-    const label = new Date(`${day}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-    return `<button type="button" class="code-bar${ui.day === day ? " is-active" : ""}" data-code-day="${day}" data-tip="${label}: ${total} worktree${total === 1 ? "" : "s"}${dirty ? `, ${dirty} uncommitted` : ""}" aria-label="${label}, ${total} worktrees"><span class="code-bar-clean" style="height:${(clean / max) * 100}%"></span><span class="code-bar-dirty" style="height:${(dirty / max) * 100}%"></span></button>`;
-  }).join("");
-  return `<div class="code-activity" role="group" aria-label="Worktree activity, last 30 days" data-tip="Worktree activity, last 30 days">${bars}</div>`;
-}
-
 // ---------- worktrees ----------
 
 function visibleTrees() {
@@ -208,7 +189,6 @@ function visibleTrees() {
   return ui.data.worktrees
     .filter((tree) => !ui.removed.has(tree.path))
     .filter(scopes[ui.treeScope] || scopes.all)
-    .filter((tree) => !ui.day || dayKey(tree.activity) === ui.day)
     .filter(repoFilter)
     .filter((tree) => matches(`${tree.branch} ${tree.path} ${prFor(tree)?.title || ""}`));
 }
@@ -234,7 +214,6 @@ function emptyState(noun) {
     ui.tab === "prs" && ui.hideDrafts && "no drafts",
     ui.tab === "prs" && ui.failingOnly && "failing CI",
     ui.tab === "worktrees" && ui.treeScope !== "all" && scopes[ui.treeScope],
-    ui.tab === "worktrees" && ui.day && new Date(`${ui.day}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     ui.tab === "commits" && (ui.branches.size || ui.prefixes.size) && "picked branches",
     ui.repos.size && (ui.repos.size === 1 ? [...ui.repos][0] : "picked repos"),
     ui.tab !== "worktrees" && ui.authors.size && (ui.authors.size === 1 ? `${authorName([...ui.authors][0])}'s` : "picked authors"),
@@ -2071,6 +2050,14 @@ function commitList(commits, empty, where) {
 }
 
 const commitTarget = (params, subject, sub, context = null) => ({ params: { source: "commit", ...params }, title: subject || params.sha.slice(0, 8), sub, context });
+// The selected Commits row as an overlay target: its author and age in the subtitle, and its PR (or branch) beside them.
+function diffTarget() {
+  const { commit } = selectedItem();
+  if (!commit) return null;
+  const pr = ui.data.prs.find((candidate) => candidate.repo === commit.repo && candidate.branch === commit.branch);
+  const context = pr ? { prs: [{ ...pr, state: pr.draft ? "Draft" : "Open" }] } : commit.branch ? { branches: [commit.branch] } : null;
+  return commitTarget({ repo: commit.repo, sha: commit.sha, ...(pr ? { slug: pr.slug } : {}) }, commit.subject, `${repoName(commit.repo)} · ${commit.sha.slice(0, 8)} · ${commit.author} · ${ago(commit.time)} ago`, context);
+}
 
 function treeDetail(tree) {
   const pr = prFor(tree);
@@ -2250,9 +2237,8 @@ function toolbar() {
   if (ui.tab === "commits") controls = commitControls();
   if (ui.tab === "cleanup") controls = cleanupControls();
   controls = repoTrigger() + controls;
-  const day = ui.day ? `<button type="button" class="code-day-chip" data-code-day="${ui.day}">${new Date(`${ui.day}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })} ×</button>` : "";
-  // Sized to its content, with the activity strip spanning both rows; scanning shows as the spinning refresh icon, so nothing shifts.
-  return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-code-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span>${iconButton("refresh", ui.data.scanning ? "Scanning worktrees, CI, and PR history…" : "Refresh everything  (R)", `data-code-refresh class="code-icon-button${ui.data.scanning ? " is-spinning" : ""}"`)}${iconButton("settings", `Tracked repositories (${ui.data.repos.length})`, 'popovertarget="code-settings" data-code-settings')}</div>${controls || day ? `<div class="code-controls">${day}${controls}</div>` : ""}</div>${activityStrip(trees)}</div>`;
+  // Tabs and the filter on top, this tab's controls below; scanning shows as the spinning refresh icon, so nothing shifts.
+  return `<div class="code-toolbar"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-code-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span>${iconButton("refresh", ui.data.scanning ? "Scanning worktrees, CI, and PR history…" : "Refresh everything  (R)", `data-code-refresh class="code-icon-button${ui.data.scanning ? " is-spinning" : ""}"`)}${iconButton("settings", `Tracked repositories (${ui.data.repos.length})`, 'popovertarget="code-settings" data-code-settings')}</div><div class="code-controls">${controls}</div></div>`;
 }
 
 // Tracked repositories live in a settings popover opened from the toolbar gear.
@@ -2490,7 +2476,7 @@ function syncUrl() {
 }
 
 function resetFilters() {
-  Object.assign(ui, { filter: "", day: "", treeScope: "all", prScope: "all", hideDrafts: false, failingOnly: false });
+  Object.assign(ui, { filter: "", treeScope: "all", prScope: "all", hideDrafts: false, failingOnly: false });
   ui.branches.clear(); ui.prefixes.clear(); ui.authors.clear(); ui.repos.clear(); syncUrl();
   const input = host?.querySelector("[data-code-filter]");
   if (input) input.value = "";
@@ -2578,7 +2564,6 @@ async function handleClick(event) {
   try {
     if (dataset.codeCopy !== undefined) return copy(target, dataset.codeCopy);
     if (dataset.codeTab) { ui.tab = codeTab(dataset.codeTab); syncUrl(); return render({ animate: true }); }
-    if (dataset.codeDay) { ui.day = ui.day === dataset.codeDay ? "" : dataset.codeDay; ui.tab = "worktrees"; ui.treeScope = "all"; syncUrl(); return render({ animate: true }); }
     if (dataset.codeGuard) {
       cleanupGuard = dataset.codeGuard;
       storage.set("code-cleanup-guard", cleanupGuard);
