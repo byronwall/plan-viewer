@@ -2409,11 +2409,12 @@ const planResult = (item, terms) => ({
   side: item.source === "pr" ? "Proposed" : escapeHtml(item.status[0].toUpperCase() + item.status.slice(1)),
 });
 const renderPlanResult = ({ plan }, index, terms) => resultRow({ ...planResult(plan, terms), attrs: searchAttrs(index) });
-const renderWorkResult = ({ work, doc }, index, terms) => resultRow({
-  icon: "list", tone: `work is-${escapeHtml(work.status)}`, attrs: searchAttrs(index),
+const workResult = ({ work, doc }, terms) => ({
+  icon: "list", tone: `work is-${escapeHtml(work.status)}`,
   title: `<span class="search-pr-number">${highlightTerms(work.id, terms)}</span> ${highlightTerms(work.title, terms)}`,
   detail: `<code>${escapeHtml(doc.task.id)}</code> · ${escapeHtml(doc.task.title)}`, side: escapeHtml(work.status[0].toUpperCase() + work.status.slice(1)),
 });
+const renderWorkResult = (hit, index, terms) => resultRow({ ...workResult(hit, terms), attrs: searchAttrs(index) });
 
 // A key (`OPS-12`, or a bare number matching the end of one), an old key it was imported from, or words from the title.
 function searchIssues(query, terms) {
@@ -2872,7 +2873,7 @@ let visits = [];
 try { visits = JSON.parse(localStorage.getItem(VISITS_KEY) || "[]"); } catch {}
 const pageKey = (url) => {
   const params = new URLSearchParams(url.search);
-  for (const name of ["pr", "wt", "issue", "file", "scope"]) params.delete(name);
+  for (const name of ["pr", "wt", "issue", "file", "scope", "graph"]) params.delete(name);
   return params.toString();
 };
 const visitKey = (url) => (url.searchParams.get("pr") ? `pr:${url.searchParams.get("pr")}` : url.searchParams.get("wt") ? `wt:${url.searchParams.get("wt")}` : url.searchParams.get("issue") ? `issue:${url.searchParams.get("issue")}` : pageKey(url));
@@ -2911,6 +2912,9 @@ function visitResult(href) {
   if (view === "weeks") return page("plan", "Weeks", params.get("date") ? `Week of ${formatDate(params.get("date"))}` : "This week");
   if (view in LIBRARY_VIEWS) return page(view === "topics" ? "topic" : "reference", LIBRARY_VIEWS[view].title, LIBRARY_VIEWS[view].intro);
   const path = params.get("path") || state.defaultPath;
+  // A work item dialog (`?item=`) is its own place, not the task behind it.
+  const work = doc(path)?.task?.work?.find((candidate) => candidate.id === params.get("item"));
+  if (work) return workResult({ work, doc: doc(path) }, []);
   return doc(path) ? docResult(doc(path), []) : { icon: "file", title: escapeHtml(path), detail: "No longer in the planning folders", side: "Document" };
 }
 
