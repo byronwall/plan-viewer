@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { execFile } from "node:child_process";
 import { readFileSync, watch, type FSWatcher } from "node:fs";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -42,6 +42,29 @@ const PORT = Number(process.env.PLAN_VIEWER_PORT || process.env.PORT || config()
 const MAX_COMMENT_LENGTH = 12_000;
 const ASSET_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".dot"]);
 const liveClients = new Set<ServerResponse>();
+
+// The viewer's own checkout: what it runs, what is on disk, and how far origin is ahead (fetched at most every five minutes).
+const VIEWER = fileURLToPath(new URL(".", import.meta.url));
+const viewerGit = async (...args: string[]) => (await promisify(execFile)("git", args, { cwd: VIEWER, timeout: 60_000 })).stdout.trim();
+const runningHead = await viewerGit("rev-parse", "HEAD").catch(() => "");
+let lastFetch = 0;
+async function viewerVersion() {
+  if (Date.now() - lastFetch > 5 * 60_000) {
+    lastFetch = Date.now();
+    await viewerGit("fetch", "--quiet").catch(() => {});
+  }
+  const [head, behind] = await Promise.all([viewerGit("rev-parse", "HEAD"), viewerGit("rev-list", "--count", "HEAD..@{u}").then(Number, () => 0)]);
+  return { running: runningHead, head, behind, watched: Boolean(process.env.PLAN_VIEWER_WATCHED) };
+}
+// Pulls when origin is ahead, then restarts: under `plan-viewer serve`, `node --watch` restarts when a loaded file's
+// mtime changes, so touching this file restarts the server even when the pull only changed client files.
+async function updateViewer() {
+  const version = await viewerVersion();
+  if (version.behind) await viewerGit("pull", "--ff-only");
+  const head = await viewerGit("rev-parse", "HEAD");
+  if (version.watched && head !== runningHead) setTimeout(() => utimes(fileURLToPath(import.meta.url), new Date(), new Date()), 200);
+  return { ...version, head, behind: 0 };
+}
 let dispatchSequence = 0;
 
 function dispatchLog(requestId: string, stage: string, details: Record<string, unknown> = {}) {
@@ -611,6 +634,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       await promisify(execFile)("open", await slackDeepLink(target).then((link) => [link], () => ["-a", "Slack", target]));
       return json(response, 200, { opened: true });
     }
+    if (request.method === "GET" && url.pathname === "/api/version") return json(response, 200, await viewerVersion());
+    if (request.method === "POST" && url.pathname === "/api/version/update") return json(response, 200, await updateViewer());
     if (request.method === "GET" && url.pathname === "/api/config") return json(response, 200, config());
     if (request.method === "GET" && url.pathname === "/api/code") return json(response, 200, await codeDashboard.load(url.searchParams.has("refresh")));
     if (request.method === "GET" && url.pathname === "/api/code/plans") return json(response, 200, await plans.load(url.searchParams.has("refresh")));

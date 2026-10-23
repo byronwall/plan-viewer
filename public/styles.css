@@ -183,6 +183,14 @@ button { cursor: pointer; }
 .history-filter input { min-width: 0; flex: 1; height: 44px; border: 0; background: none; padding: 0; color: var(--ink); font: inherit; font-size: .95rem; outline: none; }
 .history-filter input::-webkit-search-cancel-button { display: none; }
 .history-filter kbd { color: var(--muted); }
+/* Shown only when the viewer is out of date: origin is ahead, the server predates the checkout, or this page predates the server. */
+.viewer-update { position: fixed; right: 56px; bottom: 16px; z-index: 60; height: 32px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--action); border-radius: 8px; background: var(--paper); padding: 0 10px; color: var(--action-ink); font: inherit; font-size: .78rem; font-weight: 600; box-shadow: 0 2px 8px rgba(24, 33, 47, .08); cursor: pointer; transition: background-color 140ms, color 140ms; }
+.viewer-update[hidden] { display: none; }
+.viewer-update:hover { background: var(--selected); }
+.viewer-update:active { scale: .96; }
+.viewer-update:disabled { cursor: progress; opacity: .7; }
+.viewer-update:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+.viewer-update svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .history-button-key { position: absolute; right: -5px; bottom: -5px; min-width: 13px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); padding: 0 2px; color: var(--muted); font: 600 .58rem/12px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; }
 .history-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .document-body { min-width: 0; }

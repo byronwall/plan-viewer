@@ -1356,6 +1356,46 @@ function scheduleMarkdownRefresh(path) {
   }, 120);
 }
 
+// The viewer's own version: a corner button appears when origin has new commits (pull and restart), the server predates
+// the checkout (restart), or this page predates the server (reload). Checked on load and every five minutes.
+const updateButton = document.querySelector("#viewer-update");
+let pageHead = "";
+async function checkViewerVersion() {
+  const version = await fetch("/api/version").then((response) => response.json()).catch(() => null);
+  if (!version?.head || updateButton.disabled) return;
+  pageHead ||= version.running;
+  const [label, title] = version.behind ? [`Update viewer · ${version.behind} new`, "Pull the latest viewer and restart it"]
+    : version.running !== version.head ? ["Restart viewer", "The server is running an older commit than the checkout"]
+    : pageHead !== version.running ? ["Reload viewer", "This page loaded an older version than the server runs"] : [];
+  updateButton.hidden = !label;
+  if (!label) return;
+  updateButton.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2.5v2.4h-2.4"/></svg><span></span>`;
+  updateButton.querySelector("span").textContent = label;
+  updateButton.title = title;
+  updateButton.dataset.action = version.behind || version.running !== version.head ? "update" : "reload";
+}
+updateButton.addEventListener("click", async () => {
+  if (updateButton.dataset.action === "reload") return location.reload();
+  updateButton.disabled = true;
+  updateButton.querySelector("span").textContent = "Updating…";
+  const result = await fetch("/api/version/update", { method: "POST" }).then((response) => response.json()).catch((error) => ({ error: error.message }));
+  if (result.error || !result.watched) {
+    updateButton.disabled = false;
+    showNotice(result.error ? "Couldn't update the viewer" : "Pulled the latest viewer; restart it to run it", Boolean(result.error), { description: result.error || "This server isn't running under plan-viewer serve, which restarts itself." });
+    return checkViewerVersion();
+  }
+  // Wait for the restarted server to report the new commit, then load the new client.
+  for (let tries = 0; tries < 60; tries++) {
+    await new Promise((done) => setTimeout(done, 500));
+    const version = await fetch("/api/version").then((response) => response.json()).catch(() => null);
+    if (version?.running === result.head) return location.reload();
+  }
+  updateButton.disabled = false;
+  showNotice("The viewer didn't come back on the new version", true, { description: "Check the terminal running plan-viewer serve." });
+});
+checkViewerVersion();
+setInterval(checkViewerVersion, 5 * 60_000);
+
 function connectLiveUpdates() {
   const events = new EventSource("/api/events");
   events.addEventListener("markdown", (event) => {
