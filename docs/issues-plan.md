@@ -2,7 +2,7 @@
 
 A Jira issues view for Modeler work, built by the same rules as the Code view ([code-view.md](code-view.md)). It is a dense, keyboard-first, read-only workspace that makes sense of everything going on, with agents doing any writing.
 
-Status: milestones 1–6 are built (Oct 21, 2026). The README's "Issues" section describes the behavior. Deviations from this plan are listed under "Built" at the end.
+Status: milestones 1–6 are built (Oct 21, 2026). [guide.md](guide.md#issues) describes the behavior. Deviations from this plan are listed under "Built" at the end.
 
 ## Decisions already made (Byron, Oct 21, 2026)
 

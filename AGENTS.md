@@ -1,6 +1,21 @@
 # Plan Viewer: agent guide
 
-For agents changing the viewer. User-facing behavior and configuration are described in `README.md`. Content lives in separate planning workspaces (Byron's is `/Users/byronwall/repos/daily-planning`); never add workspace content here.
+For agents changing the viewer. Content lives in separate planning workspaces; never add real workspace content here.
+
+## Setup
+
+Node.js 22.6+ and nothing else. `npm install` (no packages; it enables the pre-commit hook), then `npm test` and `npm run demo`. If you are setting up a planning workspace for someone rather than changing the viewer, follow the README's "Use it with your own plans" and copy `examples/workspace/AGENTS.md` and `CLAUDE.md` into the workspace.
+
+## Docs
+
+| File | Holds | Update when |
+| --- | --- | --- |
+| `README.md` | The product intro: what it does, screenshots, setup, commands. Keep it short; detail goes in `docs/`. | Setup, commands, or a headline feature changes. |
+| `docs/guide.md` | Every page, shortcut, and behavior. | Any user-visible behavior changes. |
+| `docs/configuration.md` | Every `viewer.config.json` key and environment variable. | A key or variable is added or changed. |
+| `docs/code-view.md`, `docs/issues-plan.md`, `docs/plans-plan.md` | Design intent and plans for those surfaces. | Before adding a list/inspector/overview surface, read `code-view.md`. |
+| `docs/images/` | README screenshots, made by `scripts/screenshots.mjs` from `examples/workspace/`. | A pictured screen changes visibly. |
+| `examples/workspace/` | The demo and the template for new workspaces, including the workspace-side `AGENTS.md`. | The content format changes (it must pass `plan-viewer lint` and `links`). |
 
 ## Layout
 
@@ -25,25 +40,24 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 
 ## Commands
 
-- `npm test` runs every `*.test.*` file against `fixtures/planning/` (set by `PLANNING_ROOT`), never live planning files. It should always be green; a failure is yours.
-- `npm run demo` serves the fixtures. Against a real workspace, run `node /path/to/plan-viewer/cli.ts <serve|lint|links|move|task>` from that workspace.
+- `npm test` runs every `*.test.*` file against `fixtures/planning/` (set by `PLANNING_ROOT`), never live planning files. It should always be green; a failure is yours. New test files must be added to the `test` script in `package.json`.
+- `npm run demo` serves `examples/workspace/` on 4173 (`PLAN_VIEWER_PORT` to change). `fixtures/` is for tests only; keep demo content in `examples/`. Against a real workspace, run `node /path/to/plan-viewer/cli.ts <serve|lint|links|move|task>` from that workspace.
+- `PLAN_VIEWER_DRY_RUN=1` makes agent handoffs validate and log without opening Codex or Claude, for testing the draft flow.
+- `npm install --no-save playwright-core && node scripts/screenshots.mjs [name,…]` regenerates `docs/images/` with installed Chrome; then `oxipng -o 4 --strip safe docs/images/*.png`.
 - `.githooks/pre-commit` (enabled by `npm install`) runs `npm test`. `hooks/pre-commit` is the hook planning workspaces install; it is not this repository's.
 
 ## Gotchas
 
 - Server changes (`*.ts`) need a server restart; client changes in `public/` need only a reload.
-- Byron's own viewer runs on 4173. For previews, start another port with `PLAN_VIEWER_PORT`.
+- Byron's own viewer runs on 4173. For previews, start another port with `PLAN_VIEWER_PORT` (`.claude/launch.json`'s `demo` uses 4176).
 - `html` has `scroll-behavior: smooth`, so a plain `window.scrollTo(0, y)` animates and may not move at all in a background preview pane. Use `window.scrollTo({ top: y, behavior: "instant" })`. The library rail (`nav.documents`) scrolls on its own.
 - `/api/issues` answers from cache; the first live sync takes about two minutes. Wait for `[data-issues-state="ready"]`. `acli jira workitem search --fields key` returns nulls, so searches ask for `status`.
 - `/api/code` takes several seconds on its first scan. Wait for `[data-code-state="ready"]` (and `[data-commits-state="ready"]` on the Commits tab) instead of polling the table.
 - Load the `byron-ui-taste` skill in full before any UI change in `public/`.
 
-## Design intent
-
-`docs/code-view.md` records why the Code view works the way it does; read it before adding a new list/inspector/overview surface. `docs/issues-plan.md` is the plan for the Jira issues view.
-
 ## Rules
 
-- Keep the viewer generic. Anything that names a person, organization, repository, tracker, tool path, or skill belongs in `viewer.config.json` with a neutral default in `public/config.js`, documented in the README's configuration table. Fixtures and tests use the fictional `acme` organization.
+- Keep the viewer generic. Anything that names a person, organization, repository, tracker, tool path, or skill belongs in `viewer.config.json` with a neutral default in `public/config.js`, documented in `docs/configuration.md`. Fixtures, examples, and tests use the fictional `acme` organization.
+- Document behavior changes in `docs/guide.md` in the same commit, not in the README.
 - The workspace layout (`daily/`, `tasks/TASK-NNNN.md`, `plans/`, `reference/`) is the content format, not configuration.
 - Commit completed changes as you go on the existing branch, after `npm test` passes.

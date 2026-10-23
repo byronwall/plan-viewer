@@ -1,6 +1,6 @@
 # Code view: intent and principles
 
-The Code view (`?view=code`) covers worktrees, pull requests, commits, cleanup, and the PR and worktree overviews. Its behavior is in the README's "Code dashboard" section. This document records why it exists and the rules it was built by, so new surfaces, starting with Jira issues ([issues-plan.md](issues-plan.md)), can follow them.
+The Code view (`?view=code`) covers worktrees, pull requests, commits, cleanup, and the PR and worktree overviews. Its behavior is described in [guide.md](guide.md#code-view). This document records why it exists and the rules it was built by, so new surfaces, starting with Jira issues ([issues-plan.md](issues-plan.md)), can follow them.
 
 Sources: Byron's own words from 34 Claude Code sessions in `daily-planning` and `plan-viewer` (Oct 13–21, 2026), and the `daily-planning` git history from when the viewer lived in `viewer/`. Codex threads held almost nothing about this view. Quotes are verbatim, with their dates.
 

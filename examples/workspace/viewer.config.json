@@ -1,0 +1,24 @@
+{
+  "title": "Plan Viewer",
+  "user": "Alex",
+  "github": { "owner": "acme", "defaultRepo": "atlas", "repos": ["Orbit"] },
+  "trackers": [
+    { "prefix": "ATL", "service": "linear", "url": "https://linear.app/acme/issue/{id}" },
+    { "prefix": "OPS", "service": "jira", "url": "https://acme.atlassian.net/browse/{id}" }
+  ],
+  "issues": {
+    "jql": "component = Atlas",
+    "command": ["node", "../../fixtures/jira/fake-acli.js"],
+    "hideLabels": ["security"],
+    "triage": { "statuses": ["Needs Triage"], "labels": ["linear-migration"] },
+    "skills": [
+      {
+        "id": "triage",
+        "label": "Triage",
+        "icon": "review",
+        "prompt": "Triage these Jira issues: for each, propose a status, priority, assignee, and parent epic, and say what is unclear."
+      }
+    ],
+    "fields": { "start": "customfield_10015", "confidence": "customfield_10281", "statusUpdate": "customfield_10283" }
+  }
+}

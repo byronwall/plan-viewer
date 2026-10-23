@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "description": "A local reading desk for Markdown daily plans, tasks, and the code they touch.",
   "private": true,
+  "repository": "github:byronwall/plan-viewer",
   "type": "module",
   "bin": { "plan-viewer": "cli.ts" },
   "engines": { "node": ">=22.6" },
   "scripts": {
     "test": "PLANNING_ROOT=fixtures/planning node --experimental-strip-types --test --test-reporter=dot server.test.ts code-dashboard.test.ts search.test.js code-diff.test.js pr-notes.test.ts check-planning.test.ts config.test.js issues.test.ts local-runs.test.ts plans.test.ts",
-    "demo": "PLANNING_ROOT=fixtures/planning node --experimental-strip-types server.ts",
+    "demo": "PLANNING_ROOT=examples/workspace node --experimental-strip-types server.ts",
     "hooks:install": "git config core.hooksPath .githooks",
     "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true"
   }

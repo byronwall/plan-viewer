@@ -2,7 +2,7 @@
 
 A read-only view of the initiatives (`initiative-map.json` plus the briefs beside it) in every tracked repository, shown as a fourth tab of the Code view next to Worktrees, PRs and Commits. It brings over the reading half of `tk view`'s Initiatives tab (`~/Projects/ticket/plugins/ticket-view`) and follows the Code view's rules ([code-view.md](code-view.md)).
 
-Status: milestones 1–5 are built (Oct 22, 2026). The README's Code dashboard section describes the behavior. Deviations from this plan are listed under "Built" at the end.
+Status: milestones 1–5 are built (Oct 22, 2026). [guide.md](guide.md#code-view) describes the behavior. Deviations from this plan are listed under "Built" at the end.
 
 ## Decisions already made (Byron, Oct 22, 2026)
 

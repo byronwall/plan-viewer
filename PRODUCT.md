@@ -20,7 +20,7 @@ The viewer treats the workspace's structured Markdown as an interface: files bec
 
 ## Operating Context
 
-The app runs locally on a Mac against one planning workspace, configured by its `viewer.config.json`. All document edits happen through agents. The Codex desktop app is the destination for dispatched work.
+The app runs locally on a Mac against one planning workspace, configured by its `viewer.config.json`. All document edits happen through agents. Codex Desktop or Claude Desktop, picked in the sidebar, is the destination for dispatched work.
 
 ## Capabilities and Constraints
 
