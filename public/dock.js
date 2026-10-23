@@ -138,13 +138,18 @@ function slackChannels(group) {
   }).join("");
 }
 
-// Sources down the left, one source's links on the right; the first source starts selected.
+// A tab per source across the top, with "All" first: every link grouped by source, to scroll through in one go.
+// 1–9 pick a tab while the panel is open (app.js).
 function linkBrowser(groups) {
-  const tabs = groups.map((group, index) => `<button type="button" class="dock-source" role="tab" data-dock-source="${group.key}" aria-selected="${index === 0}"><span class="dock-link-icon">${group.icon}</span><span>${escapeHtml(group.name)}</span><small>${group.items.length}</small></button>`).join("");
+  const total = groups.reduce((sum, group) => sum + group.items.length, 0);
+  const tab = (key, name, icon, count, index) => `<button type="button" class="dock-source" role="tab" data-dock-source="${key}" aria-selected="${index === 0}" title="${escapeHtml(name)} (${index + 1})">${icon ? `<span class="dock-link-icon">${icon}</span>` : ""}<span>${escapeHtml(name)}</span><small>${count}</small></button>`;
+  const tabs = [tab("all", "All", "", total, 0), ...groups.map((group, index) => tab(group.key, group.name, group.icon, group.items.length, index + 1))].join("");
   const rows = (group) => group.key === "slack" ? slackChannels(group) : group.items.map((item) => linkRow(item, group.key === "tasks" ? group.icon : "")).join("");
   const labeled = (group) => group.key === "tasks" || group.items.some((item) => item.label);
-  const panes = groups.map((group, index) => linkList(rows(group), labeled(group), `role="tabpanel" data-dock-source-list="${group.key}"${index === 0 ? "" : " hidden"}`)).join("");
-  return `<div class="dock-link-browser"><div class="dock-sources" role="tablist" aria-orientation="vertical">${tabs}</div><div class="dock-source-lists">${panes}</div></div>`;
+  const all = groups.map((group) => `<section class="dock-channel dock-group"><h4 class="dock-channel-heading dock-group-heading"><span class="dock-link-icon">${group.icon}</span><span class="dock-channel-name">${escapeHtml(group.name)}</span><small>${group.items.length}</small></h4>${rows(group)}</section>`).join("");
+  const panes = linkList(all, true, 'role="tabpanel" data-dock-source-list="all"')
+    + groups.map((group) => linkList(rows(group), labeled(group), `role="tabpanel" data-dock-source-list="${group.key}" hidden`)).join("");
+  return `<div class="dock-link-browser"><div class="dock-sources" role="tablist">${tabs}</div><div class="dock-source-lists">${panes}</div></div>`;
 }
 
 function countUpdates(markdown) {
@@ -186,7 +191,7 @@ export function renderDock({ doc, documents, links, body }) {
   const latest = entries?.map((entry) => entry.date).sort().at(-1);
   if (updates) add("updates", "Updates", ICONS.updates, `${entries?.length || countUpdates(updates.markdown) || ""}`, updates.title, latest ? `Latest ${relativeDate(latest)} · ${entries.length} ${entries.length === 1 ? "entry" : "entries"}` : "Recorded in the task", body(updates), updates.id);
   if (subDocuments.length) add("documents", "Documents", ICONS.doc, `${subDocuments.length}`, "Task documents", `${subDocuments.length} in ${taskId}-assets`, linkList(`${parentTask ? linkRow(docItem(parentTask, parentTask.path), SERVICE_ICONS.task) : ""}${subDocuments.map((sub) => linkRow({ ...docItem(sub, sub.path, ""), current: sub.path === doc.path }, ICONS.doc)).join("")}`, true));
-  add("links", "Links", ICONS.links, `${linkCount}`, "Links out", linkCount ? `${linkCount} across ${links.length} ${links.length === 1 ? "source" : "sources"}` : "No links in this document", linkCount ? linkBrowser(links) : '<p class="dock-empty">This document doesn\'t link anywhere yet.</p>');
+  add("links", "Links", ICONS.links, `${linkCount}`, "Links out", linkCount ? `${linkCount} across ${links.length} ${links.length === 1 ? "source" : "sources"} · 1–${links.length + 1} switch tabs` : "No links in this document", linkCount ? linkBrowser(links) : '<p class="dock-empty">This document doesn\'t link anywhere yet.</p>');
   add("backlinks", "Backlinks", ICONS.backlinks, `${backlinks.length}`, "Linked from", backlinks.length ? `${backlinks.length} ${backlinks.length === 1 ? "document links" : "documents link"} here` : "Nothing links here yet", backlinks.length
     ? linkList(backlinks.map((source) => linkRow(docItem(source, source.path), source.task ? SERVICE_ICONS.task : ICONS.doc)).join(""), true)
     : '<p class="dock-empty">No other document mentions this one yet.</p>');

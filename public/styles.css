@@ -880,9 +880,9 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .doc-dock-panel-links { width: min(860px, calc(100vw - 24px)); height: min(72vh, 600px); }
 .doc-dock-panel-links:popover-open { display: flex; flex-direction: column; overflow: hidden; }
 .doc-dock-panel-links .doc-dock-panel-body { flex: 1; min-height: 0; padding: 0; }
-.dock-link-browser { height: 100%; display: grid; grid-template-columns: 148px minmax(0, 1fr); }
-.dock-sources { display: grid; align-content: start; gap: 2px; overflow-y: auto; border-right: 1px solid var(--line); background: #f8f9fb; padding: 6px; }
-.dock-source { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 8px; border: 0; border-radius: 6px; background: transparent; padding: 5px 8px; color: var(--body-ink); font-size: .78rem; font-weight: 600; text-align: left; }
+.dock-link-browser { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.dock-sources { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); background: #f8f9fb; padding: 5px 10px; }
+.dock-source { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 6px; background: transparent; padding: 4px 9px; color: var(--body-ink); font-size: .78rem; font-weight: 600; white-space: nowrap; transition: background-color 140ms ease, color 140ms ease; }
 .dock-source:hover { background: rgba(24, 33, 47, .055); color: var(--ink); }
 .dock-source[aria-selected="true"] { background: var(--paper); color: var(--action-ink); box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(24, 33, 47, .06); }
 .dock-source small { color: var(--quiet-text); font: 700 .64rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
@@ -895,6 +895,12 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .dock-source-list[hidden] { display: none; }
 .dock-channel { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; }
 .dock-channel + .dock-channel { margin-top: 2px; }
+/* In "All", sources are the sticky headings and Slack's channels become quieter subheadings under them. */
+.dock-group + .dock-group { margin-top: 8px; }
+.dock-group-heading { align-items: center; }
+.dock-group-heading .dock-link-icon { margin-right: 0; color: var(--muted); }
+.dock-group .dock-channel .dock-channel-heading { position: static; padding-top: 4px; }
+.dock-group .dock-channel .dock-channel-name { color: var(--body-ink); font-size: .75rem; }
 .dock-channel-heading { grid-column: 1 / -1; position: sticky; top: -6px; z-index: 1; display: flex; align-items: baseline; gap: 8px; margin: 0 -6px; background: rgba(255, 255, 255, .94); padding: 7px 16px 3px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 .dock-channel-name { color: var(--ink); font-size: .8rem; font-weight: 700; letter-spacing: -.005em; }
 .dock-channel-name.is-unnamed { color: var(--muted); }
@@ -919,7 +925,6 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 @keyframes dock-state-in { from { opacity: 0; } }
 .dock-link-out { color: var(--muted); font-size: .72rem; line-height: 1.12rem; opacity: 0; transition: opacity 140ms ease; }
 .dock-link:hover .dock-link-out { opacity: 1; }
-@media (max-width: 560px) { .dock-link-browser { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .dock-sources { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); } }
 .task-status-ink-open { --status-ink: #465268; }
 .task-status-ink-active { --status-ink: var(--action); }
 .task-status-ink-waiting { --status-ink: #754b00; }

@@ -2264,6 +2264,9 @@ document.addEventListener("keydown", (event) => {
   if (modal) return;
   if (event.metaKey || event.ctrlKey || event.altKey || (event.shiftKey && event.key !== "?")) return;
   if (event.target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox']")) return;
+  // 1–9 pick a tab in the open links panel.
+  const linkTab = /^[1-9]$/.test(key) && document.querySelector(".doc-dock-panel-links:popover-open [data-dock-source]:nth-child(" + key + ")");
+  if (linkTab) { event.preventDefault(); linkTab.click(); return; }
   if (state.openComposer || document.querySelector(":popover-open:not(.code-tip)")) return;
   const shortcut = shortcuts.find(shortcut => shortcut.run && shortcut.keys.some(binding => binding.toLowerCase() === key));
   if (shortcut) { event.preventDefault(); shortcut.run(); }
