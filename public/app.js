@@ -1154,12 +1154,71 @@ function openWorkItem(id) {
   // Scroll only the rail and graph panes; scrollIntoView would also nudge the page under the modal.
   const centerIn = (pane, target) => { if (!pane || !target) return; const p = pane.getBoundingClientRect(), t = target.getBoundingClientRect(); pane.scrollTop += t.top - p.top - (p.height - t.height) / 2; pane.scrollLeft += t.left - p.left - (p.width - t.width) / 2; };
   centerIn(workItemDialog.querySelector(".work-item-rail ol"), workItemDialog.querySelector(".work-item-rail-row.is-current"));
-  centerIn(workItemDialog.querySelector(".work-item-graph"), workItemDialog.querySelector(".work-graph .is-current"));
+  centerWorkGraph(workItemDialog.querySelector(".work-item-graph"));
   const url = new URL(location.href);
   url.searchParams.set("item", id);
   if (workItemView === "graph") url.searchParams.set("graph", "1"); else url.searchParams.delete("graph");
   history.replaceState(null, "", url);
 }
+
+// Graph view pans by drag and zooms by wheel around the cursor. The zoom sticks across items; each render centers the open item.
+// Overpan keeps only a sliver of the graph on screen, so either edge can sit at the far side of the pane.
+const workGraphView = { scale: 1, x: 0, y: 0 };
+let workGraphDrag = null;
+function applyWorkGraphView(pane) {
+  const graph = pane?.querySelector(".work-graph");
+  if (!graph) return;
+  const keep = 60, s = workGraphView.scale;
+  workGraphView.x = Math.min(pane.clientWidth - keep, Math.max(keep - graph.offsetWidth * s, workGraphView.x));
+  workGraphView.y = Math.min(pane.clientHeight - keep, Math.max(keep - graph.offsetHeight * s, workGraphView.y));
+  graph.style.transform = `translate(${workGraphView.x}px, ${workGraphView.y}px) scale(${s})`;
+}
+function centerWorkGraph(pane) {
+  const graph = pane?.querySelector(".work-graph"), current = graph?.querySelector(".is-current");
+  if (!current) return applyWorkGraphView(pane);
+  const g = graph.getBoundingClientRect(), c = current.getBoundingClientRect();
+  // Both rects are already scaled, so their difference is the on-screen offset the translate must cancel.
+  workGraphView.x = pane.clientWidth / 2 - (c.left - g.left + c.width / 2);
+  workGraphView.y = pane.clientHeight / 2 - (c.top - g.top + c.height / 2);
+  applyWorkGraphView(pane);
+}
+workItemDialog.addEventListener("wheel", (event) => {
+  const pane = event.target.closest(".work-item-graph");
+  if (!pane) return;
+  event.preventDefault();
+  const p = pane.getBoundingClientRect(), mx = event.clientX - p.left, my = event.clientY - p.top;
+  const next = Math.min(2.5, Math.max(.2, workGraphView.scale * Math.exp(-event.deltaY * (event.ctrlKey ? .01 : .002))));
+  const ratio = next / workGraphView.scale;
+  Object.assign(workGraphView, { scale: next, x: mx - (mx - workGraphView.x) * ratio, y: my - (my - workGraphView.y) * ratio });
+  applyWorkGraphView(pane);
+}, { passive: false });
+workItemDialog.addEventListener("pointerdown", (event) => {
+  const pane = event.target.closest(".work-item-graph");
+  if (!pane || event.button !== 0) return;
+  workGraphDrag = { pane, id: event.pointerId, startX: event.clientX, startY: event.clientY, x: workGraphView.x, y: workGraphView.y, moved: false };
+});
+workItemDialog.addEventListener("pointermove", (event) => {
+  const drag = workGraphDrag;
+  if (!drag || event.pointerId !== drag.id) return;
+  const dx = event.clientX - drag.startX, dy = event.clientY - drag.startY;
+  if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+  if (!drag.moved) { drag.moved = true; drag.pane.setPointerCapture(drag.id); drag.pane.classList.add("is-panning"); }
+  Object.assign(workGraphView, { x: drag.x + dx, y: drag.y + dy });
+  applyWorkGraphView(drag.pane);
+});
+const endWorkGraphDrag = (event) => {
+  if (!workGraphDrag || event.pointerId !== workGraphDrag.id) return;
+  workGraphDrag.pane.classList.remove("is-panning");
+  // A drag that ends over a node must not open it. Chrome may send no click after a captured drag, so the guard lasts one task.
+  if (workGraphDrag.moved) {
+    const swallow = (e) => e.stopPropagation();
+    workItemDialog.addEventListener("click", swallow, { capture: true, once: true });
+    setTimeout(() => workItemDialog.removeEventListener("click", swallow, { capture: true }));
+  }
+  workGraphDrag = null;
+};
+workItemDialog.addEventListener("pointerup", endWorkGraphDrag);
+workItemDialog.addEventListener("pointercancel", endWorkGraphDrag);
 
 // Send and Update open the composer for the item; the dialog closes first so the composer is not inert behind it.
 function openWorkComposer(id, mode) {

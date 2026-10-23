@@ -2168,10 +2168,12 @@ button.plan-doc-link:hover { background: var(--hover-field); }
   .work-item-task { gap: 6px; padding-left: 12px; }
   .work-item-main { padding: 14px 16px 20px; }
 }
-/* Graph view: the task's dependency graph fills the item pane, the open item outlined and scrolled to the center. */
+/* Graph view: the task's dependency graph fills the item pane, the open item outlined and centered; drag pans, wheel zooms. */
 .work-item-main.is-graph { display: grid; padding: 0; overflow: hidden; }
 .work-item-main.is-graph > * { max-width: none; }
-.work-item-graph { min-height: 0; overflow: auto; overscroll-behavior: contain; background: var(--hover-field); padding: 8px; scrollbar-width: thin; }
+.work-item-graph { min-height: 0; overflow: hidden; background: var(--hover-field); cursor: grab; touch-action: none; user-select: none; }
+.work-item-graph.is-panning { cursor: grabbing; }
+.work-item-graph > .work-graph { transform-origin: 0 0; }
 .work-item-dialog .work-graph > svg { width: auto; height: auto; stroke: none; stroke-width: initial; }
 .work-item-graph .work-node.is-current { border-color: var(--action-ink); box-shadow: 0 0 0 2px var(--action-ink); }
 .work-item-graph .work-group.is-current { border-color: var(--action-ink); box-shadow: 0 0 0 2px var(--action-ink); }
