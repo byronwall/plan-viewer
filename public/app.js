@@ -2264,8 +2264,12 @@ document.addEventListener("keydown", (event) => {
   if (modal) return;
   if (event.metaKey || event.ctrlKey || event.altKey || (event.shiftKey && event.key !== "?")) return;
   if (event.target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox']")) return;
-  // 1–9 pick a tab in the open links panel.
-  const linkTab = /^[1-9]$/.test(key) && document.querySelector(".doc-dock-panel-links:popover-open [data-dock-source]:nth-child(" + key + ")");
+  // In the open links panel, 1–9 pick a tab and ← → cycle through them.
+  const linkTabs = [...document.querySelectorAll(".doc-dock-panel-links:popover-open [data-dock-source]")];
+  const current = linkTabs.findIndex((tab) => tab.getAttribute("aria-selected") === "true");
+  const linkTab = linkTabs.length && (/^[1-9]$/.test(key) ? linkTabs[key - 1]
+    : key === "arrowright" ? linkTabs[(current + 1) % linkTabs.length]
+    : key === "arrowleft" ? linkTabs[(current - 1 + linkTabs.length) % linkTabs.length] : null);
   if (linkTab) { event.preventDefault(); linkTab.click(); return; }
   if (state.openComposer || document.querySelector(":popover-open:not(.code-tip)")) return;
   const shortcut = shortcuts.find(shortcut => shortcut.run && shortcut.keys.some(binding => binding.toLowerCase() === key));

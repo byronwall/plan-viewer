@@ -139,7 +139,7 @@ function slackChannels(group) {
 }
 
 // A tab per source across the top, with "All" first: every link grouped by source, to scroll through in one go.
-// 1–9 pick a tab while the panel is open (app.js).
+// The tab bar is the panel's only header. 1–9 pick a tab and ← → cycle them while the panel is open (app.js).
 function linkBrowser(groups) {
   const total = groups.reduce((sum, group) => sum + group.items.length, 0);
   const tab = (key, name, icon, count, index) => `<button type="button" class="dock-source" role="tab" data-dock-source="${key}" aria-selected="${index === 0}" title="${escapeHtml(name)} (${index + 1})">${icon ? `<span class="dock-link-icon">${icon}</span>` : ""}<span>${escapeHtml(name)}</span><small>${count}</small></button>`;
@@ -149,7 +149,7 @@ function linkBrowser(groups) {
   const all = groups.map((group) => `<section class="dock-channel dock-group"><h4 class="dock-channel-heading dock-group-heading"><span class="dock-link-icon">${group.icon}</span><span class="dock-channel-name">${escapeHtml(group.name)}</span><small>${group.items.length}</small></h4>${rows(group)}</section>`).join("");
   const panes = linkList(all, true, 'role="tabpanel" data-dock-source-list="all"')
     + groups.map((group) => linkList(rows(group), labeled(group), `role="tabpanel" data-dock-source-list="${group.key}" hidden`)).join("");
-  return `<div class="dock-link-browser"><div class="dock-sources" role="tablist">${tabs}</div><div class="dock-source-lists">${panes}</div></div>`;
+  return `<div class="dock-link-browser"><div class="dock-sources" role="tablist">${tabs}<span class="dock-sources-keys" aria-hidden="true" title="Switch tabs with ← → or 1–${groups.length + 1}"><kbd>←</kbd><kbd>→</kbd></span></div><div class="dock-source-lists">${panes}</div></div>`;
 }
 
 function countUpdates(markdown) {
@@ -184,14 +184,14 @@ export function renderDock({ doc, documents, links, body }) {
   const readyActions = (doc.nextActions || []).filter((action) => !action.blocked).length;
 
   const items = [];
-  const add = (key, label, icon, badge, title, meta, content, jump) => items.push({ key, label, icon, badge, title, meta, content, jump });
+  const add = (key, label, icon, badge, title, meta, content, jump, bare = false) => items.push({ key, label, icon, badge, title, meta, content, jump, bare });
   if (actions) add("actions", "Next actions", ICONS.actions, `${readyActions || (doc.nextActions || []).length}`, actions.title, readyActions ? `${readyActions} ready of ${(doc.nextActions || []).length}` : `${(doc.nextActions || []).length} recorded`, body(actions), actions.id);
   if (work && leaves.length) add("work", "Work", progressRing(doneLeaves, leaves.length), `${doneLeaves}/${leaves.length}`, work.title, `${doneLeaves} of ${leaves.length} items completed`, body(work), work.id);
   const entries = updates && parseUpdates(updates.markdown);
   const latest = entries?.map((entry) => entry.date).sort().at(-1);
   if (updates) add("updates", "Updates", ICONS.updates, `${entries?.length || countUpdates(updates.markdown) || ""}`, updates.title, latest ? `Latest ${relativeDate(latest)} · ${entries.length} ${entries.length === 1 ? "entry" : "entries"}` : "Recorded in the task", body(updates), updates.id);
   if (subDocuments.length) add("documents", "Documents", ICONS.doc, `${subDocuments.length}`, "Task documents", `${subDocuments.length} in ${taskId}-assets`, linkList(`${parentTask ? linkRow(docItem(parentTask, parentTask.path), SERVICE_ICONS.task) : ""}${subDocuments.map((sub) => linkRow({ ...docItem(sub, sub.path, ""), current: sub.path === doc.path }, ICONS.doc)).join("")}`, true));
-  add("links", "Links", ICONS.links, `${linkCount}`, "Links out", linkCount ? `${linkCount} across ${links.length} ${links.length === 1 ? "source" : "sources"} · 1–${links.length + 1} switch tabs` : "No links in this document", linkCount ? linkBrowser(links) : '<p class="dock-empty">This document doesn\'t link anywhere yet.</p>');
+  add("links", "Links", ICONS.links, `${linkCount}`, "Links out", linkCount ? `${linkCount} across ${links.length} ${links.length === 1 ? "source" : "sources"}` : "No links in this document", linkCount ? linkBrowser(links) : '<p class="dock-empty">This document doesn\'t link anywhere yet.</p>', "", Boolean(linkCount));
   add("backlinks", "Backlinks", ICONS.backlinks, `${backlinks.length}`, "Linked from", backlinks.length ? `${backlinks.length} ${backlinks.length === 1 ? "document links" : "documents link"} here` : "Nothing links here yet", backlinks.length
     ? linkList(backlinks.map((source) => linkRow(docItem(source, source.path), source.task ? SERVICE_ICONS.task : ICONS.doc)).join(""), true)
     : '<p class="dock-empty">No other document mentions this one yet.</p>');
@@ -200,7 +200,7 @@ export function renderDock({ doc, documents, links, body }) {
     <span class="doc-dock-title" aria-hidden="true">${escapeHtml(doc.task ? `${doc.task.id} · ${doc.title}` : doc.title)}</span>
     <div class="doc-dock-buttons" role="toolbar" aria-label="Document overview"><button type="button" class="doc-dock-button doc-dock-draft" data-dock-draft aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false" title="Open an agent draft for ${escapeHtml(doc.path)}"><span class="doc-dock-icon">${ICONS.draft}</span><span class="doc-dock-label">Draft</span></button><span class="doc-dock-divider" aria-hidden="true"></span>${items.map((item) => `<button type="button" class="doc-dock-button" popovertarget="dock-${item.key}" aria-expanded="false" style="anchor-name: --dock-${item.key}" title="${escapeHtml(item.meta)}"><span class="doc-dock-icon">${item.icon}</span><span class="doc-dock-label">${escapeHtml(item.label)}</span>${item.badge && item.badge !== "0" ? `<span class="doc-dock-badge">${escapeHtml(item.badge)}</span>` : ""}</button>`).join("")}</div>
   </div>${items.map((item) => `<div class="doc-dock-panel doc-dock-panel-${item.key}" id="dock-${item.key}" popover style="position-anchor: --dock-${item.key}" role="dialog" aria-label="${escapeHtml(item.title)}">
-    <header class="doc-dock-panel-header"><span class="doc-dock-icon">${item.icon}</span><div><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.meta)}</p></div>${item.jump ? `<button type="button" class="doc-dock-jump" data-dock-jump="${escapeHtml(item.jump)}">Go to section <span aria-hidden="true">↓</span></button>` : ""}</header>
+    ${item.bare ? "" : `<header class="doc-dock-panel-header"><span class="doc-dock-icon">${item.icon}</span><div><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.meta)}</p></div>${item.jump ? `<button type="button" class="doc-dock-jump" data-dock-jump="${escapeHtml(item.jump)}">Go to section <span aria-hidden="true">↓</span></button>` : ""}</header>`}
     <div class="doc-dock-panel-body">${item.content}</div>
   </div>`).join("")}</div>`;
 }
