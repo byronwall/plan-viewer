@@ -2007,7 +2007,8 @@ function renderSearchResults() {
   searchIndex = 0;
   const prCount = searchMatches.filter((item) => item.pr).length;
   const docCount = searchMatches.filter((item) => !item.pr && !item.page && !item.issue && !item.plan).length;
-  elements.searchStatus.textContent = `${prCount ? `${prCount} ${prCount === 1 ? "PR" : "PRs"} · ` : ""}${docCount} ${docCount === 1 ? "document" : "documents"}`;
+  const planCount = searchMatches.filter((item) => item.plan).length;
+  elements.searchStatus.textContent = `${prCount ? `${prCount} ${prCount === 1 ? "PR" : "PRs"} · ` : ""}${planCount ? `${planCount} ${planCount === 1 ? "initiative" : "initiatives"} · ` : ""}${docCount} ${docCount === 1 ? "document" : "documents"}`;
   let position = 0;
   elements.searchResults.innerHTML = searchMatches.length
     ? groups.map(([label, items]) => `<div class="search-section" role="presentation">${label}</div>${items.map((item) => { const index = position++; return item.pr ? renderPrResult(item, index, terms) : item.issue ? renderIssueResult(item, index, terms) : item.plan ? renderPlanResult(item, index, terms) : item.page ? renderPageResult(item, index) : renderSearchResult(item, index, terms); }).join("")}`).join("")

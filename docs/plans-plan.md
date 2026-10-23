@@ -2,12 +2,13 @@
 
 A read-only view of the initiatives (`initiative-map.json` plus the briefs beside it) in every tracked repository, shown as a fourth tab of the Code view next to Worktrees, PRs and Commits. It brings over the reading half of `tk view`'s Initiatives tab (`~/Projects/ticket/plugins/ticket-view`) and follows the Code view's rules ([code-view.md](code-view.md)).
 
-Status: planned (Oct 22, 2026). Nothing built yet.
+Status: milestones 1–5 are built (Oct 22, 2026). The README's Code dashboard section describes the behavior. Deviations from this plan are listed under "Built" at the end.
 
 ## Decisions already made (Byron, Oct 22, 2026)
 
 - **Purpose:** see the static plans, not track work in progress. Ongoing work is tracked through PRs.
 - **Source:** each repository's `origin/main` (its remote default branch), read with git and never from a checkout. When an open PR changes an initiative's folder, show a badge that links to the PR.
+- **Proposed initiatives:** a PR that adds a new initiative shows it as a "proposed" row (Byron, Oct 22).
 - **Scope:** initiatives only. `.tickets/` is ignored, including linked-ticket status and the dependency graph.
 - **Writes:** none. Changes go through editable agent drafts ("Copy prompt to update", "Copy retire prompt"), the same way reviews do.
 
@@ -33,7 +34,7 @@ Status: planned (Oct 22, 2026). Nothing built yet.
 
 - The PR extras pass already runs one GraphQL query per repository. It adds `files(first: 100) { path }` for open PRs, which is cheaper than a git diff per branch and works for branches that were never fetched.
 - An initiative gets a badge for every open PR whose files fall under its folder: the PR number plus a draft or ready marker, linking to the PR overview.
-- A PR that adds an `initiative-map.json` not on main shows a ghost row ("Proposed in #123") with the map read from the PR head. That's one `gh api` call per new map. Open question: keep the ghost rows, or only badge initiatives that already exist?
+- A PR that adds an `initiative-map.json` not on main shows a "proposed" row with the map read from the PR head: from the local object store when the branch is fetched, else one `gh api` call per new map.
 
 ## Client (`public/plans.js`, mounted by `code.js` as `?view=code&tab=plans`)
 
@@ -64,3 +65,11 @@ The same shape as the rest of the Code view: list, inspector, overview.
 - `.tickets/`, linked-ticket evidence, the dependency graph, and "Check status".
 - The board view and all editing (status, phase, next action, depends_on).
 - Initiatives that exist only in a worktree, with no PR yet.
+
+## Built
+
+- PR files come from a separate GraphQL query in `plans.ts` (25 open PRs a page, 100 files each) instead of the Code view's extras pass, so the two scans stay independent. It refreshes every two minutes.
+- The skip list and map file name are fixed (they are the content format the planning skill writes), so the only new setting is `code.planSkill`.
+- The full map is fetched only for the reader's Map tab (`/api/code/plan-map`); explorEDA's maps alone total about 600 KB.
+- The reader shows the documents as tabs rather than a file tree; an initiative folder rarely holds more than a handful. Front matter renders as facts, and the first `#` heading becomes the document title.
+- History entries name their headline `event`, `action` or `change` across the maps on main, so the scan accepts all three.

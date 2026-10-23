@@ -138,7 +138,7 @@ export function plansControls(segment, count) {
 function emptyPlans() {
   if (!all().length) return `<div class="code-empty"><p>No initiative maps on main in the tracked repositories.</p><p class="code-muted">Any <code>initiative-map.json</code> on a repo's origin/main shows up here, with the Markdown files beside it.</p></div>`;
   const narrowed = ps.scope !== "all" || ps.withPr || code.filtered();
-  return `<div class="code-empty"><p>No initiatives match${ps.scope === "all" ? "" : ` in ${SCOPES[ps.scope]}`}.</p>${narrowed ? `<button type="button" class="code-bar-button" data-plan-reset data-code-reset>Show all initiatives <kbd>Esc</kbd></button>` : ""}</div>`;
+  return `<div class="code-empty"><p>No initiatives match${code.filterText() ? ` <b>“${escapeHtml(code.filterText())}”</b>` : ""}${ps.scope === "all" ? "" : ` in ${SCOPES[ps.scope]}`}.</p>${narrowed ? `<button type="button" class="code-bar-button" data-plan-reset data-code-reset>Show all initiatives <kbd>Esc</kbd></button>` : ""}</div>`;
 }
 
 export function plansBody() {
@@ -178,7 +178,7 @@ function linkList(items, empty = "") {
     : `<code class="plan-link-missing" data-tip="No initiative with this slug on main">${escapeHtml(slug)}</code>`).join("")}</span>`;
 }
 
-function planFacts(item, overlay = false) {
+function planFacts(item) {
   const fetched = repoInfo(item.repo)?.fetchedAt;
   const folder = `${item.repo}/${item.folder}`;
   const finished = FINISHED.has(item.status) && !item.error;
@@ -189,12 +189,11 @@ function planFacts(item, overlay = false) {
     ["Next", item.nextAction ? `<span class="plan-next">${escapeHtml(item.nextAction)}</span>` : ""],
     ["Where", `<span>${escapeHtml(repoName(item.repo))}</span><span class="code-muted" data-tip="${fetched ? `Last fetched ${escapeHtml(new Date(fetched).toLocaleString())}` : "Never fetched"}">${escapeHtml(whereText(item))}</span>`],
     ["Folder", `<button type="button" class="code-path code-side-path" data-code-copy="${escapeHtml(folder)}" data-tip="${escapeHtml(folder)} · click to copy">${escapeHtml(item.folder || ".")}</button>`],
-    ["Edited", [item.edited && `<span class="code-muted" data-tip="${escapeHtml(new Date(item.edited).toLocaleString())}">committed ${ago(item.edited)} ago</span>`, item.lastUpdated && `<span class="code-muted">map says ${escapeHtml(item.lastUpdated)}</span>`].filter(Boolean).join("")],
+    ["Edited", [item.edited && `<span class="code-muted" data-tip="${escapeHtml(new Date(item.edited).toLocaleString())}">${proposal(item) ? "PR updated" : "committed"} ${ago(item.edited)} ago</span>`, item.lastUpdated && `<span class="code-muted">map says ${escapeHtml(item.lastUpdated)}</span>`].filter(Boolean).join("")],
     ["Depends on", linkList(item.dependsOn.map((slug) => ({ slug, item: bySlug(item.repo, slug) })))],
     ["Needed by", linkList(neededBy(item).map((other) => ({ slug: other.slug, item: other })))],
     ["Related", linkList(item.related.filter((slug) => !item.dependsOn.includes(slug)).map((slug) => ({ slug, item: bySlug(item.repo, slug) })))],
     [appName(), agent],
-    ...(overlay ? [] : [["Read", `<span class="code-side-tools">${iconButton("expand", "Open the reader (Enter)", `data-plan-open="${escapeHtml(item.id)}"`)}</span>`]]),
   ]);
 }
 
@@ -491,7 +490,7 @@ function renderOverview() {
   const position = reader.list.indexOf(item.id);
   const walk = position >= 0 && reader.list.length > 1 ? `<span class="code-muted">${position + 1} of ${reader.list.length} · <kbd>J</kbd><kbd>K</kbd> walk · <kbd>[</kbd><kbd>]</kbd> documents</span>` : `<span class="code-muted"><kbd>[</kbd><kbd>]</kbd> documents</span>`;
   dialog.querySelector('[data-o="head"]').innerHTML = `${statusMark(item)}<div class="issue-overview-title"><h3>${escapeHtml(item.title)}</h3><p class="code-muted">${escapeHtml(repoName(item.repo))} · ${escapeHtml(item.folder || ".")} · ${escapeHtml(whereText(item))}</p></div><span class="code-spacer"></span>${walk}${iconButton("fail", "Close (Esc)", "data-plan-close")}`;
-  dialog.querySelector('[data-o="side"]').innerHTML = `${item.summary ? `<p class="plan-detail-summary">${escapeHtml(item.summary)}</p>` : ""}${planFacts(item, true)}${prSection(item)}${historySection(item)}`;
+  dialog.querySelector('[data-o="side"]').innerHTML = `${item.summary ? `<p class="plan-detail-summary">${escapeHtml(item.summary)}</p>` : ""}${planFacts(item)}${prSection(item)}${historySection(item)}`;
   renderTabs(item);
 }
 
@@ -527,6 +526,12 @@ async function showDoc(path, { keepBack = false, anchor = "" } = {}) {
   if (reader.id !== item.id || reader.doc !== doc) return; // a newer pick won
   main.removeAttribute("aria-busy");
   main.innerHTML = html;
+  // Links between the repo's own files stay in the reader, so they drop the new-tab marker external links get.
+  for (const link of main.querySelectorAll(`a[href^="${READER_LINK}"]`)) {
+    link.className = "plan-reader-link";
+    link.removeAttribute("target");
+    link.querySelectorAll(".external-mark, .sr-only").forEach((mark) => mark.remove());
+  }
   outline.innerHTML = headings.length > 2 ? `<h4>On this page</h4>${headings.map((heading) => `<button type="button" class="plan-outline-${heading.level}" data-outline="${escapeHtml(heading.anchor)}">${escapeHtml(heading.title)}</button>`).join("")}` : "";
   const scroller = dialog.querySelector(".plan-reader-body");
   const target = anchor && main.querySelector(`[id="${CSS.escape(anchor)}"]`);

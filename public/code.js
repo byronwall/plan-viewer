@@ -2863,7 +2863,7 @@ export function renderCodePage(container, { tab, showNotice }) {
     host = container;
     ui.authors = new Set((new URLSearchParams(location.search).get("author") || "").split(",").filter(Boolean));
     ui.repos = new Set((new URLSearchParams(location.search).get("repo") || "").split(",").filter(Boolean));
-    initPlans({ render, select, notify: (...args) => notify(...args), matches, repoFilter, repoCell, repoHead, tableHead, resetFilters, host: () => host, selected: () => ui.sel, filtered: () => Boolean(ui.filter || ui.repos.size) });
+    initPlans({ render, select, notify: (...args) => notify(...args), matches, repoFilter, repoCell, repoHead, tableHead, resetFilters, host: () => host, selected: () => ui.sel, filtered: () => Boolean(ui.filter || ui.repos.size), filterText: () => ui.filter });
     container.addEventListener("click", (event) => { if (container.querySelector(".code-surface")) handleClick(event); });
     // Double-click a row to open what Enter opens: the PR or worktree overview, or a commit's diff.
     container.addEventListener("dblclick", (event) => {
