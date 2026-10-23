@@ -14,6 +14,7 @@ const exec = promisify(execFile);
 const MAP_FILE = "initiative-map.json";
 const SKIPPED = new Set(["node_modules", "dist", "build", "vendor"]);
 const PR_TTL_MS = 2 * 60_000;
+const CACHE_VERSION = 2; // bump when what a scan extracts from a map changes, so cached scans are redone
 const MAX_DOC_BYTES = 2_000_000;
 const DONE = new Set(["closed", "done", "complete", "completed"]);
 const STARTED = new Set(["in_progress", "in-progress", "started", "partially_implemented", "partial", "active"]);
@@ -74,6 +75,12 @@ export function statusOf(map: any): { status: string; inferred: boolean; evidenc
   return { status: "planned", inferred: true, evidence: "The map records no status and no started work." };
 }
 
+// Maps name a history entry's headline "event", "action" or "change", and its detail "reason", "summary" or "notes".
+export const historyEntry = (entry: any) => {
+  const event = text(entry?.event) || text(entry?.action) || text(entry?.change);
+  return { date: text(entry?.date), event, reason: text(entry?.reason) || [entry?.summary, entry?.notes].map(text).find((value) => value && value !== event) || "" };
+};
+
 // One initiative from its map's JSON text; a map that doesn't parse becomes an error row, not a missing one.
 export function initiativeFrom(repo: string, mapPath: string, source: string | null, ref: string, files: string[], folders: string[]): Initiative {
   const folder = folderOf(mapPath);
@@ -94,7 +101,7 @@ export function initiativeFrom(repo: string, mapPath: string, source: string | n
     slug: text(info.slug) || base.slug, title: text(info.title), summary: text(info.summary), phase: text(info.current_phase), scale: text(info.scale),
     nextAction: text(info.next_action), lastUpdated: text(info.last_updated),
     dependsOn: list(info.depends_on).map(text).filter(Boolean), related,
-    history: history.slice(-3).reverse().map((entry: any) => ({ date: text(entry.date), event: text(entry.event), reason: text(entry.reason) })), historyCount: history.length,
+    history: history.slice(-3).reverse().map(historyEntry), historyCount: history.length,
     docs: folderDocs(folder, files, folders, map.artifacts),
   };
 }
@@ -134,8 +141,12 @@ const cleanPath = (path: string) => {
 export function createPlans(root: string, deps: { repos: () => Promise<string[]>; slug: (repo: string) => Promise<string> }) {
   const cachePath = join(root, "tmp", "plans-cache.json");
   // Per repo: the scanned commit and what it held. Per GitHub slug: open PRs with their files. Per "<oid>:<path>": a proposed map.
-  let cache: { repos: Record<string, { sha: string; base: string; files: string[]; initiatives: Initiative[] }>; prs: Record<string, { at: number; prs: any[] }>; proposed: Record<string, string | null> } = { repos: {}, prs: {}, proposed: {} };
-  try { cache = { ...cache, ...JSON.parse(readFileSync(cachePath, "utf8")) }; } catch {}
+  let cache: { version?: number; repos: Record<string, { sha: string; base: string; files: string[]; initiatives: Initiative[] }>; prs: Record<string, { at: number; prs: any[] }>; proposed: Record<string, string | null> } = { repos: {}, prs: {}, proposed: {} };
+  try {
+    const saved = JSON.parse(readFileSync(cachePath, "utf8"));
+    cache = { ...cache, ...saved, repos: saved.version === CACHE_VERSION ? saved.repos || {} : {} };
+  } catch {}
+  cache.version = CACHE_VERSION;
   const loading = new Map<string, Promise<void>>();
   let persistTimer: ReturnType<typeof setTimeout> | undefined;
   const persist = () => {

@@ -2,9 +2,10 @@ import { escapeHtml, renderMarkdown, SERVICE_ICONS } from "./markdown.js";
 import { agentApp, agentName as appName, config, escapeRegExp } from "./config.js";
 import { decorate, lineClasses, markWords } from "./word-diff.js";
 import { mapHtml, mapSvg, moveGroups, svgToPng, tileCard } from "./diff-map.js";
+import { initPlans, loadPlans, openPlan, planClick, planDetail, planEmptyHint, planFor, planItems, planKey, planScopeParam, plansBody, plansControls, plansCount } from "./plans.js";
 
 // Code dashboard: tracked repos' worktrees (most recent first), their open PRs, and worktree cleanup.
-export const TABS = { prs: "Pull requests", worktrees: "Worktrees", commits: "Commits", cleanup: "Cleanup" };
+export const TABS = { prs: "Pull requests", worktrees: "Worktrees", commits: "Commits", plans: "Plans", cleanup: "Cleanup" };
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const ui = {
@@ -460,7 +461,7 @@ function repoCell(repo) {
 
 // Repos with items on the current tab, busiest first; every tracked repo stays listed so the legend is complete.
 function repoStats() {
-  const items = ui.tab === "prs" ? ui.data.prs : ui.tab === "commits" ? commitsInScope() || [] : ui.data.worktrees.filter((tree) => !ui.removed.has(tree.path) && (ui.tab === "worktrees" || (tree.cleanup && !tree.main)));
+  const items = ui.tab === "prs" ? ui.data.prs : ui.tab === "commits" ? commitsInScope() || [] : ui.tab === "plans" ? planItems() : ui.data.worktrees.filter((tree) => !ui.removed.has(tree.path) && (ui.tab === "worktrees" || (tree.cleanup && !tree.main)));
   const counts = new Map(ui.data.repos.map((repo) => [repo, 0]));
   for (const item of items) if (counts.has(item.repo)) counts.set(item.repo, counts.get(item.repo) + 1);
   return [...counts].map(([repo, count]) => ({ repo, name: repoName(repo), count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
@@ -490,7 +491,7 @@ function toggleRepo(name, only = false) {
 function renderRepoList() {
   const panel = host?.querySelector("#code-repos");
   if (!panel?.matches(":popover-open")) return;
-  const noun = { prs: "open PRs", worktrees: "worktrees", commits: "commits", cleanup: "cleanup candidates" }[ui.tab];
+  const noun = { prs: "open PRs", worktrees: "worktrees", commits: "commits", plans: "initiatives", cleanup: "cleanup candidates" }[ui.tab];
   const stats = repoStats();
   ui.repoActive = Math.max(0, Math.min(stats.length - 1, ui.repoActive || 0));
   const row = (entry, index) => `<li data-repo-row="${escapeHtml(entry.name)}" class="${entry.count ? "" : "is-empty"}" aria-selected="${index === ui.repoActive}">
@@ -2036,6 +2037,7 @@ function selectedItem() {
   if (ui.sel.startsWith("tree:")) return { kind: "tree", tree: ui.data.worktrees.find((tree) => `tree:${tree.path}` === ui.sel) };
   if (ui.sel.startsWith("pr:")) return { kind: "pr", pr: ui.data.prs.find((pr) => `pr:${pr.slug}#${pr.number}` === ui.sel) };
   if (ui.sel.startsWith("commit:")) return { kind: "commit", commit: commitFor(ui.sel) };
+  if (ui.sel.startsWith("plan:")) return { kind: "plan", plan: planFor(ui.sel) };
   return {};
 }
 
@@ -2200,13 +2202,13 @@ function renderDetail({ animate = false } = {}) {
   const pane = host?.querySelector(".code-detail");
   if (!pane) return;
   const item = selectedItem();
-  const html = item.tree ? treeDetail(item.tree) : item.pr ? prDetail(item.pr) : item.commit ? commitDetailPane(item.commit) : `<p class="code-detail-empty">${host.querySelector("[data-code-row]") ? "Select a row to see its commits, files, and actions." : "Nothing to inspect while the list is empty."}<br><br><kbd>↑</kbd><kbd>↓</kbd> or <kbd>J</kbd><kbd>K</kbd> move · <kbd>Enter</kbd> or double-click overview · <kbd>E</kbd> VS Code · <kbd>X</kbd> terminal · <kbd>Y</kbd> copy · <kbd>D</kbd> deployment · <kbd>L</kbd> local server · <kbd>S</kbd> new session · <kbd>1</kbd>–<kbd>4</kbd> review or discuss · <kbd>F</kbd> filter</p>`;
+  const html = item.tree ? treeDetail(item.tree) : item.pr ? prDetail(item.pr) : item.commit ? commitDetailPane(item.commit) : item.plan ? planDetail(item.plan) : ui.tab === "plans" ? `<p class="code-detail-empty">Select an initiative to see its status, documents, and open PRs.<br><br>${planEmptyHint()}</p>` : `<p class="code-detail-empty">${host.querySelector("[data-code-row]") ? "Select a row to see its commits, files, and actions." : "Nothing to inspect while the list is empty."}<br><br><kbd>↑</kbd><kbd>↓</kbd> or <kbd>J</kbd><kbd>K</kbd> move · <kbd>Enter</kbd> or double-click overview · <kbd>E</kbd> VS Code · <kbd>X</kbd> terminal · <kbd>Y</kbd> copy · <kbd>D</kbd> deployment · <kbd>L</kbd> local server · <kbd>S</kbd> new session · <kbd>1</kbd>–<kbd>4</kbd> review or discuss · <kbd>F</kbd> filter</p>`;
   if (lastHtml.get(pane) !== html) {
     lastHtml.set(pane, html);
     pane.innerHTML = html;
     if (animate) { pane.scrollTop = 0; fadeIn(pane, 160); }
   }
-  if (ui.sel) loadDetail(ui.sel);
+  if (ui.sel && !ui.sel.startsWith("plan:")) loadDetail(ui.sel);
 }
 
 // ---------- page ----------
@@ -2215,7 +2217,7 @@ function toolbar() {
   const count = (value) => ` <span class="code-count">${value}</span>`;
   const segment = (attr, current, options) => `<div class="code-segment">${Object.entries(options).map(([id, label]) => `<button type="button" ${attr}="${id}" aria-pressed="${current === id}">${label}</button>`).join("")}</div>`;
   const trees = ui.data.worktrees.filter((tree) => !ui.removed.has(tree.path));
-  const counts = { worktrees: trees.length, prs: ui.data.prs.length, commits: commitsInScope()?.length ?? "…", cleanup: trees.filter((tree) => level(tree) === "safe").length };
+  const counts = { worktrees: trees.length, prs: ui.data.prs.length, commits: commitsInScope()?.length ?? "…", plans: plansCount(), cleanup: trees.filter((tree) => level(tree) === "safe").length };
   const tabs = `<div class="code-segment code-tabs">${Object.entries(TABS).map(([id, label]) => `<button type="button" data-code-tab="${id}" aria-pressed="${ui.tab === id}">${label}${count(counts[id])}</button>`).join("")}</div>`;
   // Scope counts replace the old stat tiles; uncommitted counts wait for the scan.
   const pending = ui.data.scanning && trees.some((tree) => tree.dirty === null);
@@ -2236,6 +2238,7 @@ function toolbar() {
     + `<label class="code-check"><input type="checkbox" data-code-drafts ${ui.hideDrafts ? "checked" : ""}> No drafts</label><label class="code-check"><input type="checkbox" data-code-failing ${ui.failingOnly ? "checked" : ""}> Failing CI${count(ui.data.prs.filter((pr) => ["FAILURE", "ERROR"].includes(pr.ci)).length)}</label>`;
   if (ui.tab === "commits") controls = commitControls();
   if (ui.tab === "cleanup") controls = cleanupControls();
+  if (ui.tab === "plans") controls = plansControls(segment, count);
   controls = repoTrigger() + controls;
   // Tabs and the filter on top, this tab's controls below; scanning shows as the spinning refresh icon, so nothing shifts.
   return `<div class="code-toolbar"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-code-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span>${iconButton("refresh", ui.data.scanning ? "Scanning worktrees, CI, and PR history…" : "Refresh everything  (R)", `data-code-refresh class="code-icon-button${ui.data.scanning ? " is-spinning" : ""}"`)}${iconButton("settings", `Tracked repositories (${ui.data.repos.length})`, 'popovertarget="code-settings" data-code-settings')}</div><div class="code-controls">${controls}</div></div>`;
@@ -2279,7 +2282,8 @@ function render({ animate = false } = {}) {
   const focused = document.activeElement === filter;
   const caret = filter?.selectionStart;
   if (ui.tab === "commits") loadCommits();
-  const body = ui.tab === "prs" ? prsBody() : ui.tab === "commits" ? commitsBody() : ui.tab === "cleanup" ? cleanupBody() : worktreesBody();
+  if (ui.tab === "plans") loadPlans();
+  const body = ui.tab === "prs" ? prsBody() : ui.tab === "commits" ? commitsBody() : ui.tab === "cleanup" ? cleanupBody() : ui.tab === "plans" ? plansBody() : worktreesBody();
   hideTip();
   patch("toolbar", toolbar());
   patch("errors", ui.data.errors.map((error) => `<p class="work-warning">${escapeHtml(error)}</p>`).join(""));
@@ -2303,7 +2307,7 @@ async function load(refresh = false) {
     const paths = new Set(data.worktrees.map((tree) => tree.path));
     for (const path of ui.selected) if (!paths.has(path)) ui.selected.delete(path);
     if (!ui.removing) for (const path of ui.removed) if (!paths.has(path)) ui.removed.delete(path);
-    if (refresh) { ui.detail.clear(); ui.commits.clear(); }
+    if (refresh) { ui.detail.clear(); ui.commits.clear(); if (ui.tab === "plans") loadPlans(true); }
     render();
     if (diffDialog?.open) renderDiff(); // an overview opened from the URL learns its worktree here
     // Agents wait on [data-code-state="ready"] instead of polling the table.
@@ -2471,7 +2475,7 @@ function renderServers() {
 
 function syncUrl() {
   const url = new URL(location.href);
-  url.search = new URLSearchParams({ view: "code", ...(ui.tab === "prs" ? {} : { tab: ui.tab }), ...(ui.authors.size ? { author: [...ui.authors].join(",") } : {}), ...(ui.repos.size ? { repo: [...ui.repos].join(",") } : {}) });
+  url.search = new URLSearchParams({ view: "code", ...(ui.tab === "prs" ? {} : { tab: ui.tab }), ...(ui.tab === "plans" ? planScopeParam() : {}), ...(ui.authors.size ? { author: [...ui.authors].join(",") } : {}), ...(ui.repos.size ? { repo: [...ui.repos].join(",") } : {}) });
   history.replaceState(null, "", url);
 }
 
@@ -2563,6 +2567,7 @@ async function handleClick(event) {
   const { dataset } = target;
   try {
     if (dataset.codeCopy !== undefined) return copy(target, dataset.codeCopy);
+    if (planClick(dataset, target)) return;
     if (dataset.codeTab) { ui.tab = codeTab(dataset.codeTab); syncUrl(); return render({ animate: true }); }
     if (dataset.codeGuard) {
       cleanupGuard = dataset.codeGuard;
@@ -2694,6 +2699,7 @@ function handleKey(event) {
   };
   const always = ["arrowdown", "arrowup", "j", "k", "f", "r", "a", "b", "g", "escape"];
   if (key === "a" && !["prs", "commits"].includes(ui.tab)) return; // elsewhere A stays the global Tasks shortcut
+  if (item.plan && !event.target.closest?.("input, textarea") && planKey(key, item.plan, event)) return event.preventDefault();
   if (!actions[key] || (!always.includes(key) && !item.tree && !item.pr && !item.commit)) return;
   event.preventDefault();
   Promise.resolve(actions[key]()).catch((error) => notify(error.message, true));
@@ -2857,6 +2863,7 @@ export function renderCodePage(container, { tab, showNotice }) {
     host = container;
     ui.authors = new Set((new URLSearchParams(location.search).get("author") || "").split(",").filter(Boolean));
     ui.repos = new Set((new URLSearchParams(location.search).get("repo") || "").split(",").filter(Boolean));
+    initPlans({ render, select, notify: (...args) => notify(...args), matches, repoFilter, repoCell, repoHead, tableHead, resetFilters, host: () => host, selected: () => ui.sel, filtered: () => Boolean(ui.filter || ui.repos.size) });
     container.addEventListener("click", (event) => { if (container.querySelector(".code-surface")) handleClick(event); });
     // Double-click a row to open what Enter opens: the PR or worktree overview, or a commit's diff.
     container.addEventListener("dblclick", (event) => {
@@ -2868,6 +2875,7 @@ export function renderCodePage(container, { tab, showNotice }) {
       if (pr) openPrOverlay(pr.slug, pr.number);
       else if (tree) openWorktreeOverlay(tree.path);
       else if (commit) openDiff();
+      else if (row.dataset.codeRow.startsWith("plan:")) openPlan(row.dataset.codeRow.slice(5));
     });
     container.addEventListener("input", (event) => {
       if (!event.target.matches("[data-code-filter]")) return;

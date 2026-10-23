@@ -4,6 +4,7 @@ import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock
 import { documentHref, escapeHtml, markdownOutline, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
+import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
 
@@ -69,6 +70,7 @@ function showNotice(message, error = false, { description = "", action = null, k
   layoutToasts();
   if (!elements.toaster.matches(":hover, :focus-within")) startToast(entry);
 }
+setPlanNotice(showNotice);
 function startToast(entry) {
   entry.started = Date.now();
   entry.timer = window.setTimeout(() => dismissToast(entry), entry.remaining);
@@ -1896,6 +1898,7 @@ const SEARCH_ICONS = {
   code: '<path d="m6 4.5-3.5 3.5L6 11.5M10 4.5l3.5 3.5-3.5 3.5"/>',
   list: '<path d="M6 4.5h7.5M6 8h7.5M6 11.5h7.5M2.75 4.5h.5M2.75 8h.5M2.75 11.5h.5"/>',
   issue: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.5"/>',
+  initiative: '<path d="M3.5 14V2.5M3.5 3h8.5l-2 2.75 2 2.75H3.5"/>',
   server: '<rect x="2.5" y="2.5" width="11" height="4.5" rx="1.25"/><rect x="2.5" y="9" width="11" height="4.5" rx="1.25"/><path d="M5 4.75h.5M5 11.25h.5"/>',
 };
 
@@ -1950,6 +1953,13 @@ function issueResult(issue, terms) {
   return { icon: "issue", tone: `issue is-${escapeHtml(issue.category)}`, title: `<span class="search-pr-number">${highlightTerms(label, terms)}</span> ${highlightTerms(issue.summary, terms)}`, detail: `${issue.source === "linear" ? "Linear · " : ""}${detail}`, side: escapeHtml(issue.status) };
 }
 const renderIssueResult = ({ issue }, index, terms) => resultRow({ ...issueResult(issue, terms), attrs: searchAttrs(index) });
+
+const planResult = (item, terms) => ({
+  icon: "initiative", tone: `initiative is-${escapeHtml(item.status)}`, title: highlightTerms(item.title, terms),
+  detail: [item.repo.split("/").pop(), item.phase, item.edited && `${ago(item.edited)} ago`, item.summary].filter(Boolean).map((part) => highlightTerms(String(part), terms)).join(" · "),
+  side: item.source === "pr" ? "Proposed" : escapeHtml(item.status[0].toUpperCase() + item.status.slice(1)),
+});
+const renderPlanResult = ({ plan }, index, terms) => resultRow({ ...planResult(plan, terms), attrs: searchAttrs(index) });
 // A key (`OPS-12`, or a bare number matching the end of one), an old key it was imported from, or words from the title.
 function searchIssues(query) {
   const data = cachedIssues();
@@ -1984,7 +1994,7 @@ function searchGroups(query) {
   const index = cachedPrIndex();
   const prs = index?.prs || [];
   const docs = searchDocuments(state.documents, query);
-  if (query) return [["Pages", searchPages(query)], ["Issues", searchIssues(query)], ["Pull requests", searchPrs(prs, query)], ["Documents", docs]];
+  if (query) return [["Pages", searchPages(query)], ["Issues", searchIssues(query)], ["Pull requests", searchPrs(prs, query)], ["Initiatives", searchPlans(query)], ["Documents", docs]];
   const open = prs.filter((pr) => pr.state === "OPEN").sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
   return [["Needs your review", open.filter((pr) => pr.requestedOfMe).slice(0, 5)], ["Your open PRs", open.filter((pr) => pr.author === index?.me && !pr.requestedOfMe).slice(0, 5)], ["Pages", searchPages("")], ["Documents", docs]];
 }
@@ -1992,15 +2002,15 @@ function searchGroups(query) {
 function renderSearchResults() {
   const query = elements.searchInput.value.trim();
   const terms = query.toLowerCase().replace(/^#/, "").split(/\s+/).filter(Boolean);
-  const groups = searchGroups(query).map(([label, items]) => [label, items.map((item) => (label === "Documents" || item.page ? item : label === "Issues" ? { issue: item } : { pr: item }))]).filter(([, items]) => items.length);
+  const groups = searchGroups(query).map(([label, items]) => [label, items.map((item) => (label === "Documents" || item.page ? item : label === "Issues" ? { issue: item } : label === "Initiatives" ? { plan: item } : { pr: item }))]).filter(([, items]) => items.length);
   searchMatches = groups.flatMap(([, items]) => items);
   searchIndex = 0;
   const prCount = searchMatches.filter((item) => item.pr).length;
-  const docCount = searchMatches.filter((item) => !item.pr && !item.page && !item.issue).length;
+  const docCount = searchMatches.filter((item) => !item.pr && !item.page && !item.issue && !item.plan).length;
   elements.searchStatus.textContent = `${prCount ? `${prCount} ${prCount === 1 ? "PR" : "PRs"} · ` : ""}${docCount} ${docCount === 1 ? "document" : "documents"}`;
   let position = 0;
   elements.searchResults.innerHTML = searchMatches.length
-    ? groups.map(([label, items]) => `<div class="search-section" role="presentation">${label}</div>${items.map((item) => { const index = position++; return item.pr ? renderPrResult(item, index, terms) : item.issue ? renderIssueResult(item, index, terms) : item.page ? renderPageResult(item, index) : renderSearchResult(item, index, terms); }).join("")}`).join("")
+    ? groups.map(([label, items]) => `<div class="search-section" role="presentation">${label}</div>${items.map((item) => { const index = position++; return item.pr ? renderPrResult(item, index, terms) : item.issue ? renderIssueResult(item, index, terms) : item.plan ? renderPlanResult(item, index, terms) : item.page ? renderPageResult(item, index) : renderSearchResult(item, index, terms); }).join("")}`).join("")
     : '<div class="search-empty"><strong>No matches</strong><span>Try a title, path, task ID, PR number or title, project, or tag.</span></div>';
   elements.searchResults.scrollTop = 0;
   syncSearchSelection();
@@ -2025,6 +2035,7 @@ function openSearch() {
   elements.searchInput.select();
   // The index from the last open renders at once; the fresh copy replaces it unless the selection has moved.
   loadPrIndex().then(() => { if (elements.searchDialog.open && searchIndex === 0) renderSearchResults(); }, () => {});
+  if (!cachedPlans()) loadPlans().then(() => { if (elements.searchDialog.open && searchIndex === 0) renderSearchResults(); }, () => {});
 }
 
 function openSearchResult(index, external = false) {
@@ -2036,6 +2047,7 @@ function openSearchResult(index, external = false) {
   if (doc.page) { closeOverview(); doc.page.run(); }
   else if (doc.pr) openPrOverlay(doc.pr.slug, doc.pr.number);
   else if (doc.issue) openIssue(doc.issue.key);
+  else if (doc.plan) openPlan(doc.plan.id);
   else { closeOverview(); selectDocument(doc.path); }
 }
 
@@ -2277,6 +2289,8 @@ function visitResult(href) {
   const params = new URL(href, location.href).searchParams;
   const pr = params.get("pr")?.split("#");
   if (pr?.length === 2) return prResult(findPr(pr[0], Number(pr[1])) || { slug: pr[0], number: Number(pr[1]) }, []);
+  const plan = params.get("plan");
+  if (plan) return { icon: "initiative", title: escapeHtml(planTitle(plan) || plan.split("/").pop()), detail: escapeHtml(`${plan.split(":")[0].split("/").pop()} · ${params.get("doc")?.split("/").pop() || "initiative"}`), side: "Initiative" };
   const issueKey = params.get("issue");
   if (issueKey) { const issue = cachedIssues()?.issues?.find((candidate) => candidate.key === issueKey); return issue ? issueResult(issue, []) : { icon: "issue", title: escapeHtml(issueKey), detail: "Jira issue", side: "Issue" }; }
   const tree = params.get("wt");
@@ -2304,6 +2318,7 @@ function resumeVisit(href) {
   if (pr?.length === 2) openPrOverlay(pr[0], Number(pr[1]), file, scope);
   else if (params.get("wt")) openWorktreeOverlay(params.get("wt"), file, scope);
   else if (params.get("issue")) openIssue(params.get("issue"));
+  else if (params.get("plan")) openPlan(params.get("plan"), params.get("doc") || "");
   else closeOverview();
 }
 // Going to a plain page from over the PR/worktree overview closes it (its toast offers Reopen).
@@ -2317,8 +2332,9 @@ document.addEventListener("overview-closed", (event) => {
   const description = pr?.length === 2
     ? `${prNumberLabel(pr[0], pr[1])} ${findPr(pr[0], Number(pr[1]))?.title || ""}`.trim()
     : issueKey ? (issue ? `${issue.type === "Project" ? "" : issue.label || issue.key} ${issue.summary}`.trim() : issueKey.replace(/^linear:/, ""))
+    : params.get("plan") ? planTitle(params.get("plan")) || params.get("plan").split("/").pop()
     : params.get("wt")?.split("/").pop() || "";
-  showNotice(`Closed the ${pr ? "PR" : issue?.type === "Project" ? "project" : issueKey ? "issue" : "worktree"} overview`, false, { kind: "info", description, action: { label: "Reopen", run: () => resumeVisit(event.detail) } });
+  showNotice(`Closed the ${pr ? "PR" : issue?.type === "Project" ? "project" : issueKey ? "issue" : params.get("plan") ? "initiative" : "worktree"} ${params.get("plan") ? "reader" : "overview"}`, false, { kind: "info", description, action: { label: "Reopen", run: () => resumeVisit(event.detail) } });
 });
 
 const historyMenu = document.querySelector("#history-menu");
@@ -2410,6 +2426,7 @@ async function boot() {
     const worktree = search.get("wt");
     if (worktree) openWorktreeOverlay(worktree, file, scope);
     if (search.get("issue")) openIssue(search.get("issue"));
+    if (search.get("plan")) openPlan(search.get("plan"), search.get("doc") || "");
     if (config().issues.jql) loadIssues().catch(() => {}); // ⌘K finds issues by key and title
     recordVisit();
   } catch (error) {
