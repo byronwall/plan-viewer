@@ -1133,7 +1133,7 @@ function openWorkItem(id) {
       <button type="button" class="work-item-icon-button" data-dialog-close aria-label="Close">${glyph("x")}</button>
     </header>
     <nav class="work-item-rail" aria-label="Work breakdown"><ol>${rail}</ol><p><span><kbd>J</kbd><kbd>K</kbd> items</span><span><kbd>←</kbd><kbd>→</kbd> updates</span><span><kbd>G</kbd> graph</span></p></nav>
-    ${workItemView === "graph" ? `<div class="work-item-main is-graph" tabindex="-1"><div class="work-item-graph" tabindex="0" aria-label="Work stream graph">${workItemGraph(doc, id, (key) => updates.get(key)?.length || 0)}</div></div>` : `<div class="work-item-main" tabindex="-1">
+    ${workItemView === "graph" ? `<div class="work-item-main is-graph" tabindex="-1"><div class="work-item-graph" tabindex="0" aria-label="Work stream graph">${workItemGraph(doc, id, (key) => updates.get(key)?.length || 0)}</div>${workGraphTools}</div>` : `<div class="work-item-main" tabindex="-1">
       <header class="work-item-heading">
         <p class="work-item-kicker"><code>${escapeHtml(node.id)}</code>${workStatusIcon(node, nodes)}<span>${escapeHtml(label)}</span>${parent ? `<span class="work-item-in">in</span><button type="button" class="work-item-parent" data-work-item="${escapeHtml(parent.id)}" title="${escapeHtml(`${parent.id} · ${parent.title}`)}">${escapeHtml(parent.id)} ${escapeHtml(parent.title)}</button>` : ""}</p>
         <h2 id="work-item-title">${escapeHtml(node.title)}</h2>
@@ -1154,14 +1154,14 @@ function openWorkItem(id) {
   // Scroll only the rail and graph panes; scrollIntoView would also nudge the page under the modal.
   const centerIn = (pane, target) => { if (!pane || !target) return; const p = pane.getBoundingClientRect(), t = target.getBoundingClientRect(); pane.scrollTop += t.top - p.top - (p.height - t.height) / 2; pane.scrollLeft += t.left - p.left - (p.width - t.width) / 2; };
   centerIn(workItemDialog.querySelector(".work-item-rail ol"), workItemDialog.querySelector(".work-item-rail-row.is-current"));
-  centerWorkGraph(workItemDialog.querySelector(".work-item-graph"));
+  showWorkGraph(workItemDialog.querySelector(".work-item-graph"));
   const url = new URL(location.href);
   url.searchParams.set("item", id);
   if (workItemView === "graph") url.searchParams.set("graph", "1"); else url.searchParams.delete("graph");
   history.replaceState(null, "", url);
 }
 
-// Graph view pans by drag and zooms by wheel around the cursor. The zoom sticks across items; each render centers the open item.
+// Graph view pans by drag and zooms by wheel around the cursor, or by the corner toolbar and its keys (− + 0 F C).
 // Overpan keeps only a sliver of the graph on screen, so either edge can sit at the far side of the pane.
 const workGraphView = { scale: 1, x: 0, y: 0 };
 let workGraphDrag = null;
@@ -1172,7 +1172,47 @@ function applyWorkGraphView(pane) {
   workGraphView.x = Math.min(pane.clientWidth - keep, Math.max(keep - graph.offsetWidth * s, workGraphView.x));
   workGraphView.y = Math.min(pane.clientHeight - keep, Math.max(keep - graph.offsetHeight * s, workGraphView.y));
   graph.style.transform = `translate(${workGraphView.x}px, ${workGraphView.y}px) scale(${s})`;
+  const zoom = pane.parentElement.querySelector("[data-graph-zoom]");
+  if (zoom) zoom.textContent = `${Math.round(s * 100)}%`;
 }
+// Each render keeps the zoom: a graph that fits at it is centered whole (the open item is outlined); a larger one centers the item.
+function showWorkGraph(pane) {
+  const graph = pane?.querySelector(".work-graph");
+  if (!graph) return;
+  const s = workGraphView.scale, w = graph.offsetWidth * s, h = graph.offsetHeight * s;
+  if (w > pane.clientWidth || h > pane.clientHeight) return centerWorkGraph(pane);
+  Object.assign(workGraphView, { x: (pane.clientWidth - w) / 2, y: (pane.clientHeight - h) / 2 });
+  applyWorkGraphView(pane);
+}
+// Zooms by `factor` keeping the pane point (x, y) still; the pane center when no point is given.
+function zoomWorkGraph(pane, factor, x = pane.clientWidth / 2, y = pane.clientHeight / 2) {
+  const next = Math.min(2.5, Math.max(.1, workGraphView.scale * factor)), ratio = next / workGraphView.scale;
+  Object.assign(workGraphView, { scale: next, x: x - (x - workGraphView.x) * ratio, y: y - (y - workGraphView.y) * ratio });
+  applyWorkGraphView(pane);
+}
+// Fit shows the whole graph, never above 100%, so small graphs stay at reading size.
+function fitWorkGraph(pane) {
+  const graph = pane?.querySelector(".work-graph");
+  if (!graph) return;
+  const pad = 24, s = Math.max(.1, Math.min(1, (pane.clientWidth - pad * 2) / graph.offsetWidth, (pane.clientHeight - pad * 2) / graph.offsetHeight));
+  Object.assign(workGraphView, { scale: s, x: (pane.clientWidth - graph.offsetWidth * s) / 2, y: (pane.clientHeight - graph.offsetHeight * s) / 2 });
+  applyWorkGraphView(pane);
+}
+const workGraphActions = {
+  "zoom-out": (pane) => zoomWorkGraph(pane, 1 / 1.25),
+  "zoom-in": (pane) => zoomWorkGraph(pane, 1.25),
+  actual: (pane) => zoomWorkGraph(pane, 1 / workGraphView.scale),
+  fit: fitWorkGraph,
+  item: centerWorkGraph,
+};
+const workGraphKeys = { "-": "zoom-out", "_": "zoom-out", "=": "zoom-in", "+": "zoom-in", "0": "actual", f: "fit", c: "item" };
+const workGraphTools = `<div class="work-graph-tools" role="toolbar" aria-label="Graph zoom">
+  <button type="button" data-graph-action="zoom-out" title="Zoom out (−)" aria-label="Zoom out">−</button>
+  <button type="button" class="work-graph-zoom" data-graph-action="actual" title="Reset to 100% (0)" aria-label="Reset zoom to 100%"><span data-graph-zoom>100%</span></button>
+  <button type="button" data-graph-action="zoom-in" title="Zoom in (+)" aria-label="Zoom in">+</button>
+  <button type="button" data-graph-action="fit" title="Fit the whole graph (F)">Fit</button>
+  <button type="button" data-graph-action="item" title="Center the open item (C)">Item</button>
+</div>`;
 function centerWorkGraph(pane) {
   const graph = pane?.querySelector(".work-graph"), current = graph?.querySelector(".is-current");
   if (!current) return applyWorkGraphView(pane);
@@ -1186,12 +1226,13 @@ workItemDialog.addEventListener("wheel", (event) => {
   const pane = event.target.closest(".work-item-graph");
   if (!pane) return;
   event.preventDefault();
-  const p = pane.getBoundingClientRect(), mx = event.clientX - p.left, my = event.clientY - p.top;
-  const next = Math.min(2.5, Math.max(.2, workGraphView.scale * Math.exp(-event.deltaY * (event.ctrlKey ? .01 : .002))));
-  const ratio = next / workGraphView.scale;
-  Object.assign(workGraphView, { scale: next, x: mx - (mx - workGraphView.x) * ratio, y: my - (my - workGraphView.y) * ratio });
-  applyWorkGraphView(pane);
+  const p = pane.getBoundingClientRect();
+  zoomWorkGraph(pane, Math.exp(-event.deltaY * (event.ctrlKey ? .01 : .002)), event.clientX - p.left, event.clientY - p.top);
 }, { passive: false });
+workItemDialog.addEventListener("dblclick", (event) => {
+  const pane = event.target.closest(".work-item-graph");
+  if (pane && !event.target.closest("[data-work-item]")) fitWorkGraph(pane);
+});
 workItemDialog.addEventListener("pointerdown", (event) => {
   const pane = event.target.closest(".work-item-graph");
   if (!pane || event.button !== 0) return;
@@ -1236,6 +1277,8 @@ workItemDialog.addEventListener("click", (event) => {
     event.stopPropagation(); // the document's outside-click handler would close the composer this click opens
     return openWorkComposer(workItemDialog.dataset.item, agent.dataset.workAgent);
   }
+  const graphAction = event.target.closest("[data-graph-action]");
+  if (graphAction) return workGraphActions[graphAction.dataset.graphAction](workItemDialog.querySelector(".work-item-graph"));
   const view = event.target.closest("[data-work-view]");
   if (view) {
     workItemView = view.dataset.workView;
@@ -1266,6 +1309,11 @@ workItemDialog.addEventListener("keydown", (event) => {
     event.preventDefault();
     workItemView = workItemView === "graph" ? "item" : "graph";
     return openWorkItem(workItemDialog.dataset.item);
+  }
+  const graphKey = workItemView === "graph" && workGraphKeys[event.key.toLowerCase()];
+  if (graphKey) {
+    event.preventDefault();
+    return workGraphActions[graphKey](workItemDialog.querySelector(".work-item-graph"));
   }
   const walk = { j: 1, k: -1 }[event.key.toLowerCase()];
   if (!walk) return;
