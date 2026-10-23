@@ -55,4 +55,6 @@ npm run lint    # task front matter, work breakdowns, action references
 npm run links   # broken links and unknown task IDs
 ```
 
+When `npm run links` names a Slack channel or DM that `reference/slack-channels.md` does not, look it up in Slack (one message of a channel shows its name; a DM shows who it is with) and add `- C…: #channel-name` or `- D…: @Person` there. Leave an entry blank rather than guessing.
+
 Use `npm run move -- <from> <to>` to rename or move a file; it repairs every link to it. `npm run task -- TASK-0101` prints a task's context in compact form.

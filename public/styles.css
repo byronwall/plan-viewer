@@ -858,10 +858,12 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .doc-dock-button[aria-expanded="true"] .doc-dock-badge { background: var(--paper); color: var(--action-ink); }
 @container doc-dock (max-width: 820px) { .doc-dock-label { display: none; } .doc-dock-bar { gap: 8px; } }
 
-.doc-dock-panel { position: fixed; inset: auto; top: anchor(bottom); right: anchor(right); position-try-fallbacks: flip-inline; width: min(540px, calc(100vw - 24px)); max-height: min(72vh, 680px); margin: 8px 0 0; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); padding: 0; color: var(--ink); box-shadow: 0 24px 56px -12px rgba(24, 33, 47, .28), 0 2px 6px rgba(24, 33, 47, .06); transform-origin: top right; transition: opacity 180ms var(--ease-out), transform 220ms var(--ease-out), overlay 220ms allow-discrete, display 220ms allow-discrete; }
+.doc-dock-panel { position: fixed; inset: auto; top: anchor(bottom); right: anchor(right); position-try-fallbacks: flip-inline, --dock-fit; width: min(540px, calc(100vw - 24px)); max-height: min(72vh, 680px); margin: 8px 0 0; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); padding: 0; color: var(--ink); box-shadow: 0 24px 56px -12px rgba(24, 33, 47, .28), 0 2px 6px rgba(24, 33, 47, .06); transform-origin: top right; transition: opacity 180ms var(--ease-out), transform 220ms var(--ease-out), overlay 220ms allow-discrete, display 220ms allow-discrete; }
 .doc-dock-panel-work { width: min(780px, calc(100vw - 24px)); }
 .doc-dock-panel:not(:popover-open) { opacity: 0; transform: translateY(-4px) scale(.98); transition-duration: 120ms; }
 @starting-style { .doc-dock-panel:popover-open { opacity: 0; transform: translateY(-6px) scale(.97); } }
+/* When neither side of the button has room, span the viewport instead of running off it. */
+@position-try --dock-fit { top: anchor(bottom); right: 12px; bottom: 12px; left: 12px; width: auto; height: auto; max-height: none; }
 @supports not (anchor-name: --dock) { .doc-dock-panel { top: 52px; right: 24px; } }
 @media (prefers-reduced-motion: reduce) { .doc-dock-panel, .doc-dock-panel:not(:popover-open) { transform: none; } }
 .doc-dock-panel-header { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 11px; border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .94); padding: 12px 14px 11px 16px; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
@@ -875,7 +877,7 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .doc-dock-panel-body .work-graph-disclosure { margin-top: 14px; }
 .dock-empty { margin: 6px 0; color: var(--muted); font-size: .82rem; }
 .doc-dock-panel { overflow-x: hidden; }
-.doc-dock-panel-links { width: min(720px, calc(100vw - 24px)); height: min(72vh, 600px); }
+.doc-dock-panel-links { width: min(860px, calc(100vw - 24px)); height: min(72vh, 600px); }
 .doc-dock-panel-links:popover-open { display: flex; flex-direction: column; overflow: hidden; }
 .doc-dock-panel-links .doc-dock-panel-body { flex: 1; min-height: 0; padding: 0; }
 .dock-link-browser { height: 100%; display: grid; grid-template-columns: 148px minmax(0, 1fr); }
@@ -886,28 +888,30 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .dock-source small { color: var(--quiet-text); font: 700 .64rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
 .dock-source[aria-selected="true"] small { color: var(--action-muted); }
 .dock-source-lists { min-width: 0; overflow-y: auto; overscroll-behavior: contain; }
-.dock-source-list { display: grid; gap: 0; padding: 4px 6px; }
+/* Rows and channel sections are subgrids of the list, so every row shares one set of column edges. */
+.dock-source-list { display: grid; grid-template-columns: fit-content(15em) minmax(0, 1fr) auto 12px; align-content: start; column-gap: 12px; padding: 4px 6px; }
+.dock-source-list.is-unlabeled { grid-template-columns: minmax(0, 1fr) auto 12px; }
+.dock-source-list.is-unlabeled .dock-link-label { display: none; }
 .dock-source-list[hidden] { display: none; }
+.dock-channel { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; }
 .dock-channel + .dock-channel { margin-top: 2px; }
-.dock-channel-heading { position: sticky; top: -6px; z-index: 1; display: flex; align-items: baseline; gap: 8px; margin: 0 -6px; background: rgba(255, 255, 255, .94); padding: 7px 16px 3px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.dock-channel-heading { grid-column: 1 / -1; position: sticky; top: -6px; z-index: 1; display: flex; align-items: baseline; gap: 8px; margin: 0 -6px; background: rgba(255, 255, 255, .94); padding: 7px 16px 3px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 .dock-channel-name { color: var(--ink); font-size: .8rem; font-weight: 700; letter-spacing: -.005em; }
 .dock-channel-name.is-unnamed { color: var(--muted); }
 .dock-channel-name code { margin-left: 4px; color: var(--quiet-text); font: 600 .68rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .dock-channel-heading small { color: var(--quiet-text); font: 700 .64rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .doc-dock-panel-backlinks .doc-dock-panel-body, .doc-dock-panel-documents .doc-dock-panel-body { padding: 6px; }
 .doc-dock-panel-backlinks .dock-source-list, .doc-dock-panel-documents .dock-source-list { padding: 0; }
-.dock-link { --status-ink: var(--action-ink); min-width: 0; display: grid; grid-template-columns: 16px minmax(0, 1fr) auto 12px; align-items: start; gap: 8px; border-radius: 6px; padding: 4px 10px; color: var(--body-ink); font-size: .8rem; line-height: 1.4; text-decoration: none; }
-.dock-link.is-bare { grid-template-columns: minmax(0, 1fr) auto 12px; }
+.dock-link { --status-ink: var(--action-ink); grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: baseline; border-radius: 6px; padding: 4px 10px; color: var(--body-ink); font-size: .8rem; line-height: 1.4; text-decoration: none; }
 .dock-link::after { content: none !important; }
 .dock-link:hover { background: var(--hover-field); color: var(--ink); }
 .dock-link[aria-current="page"] { background: var(--selected); color: var(--action-ink); }
-.dock-link-icon { display: inline-grid; place-items: center; height: 1.12rem; color: var(--status-ink); }
+.dock-link-icon { display: inline-grid; place-items: center; margin-right: 6px; vertical-align: -3px; color: var(--status-ink); }
 .dock-source .dock-link-icon { height: auto; color: inherit; }
-.dock-link-text { min-width: 0; display: flex; align-items: baseline; gap: 10px; overflow-wrap: anywhere; }
-.dock-link-detail { min-width: 0; }
-.dock-link-label { flex: none; min-width: 5.6em; max-width: 45%; color: var(--action-ink); font: 600 .72rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.dock-link-detail { min-width: 0; overflow-wrap: anywhere; }
+.dock-link-path { display: block; color: var(--quiet-text); font: 500 .7rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: normal; }
+.dock-link-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--action-ink); white-space: nowrap; font: 600 .72rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .dock-link-state { color: var(--muted); font-size: .72rem; font-weight: 600; white-space: nowrap; animation: dock-state-in 220ms var(--ease-out) both; }
-.dock-link-state:empty { display: none; }
 .dock-link-state[data-tone="open"], .dock-link-state[data-tone="progress"] { color: var(--action-ink); }
 .dock-link-state[data-tone="draft"] { color: #5d477b; }
 .dock-link-state[data-tone="done"] { color: var(--success-ink); }

@@ -76,7 +76,11 @@ function slackSummary(url, text) {
 }
 
 const linkText = (a) => a.textContent.replace(/\(opens in [^)]*\)/g, "").replace(/[⁠↗→]/g, "").trim();
-const docLabel = (doc) => doc?.task ? doc.task.id : doc?.date ? `${doc.kind} · ${doc.date}` : doc?.title;
+// Tasks and dated notes lead with their ID or date; other documents lead with their title, with the path under it
+// (`where: ""` drops it where the folder is already known).
+const docItem = (doc, path, where = path) => doc?.task ? { path, label: doc.task.id, detail: doc.task.title, status: doc.task.status }
+  : doc?.date ? { path, label: `${doc.kind} · ${doc.date}`, detail: doc.title }
+  : { path, label: "", detail: doc?.title || path, where };
 
 // Outgoing links, read from the rendered document so every detector (markdown links, bare IDs, task paths) counts.
 export function collectLinks(root, documents) {
@@ -87,7 +91,7 @@ export function collectLinks(root, documents) {
     if (path) {
       const doc = byPath.get(path);
       const group = /^tasks\/TASK-\d{4}\.md$/.test(path) ? "tasks" : "docs";
-      if (!groups.get(group).has(path)) groups.get(group).set(path, { path, label: docLabel(doc) || path, detail: doc?.task?.title || (doc?.date ? path : doc?.title !== docLabel(doc) ? doc?.title : path), status: doc?.task?.status });
+      if (!groups.get(group).has(path)) groups.get(group).set(path, doc ? docItem(doc, path) : { path, label: "", detail: path });
       continue;
     }
     const href = a.getAttribute("href");
@@ -103,19 +107,25 @@ export function collectLinks(root, documents) {
     else if (url.hostname === "linear.app") [group, label, detail] = ["linear", issue?.[1] || text, issue && text !== issue[1] ? text : "Linear issue"];
     else if (url.hostname.endsWith(".atlassian.net")) [group, label, detail] = ["jira", issue?.[1] || text, issue && text !== issue[1] ? text : "Jira issue"];
     else if (isSlackLink(href)) [group, label, detail, state] = ["slack", ...slackSummary(url, text)];
-    else if (url.protocol === "codex:" || url.hostname === "chatgpt.com") [group, label, detail] = ["chats", text || "Conversation", url.protocol === "codex:" ? "Codex" : "ChatGPT"];
+    else if (url.protocol === "codex:" || url.hostname === "chatgpt.com") [group, label, detail] = ["chats", url.protocol === "codex:" ? "Codex" : "ChatGPT", text || "Conversation"];
     for (const items of groups.values()) if (items.has(href)) group = "";
     if (group) groups.get(group).set(href, { href, label, detail, external: url.protocol !== "codex:", metaKey: metadataKey(href), state, slack: group === "slack", channel: group === "slack" ? url.pathname.split("/")[2] : "" });
   }
   return SOURCES.map(([key, name, icon]) => ({ key, name, icon, items: [...groups.get(key).values()] })).filter((group) => group.items.length);
 }
 
-// Without an icon the row is bare: inside the link browser the selected source already says what kind it is.
+// Rows share their list's columns (label, title, state, arrow) so keys, titles and states line up from row to row.
+// The icon rides in the label cell; inside the link browser only tasks keep one, since the source rail names the kind.
+// Paths break only after a slash, never at a hyphen.
+const shownPath = (path) => escapeHtml(path).replaceAll("-", "\u2011").replaceAll("/", "/<wbr>");
 function linkRow(item, icon = "") {
-  const body = `${icon ? `<span class="dock-link-icon">${icon}</span>` : ""}<span class="dock-link-text"><span class="dock-link-label">${escapeHtml(item.label)}</span> <span class="dock-link-detail">${escapeHtml(item.detail || "")}</span></span><span class="dock-link-state">${escapeHtml(item.state || "")}</span>`;
-  if (item.path) return `<a class="markdown-document-link dock-link${icon ? "" : " is-bare"}${item.status ? ` task-status-ink-${item.status}` : ""}"${item.current ? ' aria-current="page"' : ""} href="?${new URLSearchParams({ path: item.path })}" data-document-path="${escapeHtml(item.path)}" data-document-anchor="" title="${escapeHtml(`${item.label} ${item.detail || ""}`)}">${body}<span class="dock-link-out" aria-hidden="true">→</span></a>`;
-  return `<a class="dock-link${icon ? "" : " is-bare"}${item.slack ? " slack-link" : ""}" href="${escapeHtml(item.href)}"${item.external ? ' target="_blank" rel="noreferrer"' : ""}${item.metaKey ? ` data-meta-key="${escapeHtml(item.metaKey)}"` : ""} title="${escapeHtml(item.href)}">${body}<span class="dock-link-out" aria-hidden="true">↗</span></a>`;
+  const body = `<span class="dock-link-label">${icon ? `<span class="dock-link-icon">${icon}</span>` : ""}${escapeHtml(item.label || "")}</span><span class="dock-link-detail">${escapeHtml(item.detail || "")}${item.where ? `<span class="dock-link-path">${shownPath(item.where)}</span>` : ""}</span><span class="dock-link-state">${escapeHtml(item.state || "")}</span>`;
+  if (item.path) return `<a class="markdown-document-link dock-link${item.status ? ` task-status-ink-${item.status}` : ""}"${item.current ? ' aria-current="page"' : ""} href="?${new URLSearchParams({ path: item.path })}" data-document-path="${escapeHtml(item.path)}" data-document-anchor="" title="${escapeHtml(item.path)}">${body}<span class="dock-link-out" aria-hidden="true">→</span></a>`;
+  return `<a class="dock-link${item.slack ? " slack-link" : ""}" href="${escapeHtml(item.href)}"${item.external ? ' target="_blank" rel="noreferrer"' : ""}${item.metaKey ? ` data-meta-key="${escapeHtml(item.metaKey)}"` : ""} title="${escapeHtml(item.href)}">${body}<span class="dock-link-out" aria-hidden="true">↗</span></a>`;
 }
+
+// A list without any label or icon drops the label column instead of indenting every title by an empty one.
+const linkList = (rows, labeled, attrs = "") => `<div class="dock-source-list${labeled ? "" : " is-unlabeled"}" ${attrs}>${rows}</div>`;
 
 // Slack rows sit under their channel or DM, busiest first. Headers show the ID until a name arrives with the link
 // metadata (from reference/slack-channels.md, `- C…: #channel` or `- D…: @Person`, or from a Slack token).
@@ -131,9 +141,9 @@ function slackChannels(group) {
 // Sources down the left, one source's links on the right; the first source starts selected.
 function linkBrowser(groups) {
   const tabs = groups.map((group, index) => `<button type="button" class="dock-source" role="tab" data-dock-source="${group.key}" aria-selected="${index === 0}"><span class="dock-link-icon">${group.icon}</span><span>${escapeHtml(group.name)}</span><small>${group.items.length}</small></button>`).join("");
-  // Only tasks keep their icon, colored by status.
   const rows = (group) => group.key === "slack" ? slackChannels(group) : group.items.map((item) => linkRow(item, group.key === "tasks" ? group.icon : "")).join("");
-  const panes = groups.map((group, index) => `<div class="dock-source-list" role="tabpanel" data-dock-source-list="${group.key}"${index === 0 ? "" : " hidden"}>${rows(group)}</div>`).join("");
+  const labeled = (group) => group.key === "tasks" || group.items.some((item) => item.label);
+  const panes = groups.map((group, index) => linkList(rows(group), labeled(group), `role="tabpanel" data-dock-source-list="${group.key}"${index === 0 ? "" : " hidden"}`)).join("");
   return `<div class="dock-link-browser"><div class="dock-sources" role="tablist" aria-orientation="vertical">${tabs}</div><div class="dock-source-lists">${panes}</div></div>`;
 }
 
@@ -175,10 +185,10 @@ export function renderDock({ doc, documents, links, body }) {
   const entries = updates && parseUpdates(updates.markdown);
   const latest = entries?.map((entry) => entry.date).sort().at(-1);
   if (updates) add("updates", "Updates", ICONS.updates, `${entries?.length || countUpdates(updates.markdown) || ""}`, updates.title, latest ? `Latest ${relativeDate(latest)} · ${entries.length} ${entries.length === 1 ? "entry" : "entries"}` : "Recorded in the task", body(updates), updates.id);
-  if (subDocuments.length) add("documents", "Documents", ICONS.doc, `${subDocuments.length}`, "Task documents", `${subDocuments.length} in ${taskId}-assets`, `<div class="dock-source-list">${parentTask ? linkRow({ path: parentTask.path, label: taskId, detail: parentTask.task?.title || parentTask.title, status: parentTask.task?.status }, SERVICE_ICONS.task) : ""}${subDocuments.map((sub) => linkRow({ path: sub.path, label: sub.title, detail: sub.path.slice(assetsDir.length), current: sub.path === doc.path }, ICONS.doc)).join("")}</div>`);
+  if (subDocuments.length) add("documents", "Documents", ICONS.doc, `${subDocuments.length}`, "Task documents", `${subDocuments.length} in ${taskId}-assets`, linkList(`${parentTask ? linkRow(docItem(parentTask, parentTask.path), SERVICE_ICONS.task) : ""}${subDocuments.map((sub) => linkRow({ ...docItem(sub, sub.path, ""), current: sub.path === doc.path }, ICONS.doc)).join("")}`, true));
   add("links", "Links", ICONS.links, `${linkCount}`, "Links out", linkCount ? `${linkCount} across ${links.length} ${links.length === 1 ? "source" : "sources"}` : "No links in this document", linkCount ? linkBrowser(links) : '<p class="dock-empty">This document doesn\'t link anywhere yet.</p>');
   add("backlinks", "Backlinks", ICONS.backlinks, `${backlinks.length}`, "Linked from", backlinks.length ? `${backlinks.length} ${backlinks.length === 1 ? "document links" : "documents link"} here` : "Nothing links here yet", backlinks.length
-    ? `<div class="dock-source-list">${backlinks.map((source) => linkRow({ path: source.path, label: docLabel(source), detail: source.task?.title || source.title, status: source.task?.status }, source.task ? SERVICE_ICONS.task : ICONS.doc)).join("")}</div>`
+    ? linkList(backlinks.map((source) => linkRow(docItem(source, source.path), source.task ? SERVICE_ICONS.task : ICONS.doc)).join(""), true)
     : '<p class="dock-empty">No other document mentions this one yet.</p>');
 
   return `<div class="doc-dock" data-doc-dock><div class="doc-dock-bar">
