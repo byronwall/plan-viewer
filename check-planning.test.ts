@@ -51,6 +51,12 @@ test("planning lint rejects viewer diagnostics and broken action references with
   assert.ok(planningErrors(taskPath, source + "  - W1.2: Duplicate [open]\n").some(error => error.includes("Duplicate work item W1.2")));
 });
 
+test("planning lint flags fences the viewer would show as text or that never close", () => {
+  assert.deepEqual(planningErrors("plans/a/b.md", "1. Step:\n\n   ```text\n   x\n   ```\n\n2. Next\n"), []);
+  assert.ok(planningErrors("plans/a/b.md", "Para\n\n  ```text\n  x\n  ```\n").some(error => error.includes("Line 3: this fence is indented but not inside a list item")));
+  assert.ok(planningErrors("plans/a/b.md", "Intro\n\n```text\nx\n").some(error => error.includes("Line 3: this fence is never closed")));
+});
+
 test("planning lint flags an active task whose only next actions are blocked", () => {
   const active = source.replace("status: open", "status: active");
   assert.ok(planningErrors(taskPath, active).some(error => error.includes("no ready next action: “Verify” (W1.2 is open, after W1.1)")));

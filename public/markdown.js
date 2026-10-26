@@ -394,46 +394,116 @@ function tableAlignments(line) {
 }
 
 function markdownListItem(line) {
-  const match = line.match(/^([ \t]*)([-+*]|\d+\.)\s+(.+)$/);
+  const match = line.match(/^([ \t]*)(([-+*]|\d+\.)\s+)(.+)$/);
   if (!match) return null;
+  const indent = match[1].replaceAll("\t", "    ").length;
   return {
-    indent: match[1].replaceAll("\t", "    ").length,
-    type: match[2].endsWith(".") ? "ol" : "ul",
-    content: match[3],
+    indent,
+    contentIndent: indent + match[2].length,
+    type: match[3].endsWith(".") ? "ol" : "ul",
+    start: match[3].endsWith(".") ? Number.parseInt(match[3], 10) : 1,
+    content: match[4],
   };
+}
+
+const lineIndent = (line) => line.match(/^[ \t]*/)[0].replaceAll("\t", "    ").length;
+const isFence = (line) => /^[ \t]*```/.test(line);
+
+// A list runs from `index` through its items, the blank lines between them, and every indented line under them
+// (paragraphs, fenced blocks), so `1. a`, a fenced block, `2. b` stays one numbered list. Returns its last line.
+// A fence left open ends the list at the end of the document.
+export function markdownListEnd(lines, index) {
+  let end = index;
+  let fenced = false;
+  for (let at = index + 1; at < lines.length; at += 1) {
+    const line = lines[at];
+    if (fenced) { end = at; if (isFence(line)) fenced = false; continue; }
+    if (!line.trim()) continue;
+    if (markdownListItem(line) || lineIndent(line) > 0) {
+      end = at;
+      if (isFence(line)) fenced = true;
+      continue;
+    }
+    break;
+  }
+  return end;
+}
+
+// Fence problems the renderer can't show as code: an indented fence outside a list item renders as text, and an
+// unclosed fence swallows the rest of the document. `plan-viewer lint` reports these.
+export function markdownFenceWarnings(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  const warnings = [];
+  let open = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (open >= 0) { if (line.startsWith("```")) open = -1; continue; }
+    if (line.startsWith("```")) { open = index; continue; }
+    if (markdownListItem(line)) {
+      let fence = -1;
+      const end = markdownListEnd(lines, index);
+      for (let at = index + 1; at <= end; at += 1) if (isFence(lines[at])) fence = fence >= 0 ? -1 : at;
+      if (fence >= 0 && end === lines.length - 1) open = fence;
+      index = end;
+      continue;
+    }
+    if (isFence(line)) {
+      warnings.push(`Line ${index + 1}: this fence is indented but not inside a list item, so the viewer shows it as text. Start it at column 0.`);
+      while (index + 1 < lines.length && !isFence(lines[++index]));
+    }
+  }
+  if (open >= 0) warnings.push(`Line ${open + 1}: this fence is never closed, so the rest of the document renders as code.`);
+  return warnings;
 }
 
 function renderMarkdownList(lines, currentPath) {
   const roots = [];
   const stack = [];
 
+  // Lines that aren't items belong to the deepest open item whose content column they reach, dedented to it. An item's
+  // children are its nested lists and these line runs, in source order.
+  let fenced = false;
+  let owner = null;
   for (const line of lines) {
-    const item = markdownListItem(line);
-    if (!item) continue;
+    const item = fenced ? null : markdownListItem(line);
+    if (!item) {
+      if (!fenced || !owner) {
+        const target = [...stack].reverse().find((open) => lineIndent(line) >= open.list.items.at(-1).contentIndent) || stack[0];
+        if (line.trim() || !owner) owner = target?.list.items.at(-1);
+      }
+      if (isFence(line)) fenced = !fenced;
+      if (!owner) continue;
+      const text = line.replace(new RegExp(`^ {0,${owner.contentIndent}}`), "");
+      if (Array.isArray(owner.children.at(-1))) owner.children.at(-1).push(text);
+      else owner.children.push([text]);
+      continue;
+    }
+    owner = null;
 
     while (stack.length && item.indent < stack.at(-1).indent) stack.pop();
 
     if (!stack.length || item.indent > stack.at(-1).indent) {
       const parentLists = stack.length ? stack.at(-1).list.items.at(-1).children : roots;
-      const list = { type: item.type, items: [] };
+      const list = { type: item.type, start: item.start, items: [] };
       parentLists.push(list);
       stack.push({ indent: item.indent, type: item.type, list, parentLists });
     } else if (item.type !== stack.at(-1).type) {
       const { parentLists } = stack.pop();
-      const list = { type: item.type, items: [] };
+      const list = { type: item.type, start: item.start, items: [] };
       parentLists.push(list);
       stack.push({ indent: item.indent, type: item.type, list, parentLists });
     }
 
-    stack.at(-1).list.items.push({ content: item.content, children: [] });
+    stack.at(-1).list.items.push({ content: item.content, contentIndent: item.contentIndent, children: [] });
   }
 
-  const renderList = (list) => `<${list.type}>${list.items.map((item) => {
+  const renderList = (list) => `<${list.type}${list.type === "ol" && list.start !== 1 ? ` start="${list.start}"` : ""}>${list.items.map((item) => {
     const task = item.content.match(/^\[([ xX])\]\s+(.+)$/);
     const content = task
       ? `<input class="task-box" type="checkbox" ${task[1].toLowerCase() === "x" ? "checked" : ""} tabindex="-1" aria-hidden="true">${inlineMarkdown(task[2], currentPath)}`
       : inlineMarkdown(item.content, currentPath);
-    return `<li>${content}${item.children.map(renderList).join("")}</li>`;
+    const children = item.children.map((child) => !Array.isArray(child) ? renderList(child) : child.some((line) => line.trim()) ? renderMarkdown(child.join("\n"), currentPath) : "");
+    return `<li>${content}${children.join("")}</li>`;
   }).join("")}</${list.type}>`;
 
   return roots.map(renderList).join("");
@@ -580,9 +650,9 @@ export function renderMarkdown(markdown, currentPath = "") {
       html.push(`<h${level}${headingId ? ` id="${escapeHtml(headingId)}"` : ""}>${inlineMarkdown(heading[2], currentPath)}</h${level}>`);
     } else if (listItem) {
       flushParagraph();
-      const listLines = [line];
-      while (index + 1 < lines.length && markdownListItem(lines[index + 1])) listLines.push(lines[++index]);
-      html.push(renderMarkdownList(listLines, currentPath));
+      const end = markdownListEnd(lines, index);
+      html.push(renderMarkdownList(lines.slice(index, end + 1), currentPath));
+      index = end;
     } else if (!line.trim()) {
       flushParagraph();
     } else {

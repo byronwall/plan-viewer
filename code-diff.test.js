@@ -53,6 +53,13 @@ test('consecutive > lines render as one blockquote with Markdown inside', async 
   assert.equal(renderMarkdown('**Evidence:**\n> "Is there a way\n> to go back?"\nAfter'), '<p><strong>Evidence:</strong></p><blockquote><p>&quot;Is there a way to go back?&quot;</p></blockquote><p>After</p>');
 });
 
+test('a list item keeps its indented fences and paragraphs, and a numbered list keeps counting across them', async () => {
+  const { renderMarkdown } = await import('./public/markdown.js');
+  const html = renderMarkdown('1. Writer:\n\n   ```text\n   - not an item\n   ```\n\n2. Round trip\n   - nested\n\n   Then more.\n\nAfter\n\n4. four');
+  assert.match(html, /^<ol><li>Writer:<div class="markdown-code" data-code-source="- not an item" data-code-language="text">/);
+  assert.match(html, /<\/div><\/li><li>Round trip<ul><li>nested<\/li><\/ul><p>Then more.<\/p><\/li><\/ol><p>After<\/p><ol start="4"><li>four<\/li><\/ol>$/);
+});
+
 test('a diff fence marks the changed words of a paired -/+ run', async () => {
   const { renderMarkdown } = await import('./public/markdown.js');
   const html = renderMarkdown('```diff\n-  config: dict | None\n+  config: Secret[dict] | None\n```');

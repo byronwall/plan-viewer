@@ -4,6 +4,7 @@ import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseActions, parseWorkBreakdown, stalledTaskReason } from "./public/actions.js";
+import { markdownFenceWarnings } from "./public/markdown.js";
 import { isViewableDocumentPath, parseChunks, parseTaskDocument, ROOT } from "./server.ts";
 
 export function planningErrors(path: string, markdown: string): string[] {
@@ -12,7 +13,7 @@ export function planningErrors(path: string, markdown: string): string[] {
     const body = parsed ? parsed.body : markdown;
     const chunks = parseChunks(body);
     const work = parseWorkBreakdown(chunks.find(chunk => /^work breakdown$/i.test(chunk.title))?.markdown || "");
-    const errors = [...work.warnings];
+    const errors = [...work.warnings, ...markdownFenceWarnings(markdown)];
     const actions = chunks.filter(chunk => /^(next actions|next steps)$/i.test(chunk.title)).flatMap(chunk => parseActions(chunk.markdown, path));
     for (const action of actions) {
       if (action.workItem && !work.nodes.some(node => node.id === action.workItem)) {
