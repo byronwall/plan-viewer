@@ -183,6 +183,8 @@ button { cursor: pointer; }
 .history-filter input { min-width: 0; flex: 1; height: 44px; border: 0; background: none; padding: 0; color: var(--ink); font: inherit; font-size: .95rem; outline: none; }
 .history-filter input::-webkit-search-cancel-button { display: none; }
 .history-filter kbd { color: var(--muted); }
+.history-tabs { margin: 0 8px 0 0; }
+.history-menu .search-results[hidden] { display: none; }
 /* Shown only when the viewer is out of date: origin is ahead, the server predates the checkout, or this page predates the server. */
 .viewer-update { position: fixed; right: 56px; bottom: 16px; z-index: 60; height: 32px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--action); border-radius: 8px; background: var(--paper); padding: 0 10px; color: var(--action-ink); font: inherit; font-size: .78rem; font-weight: 600; box-shadow: 0 2px 8px rgba(24, 33, 47, .08); cursor: pointer; transition: background-color 140ms, color 140ms; }
 .viewer-update[hidden] { display: none; }
@@ -2143,10 +2145,10 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 .work-item-progress { display: flex; flex: none; align-items: center; gap: 8px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .work-item-progress > span { position: relative; width: 72px; height: 4px; overflow: hidden; border-radius: 2px; background: var(--quiet-field); }
 .work-item-progress > span::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--done) * 100%); background: var(--success); }
-.work-item-views { display: flex; flex: none; gap: 2px; margin-left: auto; border-radius: 7px; background: var(--quiet-field); padding: 2px; }
-.work-item-views button { height: 24px; border: 0; border-radius: 5px; background: transparent; padding: 0 10px; color: var(--muted); font: inherit; font-size: .76rem; font-weight: 600; cursor: pointer; transition: background-color 140ms ease-out, color 140ms ease-out; }
-.work-item-views button:hover { color: var(--ink); }
-.work-item-views button[aria-selected="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgba(24, 33, 47, .12); }
+.work-item-views, .history-tabs { display: flex; flex: none; gap: 2px; margin-left: auto; border-radius: 7px; background: var(--quiet-field); padding: 2px; }
+.work-item-views button, .history-tabs button { height: 24px; border: 0; border-radius: 5px; background: transparent; padding: 0 10px; color: var(--muted); font: inherit; font-size: .76rem; font-weight: 600; cursor: pointer; transition: background-color 140ms ease-out, color 140ms ease-out; }
+.work-item-views button:hover, .history-tabs button:hover { color: var(--ink); }
+.work-item-views button[aria-selected="true"], .history-tabs button[aria-selected="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgba(24, 33, 47, .12); }
 .work-item-views + .work-item-step { margin-left: 8px; }
 .work-item-step { display: flex; align-items: center; gap: 2px; margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .work-item-step-count { min-width: 16ch; margin-right: 6px; text-align: right; } /* reserved so the toggle never shifts while stepping */

@@ -2954,7 +2954,13 @@ document.addEventListener("overview-closed", (event) => {
 });
 
 const historyMenu = document.querySelector("#history-menu");
-const historyRows = () => [...historyMenu.querySelectorAll("[data-visit-href]:not([hidden])")];
+const historyRows = () => [...historyMenu.querySelectorAll(".search-results:not([hidden]) [data-visit-href]:not([hidden])")];
+// Viewed and Changed are separate tabs so a burst of agent edits can't bury where you've been; Tab flips between them.
+function showHistoryTab(tab) {
+  for (const button of historyMenu.querySelectorAll("[data-history-tab]")) button.setAttribute("aria-selected", String(button.dataset.historyTab === tab));
+  for (const list of historyMenu.querySelectorAll("[data-history-list]")) list.hidden = list.dataset.historyList !== tab;
+  filterHistory();
+}
 const historyFilter = () => historyMenu.querySelector(".history-filter input");
 function selectHistoryRow(row) {
   for (const candidate of historyMenu.querySelectorAll("[data-visit-href]")) candidate.setAttribute("aria-selected", String(candidate === row));
@@ -2977,7 +2983,7 @@ historyMenu.addEventListener("beforetoggle", (event) => {
   }));
   const rows = shown.map((visit, index) => resultRow({
     ...visitResult(visit.href),
-    marker: index + changed.length < 9 ? index + changed.length + 1 : "", // the 1–9 jump key
+    marker: index < 9 ? index + 1 : "", // the 1–9 jump key
     side: Date.now() - visit.at < 60_000 ? "just now" : `${ago(visit.at)} ago`,
     tag: "button",
     attrs: `type="button" role="option" aria-selected="false" data-visit-href="${escapeHtml(visit.href)}"`,
@@ -2985,23 +2991,26 @@ historyMenu.addEventListener("beforetoggle", (event) => {
   // The page you're on, pinned above the list, so it's clear what picking a row will replace.
   const here = resultRow({ ...visitResult(location.href), side: "", className: "history-here", marker: "" });
   historyMenu.style.height = "";
-  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recently viewed</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed">${changeRows.length ? `<div class="search-section" role="presentation">Recently changed</div>${changeRows.join("")}` : ""}<div class="search-section" role="presentation">Recently viewed</div>${rows.join("") || '<div class="search-empty"><strong>Nothing yet</strong><span>Pages, PRs and worktrees you open will appear here.</span></div>'}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>H</kbd> close</span><span class="history-count">${shown.length + changed.length} ${shown.length + changed.length === 1 ? "place" : "places"}</span></footer>`;
+  const empty = (title, text) => `<div class="search-empty"><strong>${title}</strong><span>${text}</span></div>`;
+  const tabs = [["viewed", "Viewed"], ["changed", "Changed"]].map(([tab, label]) => `<button type="button" role="tab" tabindex="-1" data-history-tab="${tab}" aria-selected="${tab === "viewed"}">${label}</button>`).join("");
+  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recent places</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><span class="history-tabs" role="tablist" aria-label="Recent places">${tabs}</span><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed" data-history-list="viewed">${rows.join("") || empty("Nothing yet", "Pages, PRs and worktrees you open will appear here.")}</div><div class="search-results" role="listbox" aria-label="Recently changed" data-history-list="changed" hidden>${changeRows.join("") || empty("No changes yet", "Documents edited outside the viewer will appear here.")}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>Tab</kbd> viewed/changed <kbd>H</kbd> close</span><span class="history-count">${shown.length} ${shown.length === 1 ? "place" : "places"}</span></footer>`;
 });
 // Every word must appear in the row's title or detail; the 1–9 markers renumber over what's left.
 function filterHistory() {
   const words = historyFilter().value.toLowerCase().split(/\s+/).filter(Boolean);
-  const all = [...historyMenu.querySelectorAll("[data-visit-href]")];
-  if (words.length && !historyMenu.style.height) historyMenu.style.height = `${historyMenu.offsetHeight}px`; // hold the size so the field doesn't jump
+  const all = [...historyMenu.querySelectorAll(".search-results:not([hidden]) [data-visit-href]")];
   for (const row of all) row.hidden = !words.every((word) => row.textContent.toLowerCase().includes(word));
   const rows = historyRows();
   rows.forEach((row, index) => { row.querySelector(".result-marker").textContent = index < 9 ? index + 1 : ""; });
   historyMenu.querySelector(".history-none")?.remove();
-  if (all.length && !rows.length) historyMenu.querySelector(".search-results").insertAdjacentHTML("beforeend", '<div class="search-empty history-none"><strong>No matches</strong><span>Esc clears the filter.</span></div>');
+  if (all.length && !rows.length) historyMenu.querySelector(".search-results:not([hidden])").insertAdjacentHTML("beforeend", '<div class="search-empty history-none"><strong>No matches</strong><span>Esc clears the filter.</span></div>');
   historyMenu.querySelector(".history-count").textContent = words.length ? `${rows.length} of ${all.length}` : `${all.length} ${all.length === 1 ? "place" : "places"}`;
   selectHistoryRow(rows[0]);
 }
 historyMenu.addEventListener("input", filterHistory);
 historyMenu.addEventListener("click", (event) => {
+  const tab = event.target.closest("[data-history-tab]");
+  if (tab) { showHistoryTab(tab.dataset.historyTab); return; }
   const row = event.target.closest("[data-visit-href]");
   if (!row) return;
   historyMenu.hidePopover();
@@ -3021,6 +3030,11 @@ function openHistoryMenu() {
   const host = [...document.querySelectorAll("dialog[open]")].at(-1) || document.body;
   if (historyMenu.parentElement !== host) host.append(historyMenu);
   historyMenu.showPopover();
+  // Sized to the taller tab, so flipping between them doesn't resize the menu.
+  const lists = [...historyMenu.querySelectorAll("[data-history-list]")];
+  const heights = lists.map((shown) => { for (const list of lists) list.hidden = list !== shown; return historyMenu.offsetHeight; });
+  lists.forEach((list, index) => { list.hidden = index > 0; });
+  historyMenu.style.height = `${Math.max(...heights)}px`;
   selectHistoryRow(historyRows()[0]); // now, not on the async toggle event, so an arrow pressed right after H lands in the list
 }
 historyMenu.addEventListener("keydown", (event) => {
@@ -3029,6 +3043,7 @@ historyMenu.addEventListener("keydown", (event) => {
   const filter = historyFilter();
   const typing = !event.metaKey && !event.ctrlKey && !event.altKey;
   if (/^[1-9]$/.test(event.key) && typing && rows[event.key - 1]) { event.preventDefault(); rows[event.key - 1].click(); return; }
+  if (event.key === "Tab") { event.preventDefault(); showHistoryTab(historyMenu.querySelector('[data-history-tab][aria-selected="false"]').dataset.historyTab); return; }
   if (event.key === "Escape" && filter.value) { event.preventDefault(); filter.value = ""; filterHistory(); return; } // a second Esc closes
   if (event.key.toLowerCase() === "h" && typing && !filter.value) { event.preventDefault(); historyMenu.hidePopover(); return; }
   if (event.key === "Enter" && event.target === filter) { event.preventDefault(); historyMenu.querySelector('[data-visit-href][aria-selected="true"]:not([hidden])')?.click(); return; }
