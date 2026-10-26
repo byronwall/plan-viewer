@@ -844,7 +844,7 @@ export function startServer(port = PORT) {
     closeWatchers();
   });
   server.listen(port, "127.0.0.1", () => {
-    console.log(`${config().title} is ready for ${ROOT} at http://127.0.0.1:${port}`);
+    console.log(`${config().title} is ready for ${ROOT} at http://127.0.0.1:${server.address().port}`);
   });
   return server;
 }
