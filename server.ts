@@ -42,6 +42,11 @@ const PORT = Number(process.env.PLAN_VIEWER_PORT || process.env.PORT || config()
 const MAX_COMMENT_LENGTH = 12_000;
 const ASSET_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".dot"]);
 const liveClients = new Set<ServerResponse>();
+// Recent document changes, newest first, so a page opened later still sees what agents changed since the server started.
+const recentChanges: DocumentChange[] = [];
+const snapshots = new Map<string, string>();
+// Paths the viewer itself just wrote (task status), so their change isn't announced as an agent's.
+const viewerWrites = new Set<string>();
 
 // The viewer's own checkout: what it runs, what is on disk, and how far origin is ahead (fetched at most every five minutes).
 const VIEWER = fileURLToPath(new URL(".", import.meta.url));
@@ -103,6 +108,7 @@ export type TaskSummary = {
   created: string;
   updated: string;
   referencedBy?: string[];
+  work?: { id: string; title: string; status: string }[];
   chatLinks?: { href: string; provider: string; label: string }[];
 };
 
@@ -277,6 +283,64 @@ export function watchMarkdownSources(onChange: (path: string) => void, root = RO
   };
 }
 
+export type DocumentChange = {
+  path: string;
+  title: string;
+  at: number;
+  kind: "created" | "changed" | "deleted";
+  added: number;
+  removed: number;
+  sections: { title: string; anchor: string }[];
+  lines: string[];
+  source: "agent" | "viewer";
+};
+
+// A line-level summary of an edit: how many lines came and went, and the headings they sit under.
+// ponytail: multiset line comparison, not a real diff; moved lines count as unchanged, which suits a notification.
+export function describeChange(path: string, before: string | undefined, after: string | undefined): Omit<DocumentChange, "at" | "source"> {
+  const kind = before === undefined ? "created" : after === undefined ? "deleted" : "changed";
+  const sections = new Map<string, string>();
+  const lines: string[] = [];
+  const count = (from: string, against: string, collect = false) => {
+    const remaining = new Map<string, number>();
+    for (const line of against.split("\n")) remaining.set(line, (remaining.get(line) || 0) + 1);
+    let heading = "";
+    let changed = 0;
+    for (const line of from.split("\n")) {
+      const match = /^#{1,6}\s+(.+?)\s*#*$/.exec(line);
+      if (match) heading = match[1];
+      if (remaining.get(line)) { remaining.set(line, remaining.get(line)! - 1); continue; }
+      if (!line.trim()) continue;
+      changed++;
+      if (collect && lines.length < 40) lines.push(line.slice(0, 400));
+      if (heading && sections.size < 3) sections.set(markdownHeadingId(heading), heading.replace(/[`*_~]/g, ""));
+    }
+    return changed;
+  };
+  const added = count(after || "", before || "", true);
+  const removed = count(before || "", after || "");
+  const text = after ?? before ?? "";
+  const title = extname(path) === ".md" ? titleFromMarkdown(text, basename(path)) : basename(path);
+  return { path, title, kind, added, removed, sections: [...sections].map(([anchor, title]) => ({ title, anchor })), lines };
+}
+
+async function seedSnapshots() {
+  const paths = (await Promise.all(["daily", "tasks", "plans", "reference"].map(walkDocuments))).flat().filter(isViewableDocumentPath);
+  await Promise.all(paths.map(async (path) => snapshots.set(path, await readFile(join(ROOT, path), "utf8").catch(() => ""))));
+}
+
+async function recordChange(path: string) {
+  const after = await readFile(join(ROOT, path), "utf8").catch(() => undefined);
+  const before = snapshots.get(path);
+  if (after === before) return null;
+  if (after === undefined) snapshots.delete(path);
+  else snapshots.set(path, after);
+  const change: DocumentChange = { ...describeChange(path, before, after), at: Date.now(), source: viewerWrites.delete(path) ? "viewer" : "agent" };
+  recentChanges.unshift(change);
+  recentChanges.splice(50);
+  return change;
+}
+
 function titleFromMarkdown(markdown: string, fallback: string) {
   return markdown.match(/^#\s+(.+)$/m)?.[1].trim() || fallback.replace(/\.md$/, "");
 }
@@ -341,6 +405,13 @@ export async function listDocuments() {
   for (const [index, { contents }] of files.entries()) {
     const keys = [...new Set(contents.match(/\b[A-Z][A-Z0-9]+-\d+\b/g) || [])].filter((key) => !key.startsWith("TASK-"));
     if (keys.length) docs[index].issueKeys = keys;
+  }
+  // Work breakdown items, so ⌘K can find one without opening its task.
+  for (const [index, { path, contents }] of files.entries()) {
+    if (docs[index].kind !== "Task") continue;
+    const breakdown = parseChunks(parseTaskDocument(path, contents).body).find((chunk) => /^work breakdown$/i.test(chunk.title));
+    const nodes = breakdown ? parseWorkBreakdown(breakdown.markdown).nodes : [];
+    if (nodes.length) docs[index].task!.work = nodes.map(({ id, title, status }) => ({ id, title, status }));
   }
   for (const doc of docs) {
     const sources = [...(backlinks.get(doc.path) || [])];
@@ -435,7 +506,14 @@ export async function loadDocument(requested: string) {
     const node = work.nodes.find(node => node.id === action.workItem);
     const unavailable = ["completed", "deferred", "waiting"].includes(summary.task?.status || "");
     action.blocked = unavailable || Boolean(action.workItem && (!node || !node.ready));
-    action.blockedReason = unavailable ? `Task is ${summary.task?.status}. Update its state before starting work.` : action.blocked ? "Work item is unavailable. Check its status and prerequisites below." : "";
+    // Advisory only: a waiting action still opens its draft, and the reason says what it is waiting on.
+    const waitingOn = node?.deps.filter(id => work.nodes.find(dep => dep.id === id)?.status !== "completed") || [];
+    action.blockedReason = !action.blocked ? ""
+      : unavailable ? `Task is ${summary.task?.status}`
+      : !node ? `${action.workItem} is not in the work breakdown`
+      : work.warnings.length ? "Work breakdown needs repair"
+      : waitingOn.length ? `After ${waitingOn.join(", ")}`
+      : `${node.id} is ${node.status}`;
   }
   const scheduledActions = [];
   const actionWarnings: string[] = [];
@@ -476,6 +554,26 @@ export function buildActionPrompt(document: Awaited<ReturnType<typeof loadDocume
   return `Advance this next action: ${action.title}\n\nPlanning workspace: ${ROOT}\nSource file: ${document.absolutePath}\nRead the source file and the workspace AGENTS.md before acting. Follow the applicable target repository instructions and preserve unrelated work.\n\n${commentary.trim() ? `${config().user}'s direction for this run (takes precedence over the stored prompt where they differ):\n${commentary.trim()}\n\n` : ""}Stored action prompt:\n${action.prompt}\n\nCarry out the bounded action and verify its result. Record evidence and any remaining blocker in the authoritative task file. Update task state and the work breakdown only when supported by the result. Do not treat drafting a message as authorization to send it.\n\n${CHAT_LINK_INSTRUCTION}`;
 }
 
+type WorkNode = { id: string; title: string; status: string; deps: string[]; parent: string; ready: boolean };
+
+// One work breakdown item, either carried out ("run") or rewritten in the task file ("update"). Items that are not ready
+// can be sent too; the prompt says what they still wait on so the agent confirms before acting.
+export function buildWorkItemPrompt(document: Awaited<ReturnType<typeof loadDocument>>, node: WorkNode, mode: "run" | "update", commentary: string) {
+  const nodes = document.work.nodes as WorkNode[];
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const line = (n: WorkNode) => `${n.id}: ${n.title} [${n.status}]`;
+  const parent = byId.get(node.parent);
+  const waiting = node.deps.filter((id) => byId.get(id)?.status !== "completed");
+  const action = document.nextActions.find((a) => a.workItem === node.id);
+  const direction = commentary.trim() ? `${config().user}'s direction${mode === "run" ? " for this run (takes precedence over the stored prompt where they differ)" : ""}:\n${commentary.trim()}\n\n` : "";
+  const facts = `Planning workspace: ${ROOT}\nSource file: ${document.absolutePath}\nTask: ${document.task?.id || document.title} · ${document.task?.title || document.title}\nWork item: ${line(node)}${parent ? `\nPart of: ${line(parent)}` : ""}${node.deps.length ? `\nAfter: ${node.deps.map((id) => byId.get(id) ? line(byId.get(id)!) : id).join("; ")}` : ""}${action ? `\nLinked next action: ${action.title}` : ""}`;
+  if (mode === "update") {
+    return `Update work item ${node.id} in its task file. Do not carry out the work itself.\n\n${facts}\n\nRead the source file and the workspace AGENTS.md first.\n\n${direction}Revise ${node.id} so the work breakdown matches current understanding: its title, status, nesting, (after: ...) prerequisites, and its linked next action and prompt where one exists. Use the task's Findings and Updates as evidence. Keep IDs stable unless a rename is asked for, and update every reference when one changes. Add a dated update whose bold title names (${node.id}) saying what changed and why. Run the workspace lint on the task and fix what it reports.\n\n${CHAT_LINK_INSTRUCTION}`;
+  }
+  const frontier = node.ready ? "" : `\nThis item is not ready: ${waiting.length ? `it waits on ${waiting.map((id) => byId.get(id) ? line(byId.get(id)!) : id).join("; ")}` : `its status is ${node.status}`}. Check whether that still holds before acting. If it does, do only the preparation that is safe now and report what remains blocked.\n`;
+  return `Advance work item ${node.id}: ${node.title}\n\n${facts}\n${frontier}\nRead the source file and the workspace AGENTS.md before acting. Follow the applicable target repository instructions and preserve unrelated work.\n\n${direction}${action ? `Stored action prompt:\n${action.prompt}\n\n` : ""}Carry out the bounded work and verify its result. Record evidence and any remaining blocker in the authoritative task file. Update the item's status in the work breakdown only when supported by the result. Do not treat drafting a message as authorization to send it.\n\n${CHAT_LINK_INSTRUCTION}`;
+}
+
 const MAX_IMAGES = 6;
 
 // Pasted images arrive as data URLs and land in the workspace's ignored tmp/ so either agent can open them by path.
@@ -495,18 +593,28 @@ export async function saveHandoffImages(images: unknown[]) {
   return paths;
 }
 
-async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex", images: string[] = []) {
+async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex", images: string[] = [], workItem = "", mode = "") {
   const openDraft = (title: string, prompt: string) => getCodexApp().openDraft(ROOT, title, prompt, app, images);
   if (scope === "action") {
     const document = await loadDocument(path);
     const action = document.nextActions.find(action => action.id === actionId);
     if (!action || action.prompt !== expectedPrompt) throw new Error("This action changed. Reload the task and prepare it again.");
-    if (action.blocked || ["completed", "deferred", "waiting"].includes(document.task?.status || "")) throw new Error("This action is blocked or the task is no longer available to start. Reload the task.");
     if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Additional context is too long.");
     const prompt = buildActionPrompt(document, action, commentary);
     dispatchLog(requestId, "validated", { scope, path, actionId });
     if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true };
     return { accepted: true, ...await openDraft(action.title, prompt) };
+  }
+  if (scope === "work") {
+    const document = await loadDocument(path);
+    const node = (document.work.nodes as WorkNode[]).find((n) => n.id === workItem);
+    if (!node) throw new Error(`Work item ${workItem} is no longer in this task. Reload it and try again.`);
+    if (mode !== "run" && mode !== "update") throw new Error("Choose to run or update the work item.");
+    if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Additional context is too long.");
+    const prompt = buildWorkItemPrompt(document, node, mode, commentary);
+    dispatchLog(requestId, "validated", { scope, path, workItem, mode });
+    if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true };
+    return { accepted: true, ...await openDraft(`${mode === "update" ? "Update" : "Advance"} ${node.id}: ${node.title}`, prompt) };
   }
   if (!commentary.trim()) throw new Error("Add a request before opening a draft.");
   if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Commentary is too long for this first version.");
@@ -592,8 +700,9 @@ function serveLiveEvents(request: IncomingMessage, response: ServerResponse) {
   });
 }
 
-function broadcastMarkdownChange(path: string) {
-  const message = `event: markdown\ndata: ${JSON.stringify({ path })}\n\n`;
+async function broadcastMarkdownChange(path: string) {
+  const change = await recordChange(path);
+  const message = `event: markdown\ndata: ${JSON.stringify({ path, change })}\n\n`;
   for (const client of liveClients) client.write(message);
 }
 
@@ -695,8 +804,10 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const keys = Array.isArray(body.keys) ? body.keys.map(String).slice(0, 1000) : [];
       return json(response, 200, { metadata: { ...await lookupLinkMetadata(keys), ...issueTracker.aliasMetadata(keys) } });
     }
+    if (request.method === "GET" && url.pathname === "/api/changes") return json(response, 200, { changes: recentChanges });
     if (request.method === "POST" && url.pathname === "/api/task-status") {
       const body = await readJson(request);
+      viewerWrites.add(String(body.path || ""));
       return json(response, 200, { task: await setTaskStatus(String(body.path || ""), String(body.status || "")) });
     }
     if (request.method === "POST" && url.pathname === "/api/dispatch") {
@@ -704,7 +815,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request, 50_000_000);
       dispatchLog(requestId, "received", { path: String(body.path || ""), scope: String(body.scope || ""), chunkId: String(body.chunkId || "") });
       try {
-        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex"), await saveHandoffImages(Array.isArray(body.images) ? body.images : [])));
+        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex"), await saveHandoffImages(Array.isArray(body.images) ? body.images : []), String(body.workItem || ""), String(body.mode || "")));
       } catch (error) {
         dispatchLog(requestId, "failed", { error: error instanceof Error ? error.message : String(error) });
         throw error;
@@ -725,6 +836,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
 export function startServer(port = PORT) {
   const server = createServer(handleRequest);
+  seedSnapshots().catch(() => {});
   const closeWatchers = watchMarkdownSources(broadcastMarkdownChange);
   codeDashboard.startBackgroundRefresh();
   issueTracker.startBackgroundRefresh();

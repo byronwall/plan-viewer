@@ -35,3 +35,20 @@ export function searchPrs(prs, query) {
     .sort((a, b) => (b.state === "OPEN") - (a.state === "OPEN") || b.number - a.number)
     .slice(0, 6);
 }
+
+// ⌘K ranking. How well the terms match: an exact ID wins, then the whole query in the title, then each term at the
+// start of a title word, inside the title, or only in the other text. 0 means some term did not match at all.
+export function textScore(terms, title, rest = "", id = "") {
+  const heading = title.toLowerCase();
+  if (!terms.length || !terms.every((term) => `${id} ${heading} ${rest}`.toLowerCase().includes(term))) return 0;
+  const query = terms.join(" ");
+  const whole = id.toLowerCase() === query ? 60 : heading === query ? 40 : heading.startsWith(query) ? 20 : heading.includes(query) ? 10 : 0;
+  return whole + terms.reduce((sum, term) => sum + (new RegExp(`(^|[^a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(heading) ? 10 : heading.includes(term) ? 6 : 2), 0);
+}
+
+// Then context: live work rises, finished work sinks, recent edits rise (half-life about ten days), and yours rises.
+export function contextScore({ live = false, done = false, updated, mine = false }, now = Date.now()) {
+  const at = typeof updated === "number" ? updated : Date.parse(updated || "");
+  const recency = Number.isNaN(at) ? 0 : 12 * Math.exp(-Math.max(0, now - at) / 864e5 / 14);
+  return (live ? 8 : 0) - (done ? 10 : 0) + recency + (mine ? 6 : 0);
+}

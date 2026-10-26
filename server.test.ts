@@ -7,7 +7,7 @@ import { createLinkMetadataStore, refreshSlackChannels } from "./link-metadata.t
 import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle, withImages } from "./codex-desktop.ts";
 import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
 import { buildWeeks, dateKey, parseDateKey, startOfWeek } from "./public/weeks.js";
-import { ROOT, buildCodexPrompt, saveHandoffImages, dailyDigest, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize } from "./server.ts";
+import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, dailyDigest, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
   const previous = process.env.SLACK_TOKEN;
@@ -537,14 +537,14 @@ test("work breakdown diagnostics explain unsupported statuses and how to repair 
   assert.match(work.warnings[1], /W2 depends on W1, which could not be parsed/);
   assert.equal(work.nodes[0].ready, false);
   const html = renderWorkBreakdown(work, [], 'actions', 'work-breakdown');
-  assert.match(html, /Actions are paused/);
+  assert.match(html, /Readiness may be wrong/);
   assert.match(html, /data-chunk-id="work-breakdown" data-repair-work/);
   const repaired = parseWorkBreakdown(source.replace('[done]', '[completed]'));
   assert.deepEqual(repaired.warnings, []);
   assert.equal(repaired.nodes[1].ready, true);
   const entirelyInvalid = renderWorkBreakdown(parseWorkBreakdown('- W1: Prepare [unknown]'), [], 'actions', 'work-breakdown');
   assert.match(entirelyInvalid, /Use one of: open, active, waiting, deferred, completed/);
-  assert.match(entirelyInvalid, /Prepare fix ↗/);
+  assert.match(entirelyInvalid, /Draft fix/);
   assert.doesNotMatch(entirelyInvalid, /Add nested work items/);
 });
 
@@ -574,7 +574,7 @@ test("action rendering escapes titles, prompts and graph labels", async () => {
   const { renderActions, renderWorkBreakdown, parseWorkBreakdown } = await import('./public/actions.js');
   const html = renderActions([{ title: '<script>bad</script>', prompt: '<img src=x onerror=bad>', sourcePath: 'tasks/TASK-0001.md' }], 'next');
   assert.doesNotMatch(html, /<script>|<img/);
-  assert.match(html, /Prepare action/);
+  assert.match(html, /Draft action/);
   const graph = renderWorkBreakdown(parseWorkBreakdown('- W1: <script>bad</script> [open]'), [], 'work');
   assert.doesNotMatch(graph, /<script>/);
 });
@@ -597,8 +597,35 @@ test("milestone documents retain actionable and scope sections", () => {
 test("renders readable prerequisites alongside the graph arrows", async () => {
   const { renderWorkBreakdown, parseWorkBreakdown } = await import('./public/actions.js');
   const html = renderWorkBreakdown(parseWorkBreakdown('- W1: Evidence [open]\n- W2: Fix [open] (after: W1)'), [], 'work');
-  assert.match(html, /After: W1/);
+  assert.match(html, /After W1/);
   assert.match(html, /Blocked/);
+});
+
+test("a waiting action stays openable and says what it waits on", async () => {
+  const { renderActions, renderWorkBreakdown, parseWorkBreakdown } = await import('./public/actions.js');
+  const action = { title: 'Fix it', prompt: 'Apply the fix.', sourcePath: 'tasks/TASK-0001.md', workItem: 'W2', blocked: true, blockedReason: 'After W1' };
+  const list = renderActions([action], 'next');
+  assert.doesNotMatch(list, /disabled/);
+  assert.match(list, /class="action-card is-waiting"[^>]*data-action-index="0"/);
+  assert.match(list, /After W1<\/span> · Apply the fix\./);
+  const tree = renderWorkBreakdown(parseWorkBreakdown('- W1: Evidence [open]\n- W2: Fix [open] (after: W1)'), [action], 'next');
+  assert.match(tree, /class="action-go work-row-draft is-waiting"[^>]*data-action-index="0"/);
+  assert.match(tree, /class="work-row has-action"[^>]*data-work-item="W2"/);
+  assert.match(tree, /class="work-node is-actionable"[^>]*data-work-item="W2"/);
+});
+
+test("work item handoffs run or update any item and say when it is not ready", async () => {
+  const { buildWorkItemPrompt } = await import("./server.ts");
+  const task = await loadDocument("tasks/TASK-0015.md");
+  const node = { ...task.work.nodes[0], ready: false, deps: [] };
+  const run = buildWorkItemPrompt(task, node, "run", "");
+  assert.match(run, /^Advance work item W1: Compare released versions/);
+  assert.match(run, /This item is not ready/);
+  assert.ok(run.includes(task.absolutePath));
+  const update = buildWorkItemPrompt(task, { ...node, ready: true }, "update", "Split it by version.");
+  assert.match(update, /^Update work item W1 in its task file\. Do not carry out the work itself\./);
+  assert.match(update, /Split it by version\./);
+  assert.doesNotMatch(update, /not ready/);
 });
 
 test("setTaskStatus rewrites only status and updated front matter", async () => {
@@ -676,6 +703,19 @@ test("Slack permalinks become desktop deep links that land on the message and it
 test("an active task with only blocked actions explains what it is waiting on", async () => {
   const task = await loadDocument("tasks/TASK-0002.md");
   assert.ok(task.nextActions.every(action => action.blocked));
+  assert.equal(task.nextActions[0].blockedReason, "After W1");
   assert.match(task.actionWarnings.join(" "), /no ready next action: “Compare released versions” \(W2 is open, after W1\)/);
   assert.deepEqual((await loadDocument("tasks/TASK-0015.md")).actionWarnings, []);
+});
+
+test("summarizes a document edit by lines and the headings they sit under", () => {
+  const before = "# Plan\n\n## Goals\n\n- Ship it\n\n## Notes\n\nNothing yet\n";
+  const after = "# Plan\n\n## Goals\n\n- Ship it\n- Test it\n\n## Notes\n\nFound the bug\n";
+  assert.deepEqual(describeChange("plans/x.md", before, after), {
+    path: "plans/x.md", title: "Plan", kind: "changed", added: 2, removed: 1,
+    sections: [{ title: "Goals", anchor: "goals" }, { title: "Notes", anchor: "notes" }],
+    lines: ["- Test it", "Found the bug"],
+  });
+  assert.equal(describeChange("plans/x.md", undefined, after).kind, "created");
+  assert.equal(describeChange("plans/x.md", before, undefined).kind, "deleted");
 });

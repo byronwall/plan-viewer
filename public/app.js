@@ -1,8 +1,9 @@
-import { searchDocuments, searchPrs } from "./search.js";
-import { renderActions, renderWorkBreakdown } from "./actions.js";
+import { contextScore, searchDocuments, searchPrs, textScore } from "./search.js";
+import { isSettled, renderActions, renderWorkBreakdown, showDoneToggle, workStatusIcon, workStatusLabel } from "./actions.js";
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock.js";
 import { GLYPHS } from "./icons.js";
-import { delimitedTable, documentHref, escapeHtml, markdownOutline, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
+import { enhanceTable } from "./table-viewer.js";
+import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, connectPlanning, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
@@ -71,6 +72,7 @@ function showNotice(message, error = false, { description = "", action = null, k
   toasts.slice(3).forEach(dismissToast);
   layoutToasts();
   if (!elements.toaster.matches(":hover, :focus-within")) startToast(entry);
+  return entry;
 }
 setPlanNotice(showNotice);
 function startToast(entry) {
@@ -195,17 +197,22 @@ const taskFromUrl = () => {
 // Matches the .tasks-page container query that shows the detail pane.
 const taskPaneVisible = () => elements.chunks.clientWidth >= 1000;
 
-function taskDocuments(includeCompleted = false) {
-  return state.documents
-    .filter((doc) => doc.task && (includeCompleted || doc.task.status !== "completed"))
+// `&done=1` shows completed and deferred tasks, sorted the same way but after the live ones, as work breakdowns do.
+let showDoneTasks = new URLSearchParams(location.search).get("done") === "1";
+
+function taskDocuments() {
+  const tasks = state.documents
+    .filter((doc) => doc.task)
     .sort((a, b) => taskSort.dir * TASK_SORTS[taskSort.key](a, b) || a.task.id.localeCompare(b.task.id));
+  const live = tasks.filter((doc) => !isSettled(doc.task.status));
+  return { tasks: showDoneTasks ? [...live, ...tasks.filter((doc) => isSettled(doc.task.status))] : live, settled: tasks.length - live.length };
 }
 
 function updateTasksUrl(historyMode) {
   if (historyMode === "none") return;
   const url = new URL(location.href);
   const task = selectedTaskPath.match(/TASK-\d{4}/)?.[0];
-  url.search = new URLSearchParams({ view: "tasks", ...(task ? { task } : {}) });
+  url.search = new URLSearchParams({ view: "tasks", ...(task ? { task } : {}), ...(showDoneTasks ? { done: "1" } : {}) });
   url.hash = "";
   history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
 }
@@ -223,22 +230,22 @@ function taskSortHeader(key, label) {
 }
 
 function renderTasksPage() {
-  const tasks = taskDocuments();
+  const { tasks, settled } = taskDocuments();
   state.view = "tasks";
   resetPageNavigation();
   elements.tasksButton.setAttribute("aria-current", "page");
   for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
   elements.title.textContent = "Tasks";
-  elements.meta.textContent = "Repository tasks  /  unfinished";
+  elements.meta.textContent = `Repository tasks  /  ${showDoneTasks ? "all" : "unfinished"}`;
   elements.count.textContent = `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`;
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
   elements.chunks.classList.add("tasks-page");
   if (!tasks.some((doc) => doc.path === selectedTaskPath)) selectedTaskPath = taskPaneVisible() ? tasks[0]?.path || "" : "";
   elements.chunks.innerHTML = `<section class="task-browser" aria-label="Unfinished tasks">
-    <div class="task-index">${tasks.length ? `<table class="task-table">
+    <div class="task-index">${settled ? showDoneToggle(settled, `data-show-done-tasks${showDoneTasks ? " checked" : ""}`) : ""}${tasks.length ? `<table class="task-table">
       <thead><tr>${taskSortHeader("id", "ID")}${taskSortHeader("title", "Task")}${taskSortHeader("status", "Status")}${taskSortHeader("project", "Project")}${taskSortHeader("refs", "Refs")}${taskSortHeader("updated", "Updated")}</tr></thead>
-      <tbody>${tasks.map((doc) => `<tr data-select-task="${escapeHtml(doc.path)}" aria-selected="${doc.path === selectedTaskPath}">
+      <tbody>${tasks.map((doc) => `<tr data-select-task="${escapeHtml(doc.path)}" aria-selected="${doc.path === selectedTaskPath}"${isSettled(doc.task.status) ? ' class="is-done"' : ""}>
         <td class="task-col-id"><button class="task-list-id" type="button" data-task-path="${escapeHtml(doc.path)}" title="Open ${escapeHtml(doc.task.id)}">${escapeHtml(doc.task.id)}</button></td>
         <td class="task-col-title"><button class="task-row-select" type="button" data-select-task="${escapeHtml(doc.path)}">${escapeHtml(doc.task.title)}</button></td>
         <td class="task-col-status">${statusPill(doc.task, doc.path)}</td>
@@ -296,6 +303,21 @@ async function renderTaskDetail() {
     pane.querySelector(".task-detail-actions").innerHTML = `<h4>Next actions</h4><p class="work-warning">${escapeHtml(error.message)}</p>`;
   }
 }
+
+elements.chunks.addEventListener("change", (event) => {
+  // A work breakdown's toggle (in its section and its dock panel copy) keeps `&done=1` on the document URL like the Tasks page.
+  if (event.target.matches("[data-show-done-work]")) {
+    for (const toggle of elements.chunks.querySelectorAll("[data-show-done-work]")) toggle.checked = event.target.checked;
+    const url = new URL(location.href);
+    if (event.target.checked) url.searchParams.set("done", "1"); else url.searchParams.delete("done");
+    history.replaceState(null, "", url);
+    return;
+  }
+  if (!event.target.matches("[data-show-done-tasks]")) return;
+  showDoneTasks = event.target.checked;
+  updateTasksUrl("replace");
+  renderTasksPage();
+});
 
 function showTasks({ historyMode = "push" } = {}) {
   if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
@@ -549,9 +571,24 @@ function composerTemplate(target) {
   const hint = `<p class="composer-hint"><kbd>Enter</kbd> to open · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · paste images</p>`;
   const close = `<button class="popover-close" type="button" aria-label="Close dialog">×</button>`;
   const heading = (meta) => `<header class="composer-heading"><div><h3>${escapeHtml(target.title)}</h3>${meta ? `<p class="composer-meta">${meta}</p>` : ""}</div>${close}</header>`;
+  if (target.scope === "work") {
+    const { node, nodes, action, mode } = target;
+    const label = workStatusLabel(node, nodes);
+    const waiting = node.deps.filter((id) => nodes.find((n) => n.id === id)?.status !== "completed");
+    const meta = `<span title="${escapeHtml(state.selectedPath)}">${escapeHtml(state.selectedPath.split("/").pop())}</span> · ${escapeHtml(node.id)} · ${node.ready ? escapeHtml(label) : `<span class="action-waiting">${escapeHtml(label)}${waiting.length ? ` · after ${escapeHtml(waiting.join(", "))}` : ""}</span>`}`;
+    const preview = mode === "run" && action ? `<div class="action-prompt-preview" aria-label="Stored action prompt"><div class="markdown">${renderMarkdownSource(action.prompt, state.selectedPath)}</div></div>` : "";
+    const field = mode === "update"
+      ? `<label for="work-context">What should change? <span class="optional-label">optional</span></label><textarea id="work-context" name="commentary" placeholder="Split it, reword it, mark it done, add or drop a prerequisite… Leave empty to bring it in line with the latest updates."></textarea>`
+      : `<label for="work-context">Add context <span class="optional-label">optional</span></label><textarea id="work-context" name="commentary" placeholder="${node.ready ? "A constraint, recent finding, or where to start…" : "Say whether the prerequisites are done, or what can safely start now…"}"></textarea>`;
+    return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="work" data-work-item="${escapeHtml(node.id)}" data-work-mode="${mode}">
+      ${heading(meta)}
+      <div class="composer-body">${preview}<div class="composer-field">${field}<div class="composer-images" hidden></div></div></div>
+      <footer class="composer-actions">${hint}<button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open in ${agentName()}</button></footer>
+    </form>`;
+  }
   if (target.scope === "action") {
     const { action } = target;
-    const meta = `<span title="${escapeHtml(action.sourcePath)}">${escapeHtml(action.sourcePath.split("/").pop())}</span>${action.workItem ? ` · ${escapeHtml(action.workItem)}` : ""}`;
+    const meta = `<span title="${escapeHtml(action.sourcePath)}">${escapeHtml(action.sourcePath.split("/").pop())}</span>${action.workItem ? ` · ${escapeHtml(action.workItem)}` : ""}${action.blocked ? ` · <span class="action-waiting">${escapeHtml(action.blockedReason || "Waiting on prerequisites")}</span>` : ""}`;
     return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="action" data-source-path="${escapeHtml(action.sourcePath)}" data-action-id="${escapeHtml(action.id)}" data-expected-prompt="${escapeHtml(action.prompt)}">
       ${heading(meta)}
       <div class="composer-body">
@@ -645,6 +682,8 @@ function requestComposerClose(returnFocus = false) {
 
 function closeComposer(returnFocus = false) {
   const trigger = handoffTrigger;
+  // Backing out of a work item draft (Cancel, Esc, ×) returns to that item's dialog; sending it does not.
+  const workItem = returnFocus && state.openComposer?.startsWith("work:") ? state.openComposer.split(":").slice(2).join(":") : "";
   if (elements.handoffPopover.matches(":popover-open")) elements.handoffPopover.hidePopover();
   state.openComposer = null;
   handoffTrigger = null;
@@ -653,7 +692,8 @@ function closeComposer(returnFocus = false) {
   elements.globalHandoff.setAttribute("aria-expanded", "false");
   elements.documentHandoff?.setAttribute("aria-expanded", "false");
   for (const button of elements.chunks.querySelectorAll(".handoff-button, [data-action-key]")) button.setAttribute("aria-expanded", "false");
-  if (returnFocus) trigger?.focus();
+  if (workItem) openWorkItem(workItem);
+  else if (returnFocus) trigger?.focus();
 }
 
 // Images in an open overlay (an issue's description) page among themselves; elsewhere among the document's.
@@ -989,11 +1029,314 @@ function holdNavigationSelection(target) {
   navigationScrollTimer = window.setTimeout(releaseNavigationScrollLock, 1400);
 }
 
+// An update whose bold title names a work item, as in `- **2026-10-23 — Delete list (W2.3):** …`, belongs to that item, nested lines included.
+function workUpdates(doc) {
+  const updates = doc?.chunks.find(c => /^updates$/i.test(c.title))?.markdown || "";
+  const byItem = new Map();
+  for (const entry of updates.split(/\n(?=[-*]\s)/)) {
+    const ids = entry.match(/^[-*]\s+\*\*(.+?)\*\*/)?.[1]?.match(/[\w.-]+/g)?.map(token => token.replace(/\.$/, "")) || [];
+    for (const id of new Set(ids)) byItem.set(id, [...(byItem.get(id) || []), entry.trim()]);
+  }
+  return byItem;
+}
+
+const workItemDialog = document.querySelector("#work-item-dialog");
+// "item" reads one item; "graph" shows the whole work stream with the item outlined. Sticky across opens; `&graph=1`.
+let workItemView = new URLSearchParams(location.search).get("graph") === "1" ? "graph" : "item";
+const glyph = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS[name]}</svg>`;
+
+// A dated update reads as a titled note; its nested bullets become the note's own list.
+function workItemNote(entry) {
+  const [, date = "", title = "", rest = ""] = entry.match(/^[-*]\s+\*\*(?:(\d{4}-\d{2}-\d{2})\s*[—–-]\s*)?(.+?):?\*\*:?\s*([\s\S]*)$/) || [];
+  if (!title) return `<article class="work-item-note"><div class="markdown">${renderMarkdownSource(entry, state.selectedPath)}</div></article>`;
+  const [first, ...nested] = rest.split("\n");
+  const body = [first, "", ...nested.map(line => line.replace(/^ {2}/, ""))].join("\n");
+  const when = date ? `<time datetime="${date}">${escapeHtml(formatDate(date))} · ${escapeHtml(relativeDate(date))}</time>` : "";
+  return `<article class="work-item-note"><header><h4>${inlineMarkdown(title, state.selectedPath)}</h4>${when}</header><div class="markdown">${renderMarkdownSource(body, state.selectedPath)}</div></article>`;
+}
+
+// Lines elsewhere in the task that mention a work item without being filed under it (an update about something else, a
+// finding), as the sentences that name it, grouped by where they appear. Fenced prompts and `Work item:` lines are skipped.
+function workMentions(doc, id, own) {
+  const token = new RegExp(`(?<![\\w.])${id.replace(/\./g, "\\.")}(?![\\w]|\\.\\w)`);
+  const mentions = [];
+  for (const chunk of doc.chunks) {
+    if (/^work breakdown$/i.test(chunk.title)) continue;
+    const updates = /^updates$/i.test(chunk.title);
+    let source = chunk.title, skip = false, fenced = false;
+    for (const line of chunk.markdown.split("\n")) {
+      if (/^\s*```/.test(line)) { fenced = !fenced; continue; }
+      if (fenced) continue;
+      const entry = updates && line.match(/^[-*]\s+\*\*(?:(\d{4}-\d{2}-\d{2})\s*[—–-]\s*)?(.+?):?\*\*/);
+      if (entry) { source = entry[2]; skip = own.some((note) => note.startsWith(line.trim())); }
+      if (skip || !token.test(line) || /^\s*Work item:/i.test(line)) continue;
+      const text = line.replace(/^\s*(?:[-*]|\d+\.|#{1,6})\s+/, "").replace(/^\*\*[^*]+\*\*:?\s*/, "");
+      const sentences = text.split(/(?<=[.;!?])\s+(?=[A-Z(`])/).filter((sentence) => token.test(sentence));
+      const group = mentions.find((m) => m.source === source && m.chunkId === chunk.id) || mentions[mentions.push({ source, chunkId: chunk.id, date: entry?.[1] || mentions.at(-1)?.date || "", lines: [] }) - 1];
+      group.lines.push(...sentences);
+    }
+  }
+  return mentions.filter((m) => m.lines.length);
+}
+
+const markId = (html, id) => html.replace(new RegExp(`(?<![\\w.])(${id.replace(/\./g, "\\.")})(?![\\w]|\\.\\w)(?![^<]*>)`, "g"), "<mark>$1</mark>");
+
+// The same dependency graph as the task's Work breakdown section (honoring its completed toggle unless the item itself is
+// hidden there), with the open item outlined.
+function workItemGraph(doc, id, noteCount) {
+  const template = document.createElement("template");
+  template.innerHTML = renderWorkBreakdown(doc.work, doc.nextActions, "dialog", "", noteCount);
+  const graphs = template.content.querySelectorAll(".work-graph");
+  const live = template.content.querySelector(".work-graph.is-live");
+  const showDone = new URLSearchParams(location.search).get("done") === "1";
+  const graph = !showDone && live?.querySelector(`[data-work-item="${CSS.escape(id)}"]`) ? live : graphs[graphs.length - 1];
+  graph?.querySelector(`[data-work-item="${CSS.escape(id)}"]`)?.closest(".work-node, .work-group")?.classList.add("is-current");
+  return graph?.outerHTML || '<p class="work-item-empty">No graph for this task.</p>';
+}
+
+// The work item dialog reads like a small inspector for one item: the task it belongs to on top, the whole breakdown as a
+// rail on the left, and on the right the item's prerequisites, next action, updates filed under it, and other mentions.
+// It stays open until Esc or ×; J/K walk every item, ← → the ones with updates, and ?item= reopens it on refresh.
+function openWorkItem(id) {
+  const doc = state.document, nodes = doc?.work?.nodes || [];
+  const node = nodes.find(n => n.id === id);
+  if (!node) return void (workItemDialog.open && workItemDialog.close());
+  if (!openViewerDialog(workItemDialog)) return;
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const updates = workUpdates(doc), notes = updates.get(id) || [];
+  const mentions = workMentions(doc, id, notes);
+  const kids = (parent) => nodes.filter(n => n.parent === parent);
+  const depthOf = (n) => { let d = 0; for (let p = byId.get(n.parent); p; p = byId.get(p.parent)) d++; return d; };
+  const leaves = nodes.filter(n => !kids(n.id).length);
+  const doneLeaves = leaves.filter(n => n.status === "completed").length;
+  const stepper = nodes.filter(n => updates.has(n.id)), at = stepper.indexOf(node), position = nodes.indexOf(node);
+  // From an item without updates, ← → still go to the nearest items that have them.
+  const neighbors = { prev: [...stepper].reverse().find(n => nodes.indexOf(n) < position), next: stepper.find(n => nodes.indexOf(n) > position) };
+  const noteCount = (n) => updates.get(n.id)?.length ? `<span class="work-item-notes-count">${glyph("message-square")}${updates.get(n.id).length}</span>` : "";
+  const ref = (n) => `<button type="button" class="work-item-ref" data-work-item="${escapeHtml(n.id)}"><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${noteCount(n)}</button>`;
+  const rail = nodes.map(n => `<li><button type="button" class="work-item-rail-row${n === node ? " is-current" : ""}${isSettled(n.status) ? " is-settled" : ""}${kids(n.id).length ? " is-parent" : ""}" style="--depth:${depthOf(n)}" data-work-item="${escapeHtml(n.id)}"${n === node ? ' aria-current="true"' : ' tabindex="-1"'}><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${noteCount(n)}</button></li>`).join("");
+  const relation = (label, list) => list.length ? `<dt>${label}</dt><dd>${list.map(ref).join("")}</dd>` : "";
+  const relations = relation("After", node.deps.map(dep => byId.get(dep)).filter(Boolean)) + relation("Unblocks", nodes.filter(n => n.deps.includes(id))) + relation("Contains", kids(id));
+  const actionIndex = doc.nextActions.findIndex(a => a.workItem === id);
+  const action = doc.nextActions[actionIndex];
+  const task = doc.task;
+  const label = workStatusLabel(node, nodes);
+  const frontier = node.ready ? "" : " is-off-frontier";
+  const offFrontier = node.ready ? "" : ` title="${escapeHtml(`${id} is ${label.toLowerCase()}, not ready: the draft says what it still waits on`)}"`;
+  const parent = byId.get(node.parent);
+  const mentionHtml = mentions.map(m => `<li><button type="button" class="work-item-mention-source" data-work-jump="${escapeHtml(m.chunkId)}">${escapeHtml(m.source)}</button>${m.date ? `<time datetime="${m.date}">${escapeHtml(formatDate(m.date))}</time>` : ""}${m.lines.map(line => `<p>${markId(inlineMarkdown(line, state.selectedPath), id)}</p>`).join("")}</li>`).join("");
+  workItemDialog.dataset.item = id;
+  workItemDialog.innerHTML = `<header class="work-item-task">
+      ${task ? `<button type="button" class="work-item-task-link" data-dialog-close title="${escapeHtml(`${task.id} · ${task.title} — back to the task`)}"><code>${escapeHtml(task.id)}</code><span>${escapeHtml(task.title)}</span></button><span class="work-item-task-status">${escapeHtml(TASK_STATUS_LABELS[task.status] || task.status)}</span>` : `<span class="work-item-task-link"><span>${escapeHtml(doc.title)}</span></span>`}
+      <span class="work-item-progress" title="${doneLeaves} of ${leaves.length} work items completed"><span style="--done:${leaves.length ? doneLeaves / leaves.length : 0}"></span>${doneLeaves}/${leaves.length} done</span>
+      <span class="work-item-views" role="tablist" aria-label="View">${[["item", "Item"], ["graph", "Graph"]].map(([view, label]) => `<button type="button" role="tab" data-work-view="${view}" aria-selected="${workItemView === view}" title="${label} (G)">${label}</button>`).join("")}</span>
+      <span class="work-item-step"><span class="work-item-step-count">${at >= 0 ? `${at + 1} of ${stepper.length} with updates` : stepper.length ? `${stepper.length} with updates` : ""}</span>${["prev", "next"].map(dir => { const n = neighbors[dir]; return `<button type="button" class="work-item-icon-button" ${n ? `data-work-item="${escapeHtml(n.id)}" data-work-step="${dir}" title="${escapeHtml(`${n.id} · ${n.title}`)}"` : "disabled"} aria-label="${dir === "prev" ? "Previous" : "Next"} item with updates${n ? `: ${escapeHtml(n.id)}` : ""}" aria-keyshortcuts="${dir === "prev" ? "ArrowLeft" : "ArrowRight"}">${glyph("arrow-right")}</button>`; }).join("")}</span>
+      <button type="button" class="work-item-icon-button" data-dialog-close aria-label="Close">${glyph("x")}</button>
+    </header>
+    <nav class="work-item-rail" aria-label="Work breakdown"><ol>${rail}</ol><p><span><kbd>J</kbd><kbd>K</kbd> items</span><span><kbd>←</kbd><kbd>→</kbd> updates</span><span><kbd>G</kbd> graph</span></p></nav>
+    ${workItemView === "graph" ? `<div class="work-item-main is-graph" tabindex="-1"><div class="work-item-graph" tabindex="0" aria-label="Work stream graph">${workItemGraph(doc, id, (key) => updates.get(key)?.length || 0)}</div>${workGraphTools}</div>` : `<div class="work-item-main" tabindex="-1">
+      <header class="work-item-heading">
+        <p class="work-item-kicker"><code>${escapeHtml(node.id)}</code>${workStatusIcon(node, nodes)}<span>${escapeHtml(label)}</span>${parent ? `<span class="work-item-in">in</span><button type="button" class="work-item-parent" data-work-item="${escapeHtml(parent.id)}" title="${escapeHtml(`${parent.id} · ${parent.title}`)}">${escapeHtml(parent.id)} ${escapeHtml(parent.title)}</button>` : ""}</p>
+        <h2 id="work-item-title">${escapeHtml(node.title)}</h2>
+        <div class="work-item-agent">
+          <button type="button" class="work-item-agent-button${frontier}" data-work-agent="run"${offFrontier}>${glyph("play")}Send to agent</button>
+          <button type="button" class="work-item-agent-button is-secondary${frontier}" data-work-agent="update"${offFrontier}>${glyph("pen-line")}Update with agent</button>
+        </div>
+      </header>
+      ${relations ? `<dl class="work-item-relations">${relations}</dl>` : ""}
+      ${action ? `<section class="work-item-section"><h3>Next action</h3><div class="work-item-action"><p class="work-item-action-title">${escapeHtml(action.title)}</p><p class="work-item-action-prompt">${inlineMarkdown(action.prompt.replace(/\s+/g, " "), state.selectedPath)}</p></div></section>` : ""}
+      <section class="work-item-section"><h3>Updates <span>${notes.length}</span></h3>${notes.length ? notes.map(workItemNote).join("") : `<p class="work-item-empty">None filed yet. An update titled “… (${escapeHtml(id)}):” lands here.</p>`}</section>
+      ${mentions.length ? `<section class="work-item-section"><h3>Also mentioned <span>${mentions.reduce((sum, m) => sum + m.lines.length, 0)}</span></h3><ul class="work-item-mentions">${mentionHtml}</ul></section>` : ""}
+    </div>`}`;
+  const main = workItemDialog.querySelector(".work-item-main");
+  main.scrollTop = 0;
+  // Keys (J/K, ← →, G, space to scroll) need focus inside; after the composer closes it would otherwise sit on the page.
+  if (!workItemDialog.contains(document.activeElement)) main.focus({ preventScroll: true });
+  // Scroll only the rail and graph panes; scrollIntoView would also nudge the page under the modal.
+  const centerIn = (pane, target) => { if (!pane || !target) return; const p = pane.getBoundingClientRect(), t = target.getBoundingClientRect(); pane.scrollTop += t.top - p.top - (p.height - t.height) / 2; pane.scrollLeft += t.left - p.left - (p.width - t.width) / 2; };
+  centerIn(workItemDialog.querySelector(".work-item-rail ol"), workItemDialog.querySelector(".work-item-rail-row.is-current"));
+  showWorkGraph(workItemDialog.querySelector(".work-item-graph"));
+  const url = new URL(location.href);
+  url.searchParams.set("item", id);
+  if (workItemView === "graph") url.searchParams.set("graph", "1"); else url.searchParams.delete("graph");
+  history.replaceState(null, "", url);
+}
+
+// Graph view pans by drag and zooms by wheel around the cursor, or by the corner toolbar and its keys (− + 0 F C).
+// Overpan keeps only a sliver of the graph on screen, so either edge can sit at the far side of the pane.
+const workGraphView = { scale: 1, x: 0, y: 0 };
+let workGraphDrag = null;
+function applyWorkGraphView(pane) {
+  const graph = pane?.querySelector(".work-graph");
+  if (!graph) return;
+  const keep = 60, s = workGraphView.scale;
+  workGraphView.x = Math.min(pane.clientWidth - keep, Math.max(keep - graph.offsetWidth * s, workGraphView.x));
+  workGraphView.y = Math.min(pane.clientHeight - keep, Math.max(keep - graph.offsetHeight * s, workGraphView.y));
+  graph.style.transform = `translate(${workGraphView.x}px, ${workGraphView.y}px) scale(${s})`;
+  const zoom = pane.parentElement.querySelector("[data-graph-zoom]");
+  if (zoom) zoom.textContent = `${Math.round(s * 100)}%`;
+}
+// Each render keeps the zoom: a graph that fits at it is centered whole (the open item is outlined); a larger one centers the item.
+function showWorkGraph(pane) {
+  const graph = pane?.querySelector(".work-graph");
+  if (!graph) return;
+  const s = workGraphView.scale, w = graph.offsetWidth * s, h = graph.offsetHeight * s;
+  if (w > pane.clientWidth || h > pane.clientHeight) return centerWorkGraph(pane);
+  Object.assign(workGraphView, { x: (pane.clientWidth - w) / 2, y: (pane.clientHeight - h) / 2 });
+  applyWorkGraphView(pane);
+}
+// Zooms by `factor` keeping the pane point (x, y) still; the pane center when no point is given.
+function zoomWorkGraph(pane, factor, x = pane.clientWidth / 2, y = pane.clientHeight / 2) {
+  const next = Math.min(2.5, Math.max(.1, workGraphView.scale * factor)), ratio = next / workGraphView.scale;
+  Object.assign(workGraphView, { scale: next, x: x - (x - workGraphView.x) * ratio, y: y - (y - workGraphView.y) * ratio });
+  applyWorkGraphView(pane);
+}
+// Fit shows the whole graph, never above 100%, so small graphs stay at reading size.
+function fitWorkGraph(pane) {
+  const graph = pane?.querySelector(".work-graph");
+  if (!graph) return;
+  const pad = 24, s = Math.max(.1, Math.min(1, (pane.clientWidth - pad * 2) / graph.offsetWidth, (pane.clientHeight - pad * 2) / graph.offsetHeight));
+  Object.assign(workGraphView, { scale: s, x: (pane.clientWidth - graph.offsetWidth * s) / 2, y: (pane.clientHeight - graph.offsetHeight * s) / 2 });
+  applyWorkGraphView(pane);
+}
+const workGraphActions = {
+  "zoom-out": (pane) => zoomWorkGraph(pane, 1 / 1.25),
+  "zoom-in": (pane) => zoomWorkGraph(pane, 1.25),
+  actual: (pane) => zoomWorkGraph(pane, 1 / workGraphView.scale),
+  fit: fitWorkGraph,
+  item: centerWorkGraph,
+};
+const workGraphKeys = { "-": "zoom-out", "_": "zoom-out", "=": "zoom-in", "+": "zoom-in", "0": "actual", f: "fit", c: "item" };
+const workGraphTools = `<div class="work-graph-tools" role="toolbar" aria-label="Graph zoom">
+  <button type="button" data-graph-action="zoom-out" title="Zoom out (−)" aria-label="Zoom out">−</button>
+  <button type="button" class="work-graph-zoom" data-graph-action="actual" title="Reset to 100% (0)" aria-label="Reset zoom to 100%"><span data-graph-zoom>100%</span></button>
+  <button type="button" data-graph-action="zoom-in" title="Zoom in (+)" aria-label="Zoom in">+</button>
+  <button type="button" data-graph-action="fit" title="Fit the whole graph (F)">Fit</button>
+  <button type="button" data-graph-action="item" title="Center the open item (C)">Item</button>
+</div>`;
+function centerWorkGraph(pane) {
+  const graph = pane?.querySelector(".work-graph"), current = graph?.querySelector(".is-current");
+  if (!current) return applyWorkGraphView(pane);
+  const g = graph.getBoundingClientRect(), c = current.getBoundingClientRect();
+  // Both rects are already scaled, so their difference is the on-screen offset the translate must cancel.
+  workGraphView.x = pane.clientWidth / 2 - (c.left - g.left + c.width / 2);
+  workGraphView.y = pane.clientHeight / 2 - (c.top - g.top + c.height / 2);
+  applyWorkGraphView(pane);
+}
+workItemDialog.addEventListener("wheel", (event) => {
+  const pane = event.target.closest(".work-item-graph");
+  if (!pane) return;
+  event.preventDefault();
+  const p = pane.getBoundingClientRect();
+  zoomWorkGraph(pane, Math.exp(-event.deltaY * (event.ctrlKey ? .01 : .002)), event.clientX - p.left, event.clientY - p.top);
+}, { passive: false });
+workItemDialog.addEventListener("dblclick", (event) => {
+  const pane = event.target.closest(".work-item-graph");
+  if (pane && !event.target.closest("[data-work-item]")) fitWorkGraph(pane);
+});
+workItemDialog.addEventListener("pointerdown", (event) => {
+  const pane = event.target.closest(".work-item-graph");
+  if (!pane || event.button !== 0) return;
+  workGraphDrag = { pane, id: event.pointerId, startX: event.clientX, startY: event.clientY, x: workGraphView.x, y: workGraphView.y, moved: false };
+});
+workItemDialog.addEventListener("pointermove", (event) => {
+  const drag = workGraphDrag;
+  if (!drag || event.pointerId !== drag.id) return;
+  const dx = event.clientX - drag.startX, dy = event.clientY - drag.startY;
+  if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+  if (!drag.moved) { drag.moved = true; drag.pane.setPointerCapture(drag.id); drag.pane.classList.add("is-panning"); }
+  Object.assign(workGraphView, { x: drag.x + dx, y: drag.y + dy });
+  applyWorkGraphView(drag.pane);
+});
+const endWorkGraphDrag = (event) => {
+  if (!workGraphDrag || event.pointerId !== workGraphDrag.id) return;
+  workGraphDrag.pane.classList.remove("is-panning");
+  // A drag that ends over a node must not open it. Chrome may send no click after a captured drag, so the guard lasts one task.
+  if (workGraphDrag.moved) {
+    const swallow = (e) => e.stopPropagation();
+    workItemDialog.addEventListener("click", swallow, { capture: true, once: true });
+    setTimeout(() => workItemDialog.removeEventListener("click", swallow, { capture: true }));
+  }
+  workGraphDrag = null;
+};
+workItemDialog.addEventListener("pointerup", endWorkGraphDrag);
+workItemDialog.addEventListener("pointercancel", endWorkGraphDrag);
+
+// Send and Update open the composer for the item; the dialog closes first so the composer is not inert behind it.
+function openWorkComposer(id, mode) {
+  const nodes = state.document?.work?.nodes || [];
+  const node = nodes.find(n => n.id === id);
+  if (!node) return;
+  workItemDialog.close();
+  const trigger = elements.chunks.querySelector(`.work-tree [data-work-item="${CSS.escape(id)}"]`);
+  openComposer({ key: `work:${mode}:${id}`, scope: "work", mode, node, nodes, action: state.document.nextActions.find(a => a.workItem === id), title: `${mode === "update" ? "Update" : "Advance"} ${id}: ${node.title}` }, trigger);
+}
+
+workItemDialog.addEventListener("click", (event) => {
+  const agent = event.target.closest("[data-work-agent]");
+  if (agent) {
+    event.stopPropagation(); // the document's outside-click handler would close the composer this click opens
+    return openWorkComposer(workItemDialog.dataset.item, agent.dataset.workAgent);
+  }
+  const graphAction = event.target.closest("[data-graph-action]");
+  if (graphAction) return workGraphActions[graphAction.dataset.graphAction](workItemDialog.querySelector(".work-item-graph"));
+  const view = event.target.closest("[data-work-view]");
+  if (view) {
+    workItemView = view.dataset.workView;
+    return openWorkItem(workItemDialog.dataset.item);
+  }
+  const item = event.target.closest("[data-work-item]");
+  // Picking a node in the graph reads that item; the rail and stepper keep the current view.
+  if (item?.closest(".work-item-graph")) workItemView = "item";
+  if (item) return openWorkItem(item.dataset.workItem);
+  const jump = event.target.closest("[data-work-jump]");
+  const documentLink = event.target.closest(".markdown-document-link");
+  // A link that opens a new tab leaves the dialog where it was; one that navigates here closes it.
+  if (!jump && !documentLink && !event.target.closest("[data-dialog-close], a[href]:not([target=_blank])")) return;
+  workItemDialog.close();
+  if (jump) document.getElementById(jump.dataset.workJump)?.scrollIntoView({ block: "start", behavior: "instant" });
+  if (documentLink) {
+    event.preventDefault();
+    selectDocument(documentLink.dataset.documentPath, { historyMode: "push", anchor: documentLink.dataset.documentAnchor });
+  }
+});
+workItemDialog.addEventListener("keydown", (event) => {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.target.closest("input, textarea")) return;
+  if (["ArrowLeft", "ArrowRight"].includes(event.key)) {
+    event.preventDefault();
+    workItemDialog.querySelector(`[data-work-step="${event.key === "ArrowLeft" ? "prev" : "next"}"]`)?.click();
+  }
+  if (event.key.toLowerCase() === "g") {
+    event.preventDefault();
+    workItemView = workItemView === "graph" ? "item" : "graph";
+    return openWorkItem(workItemDialog.dataset.item);
+  }
+  const graphKey = workItemView === "graph" && workGraphKeys[event.key.toLowerCase()];
+  if (graphKey) {
+    event.preventDefault();
+    return workGraphActions[graphKey](workItemDialog.querySelector(".work-item-graph"));
+  }
+  const walk = { j: 1, k: -1 }[event.key.toLowerCase()];
+  if (!walk) return;
+  event.preventDefault();
+  const nodes = state.document?.work?.nodes || [];
+  const next = nodes[nodes.findIndex(n => n.id === workItemDialog.dataset.item) + walk];
+  if (next) openWorkItem(next.id);
+});
+workItemDialog.addEventListener("close", () => {
+  const url = new URL(location.href);
+  url.searchParams.delete("item");
+  url.searchParams.delete("graph");
+  history.replaceState(null, "", url);
+  const previous = dialogReturnFocus.get(workItemDialog);
+  if (previous?.isConnected && previous.getClientRects().length) previous.focus();
+});
+
 function chunkBody(doc, chunk) {
   return actionGroups.has(chunk.id)
     ? `${(doc.actionWarnings || []).map(w => `<p class="work-warning">${escapeHtml(w)}</p>`).join("")}${renderActions(actionGroups.get(chunk.id), chunk.id)}`
     : /^work breakdown$/i.test(chunk.title)
-    ? renderWorkBreakdown(doc.work, doc.nextActions, doc.chunks.find(c => /^next actions$/i.test(c.title))?.id || "work", chunk.id)
+    ? renderWorkBreakdown(doc.work, doc.nextActions, doc.chunks.find(c => /^next actions$/i.test(c.title))?.id || "work", chunk.id, (id) => workUpdates(doc).get(id)?.length || 0, new URLSearchParams(location.search).get("done") === "1")
     : doc.format === "text"
     ? `<pre class="plain-text">${escapeHtml(chunk.markdown)}</pre>`
     : (/^updates$/i.test(chunk.title) && renderUpdates(chunk.markdown, state.selectedPath))
@@ -1108,6 +1451,7 @@ function renderDocument() {
     ${chunkBody(doc, chunk)}
   </article>`).join("");
   enhanceTaskReferences();
+  markDocumentChanges();
   renderDocumentDock(doc);
   state.activeChunkId = doc.chunks[0]?.id || "";
   state.activeOutlinePath = [];
@@ -1215,7 +1559,8 @@ function syncActiveChunk() {
 function updateViewerUrl(path, anchor, historyMode) {
   if (historyMode === "none") return;
   const url = new URL(location.href);
-  url.search = new URLSearchParams({ path });
+  // Showing completed work carries from document to document until it is unchecked.
+  url.search = new URLSearchParams({ path, ...(url.searchParams.get("done") === "1" ? { done: "1" } : {}) });
   url.hash = anchor || "";
   history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
 }
@@ -1256,6 +1601,7 @@ async function selectDocument(path, { historyMode = "push", anchor = "" } = {}) 
     const response = await fetch(`/api/document?path=${encodeURIComponent(path)}`);
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || "Could not open that document.");
+    if (state.selectedPath !== path) changeMarks.delete(state.selectedPath); // you've seen what changed there
     state.selectedPath = path;
     state.document = body;
     closeComposer();
@@ -1264,6 +1610,9 @@ async function selectDocument(path, { historyMode = "push", anchor = "" } = {}) 
     renderDocument();
     updateViewerUrl(path, anchor, historyMode);
     window.requestAnimationFrame(() => scrollToDocumentAnchor(anchor));
+    const item = new URLSearchParams(location.search).get("item");
+    if (item) openWorkItem(item);
+    else if (workItemDialog.open) workItemDialog.close();
   } catch (error) {
     showNotice(error.message, true);
   } finally {
@@ -1334,6 +1683,7 @@ async function refreshFromMarkdown(changedPaths) {
     const newPinned = pinnedId ? document.getElementById(pinnedId) : null;
     if (newPinned && pinnedTop != null) window.scrollBy({ top: newPinned.getBoundingClientRect().top - pinnedTop, behavior: "instant" });
     else window.scrollTo({ top: scrollY, behavior: "instant" });
+    if (workItemDialog.open) openWorkItem(workItemDialog.dataset.item);
     if (openPanel) {
       document.getElementById(openPanel)?.showPopover();
       elements.chunks.querySelector(`[data-dock-source="${openSource}"]`)?.click();
@@ -1397,11 +1747,64 @@ updateButton.addEventListener("click", async () => {
 checkViewerVersion();
 setInterval(checkViewerVersion, 5 * 60_000);
 
+// Every document an agent (or an editor outside the viewer) changed since the server started, newest first.
+let documentChanges = [];
+fetch("/api/changes").then((response) => response.json()).then((body) => { documentChanges = body.changes || []; }).catch(() => {});
+const changeSummary = (change) => [change.sections.map((section) => section.title).join(", "), change.kind === "changed" ? `+${change.added}\u00a0−${change.removed}` : change.kind].filter(Boolean).join(" · ");
+const changeHref = (change) => documentHref(change.path, change.sections[0]?.anchor || "");
+// What agents changed in each document, marked whenever it renders: lines keep a quiet tint until you leave the
+// document, and the first render after a change (or Show/Open from its toast) flashes them and their sections.
+const changeMarks = new Map();
+// A Markdown source line reduced to the text it renders as, for matching against the page.
+const plainLine = (line) => line
+  .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+  .replace(/^\s*(?:(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?|#{1,6}\s+|>\s?)/, "")
+  .replace(/[`*_~|↗]/g, " ")
+  .replace(/\s+/g, " ")
+  .trim()
+  .toLowerCase();
+// ponytail: matches rendered blocks by text, so a line rewritten by enhancement (task references) goes unmarked.
+function markDocumentChanges() {
+  const marks = changeMarks.get(state.selectedPath);
+  if (!marks) return;
+  const flash = marks.flash ? " is-changed-flash" : "";
+  marks.flash = false;
+  for (const element of elements.chunks.querySelectorAll(".markdown li, .markdown p, .markdown tr, .markdown h3, .markdown h4, .markdown pre")) {
+    // Read it as the source would: no nested lists, screen-reader-only text, or word joiners around links.
+    const copy = element.cloneNode(true);
+    copy.querySelectorAll(":scope > ul, :scope > ol, .sr-only").forEach((extra) => extra.remove());
+    const text = plainLine((copy.matches("tr") ? [...copy.cells].map((cell) => cell.textContent).join(" ") : copy.textContent).replaceAll("\u2060", ""));
+    if (!text || element.closest(".is-changed-line")) continue;
+    if ([...marks.lines].some((line) => line && (line === text || (line.length >= 12 && text.includes(line))))) element.className += ` is-changed-line${flash}`;
+  }
+  if (!flash) return;
+  for (const anchor of marks.sections) {
+    const card = (document.getElementById(anchor) || elements.chunks.querySelector(`[data-source-anchor="${CSS.escape(anchor)}"]`))?.closest(".chunk-card");
+    card?.classList.add("is-changed-flash");
+  }
+}
+// One toast per document: a burst of writes to the same file replaces its toast instead of stacking.
+const changeToasts = new Map();
+function announceChange(change) {
+  documentChanges = [change, ...documentChanges].slice(0, 50);
+  if (change.source !== "agent") return;
+  const marks = changeMarks.get(change.path) || { sections: new Set(), lines: new Set() };
+  change.sections.forEach((section) => marks.sections.add(section.anchor));
+  change.lines.forEach((line) => marks.lines.add(plainLine(line)));
+  marks.flash = true;
+  changeMarks.set(change.path, marks);
+  dismissToast(changeToasts.get(change.path));
+  const verb = { created: "Created", changed: "Updated", deleted: "Deleted" }[change.kind];
+  const open = change.kind === "deleted" ? null : { label: change.path === state.selectedPath ? "Show" : "Open", run: () => { marks.flash = true; selectDocument(change.path, { historyMode: change.path === state.selectedPath ? "replace" : "push", anchor: change.sections[0]?.anchor || "" }); } };
+  changeToasts.set(change.path, showNotice(`${verb} “${change.title}”`, false, { kind: "info", description: changeSummary(change), action: open }));
+}
+
 function connectLiveUpdates() {
   const events = new EventSource("/api/events");
   events.addEventListener("markdown", (event) => {
     try {
       const update = JSON.parse(event.data);
+      if (update.change) announceChange(update.change);
       if (update.path) scheduleMarkdownRefresh(update.path);
     } catch {
       // Ignore malformed live events; EventSource will keep the connection alive.
@@ -1419,7 +1822,7 @@ async function dispatch(form) {
     const response = await fetch("/api/dispatch", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ app: agentApp(), path: form.dataset.sourcePath || state.selectedPath, scope: form.dataset.scope, chunkId: form.dataset.chunkId, actionId: form.dataset.actionId, expectedPrompt: form.dataset.expectedPrompt, commentary, images: [...form.querySelectorAll(".composer-images img")].map((img) => img.src) }),
+      body: JSON.stringify({ app: agentApp(), path: form.dataset.sourcePath || state.selectedPath, scope: form.dataset.scope, chunkId: form.dataset.chunkId, actionId: form.dataset.actionId, expectedPrompt: form.dataset.expectedPrompt, workItem: form.dataset.workItem, mode: form.dataset.workMode, commentary, images: [...form.querySelectorAll(".composer-images img")].map((img) => img.src) }),
     });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || `${agentName()} could not open the draft.`);
@@ -1431,7 +1834,7 @@ async function dispatch(form) {
     showNotice(`Draft loaded in ${agentName()}. Review or edit it there, then send it.`);
   } catch (error) {
     button.disabled = false;
-    button.textContent = form.dataset.scope === "action" ? `Open in ${agentName()}` : `Open draft in ${agentName()}`;
+    button.textContent = ["action", "work"].includes(form.dataset.scope) ? `Open in ${agentName()}` : `Open draft in ${agentName()}`;
     showNotice(error.message, true);
   }
 }
@@ -1751,6 +2154,11 @@ elements.chunks.addEventListener("click", (event) => {
     selectDocument(documentLink.dataset.documentPath, { historyMode: "push", anchor: documentLink.dataset.documentAnchor });
     return;
   }
+  const workItem = event.target.closest("[data-work-item]");
+  if (workItem) {
+    openWorkItem(workItem.dataset.workItem);
+    return;
+  }
   const actionButton = event.target.closest("[data-action-key]");
   if (actionButton) {
     const action = actionGroups.get(actionButton.dataset.actionKey)?.[Number(actionButton.dataset.actionIndex)];
@@ -1882,9 +2290,8 @@ window.addEventListener("blur", () => { cursorPosition = null; });
 function openCursorComposer() {
   const hovered = cursorPosition && document.elementFromPoint(cursorPosition.x, cursorPosition.y);
   const action = hovered?.closest("[data-action-key]")
-    || hovered?.closest(".action-row")?.querySelector("[data-action-key]");
+    || hovered?.closest(".action-row, .work-line")?.querySelector("[data-action-key]");
   if (action) {
-    if (action.disabled) { showNotice("This action is blocked. Resolve its prerequisites first."); return; }
     action.click();
     return;
   }
@@ -2003,20 +2410,24 @@ const planResult = (item, terms) => ({
   side: item.source === "pr" ? "Proposed" : escapeHtml(item.status[0].toUpperCase() + item.status.slice(1)),
 });
 const renderPlanResult = ({ plan }, index, terms) => resultRow({ ...planResult(plan, terms), attrs: searchAttrs(index) });
+const workResult = ({ work, doc }, terms) => ({
+  icon: "list", tone: `work is-${escapeHtml(work.status)}`,
+  title: `<span class="search-pr-number">${highlightTerms(work.id, terms)}</span> ${highlightTerms(work.title, terms)}`,
+  detail: `<code>${escapeHtml(doc.task.id)}</code> · ${escapeHtml(doc.task.title)}`, side: escapeHtml(work.status[0].toUpperCase() + work.status.slice(1)),
+});
+const renderWorkResult = (hit, index, terms) => resultRow({ ...workResult(hit, terms), attrs: searchAttrs(index) });
+
 // A key (`OPS-12`, or a bare number matching the end of one), an old key it was imported from, or words from the title.
-function searchIssues(query) {
+function searchIssues(query, terms) {
   const data = cachedIssues();
-  if (!data?.enabled || !query) return [];
-  const upper = query.trim().toUpperCase().replace(/^#/, "");
+  if (!data?.enabled) return [];
+  const upper = query.toUpperCase().replace(/^#/, "");
   const alias = data.aliases[upper];
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const scored = data.issues.filter((issue) => !issue.bot && !issue.mirrorOf).map((issue) => {
+  return data.issues.filter((issue) => !issue.bot && !issue.mirrorOf).map((issue) => {
     const shown = issue.label || issue.key;
-    const key = shown === upper || issue.key === alias ? 3 : /^\d+$/.test(upper) && shown.endsWith(`-${upper}`) ? 2 : 0;
-    const words = terms.every((term) => `${shown} ${issue.summary}`.toLowerCase().includes(term)) ? 1 : 0;
-    return [issue, key || words];
-  }).filter(([, score]) => score);
-  return scored.sort((a, b) => b[1] - a[1] || b[0].updated.localeCompare(a[0].updated)).slice(0, 8).map(([issue]) => issue);
+    const match = shown === upper || issue.key === alias ? 100 : /^\d+$/.test(upper) && shown.endsWith(`-${upper}`) ? 50 : textScore(terms, issue.summary, "", shown);
+    return match && { issue, score: match + contextScore({ live: issue.category === "indeterminate", done: issue.category === "done", updated: issue.updated, mine: Boolean(data.me) && issue.assignee?.email === data.me }) };
+  }).filter(Boolean);
 }
 
 // Every top-level page and Code tab, so ⌘K jumps straight to e.g. Pull requests.
@@ -2032,30 +2443,69 @@ const PAGES = [
 const searchPages = (query) => { const terms = query.toLowerCase().split(/\s+/).filter(Boolean); return PAGES.filter((page) => (!page.issues || config().issues.jql) && terms.every((term) => `${page.title} ${page.detail}`.toLowerCase().includes(term))).map((page) => ({ page })); };
 const renderPageResult = ({ page }, index) => resultRow({ icon: page.icon, title: escapeHtml(page.title), detail: escapeHtml(page.detail), side: "Page", attrs: searchAttrs(index) });
 
-// With no query, PRs waiting on you lead; a query lists matching PRs (number, title, branch, author) above documents.
+const LIVE_TASK = new Set(["open", "active"]);
+const SETTLED_TASK = new Set(["completed", "deferred"]);
+// Every source scored on one scale (textScore + contextScore), so a recent open task outranks an old closed issue.
+function rankedMatches(query, prs, me) {
+  const terms = query.toLowerCase().replace(/^#/, "").split(/\s+/).filter(Boolean);
+  const numeric = /^(?:[a-z][\w.-]*\s*)?#?\d+$/i.test(query);
+  const docs = searchDocuments(state.documents, query).map((doc) => {
+    const task = doc.task;
+    const text = textScore(terms, doc.title, task ? `${doc.path} ${task.summary} ${task.project} ${task.status} ${task.tags.join(" ")}` : doc.path, task?.id) || 1;
+    const context = task ? contextScore({ live: LIVE_TASK.has(task.status), done: SETTLED_TASK.has(task.status), updated: task.updated, mine: true }) : contextScore({ updated: doc.date });
+    return { doc, group: task ? "Tasks" : "Documents", score: text + context };
+  });
+  const work = state.documents.flatMap((doc) => (doc.task?.work || []).map((work) => {
+    const text = textScore(terms, work.title, "", work.id);
+    const done = SETTLED_TASK.has(work.status) || SETTLED_TASK.has(doc.task.status);
+    return text && { work, doc, group: "Work items", score: text + contextScore({ live: !done && LIVE_TASK.has(work.status), done, updated: doc.task.updated, mine: true }) };
+  })).filter(Boolean);
+  return [
+    ...searchPages(query).map((item) => ({ ...item, group: "Pages", score: textScore(terms, item.page.title, item.page.detail) })),
+    ...docs, ...work,
+    ...searchIssues(query, terms).map((item) => ({ ...item, group: "Issues" })),
+    ...searchPrs(prs, query).map((pr, index) => ({ pr, group: "Pull requests", score: (numeric ? 80 - index * 5 : textScore(terms, pr.title || "", `${pr.branch} ${pr.author} ${pr.slug}`))
+      + contextScore({ live: pr.state === "OPEN", done: pr.state !== "OPEN", updated: pr.updatedAt, mine: pr.requestedOfMe || pr.author === me }) })),
+    ...searchPlans(query).map((plan) => ({ plan, group: "Initiatives", score: (textScore(terms, plan.title, `${plan.slug} ${plan.summary}`) || 1)
+      + contextScore({ live: plan.status === "active", done: ["completed", "retired"].includes(plan.status), updated: plan.edited }) })),
+  ].sort((a, b) => b.score - a.score);
+}
+
+const GROUP_CAPS = { "Work items": 8, Issues: 8, "Pull requests": 6, Initiatives: 6 };
+// With no query, PRs waiting on you lead. A query puts the best eight matches of any kind on top, then the rest by kind,
+// kinds ordered by their best remaining match.
 function searchGroups(query) {
   const index = cachedPrIndex();
   const prs = index?.prs || [];
-  const docs = searchDocuments(state.documents, query);
-  if (query) return [["Pages", searchPages(query)], ["Issues", searchIssues(query)], ["Pull requests", searchPrs(prs, query)], ["Initiatives", searchPlans(query)], ["Documents", docs]];
+  if (query) {
+    const ranked = rankedMatches(query, prs, index?.me);
+    const groups = new Map();
+    for (const item of ranked.slice(8)) {
+      const list = groups.get(item.group) || groups.set(item.group, []).get(item.group);
+      if (list.length < (GROUP_CAPS[item.group] || Infinity)) list.push(item);
+    }
+    return [["Top results", ranked.slice(0, 8)], ...groups];
+  }
   const open = prs.filter((pr) => pr.state === "OPEN").sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
-  return [["Needs your review", open.filter((pr) => pr.requestedOfMe).slice(0, 5)], ["Your open PRs", open.filter((pr) => pr.author === index?.me && !pr.requestedOfMe).slice(0, 5)], ["Pages", searchPages("")], ["Documents", docs]];
+  const wrap = (list) => list.map((pr) => ({ pr }));
+  return [["Needs your review", wrap(open.filter((pr) => pr.requestedOfMe).slice(0, 5))], ["Your open PRs", wrap(open.filter((pr) => pr.author === index?.me && !pr.requestedOfMe).slice(0, 5))], ["Pages", searchPages("")], ["Documents", state.documents.map((doc) => ({ doc }))]];
 }
+
+const renderMatch = (item, index, terms) => item.pr ? renderPrResult(item, index, terms) : item.issue ? renderIssueResult(item, index, terms) : item.plan ? renderPlanResult(item, index, terms)
+  : item.page ? renderPageResult(item, index) : item.work ? renderWorkResult(item, index, terms) : renderSearchResult(item.doc, index, terms);
 
 function renderSearchResults() {
   const query = elements.searchInput.value.trim();
   const terms = query.toLowerCase().replace(/^#/, "").split(/\s+/).filter(Boolean);
-  const groups = searchGroups(query).map(([label, items]) => [label, items.map((item) => (label === "Documents" || item.page ? item : label === "Issues" ? { issue: item } : label === "Initiatives" ? { plan: item } : { pr: item }))]).filter(([, items]) => items.length);
+  const groups = searchGroups(query).filter(([, items]) => items.length);
   searchMatches = groups.flatMap(([, items]) => items);
   searchIndex = 0;
-  const prCount = searchMatches.filter((item) => item.pr).length;
-  const docCount = searchMatches.filter((item) => !item.pr && !item.page && !item.issue && !item.plan).length;
-  const planCount = searchMatches.filter((item) => item.plan).length;
-  elements.searchStatus.textContent = `${prCount ? `${prCount} ${prCount === 1 ? "PR" : "PRs"} · ` : ""}${planCount ? `${planCount} ${planCount === 1 ? "initiative" : "initiatives"} · ` : ""}${docCount} ${docCount === 1 ? "document" : "documents"}`;
+  const count = (key, one, many) => { const n = searchMatches.filter((item) => item[key]).length; return n ? `${n} ${n === 1 ? one : many}` : ""; };
+  elements.searchStatus.textContent = [count("work", "work item", "work items"), count("issue", "issue", "issues"), count("pr", "PR", "PRs"), count("plan", "initiative", "initiatives"), count("doc", "document", "documents")].filter(Boolean).join(" · ");
   let position = 0;
   elements.searchResults.innerHTML = searchMatches.length
-    ? groups.map(([label, items]) => `<div class="search-section" role="presentation">${label}</div>${items.map((item) => { const index = position++; return item.pr ? renderPrResult(item, index, terms) : item.issue ? renderIssueResult(item, index, terms) : item.plan ? renderPlanResult(item, index, terms) : item.page ? renderPageResult(item, index) : renderSearchResult(item, index, terms); }).join("")}`).join("")
-    : '<div class="search-empty"><strong>No matches</strong><span>Try a title, path, task ID, PR number or title, project, or tag.</span></div>';
+    ? groups.map(([label, items]) => `<div class="search-section" role="presentation">${label}</div>${items.map((item) => renderMatch(item, position++, terms)).join("")}`).join("")
+    : '<div class="search-empty"><strong>No matches</strong><span>Try a title, path, task ID, work item, PR number or title, project, or tag.</span></div>';
   elements.searchResults.scrollTop = 0;
   syncSearchSelection();
 }
@@ -2092,7 +2542,8 @@ function openSearchResult(index, external = false) {
   else if (doc.pr) openPrOverlay(doc.pr.slug, doc.pr.number);
   else if (doc.issue) openIssue(doc.issue.key);
   else if (doc.plan) openPlan(doc.plan.id);
-  else { closeOverview(); selectDocument(doc.path); }
+  else if (doc.work) { closeOverview(); selectDocument(doc.doc.path).then(() => openWorkItem(doc.work.id)); }
+  else { closeOverview(); selectDocument(doc.doc.path); }
 }
 
 elements.searchInput.addEventListener("input", renderSearchResults);
@@ -2126,7 +2577,8 @@ const tableCellText = (cell) => {
   for (const hidden of clone.querySelectorAll(".sr-only, [aria-hidden='true']")) hidden.remove();
   return clone.textContent.replaceAll("\u2060", "").replace(/\s+/g, " ").trim();
 };
-const tableRows = (table) => [...table.rows].map((row) => [...row.cells].map(tableCellText));
+// Only the rows showing, in their current order: the expanded table's sorting and filtering carry into copies and downloads.
+const tableRows = (table) => [...table.rows].filter((row) => !row.hidden && !row.closest("[data-table-ui]")).map((row) => [...row.cells].map(tableCellText));
 // Downloads are named for the heading the table sits under, falling back to the page title.
 function tableName(wrapper) {
   const heading = [...document.querySelectorAll("main h1, main h2, main h3, main h4, main h5")].filter((h) => h.compareDocumentPosition(wrapper) & Node.DOCUMENT_POSITION_FOLLOWING).pop();
@@ -2146,7 +2598,8 @@ async function copyTable(button) {
   try {
     if (format === "html") {
       const clone = table.cloneNode(true);
-      for (const hidden of clone.querySelectorAll(".sr-only, [aria-hidden='true']")) hidden.remove();
+      for (const hidden of clone.querySelectorAll(".sr-only, [aria-hidden='true'], [data-table-ui], tr[hidden]")) hidden.remove();
+      for (const sort of clone.querySelectorAll(".table-sort")) sort.replaceWith(...sort.firstElementChild.childNodes);
       for (const link of clone.querySelectorAll("a[href]")) link.setAttribute("href", link.href);
       for (const element of [clone, ...clone.querySelectorAll("*")]) for (const { name } of [...element.attributes]) if (name !== "href") element.removeAttribute(name);
       // Like a selection copied off the page: a styled table for rich editors, tab-separated text for plain ones.
@@ -2173,7 +2626,9 @@ function showTableViewer(wrapper) {
   dialog.dataset.tableSource = wrapper.dataset.tableSource;
   dialog.dataset.tableName = tableName(wrapper);
   dialog.innerHTML = `<header class="viewer-dialog-heading"><h2 id="table-viewer-title">Table <span>${table.tBodies[0].rows.length} rows × ${table.tHead.rows[0].cells.length} columns</span></h2>${tools.outerHTML}<button type="button" data-dialog-close aria-label="Close table">×</button></header><div class="table-viewer-body markdown" tabindex="0">${table.outerHTML}</div>`;
-  if (openViewerDialog(dialog, { stack: true })) dialog.querySelector(".table-viewer-body").focus();
+  if (!openViewerDialog(dialog, { stack: true })) return;
+  enhanceTable(dialog, tableCellText);
+  dialog.querySelector(".table-viewer-body").focus();
 }
 // Code blocks copy and download their fenced source verbatim; the file extension follows the fence's language.
 const CODE_EXTENSIONS = { javascript: "js", typescript: "ts", python: "py", bash: "sh", shell: "sh", zsh: "sh", markdown: "md", text: "txt", yaml: "yml" };
@@ -2293,6 +2748,7 @@ window.addEventListener("popstate", () => {
   const params = new URLSearchParams(location.search);
   if (params.get("view") === "tasks") {
     selectedTaskPath = taskFromUrl() || selectedTaskPath;
+    showDoneTasks = params.get("done") === "1";
     showTasks({ historyMode: "none" });
     return;
   }
@@ -2422,7 +2878,7 @@ let visits = [];
 try { visits = JSON.parse(localStorage.getItem(VISITS_KEY) || "[]"); } catch {}
 const pageKey = (url) => {
   const params = new URLSearchParams(url.search);
-  for (const name of ["pr", "wt", "issue", "file", "scope"]) params.delete(name);
+  for (const name of ["pr", "wt", "issue", "file", "scope", "graph"]) params.delete(name);
   return params.toString();
 };
 const visitKey = (url) => (url.searchParams.get("pr") ? `pr:${url.searchParams.get("pr")}` : url.searchParams.get("wt") ? `wt:${url.searchParams.get("wt")}` : url.searchParams.get("issue") ? `issue:${url.searchParams.get("issue")}` : pageKey(url));
@@ -2461,6 +2917,9 @@ function visitResult(href) {
   if (view === "weeks") return page("plan", "Weeks", params.get("date") ? `Week of ${formatDate(params.get("date"))}` : "This week");
   if (view in LIBRARY_VIEWS) return page(view === "topics" ? "topic" : "reference", LIBRARY_VIEWS[view].title, LIBRARY_VIEWS[view].intro);
   const path = params.get("path") || state.defaultPath;
+  // A work item dialog (`?item=`) is its own place, not the task behind it.
+  const work = doc(path)?.task?.work?.find((candidate) => candidate.id === params.get("item"));
+  if (work) return workResult({ work, doc: doc(path) }, []);
   return doc(path) ? docResult(doc(path), []) : { icon: "file", title: escapeHtml(path), detail: "No longer in the planning folders", side: "Document" };
 }
 
@@ -2507,9 +2966,18 @@ historyMenu.addEventListener("beforetoggle", (event) => {
   if (event.newState !== "open") return;
   const current = visitKey(new URL(location.href));
   const shown = visits.filter((visit) => visit.key !== current);
+  const changed = documentChanges.filter((change, index) => change.kind !== "deleted" && documentChanges.findIndex((other) => other.path === change.path) === index).slice(0, 8);
+  const changeRows = changed.map((change, index) => resultRow({
+    ...visitResult(changeHref(change)),
+    detail: escapeHtml(changeSummary(change)),
+    marker: index < 9 ? index + 1 : "",
+    side: Date.now() - change.at < 60_000 ? "just now" : `${ago(change.at)} ago`,
+    tag: "button",
+    attrs: `type="button" role="option" aria-selected="false" data-visit-href="${escapeHtml(changeHref(change))}"`,
+  }));
   const rows = shown.map((visit, index) => resultRow({
     ...visitResult(visit.href),
-    marker: index < 9 ? index + 1 : "", // the 1–9 jump key
+    marker: index + changed.length < 9 ? index + changed.length + 1 : "", // the 1–9 jump key
     side: Date.now() - visit.at < 60_000 ? "just now" : `${ago(visit.at)} ago`,
     tag: "button",
     attrs: `type="button" role="option" aria-selected="false" data-visit-href="${escapeHtml(visit.href)}"`,
@@ -2517,7 +2985,7 @@ historyMenu.addEventListener("beforetoggle", (event) => {
   // The page you're on, pinned above the list, so it's clear what picking a row will replace.
   const here = resultRow({ ...visitResult(location.href), side: "", className: "history-here", marker: "" });
   historyMenu.style.height = "";
-  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recently viewed</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed"><div class="search-section" role="presentation">Recently viewed</div>${rows.join("") || '<div class="search-empty"><strong>Nothing yet</strong><span>Pages, PRs and worktrees you open will appear here.</span></div>'}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>H</kbd> close</span><span class="history-count">${shown.length} ${shown.length === 1 ? "place" : "places"}</span></footer>`;
+  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recently viewed</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed">${changeRows.length ? `<div class="search-section" role="presentation">Recently changed</div>${changeRows.join("")}` : ""}<div class="search-section" role="presentation">Recently viewed</div>${rows.join("") || '<div class="search-empty"><strong>Nothing yet</strong><span>Pages, PRs and worktrees you open will appear here.</span></div>'}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>H</kbd> close</span><span class="history-count">${shown.length + changed.length} ${shown.length + changed.length === 1 ? "place" : "places"}</span></footer>`;
 });
 // Every word must appear in the row's title or detail; the 1–9 markers renumber over what's left.
 function filterHistory() {

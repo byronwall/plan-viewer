@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { searchDocuments, searchPrs } from './public/search.js';
+import { contextScore, searchDocuments, searchPrs, textScore } from './public/search.js';
 
 const documents = [
   { title: 'Daily plan', path: 'daily/2026/10/01/plan.md', kind: 'Plan' },
@@ -40,4 +40,14 @@ test('PR search matches title, branch and author words, open PRs first', () => {
   assert.deepEqual(searchPrs(prs, 'falcon').map(pr => pr.number), [9, 10]);
   assert.deepEqual(searchPrs(prs, 'falcon sam').map(pr => pr.number), [9]);
   assert.deepEqual(searchPrs(prs, 'ga'), []);
+});
+
+test('ranking: title word starts beat substrings, and a recent open item beats an old finished one', () => {
+  assert.equal(textScore(['delete'], 'Typo in rename'), 0);
+  assert.ok(textScore(['delete'], 'Delete modal') > textScore(['delete'], 'Undeleted rows'));
+  assert.equal(textScore(['mod-12'], 'Anything', '', 'MOD-12') > 60, true);
+  const now = Date.parse('2026-10-23');
+  const recentTask = textScore(['delete'], 'Soft delete for drafts') + contextScore({ live: true, updated: '2026-10-22', mine: true }, now);
+  const oldIssue = textScore(['delete'], 'Delete modal does not look good') + contextScore({ done: true, updated: '2026-08-01' }, now);
+  assert.ok(recentTask > oldIssue);
 });
