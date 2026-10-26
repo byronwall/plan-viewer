@@ -11,6 +11,7 @@ import { extractChatLinks } from "./public/markdown.js";
 import { CodexDesktopClient, taskTitle } from "./codex-desktop.ts";
 import { createLinkMetadataStore } from "./link-metadata.ts";
 import { createCodeDashboard, githubImage } from "./code-dashboard.ts";
+import { createPeople } from "./people.ts";
 import { createIssueTracker } from "./issues.ts";
 import { createPlans } from "./plans.ts";
 import { linearImage } from "./linear.ts";
@@ -36,6 +37,7 @@ const isExcluded = (path: string) => config().exclude.some((folder: string) => p
 const PUBLIC = fileURLToPath(new URL("public", import.meta.url));
 const lookupLinkMetadata = createLinkMetadataStore(ROOT);
 const codeDashboard = createCodeDashboard(ROOT);
+const people = createPeople(ROOT, { repos: codeDashboard.readRepos, slug: codeDashboard.githubSlug });
 const plans = createPlans(ROOT, { repos: codeDashboard.readRepos, slug: codeDashboard.githubSlug });
 const issueTracker = createIssueTracker(ROOT, async () => ({ prs: (await codeDashboard.prIndex()).prs, worktrees: await codeDashboard.worktreeIndex() }));
 const PORT = Number(process.env.PLAN_VIEWER_PORT || process.env.PORT || config().port);
@@ -806,6 +808,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const keys = Array.isArray(body.keys) ? body.keys.map(String).slice(0, 1000) : [];
       return json(response, 200, { metadata: { ...await lookupLinkMetadata(keys), ...issueTracker.aliasMetadata(keys) } });
     }
+    if (request.method === "GET" && url.pathname === "/api/people") return json(response, 200, await people());
     if (request.method === "GET" && url.pathname === "/api/changes") return json(response, 200, { changes: recentChanges });
     if (request.method === "POST" && url.pathname === "/api/task-status") {
       const body = await readJson(request);

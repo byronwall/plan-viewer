@@ -8,6 +8,8 @@ export const DEFAULT_CONFIG = {
   port: 4173,
   // Folders under daily/, tasks/, plans/ or reference/ the library and lint skip (generated corpora).
   exclude: [],
+  // People the identity index can't join on its own: [{ names, emails, github, avatar }], so every avatar matches.
+  people: [],
   github: {
     // `owner/<repo>` for every reference below.
     owner: "",

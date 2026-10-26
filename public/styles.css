@@ -2264,19 +2264,21 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 
 /* Activity page: a white working surface; a sticky toolbar, the list, and an inspector beside it on wide screens. */
 body:has(.activity-page), body:has(.activity-page) .reading-pane { background: var(--paper); }
-.activity-page { max-width: none; --src-tasks: #3157d5; --src-daily: #0f8a8a; --src-topics: #8a94a6; --src-jira: #e07a00; --src-linear: #6e56cf; --src-prs: #1f9d6b; }
+.activity-page { max-width: none; --src-tasks: #3157d5; --src-daily: #0f8a8a; --src-topics: #8a94a6; --src-jira: #e07a00; --src-linear: #6e56cf; --src-prs: #24292f; }
 .src-tasks { --src: var(--src-tasks); } .src-daily { --src: var(--src-daily); } .src-topics { --src: var(--src-topics); } .src-jira { --src: var(--src-jira); } .src-linear { --src: var(--src-linear); } .src-prs { --src: var(--src-prs); }
 .activity-surface { min-width: 0; max-width: 1740px; } /* on very wide monitors the rest stays empty rather than stretching rows */
 .activity-toolbar { position: sticky; top: 0; z-index: 8; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: -8px 0 0; padding: 8px 0; background: var(--paper); border-bottom: 1px solid var(--line); }
 .activity-toolbar .code-filter { flex: 0 1 220px; }
 .activity-dot { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 2px; background: var(--src); vertical-align: 1px; }
 .activity-when-controls { display: inline-flex; align-items: center; gap: 8px; }
-.activity-strip { display: flex; align-items: flex-end; gap: 2px; height: 30px; }
-.activity-day { display: grid; grid-template-rows: 1fr auto; justify-items: center; width: 24px; height: 30px; padding: 1px 0 0; border: 0; border-radius: 4px; background: none; color: var(--quiet-text); cursor: pointer; transition: background-color 140ms; }
-.activity-day.is-monday { margin-left: 5px; }
+.activity-strip { display: flex; align-items: flex-end; gap: 2px; height: 28px; }
+.activity-day { display: grid; grid-template-rows: 1fr auto; justify-items: center; width: 22px; height: 28px; padding: 1px 0 0; border: 0; border-radius: 4px; background: none; color: var(--quiet-text); cursor: pointer; transition: background-color 140ms; }
+.activity-day.is-monday { margin-left: 6px; }
+.activity-day:focus-visible, .activity-row a:focus-visible { outline: 2px solid var(--action); outline-offset: 1px; }
 .activity-day:hover { background: var(--hover-field); }
 .activity-day[aria-pressed="true"] { background: var(--selected); color: var(--action-ink); }
-.activity-day small { font-size: .6rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.activity-day.is-today small { color: var(--ink); font-weight: 750; }
+.activity-day small { font-size: .64rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .activity-bar { display: flex; flex-direction: column-reverse; justify-content: flex-start; width: 12px; height: 100%; overflow: hidden; border-radius: 2px 2px 0 0; background: #f1f3f6; }
 .activity-bar i { flex: none; background: var(--src); }
 .activity-strip:has([aria-pressed="true"]) .activity-day:not([aria-pressed="true"]) .activity-bar { opacity: .45; }
@@ -2291,7 +2293,7 @@ body:has(.activity-page), body:has(.activity-page) .reading-pane { background: v
   .activity-inspector { display: block; margin-top: 8px; }
 }
 .activity-table { width: 100%; table-layout: fixed; }
-.activity-table th:nth-child(1) { width: 62px; } .activity-table th:nth-child(2) { width: 18px; } .activity-table th:nth-child(4) { width: 136px; } .activity-table th:nth-child(5) { width: 34px; }
+.activity-table th:nth-child(1) { width: 62px; } .activity-table th:nth-child(2) { width: 18px; } .activity-table th:nth-child(4) { width: 30px; } .activity-table th:nth-child(5) { width: 128px; } .activity-table th:nth-child(6) { width: 34px; }
 .activity-table thead th { padding-top: 6px; }
 .activity-table td { padding: 4px 6px; vertical-align: top; }
 .activity-row { cursor: pointer; }
@@ -2316,7 +2318,8 @@ body:has(.activity-page), body:has(.activity-page) .reading-pane { background: v
 .activity-path, .activity-branch { font: .7rem ui-monospace, SFMono-Regular, Menlo, monospace; }
 .activity-delta ins { color: var(--pass); text-decoration: none; } .activity-delta del { color: var(--fail); text-decoration: none; }
 .activity-col-state { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.activity-col-state .code-ci { vertical-align: -3px; margin-right: 4px; }
+.activity-col-ci { text-align: center; }
+.activity-col-ci .code-ci { display: inline-flex; margin-top: 2px; }
 .activity-state { display: inline-block; border-radius: 4px; padding: 1px 6px; font-size: .7rem; font-weight: 600; white-space: nowrap; }
 .activity-state.is-quiet { background: var(--quiet-field); color: var(--muted); }
 .activity-state.is-progress { background: #e9eefc; color: var(--action-ink); }

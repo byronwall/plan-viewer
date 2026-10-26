@@ -51,7 +51,7 @@ function rows() {
     out.push({
       id: `doc:${doc.path}`, kind: "doc", source: DOC_SOURCE[doc.group] || "topics", at: doc.modified, doc, change,
       label: task?.id || "", title: task?.title || doc.title,
-      event: change && Math.abs(change.at - doc.modified) < 5 * 60_000 ? docEvent(change) : `saved <span class="activity-path">${escapeHtml(doc.path)}</span>`,
+      event: change && Math.abs(change.at - doc.modified) < 5 * 60_000 ? docEvent(change) : task ? "saved" : `saved <span class="activity-path">${escapeHtml(doc.path)}</span>`,
       context: escapeHtml(where), state: task ? stateHtml(task.status, TASK_TONES[task.status] || "quiet") : "",
       who: change?.source === "agent" ? `<span class="activity-agent" data-tip="Edited by an agent">${icon("session")}</span>` : "",
       mine: true, text: `${task?.id || ""} ${task?.title || doc.title} ${doc.path} ${task?.project || ""} ${task?.status || ""}`,
@@ -73,7 +73,7 @@ function rows() {
         event: row && Math.abs(new Date(row.at).getTime() - at) < 60 * 60_000 ? issueEvent(row) : "updated",
         context: parent ? `<span class="activity-parent" data-tip="${escapeHtml(parent.summary)}">↳ ${escapeHtml(parent.label || parent.key)} ${escapeHtml(parent.summary.slice(0, 40))}${parent.summary.length > 40 ? "…" : ""}</span>` : escapeHtml(issue.type),
         state: stateHtml(issue.status, ISSUE_TONES[issue.category] || "quiet"),
-        who: issue.assignee ? `<span data-tip="${escapeHtml(issue.assignee.name)}">${avatar("", issue.assignee.name)}</span>` : "",
+        who: issue.assignee ? `<span data-tip="${escapeHtml(issue.assignee.name)}">${avatar("", issue.assignee.name, issue.assignee.email)}</span>` : "",
         mine: Boolean(me) && [issue.assignee?.email, issue.reporter?.email].includes(me),
         text: `${issue.label || issue.key} ${issue.summary} ${issue.status} ${issue.assignee?.name || ""} ${parent?.summary || ""}`,
       });
@@ -87,7 +87,7 @@ function rows() {
       label: `#${pr.number}`, title: pr.title,
       event: `${new Date(pr.updatedAt) - new Date(pr.createdAt) < 60_000 ? "opened" : "updated"} <span class="activity-delta"><ins>+${pr.additions ?? 0}</ins> <del>−${pr.deletions ?? 0}</del></span>${pr.comments ? ` · ${pr.comments} comment${pr.comments === 1 ? "" : "s"}` : ""}`,
       context: `${escapeHtml(pr.slug.split("/").pop())} <span class="activity-branch">${escapeHtml(pr.branch)}</span>`,
-      state: `${ciBadge(pr)}${stateHtml(label, tone)}`,
+      ci: ciBadge(pr), state: stateHtml(label, tone),
       who: `<span data-tip="${escapeHtml(pr.author)}">${avatar(pr.author)}</span>`,
       mine: pr.author === ui.prs.me, text: `#${pr.number} ${pr.title} ${pr.branch} ${pr.author} ${pr.slug} ${label}`,
     });
@@ -107,13 +107,13 @@ function dayStrip(scoped) {
     const date = new Date(`${day}T12:00:00`);
     const parts = Object.keys(SOURCES).filter((source) => counts.get(day)[source]);
     const tip = `${date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })} · ${totals[index]} item${totals[index] === 1 ? "" : "s"}${parts.length ? `: ${parts.map((source) => `${counts.get(day)[source]} ${SOURCES[source]}`).join(", ")}` : ""}`;
-    return `<button type="button" class="activity-day${date.getDay() === 1 ? " is-monday" : ""}" data-activity-day="${day}" aria-pressed="${ui.day === day}" data-tip="${escapeHtml(tip)}"><span class="activity-bar">${parts.map((source) => `<i class="src-${source}" style="height:${(counts.get(day)[source] / max) * 100}%"></i>`).join("")}</span><small>${date.toLocaleDateString("en-US", { weekday: "narrow" })}${date.getDate()}</small></button>`;
+    return `<button type="button" class="activity-day${date.getDay() === 1 ? " is-monday" : ""}${index === STRIP_DAYS - 1 ? " is-today" : ""}" data-activity-day="${day}" aria-pressed="${ui.day === day}" data-tip="${escapeHtml(tip)}"><span class="activity-bar">${parts.map((source) => `<i class="src-${source}" style="height:${(counts.get(day)[source] / max) * 100}%"></i>`).join("")}</span><small>${date.getDate()}</small></button>`;
   }).join("")}</div>`;
 }
 
 function rowHtml(row) {
   const href = row.doc ? documentHref(row.doc.path, row.change?.sections[0]?.anchor || "") : row.issue ? `?issue=${encodeURIComponent(row.issue.key)}` : row.pr.url;
-  return `<tr class="code-row activity-row" data-activity-id="${escapeHtml(row.id)}" aria-selected="${ui.sel === row.id}"><td class="activity-col-when" data-tip="${escapeHtml(new Date(row.at).toLocaleString())}"><b>${clock(row.at)}</b>${when(row.at)}</td><td class="activity-col-source src-${row.source}" data-tip="${SOURCES[row.source]}">${SOURCE_ICONS[row.source]}</td><td class="code-col-main"><a class="activity-title" href="${escapeHtml(href)}" data-activity-open>${row.label ? `<code>${escapeHtml(row.label)}</code>` : ""}${escapeHtml(row.title)}</a><div class="activity-sub"><span class="activity-event">${row.event}</span><span class="activity-context">${row.context}</span></div></td><td class="activity-col-state">${row.state}</td><td class="activity-col-who">${row.who}</td></tr>`;
+  return `<tr class="code-row activity-row" data-activity-id="${escapeHtml(row.id)}" aria-selected="${ui.sel === row.id}"><td class="activity-col-when" data-tip="${escapeHtml(new Date(row.at).toLocaleString())}"><b>${clock(row.at)}</b>${when(row.at)}</td><td class="activity-col-source src-${row.source}" data-tip="${SOURCES[row.source]}">${SOURCE_ICONS[row.source]}</td><td class="code-col-main"><a class="activity-title" href="${escapeHtml(href)}" data-activity-open>${row.label ? `<code>${escapeHtml(row.label)}</code>` : ""}${escapeHtml(row.title)}</a><div class="activity-sub"><span class="activity-event">${row.event}</span><span class="activity-context">${row.context}</span></div></td><td class="activity-col-ci">${row.ci || ""}</td><td class="activity-col-state">${row.state}</td><td class="activity-col-who">${row.who}</td></tr>`;
 }
 
 function filtered() {
@@ -138,7 +138,7 @@ function render() {
   const focused = document.activeElement?.matches("[data-activity-filter]");
   const toolbar = `<div class="activity-toolbar" data-region="toolbar"><div class="code-segment">${sourceTabs}</div><label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-activity-filter placeholder="Filter  (F)" value="${escapeHtml(ui.query)}" spellcheck="false" autocomplete="off"></label><label class="code-check"><input type="checkbox" data-activity-mine ${ui.mine ? "checked" : ""}> Mine</label><span class="activity-when-controls"><div class="code-segment">${ranges}</div>${dayStrip(kept.filter((row) => ui.source === "all" || row.source === ui.source))}</span><span class="code-spacer"></span><span class="code-muted activity-status">${loading.length ? `Loading ${loading.join(" and ")}…` : ui.day ? `${new Date(`${ui.day}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · <button type="button" class="activity-clear-day" data-activity-day="${ui.day}">clear day</button>` : ""}</span></div>`;
   const table = ui.visible.length
-    ? `<table class="code-table activity-table"><thead><tr><th>When</th><th></th><th>Item <span class="code-muted">· what changed · where</span></th><th>State</th><th>Who</th></tr></thead>${[...days].map(([label, items]) => `<tbody><tr class="code-group-row"><th colspan="5">${escapeHtml(label)} <span>${items.length}</span></th></tr>${items.map(rowHtml).join("")}</tbody>`).join("")}</table>${shown.length > ui.visible.length ? `<p class="code-muted activity-more">Showing the newest ${ui.visible.length} of ${shown.length}. Narrow with a filter, day or range.</p>` : ""}`
+    ? `<table class="code-table activity-table"><thead><tr><th>When</th><th></th><th>Item <span class="code-muted">· what changed · where</span></th><th data-tip="Checks on the PR's latest commit">CI</th><th>State</th><th>Who</th></tr></thead>${[...days].map(([label, items]) => `<tbody><tr class="code-group-row"><th colspan="6">${escapeHtml(label)} <span>${items.length}</span></th></tr>${items.map(rowHtml).join("")}</tbody>`).join("")}</table>${shown.length > ui.visible.length ? `<p class="code-muted activity-more">Showing the newest ${ui.visible.length} of ${shown.length}. Narrow with a filter, day or range.</p>` : ""}`
     : `<p class="code-muted activity-empty">${loading.length ? "Loading…" : "Nothing here. Widen the range, pick another day, or clear the filter."}</p>`;
   const scroll = ui.host.querySelector(".activity-inspector")?.scrollTop || 0;
   const hadInspector = ui.host.querySelector(".activity-inspector");
