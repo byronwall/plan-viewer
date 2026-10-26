@@ -2955,10 +2955,12 @@ document.addEventListener("overview-closed", (event) => {
 
 const historyMenu = document.querySelector("#history-menu");
 const historyRows = () => [...historyMenu.querySelectorAll(".search-results:not([hidden]) [data-visit-href]:not([hidden])")];
-// Viewed and Changed are separate tabs so a burst of agent edits can't bury where you've been; Tab flips between them.
-function showHistoryTab(tab) {
+// Viewed and Changed are separate tabs so a burst of agent edits can't bury where you've been. The row under
+// "You are here" names the open one; Tab, or a click anywhere on that row, flips to the other.
+function showHistoryTab(tab = historyMenu.querySelector('[data-history-tab][aria-selected="false"]').dataset.historyTab) {
   for (const button of historyMenu.querySelectorAll("[data-history-tab]")) button.setAttribute("aria-selected", String(button.dataset.historyTab === tab));
   for (const list of historyMenu.querySelectorAll("[data-history-list]")) list.hidden = list.dataset.historyList !== tab;
+  historyFilter().focus(); // a click on the row shouldn't take typing away from the filter
   filterHistory();
 }
 const historyFilter = () => historyMenu.querySelector(".history-filter input");
@@ -2992,25 +2994,31 @@ historyMenu.addEventListener("beforetoggle", (event) => {
   const here = resultRow({ ...visitResult(location.href), side: "", className: "history-here", marker: "" });
   historyMenu.style.height = "";
   const empty = (title, text) => `<div class="search-empty"><strong>${title}</strong><span>${text}</span></div>`;
-  const tabs = [["viewed", "Viewed"], ["changed", "Changed"]].map(([tab, label]) => `<button type="button" role="tab" tabindex="-1" data-history-tab="${tab}" aria-selected="${tab === "viewed"}">${label}</button>`).join("");
-  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recent places</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><span class="history-tabs" role="tablist" aria-label="Recent places">${tabs}</span><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed" data-history-list="viewed">${rows.join("") || empty("Nothing yet", "Pages, PRs and worktrees you open will appear here.")}</div><div class="search-results" role="listbox" aria-label="Recently changed" data-history-list="changed" hidden>${changeRows.join("") || empty("No changes yet", "Documents edited outside the viewer will appear here.")}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>Tab</kbd> viewed/changed <kbd>Esc</kbd> close</span><span class="history-count">${shown.length} ${shown.length === 1 ? "place" : "places"}</span></footer>`;
+  const tabs = [["viewed", "Recently viewed"], ["changed", "Recently changed"]].map(([tab, label]) => `<button type="button" role="tab" tabindex="-1" data-history-tab="${tab}" aria-selected="${tab === "viewed"}">${label}<span class="history-tab-count"></span></button>`).join("");
+  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recent places</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="history-switch" data-history-switch><span role="tablist" aria-label="Recent places">${tabs}</span><span class="history-switch-key"><kbd>Tab</kbd> switch</span></div><div class="search-results" role="listbox" aria-label="Recently viewed" data-history-list="viewed">${rows.join("") || empty("Nothing yet", "Pages, PRs and worktrees you open will appear here.")}</div><div class="search-results" role="listbox" aria-label="Recently changed" data-history-list="changed" hidden>${changeRows.join("") || empty("No changes yet", "Documents edited outside the viewer will appear here.")}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>Esc</kbd> close</span></footer>`;
 });
-// Every word must appear in the row's title or detail; the 1–9 markers renumber over what's left.
+// Every word must appear in the row's title or detail; the 1–9 markers renumber over what's left. The filter covers
+// both tabs, so each tab's count says whether the other one has matches.
 function filterHistory() {
   const words = historyFilter().value.toLowerCase().split(/\s+/).filter(Boolean);
+  for (const row of historyMenu.querySelectorAll("[data-history-list] [data-visit-href]")) row.hidden = !words.every((word) => row.textContent.toLowerCase().includes(word));
+  for (const list of historyMenu.querySelectorAll("[data-history-list]")) {
+    historyMenu.querySelector(`[data-history-tab="${list.dataset.historyList}"] .history-tab-count`).textContent = list.querySelectorAll("[data-visit-href]:not([hidden])").length;
+  }
   const all = [...historyMenu.querySelectorAll(".search-results:not([hidden]) [data-visit-href]")];
-  for (const row of all) row.hidden = !words.every((word) => row.textContent.toLowerCase().includes(word));
   const rows = historyRows();
   rows.forEach((row, index) => { row.querySelector(".result-marker").textContent = index < 9 ? index + 1 : ""; });
   historyMenu.querySelector(".history-none")?.remove();
-  if (all.length && !rows.length) historyMenu.querySelector(".search-results:not([hidden])").insertAdjacentHTML("beforeend", '<div class="search-empty history-none"><strong>No matches</strong><span>Esc clears the filter.</span></div>');
-  historyMenu.querySelector(".history-count").textContent = words.length ? `${rows.length} of ${all.length}` : `${all.length} ${all.length === 1 ? "place" : "places"}`;
+  const other = historyMenu.querySelector('[data-history-tab][aria-selected="false"]');
+  const elsewhere = Number(other.querySelector(".history-tab-count").textContent);
+  const hint = elsewhere ? `${elsewhere} ${elsewhere === 1 ? "match" : "matches"} in ${other.firstChild.textContent}. Press Tab.` : "Esc clears the filter.";
+  if (all.length && !rows.length) historyMenu.querySelector(".search-results:not([hidden])").insertAdjacentHTML("beforeend", `<div class="search-empty history-none"><strong>No matches</strong><span>${hint}</span></div>`);
   selectHistoryRow(rows[0]);
 }
 historyMenu.addEventListener("input", filterHistory);
 historyMenu.addEventListener("click", (event) => {
   const tab = event.target.closest("[data-history-tab]");
-  if (tab) { showHistoryTab(tab.dataset.historyTab); return; }
+  if (tab || event.target.closest("[data-history-switch]")) { showHistoryTab(tab?.dataset.historyTab); return; }
   const row = event.target.closest("[data-visit-href]");
   if (!row) return;
   historyMenu.hidePopover();
@@ -3036,7 +3044,7 @@ function openHistoryMenu() {
   lists.forEach((list, index) => { list.hidden = index > 0; });
   historyMenu.style.height = `${Math.max(...heights)}px`;
   historyFilter().focus(); // now, not on the async toggle event, so typing right after H lands in the filter
-  selectHistoryRow(historyRows()[0]);
+  filterHistory(); // fills the tab counts and selects the newest row
 }
 historyMenu.addEventListener("keydown", (event) => {
   event.stopPropagation(); // inside the PR overview, its J/K/arrow keys must not also fire
@@ -3044,7 +3052,7 @@ historyMenu.addEventListener("keydown", (event) => {
   const filter = historyFilter();
   const typing = !event.metaKey && !event.ctrlKey && !event.altKey;
   if (/^[1-9]$/.test(event.key) && typing && rows[event.key - 1]) { event.preventDefault(); rows[event.key - 1].click(); return; }
-  if (event.key === "Tab") { event.preventDefault(); showHistoryTab(historyMenu.querySelector('[data-history-tab][aria-selected="false"]').dataset.historyTab); return; }
+  if (event.key === "Tab") { event.preventDefault(); showHistoryTab(); return; }
   if (event.key === "Escape" && filter.value) { event.preventDefault(); filter.value = ""; filterHistory(); return; } // a second Esc closes
   if (event.key === "Enter" && event.target === filter) { event.preventDefault(); historyMenu.querySelector('[data-visit-href][aria-selected="true"]:not([hidden])')?.click(); return; }
   // Letters typed anywhere in the menu go to the filter, so H then "snow" narrows the list.
