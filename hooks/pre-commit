@@ -7,5 +7,9 @@ node() { command node --experimental-strip-types --no-warnings=ExperimentalWarni
 node "$cli" lint --staged
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 if echo "$staged" | grep -qE '^(daily|tasks|plans|reference)/.*\.md$'; then
-  links=$(node "$cli" links) || { echo "$links" | grep -v '^note' >&2; echo "plan-viewer links failed; fix the errors above" >&2; exit 1; }
+  # Check the index, not the working tree, so another session's unstaged files can't block this commit.
+  index=$(mktemp -d)
+  trap 'rm -rf "$index"' EXIT
+  git checkout-index -a --prefix="$index/"
+  links=$(PLANNING_ROOT="$index" node "$cli" links) || { echo "$links" | grep -v '^note' >&2; echo "plan-viewer links failed on the staged files; fix the errors above" >&2; exit 1; }
 fi
