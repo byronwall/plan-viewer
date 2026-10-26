@@ -4,8 +4,9 @@ import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
 import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
-import { TABS as CODE_TABS, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
+import { TABS as CODE_TABS, setPeople, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, connectPlanning, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
+import { renderActivityPage } from "./activity.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
@@ -25,6 +26,7 @@ const elements = {
   topicsButton: document.querySelector("#open-topics"),
   referenceButton: document.querySelector("#open-reference"),
   weeksButton: document.querySelector("#open-weeks"),
+  activityButton: document.querySelector("#open-activity"),
   codeButton: document.querySelector("#open-code"),
   issuesButton: document.querySelector("#open-issues"),
   globalHandoff: document.querySelector("#global-handoff"),
@@ -128,7 +130,8 @@ function resetPageNavigation() {
   elements.weeksButton.setAttribute("aria-current", "false");
   elements.codeButton.setAttribute("aria-current", "false");
   elements.issuesButton.setAttribute("aria-current", "false");
-  elements.chunks.classList.remove("tasks-page", "weeks-page", "library-page", "code-page", "issues-page");
+  elements.activityButton.setAttribute("aria-current", "false");
+  elements.chunks.classList.remove("tasks-page", "weeks-page", "library-page", "code-page", "issues-page", "activity-page");
 }
 
 function documentButton(doc, dailyChild = false) {
@@ -437,6 +440,33 @@ function renderIssues(tab = new URLSearchParams(location.search).get("tab") || "
   elements.chunkNav.replaceChildren();
   elements.chunks.classList.add("code-page", "issues-page");
   renderIssuesPage(elements.chunks, { tab, showNotice });
+}
+
+function showActivity({ historyMode = "push" } = {}) {
+  if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
+  closeComposer();
+  if (historyMode !== "none") {
+    const url = new URL(location.href);
+    url.search = new URLSearchParams({ view: "activity" });
+    url.hash = "";
+    history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
+  }
+  renderActivity();
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+
+function renderActivity() {
+  state.view = "activity";
+  resetPageNavigation();
+  elements.activityButton.setAttribute("aria-current", "page");
+  for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
+  elements.title.textContent = "Activity";
+  elements.meta.textContent = "Everything that changed, newest first";
+  elements.count.textContent = "";
+  elements.chunkNav.hidden = true;
+  elements.chunkNav.replaceChildren();
+  elements.chunks.classList.add("code-page", "activity-page");
+  renderActivityPage(elements.chunks, state.documents, { openDocument: (path, anchor) => selectDocument(path, { historyMode: "push", anchor }) });
 }
 
 function formatCalendarDay(date) {
@@ -1661,6 +1691,12 @@ async function refreshFromMarkdown(changedPaths) {
       return;
     }
 
+    if (state.view === "activity") {
+      renderLibrary();
+      renderActivity();
+      return;
+    }
+
     const taskChanged = [...changedPaths].some((path) => path.startsWith("tasks/"));
     if (!currentChanged && !taskChanged) {
       renderLibrary();
@@ -1880,6 +1916,7 @@ elements.tasksButton.addEventListener("click", () => showTasks());
 elements.topicsButton.addEventListener("click", () => showLibrary("topics"));
 elements.referenceButton.addEventListener("click", () => showLibrary("reference"));
 elements.weeksButton.addEventListener("click", () => showWeeks());
+elements.activityButton.addEventListener("click", () => showActivity());
 elements.codeButton.addEventListener("click", () => showCode());
 elements.issuesButton.addEventListener("click", () => showIssues());
 connectPlanning({ documents: () => state.documents, open: (path) => selectDocument(path, { historyMode: "push" }) });
@@ -2273,6 +2310,7 @@ const shortcuts = [
   { keys: ["⌘K", "Ctrl+K", "/"], description: "Search pages, plans, tasks, topics, reference files, and PRs", run: openSearch },
   { keys: ["A"], description: "Open Tasks", run: () => showTasks() },
   { keys: ["W"], description: "Open Weeks", run: () => showWeeks() },
+  { keys: ["V"], description: "Open Activity: tasks, daily plans, issues and PRs, newest first", run: () => showActivity() },
   { keys: ["G"], description: "Open Code: worktrees, pull requests, cleanup", run: () => showCode() },
   { keys: ["I"], description: "Open Issues: Jira triage, epics, activity", run: () => config().issues.jql && showIssues() },
   { keys: ["H"], description: "Recently viewed, from anywhere (even the PR overview): type to filter, ↑↓ to move, Enter to go back, 1–9 to jump, Esc clears the filter" },
@@ -2435,6 +2473,7 @@ const PAGES = [
   { title: "Today", detail: "Today’s plan", icon: "plan", run: goToToday },
   { title: "Tasks", detail: "All tasks", icon: "task", run: () => showTasks() },
   { title: "Weeks", detail: "Calendar of daily plans", icon: "plan", run: () => showWeeks() },
+  { title: "Activity", detail: "Everything that changed, newest first", icon: "plan", run: () => showActivity() },
   ...Object.entries(LIBRARY_VIEWS).map(([view, { title, intro }]) => ({ title, detail: intro, icon: title === "Topics" ? "topic" : "reference", run: () => showLibrary(view) })),
   { title: "Local servers", detail: "Dev servers the viewer started: URLs, output, restart, stop", icon: "server", run: () => openServers(showNotice) },
   ...Object.entries(CODE_TABS).map(([tab, title]) => ({ title, detail: `Code · ${title}`, icon: tab === "prs" ? "pr" : tab === "commits" ? "branch" : "code", run: () => showCode({ tab: tab === "prs" ? "" : tab }) })),
@@ -2764,6 +2803,10 @@ window.addEventListener("popstate", () => {
     showIssues({ historyMode: "none", tab: params.get("tab") || "" });
     return;
   }
+  if (params.get("view") === "activity") {
+    showActivity({ historyMode: "none" });
+    return;
+  }
   if (params.get("view") === "weeks") {
     showWeeks({ historyMode: "none", anchor: parseDateKey(params.get("date")) || parseDateKey(localTodayKey()) });
     return;
@@ -2914,6 +2957,7 @@ function visitResult(href) {
   if (view === "tasks") return doc(`tasks/${params.get("task")}.md`) ? docResult(doc(`tasks/${params.get("task")}.md`), []) : page("list", "Tasks", "Every task by status");
   if (view === "code") return page("code", "Code", CODE_TABS[params.get("tab") || "prs"] || "Pull requests");
   if (view === "issues") return page("issue", "Issues", ISSUE_TABS[params.get("tab") || "all"] || "All");
+  if (view === "activity") return page("plan", "Activity", "Everything that changed");
   if (view === "weeks") return page("plan", "Weeks", params.get("date") ? `Week of ${formatDate(params.get("date"))}` : "This week");
   if (view in LIBRARY_VIEWS) return page(view === "topics" ? "topic" : "reference", LIBRARY_VIEWS[view].title, LIBRARY_VIEWS[view].intro);
   const path = params.get("path") || state.defaultPath;
@@ -2954,7 +2998,15 @@ document.addEventListener("overview-closed", (event) => {
 });
 
 const historyMenu = document.querySelector("#history-menu");
-const historyRows = () => [...historyMenu.querySelectorAll("[data-visit-href]:not([hidden])")];
+const historyRows = () => [...historyMenu.querySelectorAll(".search-results:not([hidden]) [data-visit-href]:not([hidden])")];
+// Viewed and Changed are separate tabs so a burst of agent edits can't bury where you've been. The row under
+// "You are here" names the open one; Tab, or a click anywhere on that row, flips to the other.
+function showHistoryTab(tab = historyMenu.querySelector('[data-history-tab][aria-selected="false"]').dataset.historyTab) {
+  for (const button of historyMenu.querySelectorAll("[data-history-tab]")) button.setAttribute("aria-selected", String(button.dataset.historyTab === tab));
+  for (const list of historyMenu.querySelectorAll("[data-history-list]")) list.hidden = list.dataset.historyList !== tab;
+  historyFilter().focus(); // a click on the row shouldn't take typing away from the filter
+  filterHistory();
+}
 const historyFilter = () => historyMenu.querySelector(".history-filter input");
 function selectHistoryRow(row) {
   for (const candidate of historyMenu.querySelectorAll("[data-visit-href]")) candidate.setAttribute("aria-selected", String(candidate === row));
@@ -2977,7 +3029,7 @@ historyMenu.addEventListener("beforetoggle", (event) => {
   }));
   const rows = shown.map((visit, index) => resultRow({
     ...visitResult(visit.href),
-    marker: index + changed.length < 9 ? index + changed.length + 1 : "", // the 1–9 jump key
+    marker: index < 9 ? index + 1 : "", // the 1–9 jump key
     side: Date.now() - visit.at < 60_000 ? "just now" : `${ago(visit.at)} ago`,
     tag: "button",
     attrs: `type="button" role="option" aria-selected="false" data-visit-href="${escapeHtml(visit.href)}"`,
@@ -2985,23 +3037,32 @@ historyMenu.addEventListener("beforetoggle", (event) => {
   // The page you're on, pinned above the list, so it's clear what picking a row will replace.
   const here = resultRow({ ...visitResult(location.href), side: "", className: "history-here", marker: "" });
   historyMenu.style.height = "";
-  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recently viewed</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed">${changeRows.length ? `<div class="search-section" role="presentation">Recently changed</div>${changeRows.join("")}` : ""}<div class="search-section" role="presentation">Recently viewed</div>${rows.join("") || '<div class="search-empty"><strong>Nothing yet</strong><span>Pages, PRs and worktrees you open will appear here.</span></div>'}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>H</kbd> close</span><span class="history-count">${shown.length + changed.length} ${shown.length + changed.length === 1 ? "place" : "places"}</span></footer>`;
+  const empty = (title, text) => `<div class="search-empty"><strong>${title}</strong><span>${text}</span></div>`;
+  const tabs = [["viewed", "Recently viewed"], ["changed", "Recently changed"]].map(([tab, label]) => `<button type="button" role="tab" tabindex="-1" data-history-tab="${tab}" aria-selected="${tab === "viewed"}">${label}<span class="history-tab-count"></span></button>`).join("");
+  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recent places</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="history-switch" data-history-switch><span role="tablist" aria-label="Recent places">${tabs}</span><span class="history-switch-key"><kbd>Tab</kbd> switch</span></div><div class="search-results" role="listbox" aria-label="Recently viewed" data-history-list="viewed">${rows.join("") || empty("Nothing yet", "Pages, PRs and worktrees you open will appear here.")}</div><div class="search-results" role="listbox" aria-label="Recently changed" data-history-list="changed" hidden>${changeRows.join("") || empty("No changes yet", "Documents edited outside the viewer will appear here.")}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>Esc</kbd> close</span></footer>`;
 });
-// Every word must appear in the row's title or detail; the 1–9 markers renumber over what's left.
+// Every word must appear in the row's title or detail; the 1–9 markers renumber over what's left. The filter covers
+// both tabs, so each tab's count says whether the other one has matches.
 function filterHistory() {
   const words = historyFilter().value.toLowerCase().split(/\s+/).filter(Boolean);
-  const all = [...historyMenu.querySelectorAll("[data-visit-href]")];
-  if (words.length && !historyMenu.style.height) historyMenu.style.height = `${historyMenu.offsetHeight}px`; // hold the size so the field doesn't jump
-  for (const row of all) row.hidden = !words.every((word) => row.textContent.toLowerCase().includes(word));
+  for (const row of historyMenu.querySelectorAll("[data-history-list] [data-visit-href]")) row.hidden = !words.every((word) => row.textContent.toLowerCase().includes(word));
+  for (const list of historyMenu.querySelectorAll("[data-history-list]")) {
+    historyMenu.querySelector(`[data-history-tab="${list.dataset.historyList}"] .history-tab-count`).textContent = list.querySelectorAll("[data-visit-href]:not([hidden])").length;
+  }
+  const all = [...historyMenu.querySelectorAll(".search-results:not([hidden]) [data-visit-href]")];
   const rows = historyRows();
   rows.forEach((row, index) => { row.querySelector(".result-marker").textContent = index < 9 ? index + 1 : ""; });
   historyMenu.querySelector(".history-none")?.remove();
-  if (all.length && !rows.length) historyMenu.querySelector(".search-results").insertAdjacentHTML("beforeend", '<div class="search-empty history-none"><strong>No matches</strong><span>Esc clears the filter.</span></div>');
-  historyMenu.querySelector(".history-count").textContent = words.length ? `${rows.length} of ${all.length}` : `${all.length} ${all.length === 1 ? "place" : "places"}`;
+  const other = historyMenu.querySelector('[data-history-tab][aria-selected="false"]');
+  const elsewhere = Number(other.querySelector(".history-tab-count").textContent);
+  const hint = elsewhere ? `${elsewhere} ${elsewhere === 1 ? "match" : "matches"} in ${other.firstChild.textContent}. Press Tab.` : "Esc clears the filter.";
+  if (all.length && !rows.length) historyMenu.querySelector(".search-results:not([hidden])").insertAdjacentHTML("beforeend", `<div class="search-empty history-none"><strong>No matches</strong><span>${hint}</span></div>`);
   selectHistoryRow(rows[0]);
 }
 historyMenu.addEventListener("input", filterHistory);
 historyMenu.addEventListener("click", (event) => {
+  const tab = event.target.closest("[data-history-tab]");
+  if (tab || event.target.closest("[data-history-switch]")) { showHistoryTab(tab?.dataset.historyTab); return; }
   const row = event.target.closest("[data-visit-href]");
   if (!row) return;
   historyMenu.hidePopover();
@@ -3011,17 +3072,23 @@ historyMenu.addEventListener("mousemove", (event) => {
   const row = event.target.closest("[data-visit-href]");
   if (row && row.getAttribute("aria-selected") !== "true") selectHistoryRow(row);
 });
-// However it opens (H or the button), the newest row is selected and focused so arrows and Enter work at once.
+// However it opens (H or the button), the filter has focus and the newest row is selected, so typing, arrows and Enter work at once. Only Esc closes, so H stays searchable.
 const historyButton = document.querySelector("#open-history");
 historyButton.addEventListener("click", () => (historyMenu.matches(":popover-open") ? historyMenu.hidePopover() : openHistoryMenu()));
 historyMenu.addEventListener("toggle", (event) => historyButton.setAttribute("aria-expanded", String(event.newState === "open")));
-historyMenu.addEventListener("toggle", (event) => { if (event.newState === "open" && !historyMenu.contains(document.activeElement)) selectHistoryRow(historyRows()[0]); });
+historyMenu.addEventListener("toggle", (event) => { if (event.newState === "open" && !historyMenu.contains(document.activeElement)) { historyFilter().focus(); selectHistoryRow(historyRows()[0]); } });
 // A modal dialog makes everything outside it inert, so the menu moves into the top open dialog to stay usable above it.
 function openHistoryMenu() {
   const host = [...document.querySelectorAll("dialog[open]")].at(-1) || document.body;
   if (historyMenu.parentElement !== host) host.append(historyMenu);
   historyMenu.showPopover();
-  selectHistoryRow(historyRows()[0]); // now, not on the async toggle event, so an arrow pressed right after H lands in the list
+  // Sized to the taller tab, so flipping between them doesn't resize the menu.
+  const lists = [...historyMenu.querySelectorAll("[data-history-list]")];
+  const heights = lists.map((shown) => { for (const list of lists) list.hidden = list !== shown; return historyMenu.offsetHeight; });
+  lists.forEach((list, index) => { list.hidden = index > 0; });
+  historyMenu.style.height = `${Math.max(...heights)}px`;
+  historyFilter().focus(); // now, not on the async toggle event, so typing right after H lands in the filter
+  filterHistory(); // fills the tab counts and selects the newest row
 }
 historyMenu.addEventListener("keydown", (event) => {
   event.stopPropagation(); // inside the PR overview, its J/K/arrow keys must not also fire
@@ -3029,8 +3096,8 @@ historyMenu.addEventListener("keydown", (event) => {
   const filter = historyFilter();
   const typing = !event.metaKey && !event.ctrlKey && !event.altKey;
   if (/^[1-9]$/.test(event.key) && typing && rows[event.key - 1]) { event.preventDefault(); rows[event.key - 1].click(); return; }
+  if (event.key === "Tab") { event.preventDefault(); showHistoryTab(); return; }
   if (event.key === "Escape" && filter.value) { event.preventDefault(); filter.value = ""; filterHistory(); return; } // a second Esc closes
-  if (event.key.toLowerCase() === "h" && typing && !filter.value) { event.preventDefault(); historyMenu.hidePopover(); return; }
   if (event.key === "Enter" && event.target === filter) { event.preventDefault(); historyMenu.querySelector('[data-visit-href][aria-selected="true"]:not([hidden])')?.click(); return; }
   // Letters typed anywhere in the menu go to the filter, so H then "snow" narrows the list.
   if (event.target !== filter && typing && (event.key.length === 1 || (event.key === "Backspace" && filter.value))) {
@@ -3042,7 +3109,7 @@ historyMenu.addEventListener("keydown", (event) => {
   }
   if (!["ArrowDown", "ArrowUp"].includes(event.key) || !rows.length) return;
   event.preventDefault();
-  selectHistoryRow(rows[(rows.indexOf(document.activeElement) + (event.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length]);
+  selectHistoryRow(rows[(rows.findIndex((row) => row.getAttribute("aria-selected") === "true") +(event.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length]);
 });
 
 async function boot() {
@@ -3065,6 +3132,7 @@ async function boot() {
     else if (requestedView in LIBRARY_VIEWS) renderLibraryPage(requestedView);
     else if (requestedView === "code") renderCode();
     else if (requestedView === "issues") renderIssues();
+    else if (requestedView === "activity") renderActivity();
     else if (requestedView === "weeks") {
       state.weekAnchor = parseDateKey(new URLSearchParams(location.search).get("date")) || parseDateKey(localTodayKey());
       renderWeeksPage();
@@ -3094,5 +3162,7 @@ try {
   document.title = config().title;
   elements.issuesButton.hidden = !config().issues.jql;
 } catch {}
+// Before the first render, so every avatar starts with the reconciled picture; answers from the server's cache.
+await fetch("/api/people").then((response) => response.json()).then((body) => setPeople(body.people)).catch(() => {});
 installCommitCards({ showNotice });
 boot();

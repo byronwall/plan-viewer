@@ -1,5 +1,9 @@
 #!/bin/sh
-# The viewer's own commits keep npm test green.
+# The viewer's own commits keep npm test green. Tests run on a copy of the staged files, so another session's
+# unstaged edits in this checkout can neither fail nor pass this commit.
 set -e
+snapshot=$(mktemp -d)
+trap 'rm -rf "$snapshot"' EXIT
+git checkout-index -a --prefix="$snapshot/"
 # Tests create their own git repos; the commit's GIT_* variables would point them at this one.
-env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE npm test --silent >/dev/null 2>&1 || { echo "npm test failed; run it to see failures" >&2; exit 1; }
+(cd "$snapshot" && env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE npm test --silent >/dev/null 2>&1) || { echo "npm test failed on the staged files; run it to see failures" >&2; exit 1; }

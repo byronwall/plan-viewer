@@ -36,6 +36,8 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 | GitHub, Linear, Jira and Slack titles cached in `tmp/link-metadata.json` | `link-metadata.ts` |
 | Codex Desktop deep links | `codex-desktop.ts` |
 | Expanded table: sort, column filters, resize | `public/table-viewer.js` (opened by `showTableViewer` in `app.js`) |
+| Activity page: documents, issues and open PRs in one list with a day strip and an inspector (reuses the Issues sidebar through `issueInspector`) | `public/activity.js` |
+| One avatar per person: GitHub/Linear/Slack/config identities joined into `/api/people`, read by `avatar()` in `code.js` | `people.ts` |
 | Search and the Weeks calendar | `public/search.js`, `public/weeks.js` |
 | Icons: Lucide glyphs and Simple Icons brand marks, vendored as path strings | `public/icons.js` |
 | Styles | `public/styles.css` |
@@ -51,7 +53,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 ## Gotchas
 
 - `plan-viewer serve` and `npm run demo` restart themselves when a `*.ts` file changes (`node --watch`); client changes in `public/` need only a reload.
-- Byron's own viewer runs on 4173; leave it alone. Preview with `.claude/launch.json`: `demo` (4176) or `workspace` (4177, the real planning workspace whose path is in the ignored `.claude/workspace`, or `PLAN_VIEWER_WORKSPACE`). Never edit `launch.json`; parallel sessions share it, and `preview_start` reuses a running server.
+- Byron's own viewer runs on 4173; leave it alone. Preview with `.claude/launch.json`: `demo` (4176) or `workspace` (4177, the real planning workspace whose path is in the ignored `.claude/workspace`, or `PLAN_VIEWER_WORKSPACE`). Never edit `launch.json`; parallel sessions share it, and `preview_start` reuses a running server. If the pane refuses the port it lands on, or a shared server is down, don't poll it: read `preview_logs`, then check the page with `node scripts/check-page.mjs "/?path=…" [--shot f.png] [--eval js] [--wait sel]`, which serves `examples/workspace` from this checkout on a free port.
 - `html` has `scroll-behavior: smooth`, so a plain `window.scrollTo(0, y)` animates and may not move at all in a background preview pane. Use `window.scrollTo({ top: y, behavior: "instant" })`. The library rail (`nav.documents`) scrolls on its own.
 - `/api/issues` answers from cache; the first live sync takes about two minutes. Wait for `[data-issues-state="ready"]`. `acli jira workitem search --fields key` returns nulls, so searches ask for `status`.
 - `/api/code` takes several seconds on its first scan. Wait for `[data-code-state="ready"]` (and `[data-commits-state="ready"]` on the Commits tab) instead of polling the table.

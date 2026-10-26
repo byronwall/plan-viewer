@@ -84,6 +84,14 @@ test("planning lint and the commit hook check the index rather than the correcte
   await git(["add", taskPath]);
   assert.deepEqual(await checkPlanning(["--staged"], root), { files: 1, errors: [] });
   assert.match((await run(hook, [], { cwd: root, env })).stdout, /ok\s+1 planning Markdown files/);
+  // Links are checked in the index too: another session's unstaged assets folder must not block the commit.
+  await mkdir(join(root, "tasks", "TASK-0099-assets"));
+  await writeFile(join(root, "tasks", "TASK-0099-assets", "draft.sql"), "select 1;\n");
+  await run(hook, [], { cwd: root, env });
+  await git(["add", "tasks/TASK-0099-assets"]);
+  await assert.rejects(run(hook, [], { cwd: root, env }), error => error.code === 1 && error.stderr.includes("no parent tasks/TASK-0099.md"));
+  await git(["rm", "-r", "--cached", "--quiet", "tasks/TASK-0099-assets"]);
+  await rm(join(root, "tasks", "TASK-0099-assets"), { recursive: true });
   await writeFile(join(root, taskPath), source.replace("Reproduce [open]", "Reproduce [done]"));
   assert.deepEqual((await checkPlanning(["--staged"], root)).errors, []);
   assert.ok((await checkPlanning([taskPath], root)).errors.length > 0);

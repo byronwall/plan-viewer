@@ -188,7 +188,18 @@ function sizeBar(pr) {
 
 // One mark per person everywhere: the GitHub avatar over initials on a hue of the name, so a missing image still reads.
 const initialsOf = (name) => name.replace(/^app\//, "").split(/[\s._-]+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "?";
-const avatar = (login, name = login) => `<span class="code-avatar" style="--hue:${branchHue(name || "?")}" aria-hidden="true">${escapeHtml(initialsOf(name || "?"))}${login ? `<img src="https://github.com/${encodeURIComponent(login.replace(/^app\//, ""))}.png?size=40" alt="" loading="lazy" onerror="this.remove()">` : ""}</span>`;
+// One picture per person everywhere: /api/people joins GitHub logins, emails and names across GitHub, Jira, Linear
+// and Slack (people.ts), so a Jira assignee and a PR author who are the same person get the same avatar.
+let people = new Map();
+const normalName = (name = "") => name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[._-]+/g, " ").replace(/\s+/g, " ").trim();
+export const setPeople = (list = []) => { people = new Map(list.flatMap((person) => person.keys.map((key) => [key, person]))); };
+const personFor = (login, name, email) => (login && people.get(`l:${login.replace(/^app\//, "").toLowerCase()}`)) || (email && people.get(`e:${email.toLowerCase()}`)) || (name && people.get(`n:${normalName(name)}`));
+const avatar = (login, name = login, email = "") => {
+  const person = personFor(login, name, email);
+  const src = person?.avatar || (login ? `https://github.com/${encodeURIComponent(login.replace(/^app\//, ""))}.png?size=40` : "");
+  const label = person?.name || name || "?";
+  return `<span class="code-avatar" style="--hue:${branchHue(label)}" aria-hidden="true">${escapeHtml(initialsOf(label))}${src ? `<img src="${escapeHtml(src)}" alt="" loading="lazy" onerror="this.remove()">` : ""}</span>`;
+};
 const REVIEW = { APPROVED: ["approved", "Approved"], CHANGES_REQUESTED: ["changes", "Changes requested"], REVIEW_REQUIRED: ["required", "Needs review"] };
 const reviewTag = (pr) => { const [kind, label] = REVIEW[pr.reviewDecision] || ["", ""]; return kind ? `<span class="code-tag code-tag-${kind}">${label}</span>` : ""; };
 // One icon per row for the states that change what to do next, named on hover; an ordinary "needs review" stays blank.
@@ -3028,4 +3039,4 @@ export function renderCodePage(container, { tab, showNotice }) {
 }
 
 // Pieces the Issues page shares, so an issue reads like a PR: icons, tooltips, the facts grid, avatars, PR chips.
-export { icon, iconButton, avatar, sideFacts, sideHead, sideStatus, showTip, hideTip, fadeIn, when, heat, ciBadge, prChip, copied };
+export { icon, iconButton, avatar, sideFacts, sideHead, sideStatus, showTip, hideTip, fadeIn, when, heat, ciBadge, prChip, copied, reviewTag, prBodyHtml };

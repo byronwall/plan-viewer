@@ -11,6 +11,7 @@ import { extractChatLinks } from "./public/markdown.js";
 import { CodexDesktopClient, taskTitle } from "./codex-desktop.ts";
 import { createLinkMetadataStore } from "./link-metadata.ts";
 import { createCodeDashboard, githubImage } from "./code-dashboard.ts";
+import { createPeople } from "./people.ts";
 import { createIssueTracker } from "./issues.ts";
 import { createPlans } from "./plans.ts";
 import { linearImage } from "./linear.ts";
@@ -36,6 +37,7 @@ const isExcluded = (path: string) => config().exclude.some((folder: string) => p
 const PUBLIC = fileURLToPath(new URL("public", import.meta.url));
 const lookupLinkMetadata = createLinkMetadataStore(ROOT);
 const codeDashboard = createCodeDashboard(ROOT);
+const people = createPeople(ROOT, { repos: codeDashboard.readRepos, slug: codeDashboard.githubSlug });
 const plans = createPlans(ROOT, { repos: codeDashboard.readRepos, slug: codeDashboard.githubSlug });
 const issueTracker = createIssueTracker(ROOT, async () => ({ prs: (await codeDashboard.prIndex()).prs, worktrees: await codeDashboard.worktreeIndex() }));
 const PORT = Number(process.env.PLAN_VIEWER_PORT || process.env.PORT || config().port);
@@ -134,6 +136,7 @@ type DocumentSummary = {
   issueKeys?: string[];
   task?: TaskSummary;
   digest?: DailyDigest;
+  modified?: number;
 };
 
 // What a daily file says about the day's work, for the Weeks calendar: the tasks it lists (in order, with the
@@ -386,8 +389,9 @@ export function repositoryLinkPath(from: string, target: string) {
 
 export async function listDocuments() {
   const paths = (await Promise.all([walkDocuments("daily"), walkDocuments("tasks"), walkDocuments("plans"), walkDocuments("reference")])).flat().filter(isViewableDocumentPath);
-  const files = await Promise.all(paths.map(async (path) => ({ path, contents: await readFile(join(ROOT, path), "utf8") })));
-  const docs = files.map(({ path, contents }) => summarize(path, contents));
+  const files = await Promise.all(paths.map(async (path) => ({ path, contents: await readFile(join(ROOT, path), "utf8"), modified: (await stat(join(ROOT, path))).mtimeMs })));
+  // `modified` orders the Activity page.
+  const docs = files.map(({ path, contents, modified }) => ({ ...summarize(path, contents), modified }));
   // Backlinks: every other document that mentions a task ID, links to a document, or names one by repository path.
   const known = new Set(docs.map((doc) => doc.path));
   const backlinks = new Map<string, Set<string>>();
@@ -804,6 +808,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const keys = Array.isArray(body.keys) ? body.keys.map(String).slice(0, 1000) : [];
       return json(response, 200, { metadata: { ...await lookupLinkMetadata(keys), ...issueTracker.aliasMetadata(keys) } });
     }
+    if (request.method === "GET" && url.pathname === "/api/people") return json(response, 200, await people());
     if (request.method === "GET" && url.pathname === "/api/changes") return json(response, 200, { changes: recentChanges });
     if (request.method === "POST" && url.pathname === "/api/task-status") {
       const body = await readJson(request);
@@ -844,7 +849,7 @@ export function startServer(port = PORT) {
     closeWatchers();
   });
   server.listen(port, "127.0.0.1", () => {
-    console.log(`${config().title} is ready for ${ROOT} at http://127.0.0.1:${port}`);
+    console.log(`${config().title} is ready for ${ROOT} at http://127.0.0.1:${server.address().port}`);
   });
   return server;
 }
