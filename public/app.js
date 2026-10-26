@@ -2993,7 +2993,7 @@ historyMenu.addEventListener("beforetoggle", (event) => {
   historyMenu.style.height = "";
   const empty = (title, text) => `<div class="search-empty"><strong>${title}</strong><span>${text}</span></div>`;
   const tabs = [["viewed", "Viewed"], ["changed", "Changed"]].map(([tab, label]) => `<button type="button" role="tab" tabindex="-1" data-history-tab="${tab}" aria-selected="${tab === "viewed"}">${label}</button>`).join("");
-  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recent places</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><span class="history-tabs" role="tablist" aria-label="Recent places">${tabs}</span><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed" data-history-list="viewed">${rows.join("") || empty("Nothing yet", "Pages, PRs and worktrees you open will appear here.")}</div><div class="search-results" role="listbox" aria-label="Recently changed" data-history-list="changed" hidden>${changeRows.join("") || empty("No changes yet", "Documents edited outside the viewer will appear here.")}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>Tab</kbd> viewed/changed <kbd>H</kbd> close</span><span class="history-count">${shown.length} ${shown.length === 1 ? "place" : "places"}</span></footer>`;
+  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recent places</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><span class="history-tabs" role="tablist" aria-label="Recent places">${tabs}</span><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed" data-history-list="viewed">${rows.join("") || empty("Nothing yet", "Pages, PRs and worktrees you open will appear here.")}</div><div class="search-results" role="listbox" aria-label="Recently changed" data-history-list="changed" hidden>${changeRows.join("") || empty("No changes yet", "Documents edited outside the viewer will appear here.")}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>Tab</kbd> viewed/changed <kbd>Esc</kbd> close</span><span class="history-count">${shown.length} ${shown.length === 1 ? "place" : "places"}</span></footer>`;
 });
 // Every word must appear in the row's title or detail; the 1–9 markers renumber over what's left.
 function filterHistory() {
@@ -3020,11 +3020,11 @@ historyMenu.addEventListener("mousemove", (event) => {
   const row = event.target.closest("[data-visit-href]");
   if (row && row.getAttribute("aria-selected") !== "true") selectHistoryRow(row);
 });
-// However it opens (H or the button), the newest row is selected and focused so arrows and Enter work at once.
+// However it opens (H or the button), the filter has focus and the newest row is selected, so typing, arrows and Enter work at once. Only Esc closes, so H stays searchable.
 const historyButton = document.querySelector("#open-history");
 historyButton.addEventListener("click", () => (historyMenu.matches(":popover-open") ? historyMenu.hidePopover() : openHistoryMenu()));
 historyMenu.addEventListener("toggle", (event) => historyButton.setAttribute("aria-expanded", String(event.newState === "open")));
-historyMenu.addEventListener("toggle", (event) => { if (event.newState === "open" && !historyMenu.contains(document.activeElement)) selectHistoryRow(historyRows()[0]); });
+historyMenu.addEventListener("toggle", (event) => { if (event.newState === "open" && !historyMenu.contains(document.activeElement)) { historyFilter().focus(); selectHistoryRow(historyRows()[0]); } });
 // A modal dialog makes everything outside it inert, so the menu moves into the top open dialog to stay usable above it.
 function openHistoryMenu() {
   const host = [...document.querySelectorAll("dialog[open]")].at(-1) || document.body;
@@ -3035,7 +3035,8 @@ function openHistoryMenu() {
   const heights = lists.map((shown) => { for (const list of lists) list.hidden = list !== shown; return historyMenu.offsetHeight; });
   lists.forEach((list, index) => { list.hidden = index > 0; });
   historyMenu.style.height = `${Math.max(...heights)}px`;
-  selectHistoryRow(historyRows()[0]); // now, not on the async toggle event, so an arrow pressed right after H lands in the list
+  historyFilter().focus(); // now, not on the async toggle event, so typing right after H lands in the filter
+  selectHistoryRow(historyRows()[0]);
 }
 historyMenu.addEventListener("keydown", (event) => {
   event.stopPropagation(); // inside the PR overview, its J/K/arrow keys must not also fire
@@ -3045,7 +3046,6 @@ historyMenu.addEventListener("keydown", (event) => {
   if (/^[1-9]$/.test(event.key) && typing && rows[event.key - 1]) { event.preventDefault(); rows[event.key - 1].click(); return; }
   if (event.key === "Tab") { event.preventDefault(); showHistoryTab(historyMenu.querySelector('[data-history-tab][aria-selected="false"]').dataset.historyTab); return; }
   if (event.key === "Escape" && filter.value) { event.preventDefault(); filter.value = ""; filterHistory(); return; } // a second Esc closes
-  if (event.key.toLowerCase() === "h" && typing && !filter.value) { event.preventDefault(); historyMenu.hidePopover(); return; }
   if (event.key === "Enter" && event.target === filter) { event.preventDefault(); historyMenu.querySelector('[data-visit-href][aria-selected="true"]:not([hidden])')?.click(); return; }
   // Letters typed anywhere in the menu go to the filter, so H then "snow" narrows the list.
   if (event.target !== filter && typing && (event.key.length === 1 || (event.key === "Backspace" && filter.value))) {
@@ -3057,7 +3057,7 @@ historyMenu.addEventListener("keydown", (event) => {
   }
   if (!["ArrowDown", "ArrowUp"].includes(event.key) || !rows.length) return;
   event.preventDefault();
-  selectHistoryRow(rows[(rows.indexOf(document.activeElement) + (event.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length]);
+  selectHistoryRow(rows[(rows.findIndex((row) => row.getAttribute("aria-selected") === "true") +(event.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length]);
 });
 
 async function boot() {
