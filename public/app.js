@@ -6,6 +6,7 @@ import { enhanceTable } from "./table-viewer.js";
 import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, connectPlanning, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
+import { renderActivityPage } from "./activity.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
@@ -25,6 +26,7 @@ const elements = {
   topicsButton: document.querySelector("#open-topics"),
   referenceButton: document.querySelector("#open-reference"),
   weeksButton: document.querySelector("#open-weeks"),
+  activityButton: document.querySelector("#open-activity"),
   codeButton: document.querySelector("#open-code"),
   issuesButton: document.querySelector("#open-issues"),
   globalHandoff: document.querySelector("#global-handoff"),
@@ -128,7 +130,8 @@ function resetPageNavigation() {
   elements.weeksButton.setAttribute("aria-current", "false");
   elements.codeButton.setAttribute("aria-current", "false");
   elements.issuesButton.setAttribute("aria-current", "false");
-  elements.chunks.classList.remove("tasks-page", "weeks-page", "library-page", "code-page", "issues-page");
+  elements.activityButton.setAttribute("aria-current", "false");
+  elements.chunks.classList.remove("tasks-page", "weeks-page", "library-page", "code-page", "issues-page", "activity-page");
 }
 
 function documentButton(doc, dailyChild = false) {
@@ -437,6 +440,33 @@ function renderIssues(tab = new URLSearchParams(location.search).get("tab") || "
   elements.chunkNav.replaceChildren();
   elements.chunks.classList.add("code-page", "issues-page");
   renderIssuesPage(elements.chunks, { tab, showNotice });
+}
+
+function showActivity({ historyMode = "push" } = {}) {
+  if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
+  closeComposer();
+  if (historyMode !== "none") {
+    const url = new URL(location.href);
+    url.search = new URLSearchParams({ view: "activity" });
+    url.hash = "";
+    history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
+  }
+  renderActivity();
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+
+function renderActivity() {
+  state.view = "activity";
+  resetPageNavigation();
+  elements.activityButton.setAttribute("aria-current", "page");
+  for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
+  elements.title.textContent = "Activity";
+  elements.meta.textContent = "Everything that changed, newest first";
+  elements.count.textContent = "";
+  elements.chunkNav.hidden = true;
+  elements.chunkNav.replaceChildren();
+  elements.chunks.classList.add("code-page", "activity-page");
+  renderActivityPage(elements.chunks, state.documents);
 }
 
 function formatCalendarDay(date) {
@@ -1661,6 +1691,12 @@ async function refreshFromMarkdown(changedPaths) {
       return;
     }
 
+    if (state.view === "activity") {
+      renderLibrary();
+      renderActivity();
+      return;
+    }
+
     const taskChanged = [...changedPaths].some((path) => path.startsWith("tasks/"));
     if (!currentChanged && !taskChanged) {
       renderLibrary();
@@ -1880,6 +1916,7 @@ elements.tasksButton.addEventListener("click", () => showTasks());
 elements.topicsButton.addEventListener("click", () => showLibrary("topics"));
 elements.referenceButton.addEventListener("click", () => showLibrary("reference"));
 elements.weeksButton.addEventListener("click", () => showWeeks());
+elements.activityButton.addEventListener("click", () => showActivity());
 elements.codeButton.addEventListener("click", () => showCode());
 elements.issuesButton.addEventListener("click", () => showIssues());
 connectPlanning({ documents: () => state.documents, open: (path) => selectDocument(path, { historyMode: "push" }) });
@@ -2273,6 +2310,7 @@ const shortcuts = [
   { keys: ["⌘K", "Ctrl+K", "/"], description: "Search pages, plans, tasks, topics, reference files, and PRs", run: openSearch },
   { keys: ["A"], description: "Open Tasks", run: () => showTasks() },
   { keys: ["W"], description: "Open Weeks", run: () => showWeeks() },
+  { keys: ["V"], description: "Open Activity: tasks, daily plans, issues and PRs, newest first", run: () => showActivity() },
   { keys: ["G"], description: "Open Code: worktrees, pull requests, cleanup", run: () => showCode() },
   { keys: ["I"], description: "Open Issues: Jira triage, epics, activity", run: () => config().issues.jql && showIssues() },
   { keys: ["H"], description: "Recently viewed, from anywhere (even the PR overview): type to filter, ↑↓ to move, Enter to go back, 1–9 to jump, Esc clears the filter" },
@@ -2435,6 +2473,7 @@ const PAGES = [
   { title: "Today", detail: "Today’s plan", icon: "plan", run: goToToday },
   { title: "Tasks", detail: "All tasks", icon: "task", run: () => showTasks() },
   { title: "Weeks", detail: "Calendar of daily plans", icon: "plan", run: () => showWeeks() },
+  { title: "Activity", detail: "Everything that changed, newest first", icon: "plan", run: () => showActivity() },
   ...Object.entries(LIBRARY_VIEWS).map(([view, { title, intro }]) => ({ title, detail: intro, icon: title === "Topics" ? "topic" : "reference", run: () => showLibrary(view) })),
   { title: "Local servers", detail: "Dev servers the viewer started: URLs, output, restart, stop", icon: "server", run: () => openServers(showNotice) },
   ...Object.entries(CODE_TABS).map(([tab, title]) => ({ title, detail: `Code · ${title}`, icon: tab === "prs" ? "pr" : tab === "commits" ? "branch" : "code", run: () => showCode({ tab: tab === "prs" ? "" : tab }) })),
@@ -2764,6 +2803,10 @@ window.addEventListener("popstate", () => {
     showIssues({ historyMode: "none", tab: params.get("tab") || "" });
     return;
   }
+  if (params.get("view") === "activity") {
+    showActivity({ historyMode: "none" });
+    return;
+  }
   if (params.get("view") === "weeks") {
     showWeeks({ historyMode: "none", anchor: parseDateKey(params.get("date")) || parseDateKey(localTodayKey()) });
     return;
@@ -2914,6 +2957,7 @@ function visitResult(href) {
   if (view === "tasks") return doc(`tasks/${params.get("task")}.md`) ? docResult(doc(`tasks/${params.get("task")}.md`), []) : page("list", "Tasks", "Every task by status");
   if (view === "code") return page("code", "Code", CODE_TABS[params.get("tab") || "prs"] || "Pull requests");
   if (view === "issues") return page("issue", "Issues", ISSUE_TABS[params.get("tab") || "all"] || "All");
+  if (view === "activity") return page("plan", "Activity", "Everything that changed");
   if (view === "weeks") return page("plan", "Weeks", params.get("date") ? `Week of ${formatDate(params.get("date"))}` : "This week");
   if (view in LIBRARY_VIEWS) return page(view === "topics" ? "topic" : "reference", LIBRARY_VIEWS[view].title, LIBRARY_VIEWS[view].intro);
   const path = params.get("path") || state.defaultPath;
@@ -3088,6 +3132,7 @@ async function boot() {
     else if (requestedView in LIBRARY_VIEWS) renderLibraryPage(requestedView);
     else if (requestedView === "code") renderCode();
     else if (requestedView === "issues") renderIssues();
+    else if (requestedView === "activity") renderActivity();
     else if (requestedView === "weeks") {
       state.weekAnchor = parseDateKey(new URLSearchParams(location.search).get("date")) || parseDateKey(localTodayKey());
       renderWeeksPage();

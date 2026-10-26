@@ -134,6 +134,7 @@ type DocumentSummary = {
   issueKeys?: string[];
   task?: TaskSummary;
   digest?: DailyDigest;
+  modified?: number;
 };
 
 // What a daily file says about the day's work, for the Weeks calendar: the tasks it lists (in order, with the
@@ -386,8 +387,9 @@ export function repositoryLinkPath(from: string, target: string) {
 
 export async function listDocuments() {
   const paths = (await Promise.all([walkDocuments("daily"), walkDocuments("tasks"), walkDocuments("plans"), walkDocuments("reference")])).flat().filter(isViewableDocumentPath);
-  const files = await Promise.all(paths.map(async (path) => ({ path, contents: await readFile(join(ROOT, path), "utf8") })));
-  const docs = files.map(({ path, contents }) => summarize(path, contents));
+  const files = await Promise.all(paths.map(async (path) => ({ path, contents: await readFile(join(ROOT, path), "utf8"), modified: (await stat(join(ROOT, path))).mtimeMs })));
+  // `modified` orders the Activity page.
+  const docs = files.map(({ path, contents, modified }) => ({ ...summarize(path, contents), modified }));
   // Backlinks: every other document that mentions a task ID, links to a document, or names one by repository path.
   const known = new Set(docs.map((doc) => doc.path));
   const backlinks = new Map<string, Set<string>>();

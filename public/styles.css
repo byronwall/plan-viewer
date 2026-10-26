@@ -2261,3 +2261,15 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 /* At phone width the dock's buttons scroll inside the bar instead of widening the page (which also shifted dialogs). */
 @container doc-dock (max-width: 480px) { .doc-dock-buttons { flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; } }
 .work-item-main:focus { outline: none; }
+
+/* Activity page: one table, newest first, grouped by day. */
+.activity-table { width: 100%; margin-top: 8px; }
+.activity-table .code-col-main { width: 100%; }
+.activity-col-source { width: 20px; }
+.activity-col-source .service-icon { width: 14px; height: 14px; display: block; }
+.activity-title { color: var(--action-ink); text-decoration: none; transition: color 140ms; }
+.activity-title:hover { color: var(--action); }
+.activity-title code { color: var(--muted); font-size: .76rem; }
+.activity-detail { display: block; }
+.activity-col-status, .activity-col-ago { white-space: nowrap; color: var(--muted); font-size: .76rem; }
+.activity-empty { padding: 16px 4px; }
