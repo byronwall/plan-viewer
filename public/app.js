@@ -1,9 +1,10 @@
 import { searchDocuments, searchPrs } from "./search.js";
 import { renderActions, renderWorkBreakdown } from "./actions.js";
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock.js";
+import { GLYPHS } from "./icons.js";
 import { delimitedTable, documentHref, escapeHtml, markdownOutline, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
-import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
+import { TABS as ISSUE_TABS, cachedIssues, connectPlanning, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
@@ -52,13 +53,13 @@ const imageViewerState = { items: [], index: 0, scale: 1, fitScale: 1, isFitView
 
 // Sonner-style toasts: stacked bottom-right above the history button, newest in front. Hovering fans the stack out
 // and pauses every timer; a fourth toast pushes the oldest out.
-const TOAST_GLYPHS = { success: '<path d="M5.4 8.3 7.2 10l3.4-3.8"/>', error: '<path d="M8 4.9v3.6M8 10.9v.1"/>', info: '<path d="M8 7.4v3.6M8 5v.1"/>' };
+const TOAST_GLYPHS = { success: GLYPHS["circle-check"], error: GLYPHS["circle-alert"], info: GLYPHS.info };
 const toasts = [];
 function showNotice(message, error = false, { description = "", action = null, kind = error ? "error" : "success" } = {}) {
   const element = document.createElement("li");
   element.className = `toast toast-${kind}`;
   element.setAttribute("role", error ? "alert" : "status");
-  element.innerHTML = `<svg class="toast-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.4"/>${TOAST_GLYPHS[kind]}</svg><div class="toast-text"><p class="toast-title"></p>${description ? '<p class="toast-description"></p>' : ""}</div>${action ? '<button type="button" class="toast-action"></button>' : ""}<button type="button" class="toast-close" aria-label="Dismiss"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5.5 5.5 5 5m0-5-5 5"/></svg></button>`;
+  element.innerHTML = `<svg class="toast-icon" viewBox="0 0 24 24" aria-hidden="true">${TOAST_GLYPHS[kind]}</svg><div class="toast-text"><p class="toast-title"></p>${description ? '<p class="toast-description"></p>' : ""}</div>${action ? '<button type="button" class="toast-action"></button>' : ""}<button type="button" class="toast-close" aria-label="Dismiss"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.x}</svg></button>`;
   element.querySelector(".toast-title").textContent = message;
   if (description) element.querySelector(".toast-description").textContent = description;
   const entry = { element, remaining: error ? 9000 : 6000, timer: 0, started: 0, height: 0 };
@@ -1369,7 +1370,7 @@ async function checkViewerVersion() {
     : pageHead !== version.running ? ["Reload viewer", "This page loaded an older version than the server runs"] : [];
   updateButton.hidden = !label;
   if (!label) return;
-  updateButton.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2.5v2.4h-2.4"/></svg><span></span>`;
+  updateButton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS["refresh-cw"]}</svg><span></span>`;
   updateButton.querySelector("span").textContent = label;
   updateButton.title = title;
   updateButton.dataset.action = version.behind || version.running !== version.head ? "update" : "reload";
@@ -1478,6 +1479,7 @@ elements.referenceButton.addEventListener("click", () => showLibrary("reference"
 elements.weeksButton.addEventListener("click", () => showWeeks());
 elements.codeButton.addEventListener("click", () => showCode());
 elements.issuesButton.addEventListener("click", () => showIssues());
+connectPlanning({ documents: () => state.documents, open: (path) => selectDocument(path, { historyMode: "push" }) });
 elements.meta.addEventListener("click", async (event) => {
   const plainClick = !(event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
   const view = event.target.closest("[data-crumb-view]");
@@ -1928,19 +1930,19 @@ function openShortcutGuide() {
 let searchMatches = [];
 let searchIndex = 0;
 const SEARCH_ICONS = {
-  pr: '<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V6.5a2 2 0 0 0-2-2H7.5M9 3 7.5 4.5 9 6"/>',
-  task: '<rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/><path d="m5.5 8 1.75 1.75L10.5 6.5"/>',
-  plan: '<rect x="2.5" y="3.5" width="11" height="10" rx="2"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/>',
-  done: '<circle cx="8" cy="8" r="5.5"/><path d="m5.75 8 1.6 1.6 2.9-3.1"/>',
-  topic: '<path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"/>',
-  reference: '<path d="M3.5 3a1 1 0 0 1 1-1H12v10H4.5a1 1 0 0 0-1 1zM3.5 13a1 1 0 0 0 1 1H12v-2"/>',
-  file: '<path d="M4.5 2h4.5l3 3v8a1 1 0 0 1-1 1h-6.5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v3h3M6 8.5h4M6 11h4"/>',
-  branch: '<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="5" r="1.5"/><path d="M4.5 5v6M11.5 6.5c0 3-7 2.5-7 4.5"/>',
-  code: '<path d="m6 4.5-3.5 3.5L6 11.5M10 4.5l3.5 3.5-3.5 3.5"/>',
-  list: '<path d="M6 4.5h7.5M6 8h7.5M6 11.5h7.5M2.75 4.5h.5M2.75 8h.5M2.75 11.5h.5"/>',
-  issue: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.5"/>',
-  initiative: '<path d="M3.5 14V2.5M3.5 3h8.5l-2 2.75 2 2.75H3.5"/>',
-  server: '<rect x="2.5" y="2.5" width="11" height="4.5" rx="1.25"/><rect x="2.5" y="9" width="11" height="4.5" rx="1.25"/><path d="M5 4.75h.5M5 11.25h.5"/>',
+  pr: GLYPHS["git-pull-request"],
+  task: GLYPHS["square-check"],
+  plan: GLYPHS["calendar"],
+  done: GLYPHS["circle-check"],
+  topic: GLYPHS["folder"],
+  reference: GLYPHS["book"],
+  file: GLYPHS["file-text"],
+  branch: GLYPHS["git-branch"],
+  code: GLYPHS["code"],
+  list: GLYPHS["list"],
+  issue: GLYPHS["circle-dot"],
+  initiative: GLYPHS["flag"],
+  server: GLYPHS["server"],
 };
 
 function searchIconKey(doc) {
@@ -1961,7 +1963,7 @@ function highlightTerms(text, terms) {
 // One row for a document, PR, or page wherever the viewer lists them (⌘K, Recently viewed): icon tile, title,
 // a muted detail line, and a right-hand column. `attrs` carries the list's own role and data attributes.
 const resultRow = ({ attrs = "", icon, tone = icon, title, detail, side, tag = "div", className = "", marker }) =>
-  `<${tag} class="search-result ${className}" ${attrs}>${marker === undefined ? "" : `<span class="result-marker" aria-hidden="true">${marker}</span>`}<span class="search-icon is-${tone}"><svg viewBox="0 0 16 16" aria-hidden="true">${SEARCH_ICONS[icon]}</svg></span><strong>${title}</strong><small>${detail}</small><span class="search-kind">${side}</span></${tag}>`;
+  `<${tag} class="search-result ${className}" ${attrs}>${marker === undefined ? "" : `<span class="result-marker" aria-hidden="true">${marker}</span>`}<span class="search-icon is-${tone}"><svg viewBox="0 0 24 24" aria-hidden="true">${SEARCH_ICONS[icon]}</svg></span><strong>${title}</strong><small>${detail}</small><span class="search-kind">${side}</span></${tag}>`;
 
 function docResult(doc, terms) {
   const icon = searchIconKey(doc);
@@ -2262,6 +2264,13 @@ document.addEventListener("keydown", (event) => {
   if (modal) return;
   if (event.metaKey || event.ctrlKey || event.altKey || (event.shiftKey && event.key !== "?")) return;
   if (event.target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox']")) return;
+  // In the open links panel, 1–9 pick a tab and ← → cycle through them.
+  const linkTabs = [...document.querySelectorAll(".doc-dock-panel-links:popover-open [data-dock-source]")];
+  const current = linkTabs.findIndex((tab) => tab.getAttribute("aria-selected") === "true");
+  const linkTab = linkTabs.length && (/^[1-9]$/.test(key) ? linkTabs[key - 1]
+    : key === "arrowright" ? linkTabs[(current + 1) % linkTabs.length]
+    : key === "arrowleft" ? linkTabs[(current - 1 + linkTabs.length) % linkTabs.length] : null);
+  if (linkTab) { event.preventDefault(); linkTab.click(); return; }
   if (state.openComposer || document.querySelector(":popover-open:not(.code-tip)")) return;
   const shortcut = shortcuts.find(shortcut => shortcut.run && shortcut.keys.some(binding => binding.toLowerCase() === key));
   if (shortcut) { event.preventDefault(); shortcut.run(); }
@@ -2508,7 +2517,7 @@ historyMenu.addEventListener("beforetoggle", (event) => {
   // The page you're on, pinned above the list, so it's clear what picking a row will replace.
   const here = resultRow({ ...visitResult(location.href), side: "", className: "history-here", marker: "" });
   historyMenu.style.height = "";
-  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><span class="sr-only">Filter recently viewed</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed"><div class="search-section" role="presentation">Recently viewed</div>${rows.join("") || '<div class="search-empty"><strong>Nothing yet</strong><span>Pages, PRs and worktrees you open will appear here.</span></div>'}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>H</kbd> close</span><span class="history-count">${shown.length} ${shown.length === 1 ? "place" : "places"}</span></footer>`;
+  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recently viewed</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="search-results" role="listbox" aria-label="Recently viewed"><div class="search-section" role="presentation">Recently viewed</div>${rows.join("") || '<div class="search-empty"><strong>Nothing yet</strong><span>Pages, PRs and worktrees you open will appear here.</span></div>'}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>H</kbd> close</span><span class="history-count">${shown.length} ${shown.length === 1 ? "place" : "places"}</span></footer>`;
 });
 // Every word must appear in the row's title or detail; the 1–9 markers renumber over what's left.
 function filterHistory() {

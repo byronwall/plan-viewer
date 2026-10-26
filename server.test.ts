@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { join } from "node:path";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { refreshSlackChannels } from "./link-metadata.ts";
+import { createLinkMetadataStore, refreshSlackChannels } from "./link-metadata.ts";
 import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle, withImages } from "./codex-desktop.ts";
 import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
 import { buildWeeks, dateKey, parseDateKey, startOfWeek } from "./public/weeks.js";
@@ -23,6 +23,18 @@ test("Slack refresh updates renamed channels, adds linked channels, and preserve
   const result = await refreshSlackChannels(ROOT, source, ["C0ACME0001", "C0ACME0002"]);
   assert.equal(result, source.replace("#old-name", "#team-atlas") + "- C0ACME0002: #new-channel\n");
   assert.deepEqual(seen, ["C0ACME0001", "C0ACME0002"]);
+});
+
+test("Slack links take channel and DM names from reference/slack-channels.md without a token", async (t) => {
+  const previous = process.env.SLACK_TOKEN;
+  delete process.env.SLACK_TOKEN;
+  const root = await mkdtemp(join(tmpdir(), "slack-names-"));
+  t.after(async () => { if (previous !== undefined) process.env.SLACK_TOKEN = previous; await rm(root, { recursive: true, force: true }); });
+  await mkdir(join(root, "reference"));
+  await writeFile(join(root, "reference", "slack-channels.md"), "- C0ACME0001: #team-atlas\n- D0ACME0001: @Alex Kim \n");
+  const lookup = createLinkMetadataStore(root);
+  const found = await lookup(["slack:C0ACME0001/1792589400.000100", "slack:D0ACME0001/1792526700.000200", "slack:D0ACME0002/1792420800.000300"]);
+  assert.deepEqual(Object.values(found).map((meta) => meta.state), ["#team-atlas", "@Alex Kim", "Direct message"]);
 });
 
 test("Slack refresh rejects failed and mismatched lookups instead of returning partial updates", async (t) => {

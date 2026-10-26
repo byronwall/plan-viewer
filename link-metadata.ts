@@ -159,10 +159,11 @@ async function fetchJira(keys: string[]): Promise<Cache> {
 // and read scopes plus users:read. Each message costs one call; channel and user names are memoised.
 const slackNames = new Map<string, Promise<string>>();
 
-// Hand-kept `- C0ACME0001: #channel-name` lines; re-read on every lookup so edits show up on the next page load.
+// Hand-kept `- C0ACME0001: #channel-name` and `- D0ACME0001: @Person` lines; re-read on every lookup so edits show
+// up on the next page load.
 async function slackChannelNames(root: string) {
   const text = await readFile(join(root, "reference", "slack-channels.md"), "utf8").catch(() => "");
-  return new Map([...text.matchAll(/^[-*][ \t]*`?([CDG][A-Z0-9]{8,})`?[ \t]*:[ \t]*(#[\w.-]+)/gm)].map(([, id, name]) => [id, name] as [string, string]));
+  return new Map([...text.matchAll(/^[-*][ \t]*`?([CDG][A-Z0-9]{8,})`?[ \t]*:[ \t]*(#[\w.-]+|@[^\n]*[^\s])/gm)].map(([, id, name]) => [id, name] as [string, string]));
 }
 
 // Resolve every name before returning replacement Markdown; failed refreshes leave the file intact.
@@ -200,7 +201,10 @@ async function fetchSlack(keys: string[], root: string) {
   };
   const name = (kind: "channel" | "user", id: string) => {
     if (!slackNames.has(id)) slackNames.set(id, (kind === "channel"
-      ? call("conversations.info", { channel: id }).then((body) => body.channel.is_im ? "Direct message" : body.channel.name ? `#${body.channel.name}` : "Group message")
+      ? call("conversations.info", { channel: id }).then(async ({ channel: info }) => info.is_im ? await name("user", info.user).then((person) => person ? `@${person}` : "Direct message")
+        // Group DMs are named `mpdm-ana--ben--cy-1` after their members.
+        : info.is_mpim ? info.name.replace(/^mpdm-|-\d+$/g, "").split("--").map((member: string) => `@${member}`).join(", ")
+        : info.name ? `#${info.name}` : "Group message")
       : call("users.info", { user: id }).then((body) => body.user.real_name || body.user.name)).catch(() => ""));
     return slackNames.get(id)!;
   };

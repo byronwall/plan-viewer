@@ -1,4 +1,5 @@
 import { documentHref, escapeHtml, markdownHeadingId } from './markdown.js';
+import { GLYPHS } from './icons.js';
 
 // This small Markdown contract is shared by the server and the browser.
 export function parseActions(markdown, sourcePath) {
@@ -138,13 +139,13 @@ export function renderWorkBreakdown(work, actions, key, repairChunkId = '') {
   const actionAttrs = i => `data-action-key="${escapeHtml(key)}" data-action-index="${i}" aria-haspopup="dialog" aria-controls="handoff-popover"`;
   const statusClass = n => `is-${statusLabel(n).toLowerCase()}`;
   const statusIcons = {
-    Open: '<circle cx="8" cy="8" r="5"/>',
-    Active: '<circle cx="8" cy="8" r="5"/><circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/>',
-    Ready: '<circle cx="8" cy="8" r="6"/><path d="m5 8 2 2 4-4"/>',
-    Blocked: '<rect x="3.5" y="7" width="9" height="7" rx="1.5"/><path d="M5.5 7V4.5a2.5 2.5 0 0 1 5 0V7"/>',
-    Waiting: '<circle cx="8" cy="8" r="6"/><path d="M8 4v4l3 2"/>',
-    Deferred: '<path d="M6 4v8M10 4v8"/>',
-    Completed: '<path d="m3 8 3 3 7-7"/>',
+    Open: GLYPHS.circle,
+    Active: GLYPHS["circle-dot"],
+    Ready: GLYPHS["circle-check"],
+    Blocked: GLYPHS.lock,
+    Waiting: GLYPHS.clock,
+    Deferred: GLYPHS.pause,
+    Completed: GLYPHS.check,
   };
   const depthOf = n => { let d = 0; for (let p = n.parent; p; p = nodes.find(x => x.id === p)?.parent) d++; return d; };
   const maxDepth = Math.max(0, ...nodes.map(depthOf));
@@ -153,8 +154,8 @@ export function renderWorkBreakdown(work, actions, key, repairChunkId = '') {
       const i = actionIndex(n);
       const label = statusLabel(n);
       const status = `${label}${i >= 0 ? ' — Prepare action' : ''}`;
-      const icon = i >= 0 ? '<path d="m4 12 8-8M4 4h8v8"/>' : statusIcons[label];
-      const body = `<code>${escapeHtml(n.id)}</code><span class="work-status-icon ${statusClass(n)}" title="${escapeHtml(status)}"><svg viewBox="0 0 16 16" aria-hidden="true">${icon}</svg><span class="sr-only">${escapeHtml(status)}</span></span><span class="work-title">${escapeHtml(n.title)}</span><small class="work-dependencies">${n.deps.length ? `After: ${n.deps.map(escapeHtml).join(', ')}` : ''}</small>`;
+      const icon = i >= 0 ? GLYPHS["arrow-up-right"] : statusIcons[label];
+      const body = `<code>${escapeHtml(n.id)}</code><span class="work-status-icon ${statusClass(n)}" title="${escapeHtml(status)}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span class="sr-only">${escapeHtml(status)}</span></span><span class="work-title">${escapeHtml(n.title)}</span><small class="work-dependencies">${n.deps.length ? `After: ${n.deps.map(escapeHtml).join(', ')}` : ''}</small>`;
       return `<li${isDone(n) ? ' class="is-done"' : ''}>${i >= 0 ? `<button type="button" class="work-row is-actionable" style="--work-depth:${depth}" ${actionAttrs(i)}>${body}</button>` : `<div class="work-row${hasChildren(n) ? ' is-parent' : ''}${n.status === 'completed' ? ' is-completed' : ''}" style="--work-depth:${depth}">${body}</div>`}${hasChildren(n) ? tree(n.id, depth + 1) : ''}</li>`;
     }).join('')}</ul>`;
   }

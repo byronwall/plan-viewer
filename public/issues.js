@@ -1,4 +1,5 @@
-import { escapeHtml, renderMarkdown } from "./markdown.js";
+import { SERVICE_ICONS, documentHref, escapeHtml, renderMarkdown } from "./markdown.js";
+import { GLYPHS } from "./icons.js";
 import { agentApp, agentName as appName, config } from "./config.js";
 import { ago, avatar, ciBadge, copied, fadeIn, heat, hideTip, icon, iconButton, isSummonKey, openPrOverlay, openWorktreeOverlay, showTip, sideFacts, sideHead, sideStatus, when } from "./code.js";
 
@@ -19,20 +20,23 @@ let seen = {};
 try { seen = JSON.parse(storage.get("issues-seen", "{}")); } catch {}
 let host = null;
 let notify = () => {};
+// The app shell hands over its document library and how to open a document, for the "In planning" section.
+let planning = { documents: () => [], open: () => {} };
+export const connectPlanning = (next) => { planning = next; };
 
 // ---------- marks ----------
 
 const TYPE_ICONS = {
-  Initiative: ['<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>', "initiative"],
-  Epic: ['<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>', "epic"],
-  Story: ['<path d="M6 3h12v18l-6-4-6 4z"/>', "story"],
-  Bug: ['<circle cx="12" cy="13" r="6"/><path d="M12 7V4M8.5 5.5 10 7.5M15.5 5.5 14 7.5M6 13H3M21 13h-3"/>', "bug"],
-  "Sub-task": ['<rect x="4" y="4" width="9" height="9" rx="2"/><rect x="11" y="11" width="9" height="9" rx="2"/>', "task"],
-  Task: ['<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/>', "task"],
+  Initiative: [GLYPHS.layers, "initiative"],
+  Epic: [GLYPHS.zap, "epic"],
+  Story: [GLYPHS.bookmark, "story"],
+  Bug: [GLYPHS.bug, "bug"],
+  "Sub-task": [GLYPHS["square-stack"], "task"],
+  Task: [GLYPHS["square-check"], "task"],
   // Linear: issues are one type, drawn as Linear draws them; projects read as epics
-  Issue: ['<circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/>', "linear"],
-  "Sub-issue": ['<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>', "linear"],
-  Project: ['<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M3.5 10h17M9 5v14"/>', "project"],
+  Issue: [GLYPHS.circle, "linear"],
+  "Sub-issue": [GLYPHS["circle-dot"], "linear"],
+  Project: [GLYPHS["layout-panel-left"], "project"],
 };
 const typeIcon = (issue) => {
   const [path, tone] = TYPE_ICONS[issue.type] || TYPE_ICONS.Task;
@@ -303,11 +307,18 @@ function codeSection(issue) {
 }
 
 const linkRow = (key, summary, status, category, label = "") => `<li><button type="button" class="issue-link-row" data-issue-open="${escapeHtml(key)}">${label ? `<span class="code-muted">${escapeHtml(label)}</span>` : ""}${byKey().has(key) ? typeIcon(byKey().get(key)) : ""}<code>${escapeHtml(keyLabel(key))}</code><span>${escapeHtml(summary)}</span><span class="code-tag issue-status issue-status-${escapeHtml(category)}">${escapeHtml(status)}</span></button></li>`;
+// Tasks first, then every other planning document that mentions this key (or a key it used to have).
+function planningSection(issue) {
+  const keys = [issue.key, ...aliasesFor(issue.key)].map((key) => key.replace(/^linear:/, ""));
+  const docs = planning.documents().filter((doc) => doc.issueKeys?.some((key) => keys.includes(key))).sort((a, b) => !!b.task - !!a.task);
+  if (!docs.length) return "";
+  return `<section>${sideHead("In planning", String(docs.length))}<ul class="issue-code-list">${docs.map((doc) => `<li><a class="issue-link-row" href="${escapeHtml(documentHref(doc.path, ""))}" data-planning-path="${escapeHtml(doc.path)}" data-tip="${escapeHtml(doc.path)}">${doc.task ? SERVICE_ICONS.task : icon("doc")}<code>${escapeHtml(doc.task?.id || doc.date || doc.kind)}</code><span>${escapeHtml(doc.task?.title || doc.title)}</span>${doc.task ? `<span class="code-tag">${escapeHtml(doc.task.status)}</span>` : ""}</a></li>`).join("")}</ul></section>`;
+}
 function relationsSection(issue, overlay = false) {
   const children = childrenOf(issue.key).sort((a, b) => a.category.localeCompare(b.category) || byUpdated(a, b));
   const kids = children.length && !overlay ? `<section>${sideHead("Children", `${children.filter((child) => child.category === "done").length}/${children.length} done`)}${progress(children)}<ul class="issue-code-list">${children.map((child) => linkRow(child.key, child.summary, child.status, child.category)).join("")}</ul></section>` : "";
   const links = issue.links.length ? `<section>${sideHead("Links", String(issue.links.length))}<ul class="issue-code-list">${issue.links.map((link) => linkRow(link.key, link.summary, link.status, link.category, link.label)).join("")}</ul></section>` : "";
-  return counterpartsSection(issue) + kids + links;
+  return planningSection(issue) + counterpartsSection(issue) + kids + links;
 }
 
 // ---------- migration: the same work in Linear and Jira ----------
@@ -526,7 +537,7 @@ function peoplePopover() {
   for (const issue of base().filter(open)) counts.set(personKey(issue), (counts.get(personKey(issue)) || 0) + 1);
   const query = ui.peopleQuery.toLowerCase();
   const rows = [...counts].filter(([name]) => (name || "unassigned").toLowerCase().includes(query)).sort((a, b) => b[1] - a[1]);
-  return `<label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-people-query placeholder="Find a person" value="${escapeHtml(ui.peopleQuery)}" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list">${rows.map(([name, count]) => `<li><button type="button" class="issue-person-row" data-issue-person="${escapeHtml(name)}" aria-pressed="${ui.people.has(name)}">${name ? avatar("", name) : icon("person")}<span>${escapeHtml(name || "Unassigned")}</span><span class="code-count">${count}</span></button></li>`).join("")}</ul>${ui.people.size ? '<div class="code-branch-actions"><button type="button" class="code-bar-button" data-issue-people-clear>Everyone</button></div>' : ""}`;
+  return `<label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-people-query placeholder="Find a person" value="${escapeHtml(ui.peopleQuery)}" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list">${rows.map(([name, count]) => `<li><button type="button" class="issue-person-row" data-issue-person="${escapeHtml(name)}" aria-pressed="${ui.people.has(name)}">${name ? avatar("", name) : icon("person")}<span>${escapeHtml(name || "Unassigned")}</span><span class="code-count">${count}</span></button></li>`).join("")}</ul>${ui.people.size ? '<div class="code-branch-actions"><button type="button" class="code-bar-button" data-issue-people-clear>Everyone</button></div>' : ""}`;
 }
 
 function toolbar() {
@@ -546,7 +557,7 @@ function toolbar() {
   const sources = both && ui.tab !== "migration" ? segment("data-issue-source", ui.source, { all: "Both", jira: `Jira${count(ui.data.issues.filter((issue) => issue.inScope && !issue.bot && !issue.mirrorOf && issue.source !== "linear" && open(issue)).length)}`, linear: `Linear${count(ui.data.issues.filter((issue) => issue.source === "linear" && !issue.mirrorOf && open(issue)).length)}` }) : "";
   const shared = `${sources}${people}${ui.tab !== "triage" && ui.tab !== "activity" ? `<label class="code-check"><input type="checkbox" data-issue-done ${ui.showDone ? "checked" : ""}> Done</label>` : ""}<label class="code-check" data-tip="Issues labeled ${escapeHtml((config().issues.hideLabels || []).join(", ") || "by scanners")}"><input type="checkbox" data-issue-bots ${ui.showBots ? "checked" : ""}> Bots${count(ui.data.issues.filter((issue) => issue.inScope && issue.bot && issue.category !== "done").length)}</label>`;
   const synced = ui.data.syncing ? escapeHtml(ui.data.progress || "Syncing with Jira…") : ui.data.syncedAt ? `Synced ${ago(ui.data.syncedAt)} ago` : "Never synced";
-  return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg><input type="search" data-issue-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span><span class="code-muted issue-synced">${synced}</span>${iconButton("refresh", ui.data.syncing ? "Syncing with Jira…" : "Re-read every issue from Jira  (R)", `data-issue-refresh class="code-icon-button${ui.data.syncing ? " is-spinning" : ""}"`)}</div><div class="code-controls">${controls}${shared}</div></div></div>`;
+  return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-issue-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span><span class="code-muted issue-synced">${synced}</span>${iconButton("refresh", ui.data.syncing ? "Syncing with Jira…" : "Re-read every issue from Jira  (R)", `data-issue-refresh class="code-icon-button${ui.data.syncing ? " is-spinning" : ""}"`)}</div><div class="code-controls">${controls}${shared}</div></div></div>`;
 }
 
 const lastHtml = new WeakMap();
@@ -644,6 +655,12 @@ async function handleClick(event) {
   const opener = event.target.closest("tr[data-issue-open]");
   if (!target && opener) return openIssue(opener.dataset.issueOpen, opener.dataset.issueList.split(","));
   if (!target) { if (row && host?.contains(row)) select(row.dataset.issueRow); return; }
+  if (target.matches("a[data-planning-path]") && !event.metaKey && !event.ctrlKey) {
+    event.preventDefault();
+    event.stopPropagation();
+    dialog?.close();
+    return planning.open(target.dataset.planningPath);
+  }
   if (target.matches("a")) return;
   const { dataset } = target;
   try {
