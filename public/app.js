@@ -466,7 +466,7 @@ function renderActivity() {
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
   elements.chunks.classList.add("code-page", "activity-page");
-  renderActivityPage(elements.chunks, state.documents);
+  renderActivityPage(elements.chunks, state.documents, { openDocument: (path, anchor) => selectDocument(path, { historyMode: "push", anchor }) });
 }
 
 function formatCalendarDay(date) {

@@ -435,7 +435,7 @@ async function loadDetail(key) {
 }
 
 function renderDetail({ animate = false } = {}) {
-  const pane = host?.querySelector(".code-detail");
+  const pane = host?.querySelector(".issue-surface .code-detail"); // not another page's inspector in the same container
   if (!pane) return;
   const issue = byKey().get(ui.sel);
   const multi = ui.selected.size > 1 ? `<p class="issue-multi">${ui.selected.size} selected · ${skillButtons([...ui.selected])} <button type="button" class="code-bar-button" data-issue-select-none>Clear</button></p>` : "";
@@ -445,6 +445,16 @@ function renderDetail({ animate = false } = {}) {
   if (animate) { pane.scrollTop = 0; fadeIn(pane, 160); }
   if (issue) loadDetail(issue.key);
 }
+
+// The issue inspector for other pages (Activity): the same sections as this page's, with its buttons routed through
+// `handleIssueClick`. `loadIssueDetail` resolves once the description and comments are in.
+export const issueInspector = (key) => {
+  const issue = ui.data && byKey().get(key);
+  return issue ? `<div class="code-detail-head">${typeIcon(issue)}<h3>${keyMark(issue)} ${escapeHtml(issue.summary)}</h3></div>${issueFacts(issue)}${codeSection(issue)}${relationsSection(issue)}${textSections(issue, false)}` : "";
+};
+export const loadIssueDetail = (key) => loadDetail(key);
+export const issueLink = (key) => issueUrl(key);
+export const handleIssueClick = (event) => handleClick(event);
 
 // The overview: the issue in full, walking the list it was opened from with J/K and X.
 let dialog = null;
