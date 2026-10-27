@@ -1400,6 +1400,7 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-commit-body { margin: 0; white-space: pre-wrap; font: .76rem/1.5 ui-monospace, Menlo, monospace; color: var(--body-ink); }
 .code-diff { --pass: #1f9d6b; --fail: #d6453d; --pending: #e0a100; --dirty: #c27803; --dirty-field: #fdf1d8; --merged: #7b4fd1; --merged-field: #efe8fb; --requested: #8b4fd8; --requested-field: #f1e8fd; width: calc(100vw - 48px); max-width: 1800px; height: calc(100dvh - 48px); max-height: none; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--ink); padding: 0; box-shadow: 0 24px 80px #18212f40; }
 .code-diff[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.code-diff[data-wide] { width: 100%; max-width: none; height: 100%; margin: 0; border: 0; border-radius: 0; }
 .code-diff::backdrop { background: #18212f66; }
 .code-diff-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 .code-diff-head h3 { margin: 0; font-size: .95rem; }

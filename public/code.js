@@ -66,6 +66,7 @@ const ICONS = {
   stop: GLYPHS["square"],
   person: GLYPHS["user"],
   branch: GLYPHS["git-branch"],
+  minimize: GLYPHS["minimize"],
 };
 const icon = (name) => `<svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ICONS.review}</svg>`;
 const iconButton = (name, tip, attrs) => `<button type="button" class="code-icon-button" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}" ${attrs}>${icon(name)}</button>`;
@@ -816,6 +817,8 @@ export function parsePatch(patch) {
 
 const isMarkdown = (path) => /\.(md|markdown|mdx)$/i.test(path);
 let diffLayout = storage.get("code-diff-layout", "split");
+let diffWide = storage.get("code-diff-wide", "") === "1";
+const toggleDiffWide = () => { diffWide = !diffWide; storage.set("code-diff-wide", diffWide ? "1" : ""); renderDiff(); };
 // "single" shows one file and J/K steps through them; "all" stacks every file in one scroll, rendered as it nears view.
 let diffView = storage.get("code-diff-view", "single");
 // Viewed files drop out of the file list and J/K by default (H toggles); the current file always stays.
@@ -981,9 +984,10 @@ function ensureDiffDialog() {
       return;
     }
     if (event.target.closest("[data-code-skill], [data-code-open], [data-code-session], [data-code-preview], [data-code-run], [data-code-stop-run]")) return handleClick(event);
-    const button = event.target.closest("[data-diff-hide], [data-diff-list], [data-map-zoom], [data-map-move], [data-map-edges], [data-map-export], [data-map-full], [data-diff-viewed], [data-diff-collapse], [data-diff-local-dir], [data-diff-file], [data-diff-mode], [data-diff-layout], [data-diff-view], [data-diff-scope], [data-diff-pr], [data-diff-wt], [data-diff-local], [data-diff-load], [data-diff-close], [data-diff-bots], [data-code-copy]");
+    const button = event.target.closest("[data-diff-hide], [data-diff-list], [data-map-zoom], [data-map-move], [data-map-edges], [data-map-export], [data-map-full], [data-diff-viewed], [data-diff-collapse], [data-diff-local-dir], [data-diff-file], [data-diff-mode], [data-diff-layout], [data-diff-view], [data-diff-scope], [data-diff-pr], [data-diff-wt], [data-diff-local], [data-diff-load], [data-diff-close], [data-diff-wide], [data-diff-bots], [data-code-copy]");
     if (!button) return;
     const { dataset } = button;
+    if ("diffWide" in dataset) return toggleDiffWide();
     if ("diffBots" in dataset) { showBotComments = !showBotComments; return renderDiff(); }
     if ("diffHide" in dataset) return toggleHideViewed();
     if (dataset.diffList) return setFileListMode(dataset.diffList);
@@ -1041,6 +1045,7 @@ function ensureDiffDialog() {
     else if (key === "w" && diffDialog.querySelector(diff.pr ? ".code-side-facts [data-diff-wt]" : ".code-side-facts [data-diff-pr]")) diffDialog.querySelector(diff.pr ? ".code-side-facts [data-diff-wt]" : ".code-side-facts [data-diff-pr]").click();
     else if (key === "v") { diffView = diffView === "all" ? "single" : "all"; storage.set("code-diff-view", diffView); renderDiff(); scrollToFile(); }
     else if (key === "m" && diffView === "single") { diff.mode = diff.mode === "rendered" ? "diff" : "rendered"; renderDiff(); }
+    else if (key === "g") toggleDiffWide();
     else if (key === "s") { diffLayout = diffLayout === "split" ? "unified" : "split"; storage.set("code-diff-layout", diffLayout); renderDiff(); }
     else return;
     event.preventDefault();
@@ -2030,8 +2035,9 @@ function renderDiff() {
   const viewedCount = subject() && files && !description && !local ? files.filter(isViewed).length : 0;
   const progress = subject() && files?.length && !description && !local
     ? ` · <span class="code-diff-progress${viewedCount === files.length ? " is-done" : viewedCount ? "" : " is-none"}">${viewedCount === files.length ? `All ${files.length} viewed` : `${viewedCount} of ${files.length} viewed`}</span>` : "";
-  const hints = `<kbd>J</kbd><kbd>K</kbd> file${subject() ? ` · <kbd>X</kbd> viewed · <kbd>U</kbd> unviewed only · <kbd>D</kbd> ${wt ? "views" : "description"} · <kbd>N</kbd><kbd>P</kbd> ${wt ? "scope" : "commit"}` : ""} · <kbd>/</kbd> filter · <kbd>T</kbd> map · <kbd>V</kbd> view · <kbd>S</kbd> layout${markdown ? " · <kbd>M</kbd> rendered" : ""}${pr ? " · <kbd>C</kbd> note" : ""}${pr && prStack().stack.length > 1 ? " · <kbd>[</kbd><kbd>]</kbd> stack" : ""}`;
-  diffRegion("head", `<div class="code-diff-title"><h3>${title}</h3><p class="code-muted">${sub}${files && !description && !local && !progress ? ` · ${files.length} ${files.length === 1 ? "file" : "files"}` : ""}${progress}</p></div><span class="code-diff-hints code-muted">${hints}</span>${diffSegment("data-diff-view", diffView, { single: "One file", all: "All files" })}${diffSegment("data-diff-layout", diffLayout, { split: "Split", unified: "Unified" })}<button type="button" class="code-icon-button" data-diff-close aria-label="Close (Esc)">${icon("fail")}</button>`);
+  const hints = `<kbd>J</kbd><kbd>K</kbd> file${subject() ? ` · <kbd>X</kbd> viewed · <kbd>U</kbd> unviewed only · <kbd>D</kbd> ${wt ? "views" : "description"} · <kbd>N</kbd><kbd>P</kbd> ${wt ? "scope" : "commit"}` : ""} · <kbd>/</kbd> filter · <kbd>T</kbd> map · <kbd>V</kbd> view · <kbd>S</kbd> layout · <kbd>G</kbd> full width${markdown ? " · <kbd>M</kbd> rendered" : ""}${pr ? " · <kbd>C</kbd> note" : ""}${pr && prStack().stack.length > 1 ? " · <kbd>[</kbd><kbd>]</kbd> stack" : ""}`;
+  diffRegion("head", `<div class="code-diff-title"><h3>${title}</h3><p class="code-muted">${sub}${files && !description && !local && !progress ? ` · ${files.length} ${files.length === 1 ? "file" : "files"}` : ""}${progress}</p></div><span class="code-diff-hints code-muted">${hints}</span>${diffSegment("data-diff-view", diffView, { single: "One file", all: "All files" })}${diffSegment("data-diff-layout", diffLayout, { split: "Split", unified: "Unified" })}${iconButton(diffWide ? "minimize" : "expand", diffWide ? "Restore size (G)" : "Full width (G)", `data-diff-wide aria-pressed="${diffWide}"`)}<button type="button" class="code-icon-button" data-diff-close aria-label="Close (Esc)">${icon("fail")}</button>`);
+  diffDialog.toggleAttribute("data-wide", diffWide);
   diffDialog.querySelector(".code-diff-split").classList.toggle("has-pr", Boolean(subject()));
   diffDialog.toggleAttribute("data-notes", Boolean(pr));
   diffRegion("pr", wt ? wtColumn() : pr ? prColumn() : "");
