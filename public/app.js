@@ -8,7 +8,7 @@ import { TABS as CODE_TABS, setPeople, ago, cachedPrIndex, commitLinkMatch, diff
 import { TABS as ISSUE_TABS, cachedIssues, connectPlanning, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { renderActivityPage } from "./activity.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
-import { AGENTS, agentApp, agentName, config, referenceConfig, setConfig, setAgentApp } from "./config.js";
+import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
 
 const state = { documents: [], defaultPath: "", selectedPath: "", document: null, activeChunkId: "", openComposer: null, view: "document", weekAnchor: null };
@@ -434,7 +434,8 @@ function renderIssues(tab = new URLSearchParams(location.search).get("tab") || "
   elements.issuesButton.setAttribute("aria-current", "page");
   for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
   elements.title.textContent = "Issues";
-  elements.meta.textContent = `Jira  /  ${config().issues.jql}`;
+  const { jql, linear, github } = config().issues;
+  elements.meta.textContent = [jql && `Jira  /  ${jql}`, linear?.teams?.length && `Linear  /  ${linear.teams.join(", ")}`, github && "GitHub  /  tracked repositories"].filter(Boolean).join("   ·   ");
   elements.count.textContent = "";
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
@@ -2312,7 +2313,7 @@ const shortcuts = [
   { keys: ["W"], description: "Open Weeks", run: () => showWeeks() },
   { keys: ["V"], description: "Open Activity: tasks, daily plans, issues and PRs, newest first", run: () => showActivity() },
   { keys: ["G"], description: "Open Code: worktrees, pull requests, cleanup", run: () => showCode() },
-  { keys: ["I"], description: "Open Issues: Jira triage, epics, activity", run: () => config().issues.jql && showIssues() },
+  { keys: ["I"], description: "Open Issues: triage, epics, activity", run: () => issuesOn() && showIssues() },
   { keys: ["H"], description: "Recently viewed, from anywhere (even the PR overview): type to filter, ↑↓ to move, Enter to go back, 1–9 to jump, Esc clears the filter" },
   { keys: ["J"], description: "Jump to the next document section", run: () => jumpSection(1) },
   { keys: ["K"], description: "Jump to the previous document section", run: () => jumpSection(-1) },
@@ -2438,7 +2439,7 @@ const renderPrResult = ({ pr }, index, terms) => resultRow({ ...prResult(pr, ter
 function issueResult(issue, terms) {
   const detail = [issue.type, issue.assignee?.name || "Unassigned", issue.updated && `${ago(issue.updated)} ago`].filter(Boolean).map((part) => highlightTerms(part, terms)).join(" · ");
   const label = issue.type === "Project" ? "Project" : issue.label || issue.key;
-  return { icon: "issue", tone: `issue is-${escapeHtml(issue.category)}`, title: `<span class="search-pr-number">${highlightTerms(label, terms)}</span> ${highlightTerms(issue.summary, terms)}`, detail: `${issue.source === "linear" ? "Linear · " : ""}${detail}`, side: escapeHtml(issue.status) };
+  return { icon: "issue", tone: `issue is-${escapeHtml(issue.category)}`, title: `<span class="search-pr-number">${highlightTerms(label, terms)}</span> ${highlightTerms(issue.summary, terms)}`, detail: `${{ linear: "Linear · ", github: "GitHub · " }[issue.source] || ""}${detail}`, side: escapeHtml(issue.status) };
 }
 const renderIssueResult = ({ issue }, index, terms) => resultRow({ ...issueResult(issue, terms), attrs: searchAttrs(index) });
 
@@ -2479,7 +2480,7 @@ const PAGES = [
   ...Object.entries(CODE_TABS).map(([tab, title]) => ({ title, detail: `Code · ${title}`, icon: tab === "prs" ? "pr" : tab === "commits" ? "branch" : "code", run: () => showCode({ tab: tab === "prs" ? "" : tab }) })),
   ...Object.entries(ISSUE_TABS).map(([tab, title]) => ({ title: tab === "all" ? "Issues" : `${title} issues`, detail: `Issues · ${title}`, icon: "issue", issues: true, run: () => showIssues({ tab: tab === "all" ? "" : tab }) })),
 ];
-const searchPages = (query) => { const terms = query.toLowerCase().split(/\s+/).filter(Boolean); return PAGES.filter((page) => (!page.issues || config().issues.jql) && terms.every((term) => `${page.title} ${page.detail}`.toLowerCase().includes(term))).map((page) => ({ page })); };
+const searchPages = (query) => { const terms = query.toLowerCase().split(/\s+/).filter(Boolean); return PAGES.filter((page) => (!page.issues || issuesOn()) && terms.every((term) => `${page.title} ${page.detail}`.toLowerCase().includes(term))).map((page) => ({ page })); };
 const renderPageResult = ({ page }, index) => resultRow({ icon: page.icon, title: escapeHtml(page.title), detail: escapeHtml(page.detail), side: "Page", attrs: searchAttrs(index) });
 
 const LIVE_TASK = new Set(["open", "active"]);
@@ -3149,7 +3150,7 @@ async function boot() {
     if (worktree) openWorktreeOverlay(worktree, file, scope);
     if (search.get("issue")) openIssue(search.get("issue"));
     if (search.get("plan")) openPlan(search.get("plan"), search.get("doc") || "");
-    if (config().issues.jql) loadIssues().catch(() => {}); // ⌘K finds issues by key and title
+    if (issuesOn()) loadIssues().catch(() => {}); // ⌘K finds issues by key and title
     recordVisit();
   } catch (error) {
     showNotice(error.message, true);
@@ -3160,7 +3161,7 @@ async function boot() {
 try {
   setConfig(await fetch("/api/config").then((response) => response.json()));
   document.title = config().title;
-  elements.issuesButton.hidden = !config().issues.jql;
+  elements.issuesButton.hidden = !issuesOn();
 } catch {}
 // Before the first render, so every avatar starts with the reconciled picture; answers from the server's cache.
 await fetch("/api/people").then((response) => response.json()).then((body) => setPeople(body.people)).catch(() => {});

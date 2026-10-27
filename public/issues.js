@@ -3,7 +3,7 @@ import { GLYPHS } from "./icons.js";
 import { agentApp, agentName as appName, config } from "./config.js";
 import { ago, avatar, ciBadge, copied, fadeIn, heat, hideTip, icon, iconButton, isSummonKey, openPrOverlay, openWorktreeOverlay, showTip, sideFacts, sideHead, sideStatus, when } from "./code.js";
 
-// Issues page: Jira issues in the configured scope (viewer.config.json `issues`), laid out like the Code page:
+// Issues page: Jira, Linear and GitHub issues in the configured scope (viewer.config.json `issues`), laid out like the Code page:
 // a dense list newest first, an inspector for the selected row, and a full overview on Enter. Read-only; changes go
 // through agent drafts.
 export const TABS = { all: "All", triage: "Triage", epics: "Epics", activity: "Activity", migration: "Migration" };
@@ -38,8 +38,10 @@ const TYPE_ICONS = {
   "Sub-issue": [GLYPHS["circle-dot"], "linear"],
   Project: [GLYPHS["layout-panel-left"], "project"],
 };
+// GitHub issues draw as GitHub does: an open circle, a checked one once closed.
+const GITHUB_ICONS = { new: [GLYPHS["circle-dot"], "github"], done: [GLYPHS["circle-check"], "github-done"] };
 const typeIcon = (issue) => {
-  const [path, tone] = TYPE_ICONS[issue.type] || TYPE_ICONS.Task;
+  const [path, tone] = issue.source === "github" ? GITHUB_ICONS[issue.category] || GITHUB_ICONS.new : TYPE_ICONS[issue.type] || TYPE_ICONS.Task;
   return `<span class="issue-type issue-type-${tone}" data-tip="${escapeHtml(issue.type || "Issue")}" role="img" aria-label="${escapeHtml(issue.type)}"><svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true">${path}</svg></span>`;
 };
 const PRIORITY_LEGEND = "Priority: ⇈ urgent · ↑ high · = medium · ↓ low · blank when unset";
@@ -51,13 +53,14 @@ const priorityIcon = (issue) => {
 const isTriage = (issue) => issue.category === "new" && (issue.triage || ui.data.triage.statuses.includes(issue.status) || issue.labels.some((label) => ui.data.triage.labels.some((prefix) => label.startsWith(prefix))));
 const statusTag = (issue) => `<span class="code-tag issue-status issue-status-${isTriage(issue) && ui.data.triage.statuses.includes(issue.status) ? "triage" : issue.category}">${escapeHtml(issue.status)}</span>`;
 const firstName = (person) => (person?.name || "").split(" ")[0];
-const personMark = (person, full = false) => person ? `<span class="code-side-person" data-tip="${escapeHtml(person.name)}">${avatar("", person.name, person.email)}${escapeHtml(full ? person.name : firstName(person))}</span>` : '<span class="code-muted">Unassigned</span>';
-const isMine = (issue) => Boolean(ui.data.me) && [issue.assignee?.email, issue.reporter?.email].includes(ui.data.me);
+const personMark = (person, full = false) => person ? `<span class="code-side-person" data-tip="${escapeHtml(person.name)}">${avatar(person.login || "", person.name, person.email)}${escapeHtml(full ? person.name : firstName(person))}</span>` : '<span class="code-muted">Unassigned</span>';
+const isMine = (issue) => issue.source === "github" ? Boolean(ui.data.githubMe) && [issue.assignee?.login, issue.reporter?.login].includes(ui.data.githubMe) : Boolean(ui.data.me) && [issue.assignee?.email, issue.reporter?.email].includes(ui.data.me);
 // Linear keys are namespaced (`linear:MOD-12`) since a Jira project can share the prefix; the label is what shows.
 const label = (issue) => issue.label || issue.key;
-const keyLabel = (key) => { const issue = byKey().get(key); return issue ? label(issue) : key.replace(/^linear:/, ""); };
+const keyLabel = (key) => { const issue = byKey().get(key); return issue ? label(issue) : key.replace(/^(linear|github):/, ""); };
 const issueUrl = (key) => byKey().get(key)?.url || `https://${ui.data.site}/browse/${key}`;
-const trackerName = (issue) => (issue?.source === "linear" ? "Linear" : "Jira");
+const TRACKERS = { jira: "Jira", linear: "Linear", github: "GitHub" };
+const trackerName = (issue) => TRACKERS[issue?.source] || "Jira";
 const keyMark = (issue) => issue.type === "Project" ? "" : `<code>${escapeHtml(label(issue))}</code>`;
 // Linear projects have no identifier; in list rows the slot says what the row is instead of sitting empty.
 const keyCell = (issue) => keyMark(issue) || `<span class="issue-key-none">${escapeHtml(issue.type)}</span>`;
@@ -309,7 +312,7 @@ function codeSection(issue) {
 const linkRow = (key, summary, status, category, label = "") => `<li><button type="button" class="issue-link-row" data-issue-open="${escapeHtml(key)}">${label ? `<span class="code-muted">${escapeHtml(label)}</span>` : ""}${byKey().has(key) ? typeIcon(byKey().get(key)) : ""}<code>${escapeHtml(keyLabel(key))}</code><span>${escapeHtml(summary)}</span><span class="code-tag issue-status issue-status-${escapeHtml(category)}">${escapeHtml(status)}</span></button></li>`;
 // Tasks first, then every other planning document that mentions this key (or a key it used to have).
 function planningSection(issue) {
-  const keys = [issue.key, ...aliasesFor(issue.key)].map((key) => key.replace(/^linear:/, ""));
+  const keys = [issue.key, ...aliasesFor(issue.key)].map((key) => key.replace(/^(linear|github):/, ""));
   const docs = planning.documents().filter((doc) => doc.issueKeys?.some((key) => keys.includes(key))).sort((a, b) => !!b.task - !!a.task);
   if (!docs.length) return "";
   return `<section>${sideHead("In planning", String(docs.length))}<ul class="issue-code-list">${docs.map((doc) => `<li><a class="issue-link-row" href="${escapeHtml(documentHref(doc.path, ""))}" data-planning-path="${escapeHtml(doc.path)}" data-tip="${escapeHtml(doc.path)}">${doc.task ? SERVICE_ICONS.task : icon("doc")}<code>${escapeHtml(doc.task?.id || doc.date || doc.kind)}</code><span>${escapeHtml(doc.task?.title || doc.title)}</span>${doc.task ? `<span class="code-tag">${escapeHtml(doc.task.status)}</span>` : ""}</a></li>`).join("")}</ul></section>`;
@@ -441,7 +444,7 @@ function renderDetail({ animate = false } = {}) {
   const multi = ui.selected.size > 1 ? `<p class="issue-multi">${ui.selected.size} selected · ${skillButtons([...ui.selected])} <button type="button" class="code-bar-button" data-issue-select-none>Clear</button></p>` : "";
   pane.innerHTML = issue
     ? `${multi}<div class="code-detail-head">${typeIcon(issue)}<h3>${keyMark(issue)} ${escapeHtml(issue.summary)}</h3></div>${issueFacts(issue)}${codeSection(issue)}${relationsSection(issue)}${textSections(issue, false)}`
-    : `${multi}<p class="code-detail-empty">Select an issue to see its details, code, and comments.<br><br><kbd>J</kbd><kbd>K</kbd> move · <kbd>Enter</kbd> overview · <kbd>1</kbd>–<kbd>${(ui.data.skills || []).length}</kbd> agent drafts · <kbd>Space</kbd> select · <kbd>X</kbd> seen · <kbd>O</kbd> Jira · <kbd>Y</kbd> copy link · <kbd>A</kbd> people · <kbd>F</kbd> filter · <kbd>R</kbd> refresh</p>`;
+    : `${multi}<p class="code-detail-empty">Select an issue to see its details, code, and comments.<br><br><kbd>J</kbd><kbd>K</kbd> move · <kbd>Enter</kbd> overview · <kbd>1</kbd>–<kbd>${(ui.data.skills || []).length}</kbd> agent drafts · <kbd>Space</kbd> select · <kbd>X</kbd> seen · <kbd>O</kbd> open · <kbd>Y</kbd> copy link · <kbd>A</kbd> people · <kbd>F</kbd> filter · <kbd>R</kbd> refresh</p>`;
   if (animate) { pane.scrollTop = 0; fadeIn(pane, 160); }
   if (issue) loadDetail(issue.key);
 }
@@ -513,7 +516,7 @@ function renderOverview() {
   if (!issue) return;
   const position = overview.list.indexOf(issue.key);
   const walk = position >= 0 && overview.list.length > 1 ? `<span class="code-muted">${position + 1} of ${overview.list.length} · <kbd>J</kbd><kbd>K</kbd> walk · <kbd>X</kbd> seen and next</span>` : "";
-  const where = issue.source === "linear" ? `Linear · ${issue.project} team${issue.mirrorOf ? ` · synced copy of ${issue.mirrorOf}` : ""}` : `${issue.project} · ${issue.components.join(", ") || "no component"}`;
+  const where = issue.source === "linear" ? `Linear · ${issue.project} team${issue.mirrorOf ? ` · synced copy of ${issue.mirrorOf}` : ""}` : issue.source === "github" ? `GitHub · ${issue.project}${issue.components.length ? ` · ${issue.components.join(", ")}` : ""}` : `${issue.project} · ${issue.components.join(", ") || "no component"}`;
   dialog.querySelector('[data-o="head"]').innerHTML = `${typeIcon(issue)}<div class="issue-overview-title"><h3>${keyMark(issue)} ${escapeHtml(issue.summary)}</h3><p class="code-muted">${escapeHtml(where)}${issue.inScope ? "" : " · outside the configured scope"}${isSeen(issue) ? " · seen" : ""}</p></div><span class="code-spacer"></span>${walk}${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
   dialog.querySelector('[data-o="side"]').innerHTML = issueFacts(issue, true) + codeSection(issue) + relationsSection(issue, true);
   dialog.querySelector('[data-o="main"]').innerHTML = `<div class="issue-overview-text">${textSections(issue, true)}</div>`;
@@ -554,7 +557,7 @@ function toolbar() {
   const count = (value) => ` <span class="code-count">${value}</span>`;
   const segment = (attr, current, options) => `<div class="code-segment">${Object.entries(options).map(([id, label]) => `<button type="button" ${attr}="${id}" aria-pressed="${current === id}">${label}</button>`).join("")}</div>`;
   const scoped = base();
-  const both = ui.data.sources?.length > 1;
+  const both = ["jira", "linear"].every((source) => ui.data.sources?.includes(source));
   const groups = both ? migrationGroups() : [];
   const counts = { all: scoped.filter(open).length, triage: scoped.filter(isTriage).length, epics: epicGroups().reduce((sum, [, epics]) => sum + epics.length, 0), activity: "", migration: groups.filter((group) => ["drift", "copies", "title"].includes(group.kind)).length };
   const tabs = `<div class="code-segment code-tabs">${Object.entries(TABS).filter(([id]) => id !== "migration" || both).map(([id, label]) => `<button type="button" data-issue-tab="${id}" aria-pressed="${ui.tab === id}">${label}${counts[id] === "" ? "" : count(counts[id])}</button>`).join("")}</div>`;
@@ -564,10 +567,11 @@ function toolbar() {
   if (ui.tab === "triage") controls = `<label class="code-check"><input type="checkbox" data-issue-hide-seen-box ${ui.hideSeen ? "checked" : ""}> Hide seen <kbd>U</kbd>${count(scoped.filter(isTriage).filter(isSeen).length)}</label>${ui.selected.size ? `<span class="issue-bulk">${ui.selected.size} selected ${skillButtons([...ui.selected])}<button type="button" class="code-bar-button" data-issue-select-none>Clear</button></span>` : '<span class="code-muted">Space selects rows for one draft about several issues.</span>'}`;
   if (ui.tab === "migration") controls = segment("data-issue-migration", ui.migration, Object.fromEntries(Object.entries(MIGRATION).map(([id, label]) => [id, `${label}${count(groups.filter((group) => group.kind === id).length)}`]))) + (ui.selected.size ? `<span class="issue-bulk">${ui.selected.size} selected ${skillButtons([...ui.selected])}<button type="button" class="code-bar-button" data-issue-select-none>Clear</button></span>` : "");
   if (ui.tab === "activity") controls = segment("data-issue-activity", ui.activityScope, ACTIVITY_SCOPES) + `<label class="code-check">Since <input type="date" data-issue-since value="${escapeHtml(ui.since)}"></label>`;
-  const sources = both && ui.tab !== "migration" ? segment("data-issue-source", ui.source, { all: "Both", jira: `Jira${count(ui.data.issues.filter((issue) => issue.inScope && !issue.bot && !issue.mirrorOf && issue.source !== "linear" && open(issue)).length)}`, linear: `Linear${count(ui.data.issues.filter((issue) => issue.source === "linear" && !issue.mirrorOf && open(issue)).length)}` }) : "";
+  const sourceCount = (source) => count(ui.data.issues.filter((issue) => issue.inScope && !issue.bot && !issue.mirrorOf && (issue.source || "jira") === source && open(issue)).length);
+  const sources = ui.data.sources?.length > 1 && ui.tab !== "migration" ? segment("data-issue-source", ui.source, { all: "All", ...Object.fromEntries(ui.data.sources.map((source) => [source, `${TRACKERS[source]}${sourceCount(source)}`])) }) : "";
   const shared = `${sources}${people}${ui.tab !== "triage" && ui.tab !== "activity" ? `<label class="code-check"><input type="checkbox" data-issue-done ${ui.showDone ? "checked" : ""}> Done</label>` : ""}<label class="code-check" data-tip="Issues labeled ${escapeHtml((config().issues.hideLabels || []).join(", ") || "by scanners")}"><input type="checkbox" data-issue-bots ${ui.showBots ? "checked" : ""}> Bots${count(ui.data.issues.filter((issue) => issue.inScope && issue.bot && issue.category !== "done").length)}</label>`;
-  const synced = ui.data.syncing ? escapeHtml(ui.data.progress || "Syncing with Jira…") : ui.data.syncedAt ? `Synced ${ago(ui.data.syncedAt)} ago` : "Never synced";
-  return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-issue-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span><span class="code-muted issue-synced">${synced}</span>${iconButton("refresh", ui.data.syncing ? "Syncing with Jira…" : "Re-read every issue from Jira  (R)", `data-issue-refresh class="code-icon-button${ui.data.syncing ? " is-spinning" : ""}"`)}</div><div class="code-controls">${controls}${shared}</div></div></div>`;
+  const synced = ui.data.syncing ? escapeHtml(ui.data.progress || "Syncing issues…") : ui.data.syncedAt ? `Synced ${ago(ui.data.syncedAt)} ago` : "Never synced";
+  return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-issue-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span><span class="code-muted issue-synced">${synced}</span>${iconButton("refresh", ui.data.syncing ? "Syncing issues…" : "Re-read every issue  (R)", `data-issue-refresh class="code-icon-button${ui.data.syncing ? " is-spinning" : ""}"`)}</div><div class="code-controls">${controls}${shared}</div></div></div>`;
 }
 
 const lastHtml = new WeakMap();
@@ -591,7 +595,7 @@ function render({ animate = false } = {}) {
   const caret = filter?.selectionStart;
   hideTip();
   patch("toolbar", toolbar());
-  patch("errors", ui.data.error ? `<p class="work-warning">Jira sync failed: ${escapeHtml(ui.data.error)}</p>` : "");
+  patch("errors", ui.data.error ? `<p class="work-warning">Issue sync failed: ${escapeHtml(ui.data.error)}</p>` : "");
   const body = ui.tab === "triage" ? triageBody() : ui.tab === "epics" ? epicsBody() : ui.tab === "activity" ? activityBody() : ui.tab === "migration" ? migrationBody() : allBody();
   const list = patch("list", body);
   if (list && animate) fadeIn(list);
@@ -613,7 +617,7 @@ async function load(refresh = false) {
   if (refresh) ui.detail.clear();
   for (const key of ui.selected) if (!byKey().has(key)) ui.selected.delete(key);
   if (host?.isConnected) {
-    if (!data.enabled) host.innerHTML = `<section class="issue-loading"><p>No Jira scope configured. Set <code>issues.jql</code> in <code>viewer.config.json</code> to list issues here.</p></section>`;
+    if (!data.enabled) host.innerHTML = `<section class="issue-loading"><p>No issue source configured. Set <code>issues.jql</code>, <code>issues.linear.teams</code> or <code>issues.github</code> in <code>viewer.config.json</code> to list issues here.</p></section>`;
     render();
     host.dataset.issuesState = data.syncing ? "syncing" : "ready"; // agents wait on [data-issues-state="ready"]
     if (data.syncing) ui.poll = window.setTimeout(() => load().catch((error) => notify(error.message, true)), 2500);
@@ -742,7 +746,7 @@ export function renderIssuesPage(container, { tab, showNotice }) {
   ui.tab = issueTab(tab);
   ui.since = new URLSearchParams(location.search).get("since") || "";
   const source = new URLSearchParams(location.search).get("source");
-  if (["all", "jira", "linear"].includes(source)) ui.source = source;
+  if (["all", "jira", "linear", "github"].includes(source)) ui.source = source;
   if (host !== container) {
     host = container;
     container.addEventListener("click", (event) => { if (container.querySelector(".issue-surface")) handleClick(event); });

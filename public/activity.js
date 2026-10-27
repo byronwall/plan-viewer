@@ -3,15 +3,15 @@
 // (or Jira/Linear `updated`), PRs GitHub's `updatedAt`.
 import { SERVICE_ICONS, documentHref, escapeHtml, renderMarkdown } from "./markdown.js";
 import { GLYPHS, glyph } from "./icons.js";
-import { config } from "./config.js";
+import { config, issuesOn } from "./config.js";
 import { handleIssueClick, issueInspector, issueLink, loadIssueDetail, loadIssues, openIssue } from "./issues.js";
 import { avatar, ciBadge, copied, diffSize, fadeIn, hideTip, icon, iconButton, loadPrIndex, openPrOverlay, prBodyHtml, prefetchPr, reviewTag, showTip, sideFacts, sideHead, sideStatus, when } from "./code.js";
 
 const DAY = 86_400_000;
 const STRIP_DAYS = 14;
-export const SOURCES = { all: "All", tasks: "Tasks", daily: "Daily", topics: "Docs", jira: "Jira", linear: "Linear", prs: "PRs" };
+export const SOURCES = { all: "All", tasks: "Tasks", daily: "Daily", topics: "Docs", jira: "Jira", linear: "Linear", github: "Issues", prs: "PRs" };
 const RANGES = { day: ["24h", DAY], week: ["7d", 7 * DAY], month: ["30d", 30 * DAY], all: ["All", Infinity] };
-const SOURCE_ICONS = { tasks: SERVICE_ICONS.task, daily: glyph("calendar", "service-icon is-stroke"), topics: glyph("file-text", "service-icon is-stroke"), jira: SERVICE_ICONS.jira, linear: SERVICE_ICONS.linear, prs: SERVICE_ICONS.github };
+const SOURCE_ICONS = { tasks: SERVICE_ICONS.task, daily: glyph("calendar", "service-icon is-stroke"), topics: glyph("file-text", "service-icon is-stroke"), jira: SERVICE_ICONS.jira, linear: SERVICE_ICONS.linear, github: SERVICE_ICONS.github, prs: SERVICE_ICONS.github };
 const DOC_SOURCE = { Tasks: "tasks", "Task documents": "tasks", Today: "daily", Daily: "daily", Topics: "topics", Reference: "topics" };
 // State tones: what the colored state cell means at a glance.
 const TASK_TONES = { active: "progress", open: "quiet", waiting: "wait", blocked: "fail", completed: "pass", done: "pass", cancelled: "quiet", deferred: "quiet" };
@@ -68,13 +68,13 @@ function rows() {
       const at = Math.max(new Date(issue.updated || 0).getTime() || 0, row ? new Date(row.at).getTime() : 0);
       const parent = byKey.get(issue.parent);
       out.push({
-        id: `issue:${issue.key}`, kind: "issue", source: issue.source === "linear" ? "linear" : "jira", at, issue,
+        id: `issue:${issue.key}`, kind: "issue", source: issue.source || "jira", at, issue,
         label: issue.type === "Project" ? "" : issue.label || issue.key, title: issue.summary,
         event: row && Math.abs(new Date(row.at).getTime() - at) < 60 * 60_000 ? issueEvent(row) : "updated",
         context: parent ? `<span class="activity-parent" data-tip="${escapeHtml(parent.summary)}">↳ ${escapeHtml(parent.label || parent.key)} ${escapeHtml(parent.summary.slice(0, 40))}${parent.summary.length > 40 ? "…" : ""}</span>` : escapeHtml(issue.type),
         state: stateHtml(issue.status, ISSUE_TONES[issue.category] || "quiet"),
-        who: issue.assignee ? `<span data-tip="${escapeHtml(issue.assignee.name)}">${avatar("", issue.assignee.name, issue.assignee.email)}</span>` : "",
-        mine: Boolean(me) && [issue.assignee?.email, issue.reporter?.email].includes(me),
+        who: issue.assignee ? `<span data-tip="${escapeHtml(issue.assignee.name)}">${avatar(issue.assignee.login || "", issue.assignee.name, issue.assignee.email)}</span>` : "",
+        mine: issue.source === "github" ? Boolean(ui.issues.githubMe) && [issue.assignee?.login, issue.reporter?.login].includes(ui.issues.githubMe) : Boolean(me) && [issue.assignee?.email, issue.reporter?.email].includes(me),
         text: `${issue.label || issue.key} ${issue.summary} ${issue.status} ${issue.assignee?.name || ""} ${parent?.summary || ""}`,
       });
     }
@@ -131,10 +131,11 @@ function render() {
   ui.visible = shown.slice(0, 500);
   const days = new Map();
   for (const row of ui.visible) { const label = dayLabel(row.at); if (!days.has(label)) days.set(label, []); days.get(label).push(row); }
-  const issuesOn = Boolean(config().issues.jql);
-  const sourceTabs = Object.entries(SOURCES).filter(([source]) => (source !== "jira" && source !== "linear") || issuesOn).map(([source, label]) => `<button type="button" data-activity-source="${source}" aria-pressed="${ui.source === source}">${source === "all" ? "" : `<i class="activity-dot src-${source}"></i>`}${label} <span class="code-count">${counts[source]}</span></button>`).join("");
+  const issues = config().issues;
+  const on = { jira: Boolean(issues.jql), linear: Boolean(issues.linear?.teams?.length), github: Boolean(issues.github) };
+  const sourceTabs = Object.entries(SOURCES).filter(([source]) => !(source in on) || on[source]).map(([source, label]) => `<button type="button" data-activity-source="${source}" aria-pressed="${ui.source === source}">${source === "all" ? "" : `<i class="activity-dot src-${source}"></i>`}${label} <span class="code-count">${counts[source]}</span></button>`).join("");
   const ranges = Object.entries(RANGES).map(([range, [label]]) => `<button type="button" data-activity-range="${range}" aria-pressed="${!ui.day && ui.range === range}">${label}</button>`).join("");
-  const loading = [!ui.issues && issuesOn && "issues", !ui.prs && "PRs"].filter(Boolean);
+  const loading = [!ui.issues && issuesOn() && "issues", !ui.prs && "PRs"].filter(Boolean);
   const focused = document.activeElement?.matches("[data-activity-filter]");
   const toolbar = `<div class="activity-toolbar" data-region="toolbar"><div class="code-segment">${sourceTabs}</div><label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-activity-filter placeholder="Filter  (F)" value="${escapeHtml(ui.query)}" spellcheck="false" autocomplete="off"></label><label class="code-check"><input type="checkbox" data-activity-mine ${ui.mine ? "checked" : ""}> Mine</label><span class="activity-when-controls"><div class="code-segment">${ranges}</div>${dayStrip(kept.filter((row) => ui.source === "all" || row.source === ui.source))}</span><span class="code-spacer"></span><span class="code-muted activity-status">${loading.length ? `Loading ${loading.join(" and ")}…` : ui.day ? `${new Date(`${ui.day}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · <button type="button" class="activity-clear-day" data-activity-day="${ui.day}">clear day</button>` : ""}</span></div>`;
   const table = ui.visible.length
@@ -260,7 +261,7 @@ export function renderActivityPage(container, documents, { openDocument } = {}) 
 
 function refresh() {
   fetch("/api/changes").then((response) => response.json()).then((body) => { ui.changes = body.changes || []; render(); }).catch(() => {});
-  if (config().issues.jql) fetch("/api/issues").then((response) => response.json()).then((data) => { ui.issues = data; render(); }).catch(() => {});
+  if (issuesOn()) fetch("/api/issues").then((response) => response.json()).then((data) => { ui.issues = data; render(); }).catch(() => {});
   loadPrIndex().then((data) => { ui.prs = data; render(); }).catch(() => {});
 }
 

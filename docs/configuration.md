@@ -62,7 +62,7 @@ That turns `#1234`, commit SHAs, and `ATL-12` in your Markdown into links with l
 | `code.planSkill` | Skill the Plans tab's **Update** and **Retire** drafts tell the agent to use (`/<skill>` in Claude, "the <skill> skill" in Codex). Empty leaves the skill out of the prompt. |
 | `code.prPreview` | Preview button for repositories containing every `requires` file; runs `command` with `{number}`. `null` hides it. |
 | `code.run` | Run button (`L`) for worktrees and PRs in repositories containing every `requires` file: runs `command` in the worktree as a background local server, shows the first `localhost` URL it prints and its output, and stops it on demand or when the viewer exits. A PR without a worktree is checked out first with `worktree` (run in the repository, `{branch}` filled); without `worktree` only checked-out PRs get the button. `null` hides it. |
-| `issues.jql` | Jira scope for the Issues page (`component = Atlas OR project = OPS`). Empty hides the page. |
+| `issues.jql` | Jira scope for the Issues page (`component = Atlas OR project = OPS`). The page hides when this, `issues.linear.teams` and `issues.github` are all empty. |
 | `issues.command` | How to run `acli` (default `["acli"]`, already signed in); the fixtures point it at `fixtures/jira/fake-acli.js`. |
 | `issues.hideLabels` | Labels of machine-made issues (security scanners) hidden until **Bots** is checked. |
 | `issues.triage` | The Triage queue: `statuses` (default `Needs Triage`) plus open issues with a label starting with one of `labels` (a migration's review label). |
@@ -71,6 +71,7 @@ That turns `#1234`, commit SHAs, and `ATL-12` in your Markdown into links with l
 | `issues.fields` | Site-specific custom field ids: `start`, `confidence`, `statusUpdate`, `epicLink`. |
 | `issues.refreshMinutes` | Minutes between incremental syncs (default 5). |
 | `issues.linear.teams` | Linear team keys (`["ATL"]`) whose issues and projects sit beside the Jira ones, read with the Linear API key. With both trackers the page gains a source switch and a Migration tab. |
+| `issues.github` | `true` reads the open and closed GitHub issues of every repository in `code.reposFile`, through `gh`. Default `false`. |
 
 Credentials stay with their tools: `gh` for GitHub, `acli` for Jira, `LINEAR_API_KEY` or `[linear] API_KEY` in `config.toml`, and `SLACK_TOKEN` or `[slack] TOKEN`. Link titles are cached in the workspace's ignored `tmp/` folder.
 

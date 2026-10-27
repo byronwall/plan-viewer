@@ -62,6 +62,8 @@ export const DEFAULT_CONFIG = {
     fields: {},
     // Linear teams (by key) whose issues and projects sit beside the Jira ones, read with the Linear API key.
     linear: { teams: [] },
+    // true reads the GitHub issues of every repository the Code page tracks, through `gh`.
+    github: false,
   },
 };
 
@@ -83,6 +85,9 @@ export function setConfig(overrides) {
 }
 
 export const config = () => current;
+
+// The Issues page shows when any source is configured: a Jira scope, Linear teams, or GitHub issues.
+export const issuesOn = () => Boolean(current.issues.jql || current.issues.linear?.teams?.length || current.issues.github);
 
 export const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 

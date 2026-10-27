@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { claudeNewSessionUrl, codexNewTaskUrl } from "./codex-desktop.ts";
 import { config } from "./public/config.js";
+import { fetchGithub, githubLogin } from "./github.ts";
 import { fetchLinear, linearClient } from "./linear.ts";
 
 // Jira issues for the Issues page (viewer.config.json `issues`), read through `acli` and cached in tmp/issues-cache.json.
@@ -17,13 +18,13 @@ const VIEW_CONCURRENCY = 8;
 const ACTIVITY_LIMIT = 3000;
 const FULL_SCAN_MS = 60 * 60_000; // keys that left the scope (component removed, moved project) drop out on the next full scan
 
-type Person = { name: string; email: string };
+type Person = { name: string; email: string; login?: string };
 type Comment = { id: string; author: Person | null; created: string; body: string };
 type Link = { type: string; label: string; key: string; display?: string; summary: string; status: string; category: string };
-// Jira issues, and Linear issues and projects (linear.ts) in the same shape. `label` is the shown key when `key` is namespaced,
+// Jira issues, and Linear issues and projects (linear.ts) and GitHub issues (github.ts) in the same shape. `label` is the shown key when `key` is namespaced,
 // `mirrorOf` the Jira key a Linear issue was synced from, `triage` a Linear issue in its team's Triage state.
 export type Issue = {
-  key: string; label?: string; source?: "jira" | "linear"; url?: string; mirrorOf?: string; triage?: boolean; summary: string; project: string; type: string; level: number; status: string; category: string; priority: string;
+  key: string; label?: string; source?: "jira" | "linear" | "github"; url?: string; mirrorOf?: string; triage?: boolean; summary: string; project: string; type: string; level: number; status: string; category: string; priority: string;
   assignee: Person | null; reporter: Person | null; labels: string[]; components: string[]; parent: string; created: string; updated: string;
   resolution: string; due: string; start: string; confidence: string; statusUpdate: string; links: Link[]; prCount: number; prState: string;
   description: string; comments: Comment[]; attachments: number; prUrls: string[];
@@ -31,7 +32,7 @@ export type Issue = {
   milestones?: { name: string; description: string; target: string; progress: number; status: string }[];
 };
 type Activity = { at: string; key: string; kind: string; from?: string; to?: string; by?: string; text?: string };
-type Cache = { at: number; fullAt: number; scope: string[]; issues: Record<string, Issue>; activity: Activity[]; me: string; site: string; linearAt: number; linearFullAt: number };
+type Cache = { at: number; fullAt: number; scope: string[]; issues: Record<string, Issue>; activity: Activity[]; me: string; site: string; linearAt: number; linearFullAt: number; githubAt: number; githubMe: string };
 
 // ---------- Atlassian document format → Markdown ----------
 
@@ -156,7 +157,7 @@ export function diffIssue(before: Issue | undefined, after: Issue): Activity[] {
 // Old keys an issue carries from a tracker it was imported from, as lowercase labels (`atl-123` for an issue
 // migrated from the `ATL` Linear tracker), so code and documents that still say ATL-123 find the new issue.
 export function aliasesOf(issue: Issue, prefixes: string[]) {
-  if (issue.source === "linear") return [];
+  if (issue.source === "linear" || issue.source === "github") return [];
   return issue.labels.map((label) => label.toUpperCase()).filter((label) => prefixes.some((prefix) => label.startsWith(`${prefix}-`)) && /^[A-Z][A-Z0-9]*-\d+$/.test(label));
 }
 
@@ -186,7 +187,7 @@ export function pairIssues(issues: Issue[], prefixes: string[]): Pair[] {
   }
   // ponytail: exact match on the normalized title; token overlap if real duplicates turn out to be reworded
   const jiraByTitle = new Map<string, Issue[]>();
-  for (const issue of issues) if (issue.source !== "linear" && issue.category !== "done") {
+  for (const issue of issues) if (issue.source !== "linear" && issue.source !== "github" && issue.category !== "done") {
     const title = normalTitle(issue.summary);
     if (title.length >= 12) jiraByTitle.set(title, [...(jiraByTitle.get(title) || []), issue]);
   }
@@ -212,9 +213,9 @@ export function clustersOf(pairs: Pair[]) {
 
 type Runner = (args: string[]) => Promise<string>;
 
-export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs: any[]; worktrees: { repo: string; path: string; branch: string }[] }>) {
+export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs: any[]; worktrees: { repo: string; path: string; branch: string }[] }>, repoSlugs: () => Promise<string[]> = async () => []) {
   const cachePath = join(root, "tmp", "issues-cache.json");
-  let cache: Cache = { at: 0, fullAt: 0, scope: [], issues: {}, activity: [], me: "", site: "", linearAt: 0, linearFullAt: 0 };
+  let cache: Cache = { at: 0, fullAt: 0, scope: [], issues: {}, activity: [], me: "", site: "", linearAt: 0, linearFullAt: 0, githubAt: 0, githubMe: "" };
   try { cache = { ...cache, ...JSON.parse(readFileSync(cachePath, "utf8")) }; } catch {}
   let sync: Promise<void> | null = null;
   let error = "";
@@ -222,7 +223,7 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
 
   const settings = () => config().issues;
   const linearTeams = () => settings().linear?.teams || [];
-  const enabled = () => Boolean(settings().jql || linearTeams().length);
+  const enabled = () => Boolean(settings().jql || linearTeams().length || settings().github);
   const linear = linearClient(root);
   const acli: Runner = async (args) => {
     const [command, ...rest] = settings().command;
@@ -267,7 +268,7 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     const children = containers.length ? await search(`parent in (${containers.join(",")})`) : [];
     const wanted = new Set(children);
     for (let pass = 0; pass < 3; pass++) { // up to initiative level
-      const parents = Object.values(cache.issues).filter((issue) => issue.source !== "linear").map((issue) => issue.parent).filter((key) => key && !cache.issues[key]);
+      const parents = Object.values(cache.issues).filter((issue) => issue.source === "jira").map((issue) => issue.parent).filter((key) => key && !cache.issues[key]);
       if (!parents.length) break;
       store(await viewAll([...new Set(parents)]));
     }
@@ -290,7 +291,19 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     cache.linearAt = started;
   }
 
+  // GitHub issues in the tracked repositories are few, so every read is a full one that replaces the previous copy.
+  async function runGithub() {
+    const started = Date.now();
+    cache.githubMe ||= await githubLogin();
+    const issues = await fetchGithub(await repoSlugs(), (text) => { progress = text; });
+    const current = new Set(issues.map((issue) => issue.key));
+    for (const key of Object.keys(cache.issues)) if (cache.issues[key].source === "github" && !current.has(key)) delete cache.issues[key];
+    store(issues);
+    cache.githubAt = started;
+  }
+
   async function run(force: boolean) {
+    if (settings().github) await runGithub();
     if (linearTeams().length) await runLinear(force);
     if (settings().jql) await runJira(force);
     progress = "";
@@ -367,21 +380,21 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
   async function load(force = false) {
     if (!enabled()) return { enabled: false };
     if (force) refresh(true).catch(() => {});
-    else if (Date.now() - Math.max(cache.at, cache.linearAt) > settings().refreshMinutes * 60_000) refresh().catch(() => {});
+    else if (Date.now() - Math.max(cache.at, cache.linearAt, cache.githubAt) > settings().refreshMinutes * 60_000) refresh().catch(() => {});
     const { aliases, code, pairs, clusters } = await joins();
     const scope = new Set(cache.scope);
     const hidden = new Set(settings().hideLabels);
     // One name per person: Linear shows some accounts by handle, Jira by full name, both by the same email.
     const names = new Map<string, string>();
-    for (const issue of Object.values(cache.issues)) if (issue.source !== "linear") for (const who of [issue.assignee, issue.reporter]) if (who?.email && who.name) names.set(who.email, who.name);
+    for (const issue of Object.values(cache.issues)) if (issue.source === "jira") for (const who of [issue.assignee, issue.reporter]) if (who?.email && who.name) names.set(who.email, who.name);
     const named = (who: Person | null) => (who && names.has(who.email) ? { ...who, name: names.get(who.email)! } : who);
     const issues = Object.values(cache.issues).map(({ description, comments, statusUpdate, milestones, resources, ...issue }) => ({
-      ...issue, assignee: named(issue.assignee), reporter: named(issue.reporter), inScope: issue.source === "linear" || scope.has(issue.key), bot: issue.labels.some((label) => hidden.has(label)), comments: comments.length,
+      ...issue, assignee: named(issue.assignee), reporter: named(issue.reporter), inScope: issue.source !== "jira" || scope.has(issue.key), bot: issue.labels.some((label) => hidden.has(label)), comments: comments.length,
       lastComment: comments.at(-1) ? { by: comments.at(-1)!.author?.name || "", at: comments.at(-1)!.created } : null, hasUpdate: Boolean(statusUpdate),
     }));
     return {
-      enabled: true, site: cache.site, me: cache.me, syncedAt: Math.max(cache.at, cache.linearAt), syncing: Boolean(sync), progress, error, issues, aliases, code, pairs, clusters,
-      sources: [...(settings().jql ? ["jira"] : []), ...(linearTeams().length ? ["linear"] : [])],
+      enabled: true, site: cache.site, me: cache.me, githubMe: cache.githubMe, syncedAt: Math.max(cache.at, cache.linearAt, cache.githubAt), syncing: Boolean(sync), progress, error, issues, aliases, code, pairs, clusters,
+      sources: [...(settings().jql ? ["jira"] : []), ...(linearTeams().length ? ["linear"] : []), ...(settings().github ? ["github"] : [])],
       activity: cache.activity, skills: issueSkills(), triage: settings().triage,
     };
   }
@@ -393,7 +406,7 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
   }
 
   const issueUrl = (issue: Issue) => issue.url || `https://${cache.site}/browse/${issue.key}`;
-  const name = (issue: Issue) => `${issue.source === "linear" ? `Linear ${issue.type === "Project" ? "project" : issue.label}` : issue.key}`;
+  const name = (issue: Issue) => issue.source === "linear" ? `Linear ${issue.type === "Project" ? "project" : issue.label}` : issue.source === "github" ? `GitHub ${issue.label}` : issue.key;
   const ROLE = { mirror: ["synced into Linear as", "a Linear copy of"], import: ["imported into Jira from", "imported into Jira as"], title: ["same title as", "same title as"] };
   function context(issue: Issue, code: Record<string, { prs: any[] }>, pairs: Pair[]) {
     const parent = cache.issues[issue.parent];
@@ -417,11 +430,11 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     if (!issues.length) throw new Error("No issues selected.");
     const { code, pairs } = await joins();
     const list = issues.map((issue) => context(issue, code, pairs)).join("\n");
-    const reading = [issues.some((issue) => issue.source !== "linear") && "Jira issues with `acli jira workitem view <KEY> --json`", issues.some((issue) => issue.source === "linear") && "Linear issues with the Linear MCP"].filter(Boolean).join(" and ");
+    const reading = [issues.some((issue) => issue.source === "jira") && "Jira issues with `acli jira workitem view <KEY> --json`", issues.some((issue) => issue.source === "linear") && "Linear issues with the Linear MCP", issues.some((issue) => issue.source === "github") && "GitHub issues with `gh issue view <URL> --comments`"].filter(Boolean).join(" and ");
     const noun = issues.length === 1 ? "this issue" : "these issues";
     const draft = chosen.id === "discuss"
       ? `Let's talk through ${noun}. Read ${reading} first, then \n\n${list}\n`
-      : `${chosen.prompt}\n\n${list}\n\nRead ${reading} in full first. Don't change anything in Jira or Linear until I say which way to go.`;
+      : `${chosen.prompt}\n\n${list}\n\nRead ${reading} in full first. Don't change anything in the issue tracker until I say which way to go.`;
     const folder = (settings().workspace || root).replace(/^~(?=\/)/, process.env.HOME || "~");
     const url = app === "claude" ? claudeNewSessionUrl(folder, draft) : codexNewTaskUrl(draft, folder);
     await exec("/usr/bin/open", [url]);
@@ -437,7 +450,7 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     for (const key of keys) {
       const [service, id] = key.split(":");
       const issue = service === "jira" ? cache.issues[id] : aliases.get(id);
-      if (issue && issue.source !== "linear") out[key] = { title: issue.summary, state: service === "jira" ? issue.status : `${issue.status} · now ${issue.key}`, tone: tones[issue.category] || "open", person: issue.assignee?.name, fetchedAt: cache.at };
+      if (issue && issue.source === "jira") out[key] = { title: issue.summary, state: service === "jira" ? issue.status : `${issue.status} · now ${issue.key}`, tone: tones[issue.category] || "open", person: issue.assignee?.name, fetchedAt: cache.at };
     }
     return out;
   }
