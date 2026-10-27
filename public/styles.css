@@ -1406,7 +1406,10 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-diff-head h3 { margin: 0; font-size: .95rem; }
 .code-diff-head p { margin: 2px 0 0; font-size: .74rem; }
 .code-diff-split { position: relative; display: grid; grid-template-columns: minmax(220px, 340px) minmax(0, 1fr); min-height: 0; }
-.code-diff-files { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; border-right: 1px solid var(--line); }
+.code-diff-files { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; border-right: 1px solid var(--line); }
+.code-diff-resize { display: none; }
+.code-diff-split.is-map:not(.is-map-full) .code-diff-resize { display: block; position: absolute; top: 0; right: -4px; bottom: 0; z-index: 10; width: 7px; cursor: col-resize; touch-action: none; transition: background-color 140ms; }
+.code-diff-split.is-map .code-diff-resize:hover, .code-diff-split.is-map .code-diff-resize:active { background: color-mix(in srgb, var(--action-ink) 30%, transparent); }
 .code-diff-files > [data-d="files"] { overflow: auto; overscroll-behavior: contain; padding: 0 6px 6px; }
 .code-diff-files > [data-d="files"] > p { margin: 8px 6px; font-size: .78rem; }
 .code-diff-files > [data-d="files"] > p.code-ftree-done { margin-top: 6px; color: var(--pass); }
@@ -1684,9 +1687,9 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 .code-local-table tr.is-nested td:first-child { padding-left: 30px; }
 
 /* Change map: the files column swapped for a treemap of the change (T). */
-.code-diff-split.is-map { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
-.code-diff-split.has-pr.is-map { grid-template-columns: 300px minmax(0, 1.15fr) minmax(0, 1fr); }
-@media (max-width: 1320px) { .code-diff-split.has-pr.is-map { grid-template-columns: 220px minmax(0, 1.15fr) minmax(0, 1fr); } }
+.code-diff-split.is-map { grid-template-columns: minmax(0, var(--map-fr, 1.15fr)) minmax(0, 1fr); }
+.code-diff-split.has-pr.is-map { grid-template-columns: 300px minmax(0, var(--map-fr, 1.15fr)) minmax(0, 1fr); }
+@media (max-width: 1320px) { .code-diff-split.has-pr.is-map { grid-template-columns: 220px minmax(0, var(--map-fr, 1.15fr)) minmax(0, 1fr); } }
 .code-diff-split.is-map .code-diff-files > [data-d="files"] { position: relative; overflow: hidden; padding: 0 6px 6px; }
 .code-diff-filter-row [data-d="listmode"] { flex: none; }
 .code-map-bar { display: flex; align-items: center; gap: 10px; height: 26px; min-width: 0; font-size: .74rem; }
@@ -1758,7 +1761,7 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 @media (prefers-reduced-motion: reduce) { .code-map-tile, .code-map-ribbon path, .code-map-crumb, .code-map-dir-label { transition: none; } }
 @media (max-width: 1100px) {
   /* Stacked overview: the map takes the left column's lower part and an even share of the width. */
-  .code-diff-split.has-pr.is-map { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, .5fr) minmax(0, 1.5fr); }
+  .code-diff-split.has-pr.is-map { grid-template-columns: minmax(0, var(--map-fr, 1fr)) minmax(0, 1fr); grid-template-rows: minmax(0, .5fr) minmax(0, 1.5fr); }
 }
 /* Expanded map: lifted over the whole overview; drag the bottom-right corner to choose the copied image's shape. */
 .code-diff-split.is-map-full .code-diff-files { position: absolute; top: 0; left: 0; z-index: 20; width: 100%; height: 100%; min-width: 360px; min-height: 280px; max-width: 100%; max-height: 100%; box-sizing: border-box; overflow: hidden; resize: both; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--paper); box-shadow: 0 10px 40px rgba(24, 33, 47, .18); }

@@ -909,7 +909,7 @@ function syncViewUrl() {
 function ensureDiffDialog() {
   if (diffDialog) return;
   diffDialog = Object.assign(document.body.appendChild(document.createElement("dialog")), { className: "code-diff", tabIndex: -1 });
-  diffDialog.innerHTML = `<header class="code-diff-head" data-d="head"></header><div class="code-diff-split"><aside class="code-diff-pr" data-d="pr"></aside><div class="code-diff-files"><div class="code-diff-filter-row"><label class="code-filter code-diff-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-diff-filter placeholder="Filter files  /" spellcheck="false" autocomplete="off"></label><button type="button" class="code-diff-hide" data-diff-hide></button><span data-d="listmode"></span></div><div data-d="files"></div></div><div class="code-diff-main"><div data-d="filehead"></div><div class="code-diff-body" data-d="body"></div></div></div><button type="button" class="code-note-add" data-note-new hidden>${icon("comment")}Comment <kbd>C</kbd></button><div class="code-note-composer" hidden><div class="code-note-where"><b data-composer-where></b><span class="code-muted">saved to plans/pr-notes</span></div><blockquote></blockquote><textarea rows="2" placeholder="Note for this PR" spellcheck="true"></textarea><div class="code-note-buttons"><button type="button" class="code-bar-button" data-note-cancel>Cancel</button><button type="button" class="code-bar-button is-primary" data-note-save>Save <kbd>⌘↵</kbd></button></div></div>`;
+  diffDialog.innerHTML = `<header class="code-diff-head" data-d="head"></header><div class="code-diff-split"><aside class="code-diff-pr" data-d="pr"></aside><div class="code-diff-files"><div class="code-diff-filter-row"><label class="code-filter code-diff-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-diff-filter placeholder="Filter files  /" spellcheck="false" autocomplete="off"></label><button type="button" class="code-diff-hide" data-diff-hide></button><span data-d="listmode"></span></div><div data-d="files"></div><div class="code-diff-resize" data-diff-resize title="Drag to resize · double-click to reset"></div></div><div class="code-diff-main"><div data-d="filehead"></div><div class="code-diff-body" data-d="body"></div></div></div><button type="button" class="code-note-add" data-note-new hidden>${icon("comment")}Comment <kbd>C</kbd></button><div class="code-note-composer" hidden><div class="code-note-where"><b data-composer-where></b><span class="code-muted">saved to plans/pr-notes</span></div><blockquote></blockquote><textarea rows="2" placeholder="Note for this PR" spellcheck="true"></textarea><div class="code-note-buttons"><button type="button" class="code-bar-button" data-note-cancel>Cancel</button><button type="button" class="code-bar-button is-primary" data-note-save>Save <kbd>⌘↵</kbd></button></div></div>`;
   const body = diffDialog.querySelector('[data-d="body"]');
   // While selecting, the other side of a split diff can't be selected, so a drag down one column stays in it.
   body.addEventListener("mousedown", (event) => {
@@ -952,6 +952,27 @@ function ensureDiffDialog() {
     if (fileListMode !== "map" || !diffDialog.open || !diff.files?.length || resizeFrame) return;
     resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; renderDiffFiles(); });
   }).observe(fileRegion);
+  // The map/code divider: dragging sets the two columns' ratio (in fr, so it holds as the window resizes).
+  const split = diffDialog.querySelector(".code-diff-split");
+  const handle = diffDialog.querySelector("[data-diff-resize]");
+  const mapRatio = storage.get("code-diff-map-fr", "");
+  if (mapRatio) split.style.setProperty("--map-fr", `${mapRatio}fr`);
+  handle.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    const left = diffDialog.querySelector(".code-diff-files").getBoundingClientRect().left;
+    const right = split.getBoundingClientRect().right;
+    const move = (moved) => {
+      const x = Math.min(Math.max(moved.clientX, left + 240), right - 320);
+      split.style.setProperty("--map-fr", `${((x - left) / (right - x)).toFixed(3)}fr`);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("lostpointercapture", () => {
+      handle.removeEventListener("pointermove", move);
+      storage.set("code-diff-map-fr", split.style.getPropertyValue("--map-fr").replace("fr", ""));
+    }, { once: true });
+  });
+  handle.addEventListener("dblclick", () => { split.style.removeProperty("--map-fr"); storage.set("code-diff-map-fr", ""); });
   const filter = diffDialog.querySelector("[data-diff-filter]");
   filter.addEventListener("input", () => { diff.filter = filter.value; renderDiffFiles(); });
   filter.addEventListener("keydown", (event) => {
