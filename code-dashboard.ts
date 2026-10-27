@@ -132,6 +132,12 @@ export function createCodeDashboard(root: string) {
     return remote.match(/github\.com[:/](.+?)(?:\.git)?$/)?.[1] || "";
   }
 
+  // The tracked clone of a GitHub repo, or "".
+  async function cloneFor(slug: string) {
+    for (const repo of await readRepos()) if (await githubSlug(repo) === slug) return repo;
+    return "";
+  }
+
   async function listWorktrees(repo: string): Promise<Worktree[]> {
     const blocks = (await git(repo, ["worktree", "list", "--porcelain"])).trim().split("\n\n");
     const trees = blocks.map((block, index) => {
@@ -760,6 +766,23 @@ export function createCodeDashboard(root: string) {
     });
   }
 
+  // A stack diffs in the tracked clone like a PR, with both branch tips read by `git ls-remote` so no GitHub API call
+  // is needed; GitHub's compare diff is the fallback.
+  async function stackPatch(slug: string, base: string, head: string) {
+    const repo = await cloneFor(slug);
+    if (repo) {
+      try {
+        const tips = new Map((await git(repo, ["ls-remote", "origin", `refs/heads/${base}`, `refs/heads/${head}`])).trim().split("\n").map((line) => line.split("\t").reverse() as [string, string]));
+        const [baseSha, headSha] = [tips.get(`refs/heads/${base}`), tips.get(`refs/heads/${head}`)];
+        if (baseSha && headSha) {
+          await git(repo, ["fetch", "--no-write-fetch-head", "--quiet", "origin", headSha, baseSha]);
+          return (await exec("git", ["-C", repo, "diff", "-M", "--no-color", `${baseSha}...${headSha}`], { maxBuffer: 256 << 20 })).stdout;
+        }
+      } catch {}
+    }
+    return gh(["api", "-H", "Accept: application/vnd.github.diff", `repos/${slug}/compare/${base}...${head}`]);
+  }
+
   // Unified patch text for a commit, a worktree's uncommitted changes (tracked and untracked), or a pull request.
   async function diff(params: URLSearchParams) {
     const source = params.get("source");
@@ -787,8 +810,8 @@ export function createCodeDashboard(root: string) {
       return { patch: await cachedPr("diff", slug, number, () => prPatch(slug, number)) };
     }
     if (source === "stack") {
-      const { slug, number, key } = stackTarget(params);
-      return { patch: await cachedPr(`stack-diff ${key}`, slug, number, () => gh(["api", "-H", "Accept: application/vnd.github.diff", `repos/${slug}/compare/${key}`])) };
+      const { slug, number, base, head, key } = stackTarget(params);
+      return { patch: await cachedPr(`stack-diff ${key}`, slug, number, () => stackPatch(slug, base, head)) };
     }
     throw new Error("Unknown diff source.");
   }
@@ -880,7 +903,7 @@ export function createCodeDashboard(root: string) {
       before = source === "branch" ? await branchBase(repo) : "HEAD";
     } else if (source === "pr" || source === "stack") {
       const { slug, refs } = await prRefs(params);
-      for (const candidate of await readRepos()) if (await githubSlug(candidate) === slug) { repo = candidate; break; }
+      repo = await cloneFor(slug);
       if (repo && (await git(repo, ["cat-file", "-e", `${refs.base}^{commit}`]).then(() => git(repo, ["cat-file", "-e", `${refs.head}^{commit}`])).then(() => false, () => true))) {
         await git(repo, ["fetch", "--quiet", "--no-tags", "origin", refs.base, refs.head]).catch(() => {});
       }
