@@ -181,11 +181,13 @@ export function renderDock({ doc, documents, links, body }) {
   const linkCount = links.reduce((sum, group) => sum + group.items.length, 0);
   const leaves = (doc.work?.nodes || []).filter((node) => !doc.work.nodes.some((child) => child.parent === node.id));
   const doneLeaves = leaves.filter((node) => node.status === "completed").length;
-  const readyActions = (doc.nextActions || []).filter((action) => !action.blocked).length;
+  // Next steps on a day also lists the scheduled tasks' actions, so its counts include them.
+  const listed = [...(doc.nextActions || []), ...(actions && /^next steps$/i.test(actions.title) ? doc.scheduledActions || [] : [])];
+  const readyActions = listed.filter((action) => !action.blocked).length;
 
   const items = [];
   const add = (key, label, icon, badge, title, meta, content, jump, bare = false, workItem = "") => items.push({ key, label, icon, badge, title, meta, content, jump, bare, workItem });
-  if (actions) add("actions", "Next actions", ICONS.actions, `${readyActions || (doc.nextActions || []).length}`, actions.title, readyActions ? `${readyActions} ready of ${(doc.nextActions || []).length}` : `${(doc.nextActions || []).length} recorded`, body(actions), actions.id);
+  if (actions) add("actions", "Next actions", ICONS.actions, `${readyActions || listed.length}`, actions.title, readyActions ? `${readyActions} ready of ${listed.length}` : `${listed.length} recorded`, body(actions), actions.id);
   // Work opens the work item dialog (which carries the whole breakdown) at the first ready item, else the first live one.
   const start = leaves.find((node) => node.ready) || leaves.find((node) => ["open", "active", "waiting"].includes(node.status)) || leaves[0];
   if (work && leaves.length) add("work", "Work", progressRing(doneLeaves, leaves.length), `${doneLeaves}/${leaves.length}`, work.title, `${doneLeaves} of ${leaves.length} items completed · opens ${start.id}`, "", work.id, false, start.id);

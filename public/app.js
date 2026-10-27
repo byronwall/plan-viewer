@@ -1481,9 +1481,9 @@ function renderDocument() {
     </div>
     ${chunkBody(doc, chunk)}
   </article>`).join("");
-  enhanceTaskReferences();
   markDocumentChanges();
   renderDocumentDock(doc);
+  enhanceTaskReferences();
   state.activeChunkId = doc.chunks[0]?.id || "";
   state.activeOutlinePath = [];
   for (const chunk of doc.chunks) {
