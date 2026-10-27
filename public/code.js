@@ -179,12 +179,9 @@ function skillButtons(pr, workspace, tree) {
   return (meta().skills || []).map((skill, index) => iconButton(skill.icon || skill.id, `${skill.label} in ${appName()} · ${tree ? "worktree" : "main checkout"} (${index + 1})`, `data-code-skill="${skill.id}" data-url="${escapeHtml(pr.url)}" data-path="${escapeHtml(workspace)}"`)).join("");
 }
 
-function sizeBar(pr) {
-  const total = pr.additions + pr.deletions;
-  const width = Math.min(48, Math.round(Math.log10(total + 1) * 14));
-  const add = total ? Math.round((pr.additions / total) * width) : 0;
-  return `<span class="code-size" data-tip="+${pr.additions} −${pr.deletions}"><span class="code-size-add" style="width:${add}px"></span><span class="code-size-del" style="width:${width - add}px"></span></span>`;
-}
+// At most three digits (987, 1.23K, 87.4K) so the column stays tight; the tip has the exact counts.
+const compact = new Intl.NumberFormat("en", { notation: "compact", maximumSignificantDigits: 3 });
+const sizeCount = (pr) => `<span class="code-size" data-tip="+${pr.additions.toLocaleString()} −${pr.deletions.toLocaleString()} lines"><b class="code-add">+${compact.format(pr.additions)}</b><b class="code-del">−${compact.format(pr.deletions)}</b></span>`;
 
 // One mark per person everywhere: the GitHub avatar over initials on a hue of the name, so a missing image still reads.
 const initialsOf = (name) => name.replace(/^app\//, "").split(/[\s._-]+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "?";
@@ -411,7 +408,7 @@ function prRow(pr, rail) {
     <td class="code-col-flags">${prFlags(pr, tree)}</td>
     <td class="code-col-labels">${labelDots(pr)}</td>
     <td class="code-col-state">${prState(pr)}</td>
-    <td class="code-col-size">${sizeBar(pr)}</td>
+    <td class="code-col-size">${sizeCount(pr)}</td>
     <td class="code-col-when">${when(pr.updatedAt)}<span class="code-age" data-tip="Opened ${escapeHtml(new Date(pr.createdAt).toLocaleDateString())}">${ago(pr.createdAt)} old</span></td>
     <td class="code-col-skills">${skillButtons(pr, workspace, tree)}</td>
     <td class="code-col-actions">${runButton(pr.repo, tree, pr.branch)}${previewButton(pr)}${copyButton(pr.url, "Copy PR link (Y)")}${tree ? iconButton("vscode", "Open worktree in VS Code", `data-code-open="vscode" data-path="${escapeHtml(tree.path)}"`) : `<span class="code-icon-button is-blank"></span>`}</td></tr>`;
@@ -781,7 +778,7 @@ function commitDetailPane(commit) {
   const body = extra?.body.split("\n").slice(1).join("\n").trim();
   return `<header class="code-detail-head"><h3>${escapeHtml(commit.subject)}</h3>${copyButton(commit.sha, "Copy SHA")}</header>
     <div class="code-detail-meta">${avatar(commit.login, authorOf(commit))}<span>${escapeHtml(commit.author)}${commit.login && commit.login !== commit.author ? ` <span class="code-muted">${escapeHtml(commit.login)}</span>` : ""}</span><span>${when(commit.time)} ago</span><code>${commit.sha.slice(0, 10)}</code></div>
-    <div class="code-detail-meta">${branchPill(commit.branch)}${sizeBar(commit)}<span class="code-muted">+${commit.additions} −${commit.deletions}</span></div>
+    <div class="code-detail-meta">${branchPill(commit.branch)}<span class="code-muted">+${commit.additions} −${commit.deletions}</span></div>
     <div class="code-detail-actions"><button type="button" class="code-bar-button" data-code-view-diff>View diff <kbd>Enter</kbd></button>${commit.worktree ? treeActions(ui.data.worktrees.find((tree) => tree.path === commit.worktree) || { path: commit.worktree, branch: commit.branch }) : ""}</div>
     ${commitPrSection(commit)}
     ${body ? `<section><h4>Message</h4><pre class="code-commit-body">${escapeHtml(body)}</pre></section>` : ""}
@@ -1400,7 +1397,7 @@ function prFacts(pr, tree, wtPath, overlay = false) {
     ["Status", prStatus(pr)],
     ["Author", pr.author ? `<span class="code-side-person">${avatar(pr.author)}${escapeHtml(pr.author)}</span>${pr.createdAt ? `<span class="code-muted" data-tip="Opened ${escapeHtml(new Date(pr.createdAt).toLocaleString())}${pr.updatedAt ? ` · updated ${escapeHtml(new Date(pr.updatedAt).toLocaleString())}` : ""}">${ago(pr.updatedAt || pr.createdAt)} ago</span>` : ""}` : ""],
     ["Branch", pr.branch ? `${branchChip(pr.branch)}${pr.base ? `<span class="code-muted code-side-base" data-tip="Merges into ${escapeHtml(pr.base)}">→ ${escapeHtml(pr.base)}</span>` : ""}` : ""],
-    ["Size", pr.additions !== undefined ? `<span class="code-side-size">${sizeBar(pr)}<span class="code-add">+${pr.additions}</span><span class="code-del">−${pr.deletions}</span></span>${labelDots(pr)}` : ""],
+    ["Size", pr.additions !== undefined ? `<span class="code-side-size"><span class="code-add">+${pr.additions}</span><span class="code-del">−${pr.deletions}</span></span>${labelDots(pr)}` : ""],
     ["Reviews", prReviewers(pr)],
     [appName(), open ? sideSkills(pr, tree?.path || pr.repo, tree) : ""],
     ["Local", wtPath ? `<span class="code-side-tools">${iconButton("branch", `Worktree overview${overlay ? " (W)" : ""}`, `data-diff-wt="${escapeHtml(wtPath)}"`)}${tree ? treeActions(tree) : ""}</span>` : open && ui.data ? `<span class="code-side-tools">${runButton(pr.repo, null, pr.branch)}</span><span class="code-muted">Not checked out</span>` : ""],

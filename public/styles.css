@@ -1196,9 +1196,8 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-ab { display: inline-flex; gap: 6px; font: .72rem ui-monospace, Menlo, monospace; color: var(--quiet-text); }
 .code-ab .is-ahead { color: var(--pass); font-weight: 700; }
 .code-ab .is-far { color: var(--dirty); }
-.code-size { display: inline-flex; height: 6px; border-radius: 5px; overflow: hidden; vertical-align: middle; background: var(--quiet-field); min-width: 2px; }
-.code-size-add { background: var(--pass); }
-.code-size-del { background: var(--fail); }
+.code-size { display: flex; flex-direction: column; font-size: .72rem; line-height: 1.3; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.code-size b { font-weight: 600; } .code-size .code-add { color: var(--pass); } .code-size .code-del { color: var(--fail); }
 .code-col-author { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--body-ink) !important; }
 /* one author mark everywhere: initials on the name's hue, the GitHub avatar laid over them */
 .code-avatar { position: relative; display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; overflow: hidden; border-radius: 50%; vertical-align: -4px; background: hsl(var(--hue) 42% 88%); color: hsl(var(--hue) 45% 30%); font-size: .52rem; font-weight: 700; letter-spacing: .02em; line-height: 1; }
