@@ -742,6 +742,16 @@ export function createCodeDashboard(root: string) {
     return { sha: commit.sha, subject: commit.commit.message.split("\n")[0], author: commit.commit.author?.name || commit.author?.login || "", time: new Date(commit.commit.author?.date).getTime(), files: commit.files?.length || 0, additions: commit.stats?.additions || 0, deletions: commit.stats?.deletions || 0, local: false, ...await context };
   }
 
+  // GitHub refuses diffs over 300 files or 20,000 lines, so a big PR is diffed in its tracked local clone instead:
+  // fetch the head and base commits by SHA (no refs or FETCH_HEAD written) and diff from their merge base, as GitHub does.
+  async function localPrDiff(slug: string, number: number) {
+    const { repo } = await prDetail(slug, number);
+    if (!repo) throw new Error(`This PR's diff is too large for GitHub to send; add a local clone of ${slug} to see it.`);
+    const { headRefOid, baseRefOid } = JSON.parse(await gh(["pr", "view", String(number), "-R", slug, "--json", "headRefOid,baseRefOid"]));
+    await git(repo, ["fetch", "--no-write-fetch-head", "--quiet", "origin", headRefOid, baseRefOid]);
+    return (await exec("git", ["-C", repo, "diff", "-M", "--no-color", `${baseRefOid}...${headRefOid}`], { maxBuffer: 256 << 20 })).stdout;
+  }
+
   // Unified patch text for a commit, a worktree's uncommitted changes (tracked and untracked), or a pull request.
   async function diff(params: URLSearchParams) {
     const source = params.get("source");
@@ -766,7 +776,10 @@ export function createCodeDashboard(root: string) {
       const slug = params.get("slug") || "";
       const number = Number(params.get("number"));
       checkSlug(slug, number);
-      return { patch: await cachedPr("diff", slug, number, () => gh(["pr", "diff", String(number), "-R", slug, "--color", "never"])) };
+      return { patch: await cachedPr("diff", slug, number, () => gh(["pr", "diff", String(number), "-R", slug, "--color", "never"]).catch((error) => {
+        if (!/too_large|exceeded the maximum/.test(error.message)) throw error;
+        return localPrDiff(slug, number);
+      })) };
     }
     if (source === "stack") {
       const { slug, number, key } = stackTarget(params);
