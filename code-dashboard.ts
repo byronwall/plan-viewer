@@ -513,13 +513,14 @@ export function createCodeDashboard(root: string) {
   }
 
   async function loadPrDetail(slug: string, number: number) {
-    const fields = "body,files,commits,title,url,state,author,headRefName,baseRefName,isDraft,reviewDecision,additions,deletions,createdAt,updatedAt,mergedAt";
+    const fields = "body,files,commits,title,url,state,author,headRefName,baseRefName,headRefOid,baseRefOid,isDraft,reviewDecision,additions,deletions,createdAt,updatedAt,mergedAt";
     const { stdout } = await exec("gh", ["pr", "view", String(number), "-R", slug, "--json", fields], { maxBuffer: 32 << 20 });
     const pr = JSON.parse(stdout);
     const repo = (await readRepos()).find((candidate) => candidate.split("/").pop()!.toLowerCase() === slug.split("/")[1].toLowerCase()) || "";
     return {
       slug, number, repo, title: pr.title, url: pr.url, state: pr.state, author: pr.author?.login || "", branch: pr.headRefName, base: pr.baseRefName,
       draft: pr.isDraft, reviewDecision: pr.reviewDecision || "", additions: pr.additions, deletions: pr.deletions, createdAt: pr.createdAt, updatedAt: pr.updatedAt, mergedAt: pr.mergedAt,
+      headSha: pr.headRefOid, baseSha: pr.baseRefOid,
       body: pr.body || "",
       files: (pr.files || []).map((file: any) => ({ path: file.path, additions: file.additions, deletions: file.deletions })),
       // Oldest first, full SHAs, so the PR overlay can walk them in order and fetch each diff.
@@ -742,14 +743,21 @@ export function createCodeDashboard(root: string) {
     return { sha: commit.sha, subject: commit.commit.message.split("\n")[0], author: commit.commit.author?.name || commit.author?.login || "", time: new Date(commit.commit.author?.date).getTime(), files: commit.files?.length || 0, additions: commit.stats?.additions || 0, deletions: commit.stats?.deletions || 0, local: false, ...await context };
   }
 
-  // GitHub refuses diffs over 300 files or 20,000 lines, so a big PR is diffed in its tracked local clone instead:
-  // fetch the head and base commits by SHA (no refs or FETCH_HEAD written) and diff from their merge base, as GitHub does.
-  async function localPrDiff(slug: string, number: number) {
-    const { repo } = await prDetail(slug, number);
-    if (!repo) throw new Error(`This PR's diff is too large for GitHub to send; add a local clone of ${slug} to see it.`);
-    const { headRefOid, baseRefOid } = JSON.parse(await gh(["pr", "view", String(number), "-R", slug, "--json", "headRefOid,baseRefOid"]));
-    await git(repo, ["fetch", "--no-write-fetch-head", "--quiet", "origin", headRefOid, baseRefOid]);
-    return (await exec("git", ["-C", repo, "diff", "-M", "--no-color", `${baseRefOid}...${headRefOid}`], { maxBuffer: 256 << 20 })).stdout;
+  // A PR is diffed in its tracked local clone when there is one: fetch the head and base commits by SHA (no refs or
+  // FETCH_HEAD written; only new objects cross the network) and diff from their merge base, as GitHub does. GitHub's
+  // diff is the fallback, for repos without a clone or a failed fetch; it refuses PRs over 300 files or 20,000 lines.
+  async function prPatch(slug: string, number: number) {
+    const { repo, headSha, baseSha } = await prDetail(slug, number);
+    if (repo && headSha && baseSha) {
+      try {
+        await git(repo, ["fetch", "--no-write-fetch-head", "--quiet", "origin", headSha, baseSha]);
+        return (await exec("git", ["-C", repo, "diff", "-M", "--no-color", `${baseSha}...${headSha}`], { maxBuffer: 256 << 20 })).stdout;
+      } catch {}
+    }
+    return gh(["pr", "diff", String(number), "-R", slug, "--color", "never"]).catch((error) => {
+      if (/too_large|exceeded the maximum/.test(error.message)) throw new Error(`This PR's diff is too large for GitHub to send; add a local clone of ${slug} to see it.`);
+      throw error;
+    });
   }
 
   // Unified patch text for a commit, a worktree's uncommitted changes (tracked and untracked), or a pull request.
@@ -776,10 +784,7 @@ export function createCodeDashboard(root: string) {
       const slug = params.get("slug") || "";
       const number = Number(params.get("number"));
       checkSlug(slug, number);
-      return { patch: await cachedPr("diff", slug, number, () => gh(["pr", "diff", String(number), "-R", slug, "--color", "never"]).catch((error) => {
-        if (!/too_large|exceeded the maximum/.test(error.message)) throw error;
-        return localPrDiff(slug, number);
-      })) };
+      return { patch: await cachedPr("diff", slug, number, () => prPatch(slug, number)) };
     }
     if (source === "stack") {
       const { slug, number, key } = stackTarget(params);
