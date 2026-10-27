@@ -32,7 +32,7 @@ export type Issue = {
   milestones?: { name: string; description: string; target: string; progress: number; status: string }[];
 };
 type Activity = { at: string; key: string; kind: string; from?: string; to?: string; by?: string; text?: string };
-type Cache = { at: number; fullAt: number; scope: string[]; issues: Record<string, Issue>; activity: Activity[]; me: string; site: string; linearAt: number; linearFullAt: number; githubAt: number; githubMe: string };
+type Cache = { at: number; fullAt: number; scope: string[]; issues: Record<string, Issue>; activity: Activity[]; me: string; site: string; linearAt: number; linearFullAt: number; githubAt: number; githubMe: string; githubRepos: string[] };
 
 // ---------- Atlassian document format → Markdown ----------
 
@@ -215,7 +215,7 @@ type Runner = (args: string[]) => Promise<string>;
 
 export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs: any[]; worktrees: { repo: string; path: string; branch: string }[] }>, repoSlugs: () => Promise<string[]> = async () => []) {
   const cachePath = join(root, "tmp", "issues-cache.json");
-  let cache: Cache = { at: 0, fullAt: 0, scope: [], issues: {}, activity: [], me: "", site: "", linearAt: 0, linearFullAt: 0, githubAt: 0, githubMe: "" };
+  let cache: Cache = { at: 0, fullAt: 0, scope: [], issues: {}, activity: [], me: "", site: "", linearAt: 0, linearFullAt: 0, githubAt: 0, githubMe: "", githubRepos: [] };
   try { cache = { ...cache, ...JSON.parse(readFileSync(cachePath, "utf8")) }; } catch {}
   let sync: Promise<void> | null = null;
   let error = "";
@@ -295,7 +295,8 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
   async function runGithub() {
     const started = Date.now();
     cache.githubMe ||= await githubLogin();
-    const issues = await fetchGithub(await repoSlugs(), (text) => { progress = text; });
+    cache.githubRepos = await repoSlugs();
+    const issues = await fetchGithub(cache.githubRepos, (text) => { progress = text; });
     const current = new Set(issues.map((issue) => issue.key));
     for (const key of Object.keys(cache.issues)) if (cache.issues[key].source === "github" && !current.has(key)) delete cache.issues[key];
     store(issues);
@@ -393,7 +394,7 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
       lastComment: comments.at(-1) ? { by: comments.at(-1)!.author?.name || "", at: comments.at(-1)!.created } : null, hasUpdate: Boolean(statusUpdate),
     }));
     return {
-      enabled: true, site: cache.site, me: cache.me, githubMe: cache.githubMe, syncedAt: Math.max(cache.at, cache.linearAt, cache.githubAt), syncing: Boolean(sync), progress, error, issues, aliases, code, pairs, clusters,
+      enabled: true, site: cache.site, me: cache.me, githubMe: cache.githubMe, githubRepos: cache.githubRepos, syncedAt: Math.max(cache.at, cache.linearAt, cache.githubAt), syncing: Boolean(sync), progress, error, issues, aliases, code, pairs, clusters,
       sources: [...(settings().jql ? ["jira"] : []), ...(linearTeams().length ? ["linear"] : []), ...(settings().github ? ["github"] : [])],
       activity: cache.activity, skills: issueSkills(), triage: settings().triage,
     };

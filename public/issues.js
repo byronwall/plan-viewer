@@ -15,6 +15,7 @@ const ui = {
   tab: "all", data: null, filter: "", scope: "all", people: new Set(), showBots: false, showDone: false, hideSeen: storage.get("issues-hide-seen", "on") === "on",
   sel: "", detail: new Map(), selected: new Set(), expanded: new Set(), since: "", activityScope: "all", poll: 0, peopleQuery: "",
   source: storage.get("issues-source", "all"), migration: "linear",
+  group: storage.get("issues-group", "repo"), collapsed: new Set(storage.get("issues-collapsed", "").split("\n").filter(Boolean)),
 };
 let seen = {};
 try { seen = JSON.parse(storage.get("issues-seen", "{}")); } catch {}
@@ -118,21 +119,28 @@ const parentLine = (issue) => {
   const aliases = aliasesFor(issue.key);
   const children = issue.level >= 1 ? childrenOf(issue.key) : [];
   const bits = [parent ? `<button type="button" class="issue-parent" data-issue-open="${escapeHtml(parent.key)}" data-tip="Open ${escapeHtml(parent.type.toLowerCase())} overview">${typeIcon(parent)}<span>${escapeHtml(parent.summary)}</span></button>` : "",
-    children.length ? progress(children) : "", aliases.length ? `<span class="code-muted" data-tip="Imported from ${escapeHtml(aliases.join(", "))}">was ${escapeHtml(aliases.join(", "))}</span>` : ""].filter(Boolean);
+    children.length ? progress(children) : "", aliases.length ? `<span class="code-muted" data-tip="Imported from ${escapeHtml(aliases.join(", "))}">was ${escapeHtml(aliases.join(", "))}</span>` : "",
+    issue.source === "github" && issue.labels.length ? `<span class="issue-labels">${issue.labels.map(escapeHtml).join(" · ")}</span>` : "",
+    issue.source === "github" && issue.comments ? `<span class="issue-comment-count" data-tip="${issue.comments} comment${issue.comments === 1 ? "" : "s"}">${icon("comment")}${issue.comments}</span>` : ""].filter(Boolean);
   return bits.length ? `<div class="code-sub issue-sub">${bits.join("")}</div>` : "";
 };
 
-function issueRow(issue, { check = false, depth = 0 } = {}) {
+// Under its repository's header a GitHub issue needs only its number; elsewhere the key names the repository too.
+const shortKey = (issue) => issue.source === "github" ? `<code>#${escapeHtml(label(issue).split("#")[1])}</code>` : keyCell(issue);
+function issueRow(issue, { check = false, columns = COLUMNS, inGroup = false } = {}) {
   const key = issue.key;
-  return `<tr class="code-row issue-row${isSeen(issue) && ui.tab === "triage" ? " is-seen" : ""}${issue.inScope ? "" : " is-context"}" data-issue-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">
+  const cells = {
+    "issue-col-priority": () => priorityIcon(issue),
+    "issue-col-key": () => `<span class="issue-key-cell">${typeIcon(issue)}${inGroup ? shortKey(issue) : keyCell(issue)}</span>`,
+    "code-col-main": () => `<div class="code-pr-title">${escapeHtml(issue.summary)}</div>${parentLine(issue)}`,
+    "issue-col-status": () => statusTag(issue),
+    "issue-col-person": () => personMark(issue.assignee),
+    "issue-col-code": () => codeChips(issue),
+    "code-col-when": () => `${when(issue.updated)}${ui.tab === "triage" ? `<span class="issue-seen-mark" data-tip="${isSeen(issue) ? "Seen at this version (X)" : "Not seen yet (X)"}">${isSeen(issue) ? icon("pass") : ""}</span>` : ""}`,
+  };
+  return `<tr class="code-row issue-row${isSeen(issue) && ui.tab === "triage" ? " is-seen" : ""}${issue.inScope ? "" : " is-context"}${issue.category === "done" ? " is-done" : ""}" data-issue-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">
     ${check ? `<td class="issue-col-check"><input type="checkbox" data-issue-select="${escapeHtml(key)}" aria-label="Select ${escapeHtml(key)}" ${ui.selected.has(key) ? "checked" : ""}></td>` : ""}
-    <td class="issue-col-priority">${priorityIcon(issue)}</td>
-    <td class="issue-col-key"${depth ? ` style="padding-left:${6 + depth * 18}px"` : ""}><span class="issue-key-cell">${typeIcon(issue)}${keyCell(issue)}</span></td>
-    <td class="code-col-main"><div class="code-pr-title">${escapeHtml(issue.summary)}</div>${parentLine(issue)}</td>
-    <td class="issue-col-status">${statusTag(issue)}</td>
-    <td class="issue-col-person">${personMark(issue.assignee)}</td>
-    <td class="issue-col-code">${codeChips(issue)}</td>
-    <td class="code-col-when code-heat-${heat(issue.updated)}">${when(issue.updated)}${ui.tab === "triage" ? `<span class="issue-seen-mark" data-tip="${isSeen(issue) ? "Seen at this version (X)" : "Not seen yet (X)"}">${isSeen(issue) ? icon("pass") : ""}</span>` : ""}</td></tr>`;
+    ${columns.map(([name]) => `<td class="${name}${name === "code-col-when" ? ` code-heat-${heat(issue.updated)}` : ""}">${cells[name]()}</td>`).join("")}</tr>`;
 }
 
 function emptyState(noun) {
@@ -153,10 +161,50 @@ function grouped(issues, row, columns) {
 }
 const PRIORITY_HEAD = `<span class="issue-priority-head" aria-label="Priority"><svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${PRIORITY.Urgent[1]}"/></svg></span>`;
 const COLUMNS = [["issue-col-priority", PRIORITY_HEAD], ["issue-col-key", "Issue"], ["code-col-main", "Title"], ["issue-col-status", "Status"], ["issue-col-person", "Assignee"], ["issue-col-code", "Code"], ["code-col-when", "Updated"]];
+// A column that would be blank, or the same, on every row stays out: GitHub issues carry no priority, a solo
+// repository has no assignees, and an all-open list needs no status.
+function columnsFor(issues) {
+  const keep = {
+    "issue-col-priority": issues.some((issue) => issue.priority),
+    "issue-col-status": new Set(issues.map((issue) => issue.status)).size > 1 || issues.some((issue) => issue.source !== "github"),
+    "issue-col-person": issues.some((issue) => issue.assignee),
+    "issue-col-code": issues.some((issue) => codeOf(issue).prs.length || codeOf(issue).worktrees.length || issue.prCount),
+  };
+  return COLUMNS.filter(([name]) => keep[name] ?? true);
+}
+// "repo" when every issue is a GitHub one, else "project" (a Jira project or a Linear team).
+const groupNoun = (issues) => (issues.every((issue) => issue.source === "github") ? "repo" : "project");
+const done = (issue) => issue.category === "done";
+const repoName = (slug) => slug.split("/").pop();
+
+// One section per repository (or project), the most recently touched first; open issues above closed ones in each.
+function byProject(issues, columns) {
+  const groups = new Map();
+  for (const issue of issues) groups.set(issue.project, [...(groups.get(issue.project) || []), issue]);
+  const sections = [...groups].map(([project, rows]) => {
+    const sorted = rows.sort((a, b) => done(a) - done(b) || byUpdated(a, b));
+    const closed = sorted.filter(done).length;
+    const collapsed = ui.collapsed.has(project);
+    const latest = sorted.reduce((last, issue) => (issue.updated > last ? issue.updated : last), "");
+    const home = sorted[0].source === "github" ? sorted[0].url.replace(/\/issues\/\d+$/, "/issues") : "";
+    const head = `<tr class="code-group-row issue-project-row"><th colspan="${columns.length}"><button type="button" class="issue-project-toggle" data-issue-collapse="${escapeHtml(project)}" aria-expanded="${!collapsed}"><svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg><span class="issue-project-name">${escapeHtml(project)}</span><span class="issue-project-count">${[sorted.length - closed && `${sorted.length - closed} open`, closed && `${closed} closed`].filter(Boolean).join(" · ")}</span></button>${home ? `<a class="issue-project-link" href="${escapeHtml(home)}" target="_blank" rel="noreferrer" data-tip="${escapeHtml(project)} issues on GitHub">${icon("external")}</a>` : ""}<span class="issue-project-when code-heat-${heat(latest)}">${when(latest)}</span></th></tr>`;
+    return { latest, html: `<tbody>${head}${collapsed ? "" : sorted.map((issue) => issueRow(issue, { columns, inGroup: true })).join("")}</tbody>` };
+  }).sort((a, b) => b.latest.localeCompare(a.latest));
+  return `<table class="code-table issue-table">${tableHead(columns)}${sections.map((section) => section.html).join("")}${quietRepos(issues, columns)}</table>`;
+}
+// Tracked repositories with nothing in the list, named once at the foot so the page accounts for every one of them.
+function quietRepos(issues, columns) {
+  if (ui.filter || ui.people.size || ui.scope !== "all" || !(ui.data.githubRepos || []).length) return "";
+  const shown = new Set(issues.map((issue) => issue.project));
+  const quiet = ui.data.githubRepos.map(repoName).filter((name) => !shown.has(name)).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  return quiet.length ? `<tbody><tr class="issue-quiet-repos"><td colspan="${columns.length}">No ${ui.showDone ? "" : "open "}issues in ${quiet.map(escapeHtml).join(", ")}</td></tr></tbody>` : "";
+}
 
 function allBody() {
   const issues = visibleIssues();
-  return issues.length ? grouped(issues, (issue) => issueRow(issue), COLUMNS) : emptyState(ui.showDone ? "issues" : "open issues");
+  if (!issues.length) return emptyState(ui.showDone ? "issues" : "open issues");
+  const columns = columnsFor(issues);
+  return ui.group === "repo" ? byProject(issues, columns.map(([name, head]) => [name, name === "issue-col-key" ? "#" : head])) : grouped(issues, (issue) => issueRow(issue, { columns }), columns);
 }
 
 function triageBody() {
@@ -560,17 +608,25 @@ function toolbar() {
   const both = ["jira", "linear"].every((source) => ui.data.sources?.includes(source));
   const groups = both ? migrationGroups() : [];
   const counts = { all: scoped.filter(open).length, triage: scoped.filter(isTriage).length, epics: epicGroups().reduce((sum, [, epics]) => sum + epics.length, 0), activity: "", migration: groups.filter((group) => ["drift", "copies", "title"].includes(group.kind)).length };
-  const tabs = `<div class="code-segment code-tabs">${Object.entries(TABS).filter(([id]) => id !== "migration" || both).map(([id, label]) => `<button type="button" data-issue-tab="${id}" aria-pressed="${ui.tab === id}">${label}${counts[id] === "" ? "" : count(counts[id])}</button>`).join("")}</div>`;
+  // A tab or scope with nothing in it (Epics for GitHub issues, Mine when everything is mine) stays out unless it is the one open.
+  const tabs = `<div class="code-segment code-tabs">${Object.entries(TABS).filter(([id]) => (id !== "migration" || both) && (counts[id] !== 0 || ui.tab === id)).map(([id, label]) => `<button type="button" data-issue-tab="${id}" aria-pressed="${ui.tab === id}">${label}${counts[id] === "" ? "" : count(counts[id])}</button>`).join("")}</div>`;
   const people = `<button type="button" class="code-bar-button issue-people-trigger${ui.people.size ? " is-active" : ""}" popovertarget="issue-people" data-issue-people-trigger>${icon("person")}${ui.people.size === 1 ? escapeHtml([...ui.people][0] || "Unassigned") : ui.people.size ? `${ui.people.size} people` : "Everyone"} <kbd>A</kbd></button>`;
   let controls = "";
-  if (ui.tab === "all") controls = segment("data-issue-scope", ui.scope, Object.fromEntries(Object.entries(SCOPES).map(([id, [label, test]]) => [id, `${label}${count(scoped.filter(open).filter(test).length)}`])));
+  if (ui.tab === "all") {
+    const total = scoped.filter(open).length;
+    const scopes = Object.entries(SCOPES).map(([id, [label, test]]) => [id, label, scoped.filter(open).filter(test).length]).filter(([id, , value]) => id === "all" || id === ui.scope || (value > 0 && value < total));
+    const noun = groupNoun(scoped);
+    controls = segment("data-issue-group", ui.group, { repo: `By ${noun}`, recent: "By update" }) + (scopes.length > 1 ? segment("data-issue-scope", ui.scope, Object.fromEntries(scopes.map(([id, label, value]) => [id, `${label}${count(value)}`]))) : "");
+  }
   if (ui.tab === "triage") controls = `<label class="code-check"><input type="checkbox" data-issue-hide-seen-box ${ui.hideSeen ? "checked" : ""}> Hide seen <kbd>U</kbd>${count(scoped.filter(isTriage).filter(isSeen).length)}</label>${ui.selected.size ? `<span class="issue-bulk">${ui.selected.size} selected ${skillButtons([...ui.selected])}<button type="button" class="code-bar-button" data-issue-select-none>Clear</button></span>` : '<span class="code-muted">Space selects rows for one draft about several issues.</span>'}`;
   if (ui.tab === "migration") controls = segment("data-issue-migration", ui.migration, Object.fromEntries(Object.entries(MIGRATION).map(([id, label]) => [id, `${label}${count(groups.filter((group) => group.kind === id).length)}`]))) + (ui.selected.size ? `<span class="issue-bulk">${ui.selected.size} selected ${skillButtons([...ui.selected])}<button type="button" class="code-bar-button" data-issue-select-none>Clear</button></span>` : "");
   if (ui.tab === "activity") controls = segment("data-issue-activity", ui.activityScope, ACTIVITY_SCOPES) + `<label class="code-check">Since <input type="date" data-issue-since value="${escapeHtml(ui.since)}"></label>`;
   const sourceCount = (source) => count(ui.data.issues.filter((issue) => issue.inScope && !issue.bot && !issue.mirrorOf && (issue.source || "jira") === source && open(issue)).length);
   const sources = ui.data.sources?.length > 1 && ui.tab !== "migration" ? segment("data-issue-source", ui.source, { all: "All", ...Object.fromEntries(ui.data.sources.map((source) => [source, `${TRACKERS[source]}${sourceCount(source)}`])) }) : "";
-  const shared = `${sources}${people}${ui.tab !== "triage" && ui.tab !== "activity" ? `<label class="code-check"><input type="checkbox" data-issue-done ${ui.showDone ? "checked" : ""}> Done</label>` : ""}<label class="code-check" data-tip="Issues labeled ${escapeHtml((config().issues.hideLabels || []).join(", ") || "by scanners")}"><input type="checkbox" data-issue-bots ${ui.showBots ? "checked" : ""}> Bots${count(ui.data.issues.filter((issue) => issue.inScope && issue.bot && issue.category !== "done").length)}</label>`;
-  const synced = ui.data.syncing ? escapeHtml(ui.data.progress || "Syncing issues…") : ui.data.syncedAt ? `Synced ${ago(ui.data.syncedAt)} ago` : "Never synced";
+  const shared = `${sources}${people}${ui.tab !== "triage" && ui.tab !== "activity" ? `<label class="code-check"><input type="checkbox" data-issue-done ${ui.showDone ? "checked" : ""}> Done</label>` : ""}${(config().issues.hideLabels || []).length || ui.showBots ? `<label class="code-check" data-tip="Issues labeled ${escapeHtml((config().issues.hideLabels || []).join(", "))}"><input type="checkbox" data-issue-bots ${ui.showBots ? "checked" : ""}> Bots${count(ui.data.issues.filter((issue) => issue.inScope && issue.bot && issue.category !== "done").length)}</label>` : ""}`;
+  const repos = ui.data.githubRepos || [];
+  const reach = repos.length && ui.tab === "all" ? `${new Set(scoped.filter(open).filter((issue) => issue.source === "github").map((issue) => issue.project)).size} of ${repos.length} tracked repos · ` : "";
+  const synced = ui.data.syncing ? escapeHtml(ui.data.progress || "Syncing issues…") : `${reach}${ui.data.syncedAt ? `synced ${ago(ui.data.syncedAt)} ago` : "never synced"}`;
   return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-issue-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span><span class="code-muted issue-synced">${synced}</span>${iconButton("refresh", ui.data.syncing ? "Syncing issues…" : "Re-read every issue  (R)", `data-issue-refresh class="code-icon-button${ui.data.syncing ? " is-spinning" : ""}"`)}</div><div class="code-controls">${controls}${shared}</div></div></div>`;
 }
 
@@ -631,7 +687,7 @@ export const cachedIssues = () => ui.data;
 function syncUrl() {
   const url = new URL(location.href);
   const issue = url.searchParams.get("issue");
-  url.search = new URLSearchParams({ view: "issues", ...(ui.tab === "all" ? {} : { tab: ui.tab }), ...(ui.source === "all" ? {} : { source: ui.source }), ...(ui.since ? { since: ui.since } : {}), ...(issue ? { issue } : {}) });
+  url.search = new URLSearchParams({ view: "issues", ...(ui.tab === "all" ? {} : { tab: ui.tab }), ...(ui.source === "all" ? {} : { source: ui.source }), ...(ui.tab === "all" && ui.group !== "repo" ? { group: ui.group } : {}), ...(ui.since ? { since: ui.since } : {}), ...(issue ? { issue } : {}) });
   history.replaceState(null, "", url);
 }
 
@@ -680,6 +736,12 @@ async function handleClick(event) {
   try {
     if (dataset.issueTab) { ui.tab = issueTab(dataset.issueTab); syncUrl(); return render({ animate: true }); }
     if (dataset.issueScope) { ui.scope = dataset.issueScope; return render({ animate: true }); }
+    if (dataset.issueGroup) { ui.group = dataset.issueGroup; storage.set("issues-group", ui.group); syncUrl(); return render({ animate: true }); }
+    if (dataset.issueCollapse !== undefined) {
+      ui.collapsed.has(dataset.issueCollapse) ? ui.collapsed.delete(dataset.issueCollapse) : ui.collapsed.add(dataset.issueCollapse);
+      storage.set("issues-collapsed", [...ui.collapsed].join("\n"));
+      return render();
+    }
     if (dataset.issueSource) { ui.source = dataset.issueSource; storage.set("issues-source", ui.source); syncUrl(); return render({ animate: true }); }
     if (dataset.issueMigration) { ui.migration = dataset.issueMigration; return render({ animate: true }); }
     if (dataset.issueActivity) { ui.activityScope = dataset.issueActivity; return render({ animate: true }); }
@@ -747,6 +809,8 @@ export function renderIssuesPage(container, { tab, showNotice }) {
   ui.since = new URLSearchParams(location.search).get("since") || "";
   const source = new URLSearchParams(location.search).get("source");
   if (["all", "jira", "linear", "github"].includes(source)) ui.source = source;
+  const group = new URLSearchParams(location.search).get("group");
+  if (group === "recent" || group === "repo") ui.group = group;
   if (host !== container) {
     host = container;
     container.addEventListener("click", (event) => { if (container.querySelector(".issue-surface")) handleClick(event); });

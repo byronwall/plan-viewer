@@ -1827,6 +1827,27 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 .issue-parent .code-icon { width: 11px; height: 11px; }
 .issue-parent > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
 .issue-row.is-context td { opacity: .6; }
+.issue-row.is-done .code-pr-title { color: var(--muted); font-weight: 500; }
+.issue-table .code-col-main { max-width: 600px; }
+/* Repository sections: the name reads as a heading, not an uppercase label; the chevron collapses the section. */
+.issue-project-row th { padding: 14px 6px 5px; text-transform: none; letter-spacing: 0; font-size: .8rem; }
+.issue-project-row th > * { vertical-align: middle; }
+.issue-project-toggle { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 2px 6px 2px 2px; margin-left: -2px; border-radius: 5px; color: var(--ink); transition: background-color 140ms ease; }
+.issue-project-toggle:hover { background: var(--hover-field); }
+.issue-project-toggle .code-icon { width: 13px; height: 13px; color: var(--quiet-text); transform: rotate(90deg); transition: transform 140ms ease; }
+.issue-project-toggle[aria-expanded="false"] .code-icon { transform: none; }
+.code-group-row th .issue-project-name { color: var(--ink); font-weight: 650; }
+.code-group-row th .issue-project-count { color: var(--quiet-text); font-weight: 500; font-variant-numeric: tabular-nums; }
+.issue-project-link { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 4px; color: var(--quiet-text); transition: color 140ms ease, background-color 140ms ease; }
+.issue-project-link:hover { color: var(--action-ink); background: var(--hover-field); }
+.issue-project-link .code-icon { width: 12px; height: 12px; }
+.issue-project-row:has([aria-expanded="false"]) th { border-bottom-color: transparent; }
+.code-group-row th .issue-project-when { float: right; padding: 3px 6px 0 0; font-size: .74rem; font-weight: 500; }
+.issue-quiet-repos td { padding: 12px 8px 6px; color: var(--quiet-text); font-size: .76rem; }
+.issue-labels { flex: none; color: var(--muted); }
+.issue-comment-count { display: inline-flex; flex: none; align-items: center; gap: 3px; white-space: nowrap; color: var(--quiet-text); }
+.issue-comment-count .code-icon { width: 11px; height: 11px; }
+@media (prefers-reduced-motion: reduce) { .issue-project-toggle, .issue-project-toggle .code-icon, .issue-project-link { transition: none; } }
 .issue-row.is-seen .code-pr-title { color: var(--muted); font-weight: 500; }
 .issue-seen-mark { display: inline-grid; place-items: center; width: 16px; margin-left: 6px; color: var(--pass); vertical-align: -3px; }
 .issue-seen-mark .code-icon { width: 13px; height: 13px; stroke-width: 2.4; }
