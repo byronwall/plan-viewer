@@ -127,9 +127,11 @@ const parentLine = (issue) => {
 
 // Under its repository's header a GitHub issue needs only its number; elsewhere the key names the repository too.
 const shortKey = (issue) => issue.source === "github" ? `<code>#${escapeHtml(label(issue).split("#")[1])}</code>` : keyCell(issue);
-function issueRow(issue, { check = false, columns = COLUMNS, inGroup = false } = {}) {
+function issueRow(issue, { columns = COLUMNS, inGroup = false } = {}) {
   const key = issue.key;
   const cells = {
+    "issue-col-check": () => `<input type="checkbox" data-issue-select="${escapeHtml(key)}" aria-label="Select ${escapeHtml(label(issue))}" ${ui.selected.has(key) ? "checked" : ""}>`,
+    "code-col-skills": () => skillButtons([key]),
     "issue-col-priority": () => priorityIcon(issue),
     "issue-col-key": () => `<span class="issue-key-cell">${typeIcon(issue)}${inGroup ? shortKey(issue) : keyCell(issue)}</span>`,
     "code-col-main": () => `<div class="code-pr-title">${escapeHtml(issue.summary)}</div>${parentLine(issue)}`,
@@ -138,8 +140,7 @@ function issueRow(issue, { check = false, columns = COLUMNS, inGroup = false } =
     "issue-col-code": () => codeChips(issue),
     "code-col-when": () => `${when(issue.updated)}${ui.tab === "triage" ? `<span class="issue-seen-mark" data-tip="${isSeen(issue) ? "Seen at this version (X)" : "Not seen yet (X)"}">${isSeen(issue) ? icon("pass") : ""}</span>` : ""}`,
   };
-  return `<tr class="code-row issue-row${isSeen(issue) && ui.tab === "triage" ? " is-seen" : ""}${issue.inScope ? "" : " is-context"}${issue.category === "done" ? " is-done" : ""}" data-issue-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">
-    ${check ? `<td class="issue-col-check"><input type="checkbox" data-issue-select="${escapeHtml(key)}" aria-label="Select ${escapeHtml(key)}" ${ui.selected.has(key) ? "checked" : ""}></td>` : ""}
+  return `<tr class="code-row issue-row${isSeen(issue) && ui.tab === "triage" ? " is-seen" : ""}${issue.inScope ? "" : " is-context"}${issue.category === "done" ? " is-done" : ""}${ui.selected.has(key) ? " is-picked" : ""}" data-issue-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">
     ${columns.map(([name]) => `<td class="${name}${name === "code-col-when" ? ` code-heat-${heat(issue.updated)}` : ""}">${cells[name]()}</td>`).join("")}</tr>`;
 }
 
@@ -172,6 +173,12 @@ function columnsFor(issues) {
   };
   return COLUMNS.filter(([name]) => keep[name] ?? true);
 }
+// The select box leads every list row and the agent drafts trail it, as on the Code page's PR table.
+const checkHead = (issues) => {
+  const picked = issues.filter((issue) => ui.selected.has(issue.key)).length;
+  return `<input type="checkbox" data-issue-select-all aria-label="Select every issue shown" ${picked && picked === issues.length ? "checked" : ""}${picked && picked < issues.length ? " data-indeterminate" : ""}>`;
+};
+const withPicks = (issues, columns) => [["issue-col-check", checkHead(issues)], ...columns, ["code-col-skills", `Send to ${appName()}`]];
 // "repo" when every issue is a GitHub one, else "project" (a Jira project or a Linear team).
 const groupNoun = (issues) => (issues.every((issue) => issue.source === "github") ? "repo" : "project");
 const done = (issue) => issue.category === "done";
@@ -187,7 +194,9 @@ function byProject(issues, columns) {
     const collapsed = ui.collapsed.has(project);
     const latest = sorted.reduce((last, issue) => (issue.updated > last ? issue.updated : last), "");
     const home = sorted[0].source === "github" ? sorted[0].url.replace(/\/issues\/\d+$/, "/issues") : "";
-    const head = `<tr class="code-group-row issue-project-row"><th colspan="${columns.length}"><button type="button" class="issue-project-toggle" data-issue-collapse="${escapeHtml(project)}" aria-expanded="${!collapsed}"><svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg><span class="issue-project-name">${escapeHtml(project)}</span><span class="issue-project-count">${[sorted.length - closed && `${sorted.length - closed} open`, closed && `${closed} closed`].filter(Boolean).join(" · ")}</span></button>${home ? `<a class="issue-project-link" href="${escapeHtml(home)}" target="_blank" rel="noreferrer" data-tip="${escapeHtml(project)} issues on GitHub">${icon("external")}</a>` : ""}<span class="issue-project-when code-heat-${heat(latest)}">${when(latest)}</span></th></tr>`;
+    const picked = sorted.filter((issue) => ui.selected.has(issue.key)).length;
+    const pick = `<th class="issue-col-check"><input type="checkbox" data-issue-select-group="${escapeHtml(project)}" aria-label="Select every ${escapeHtml(project)} issue shown" ${picked === sorted.length ? "checked" : ""}${picked && picked < sorted.length ? " data-indeterminate" : ""}></th>`;
+    const head = `<tr class="code-group-row issue-project-row">${pick}<th colspan="${columns.length - 3}"><button type="button" class="issue-project-toggle" data-issue-collapse="${escapeHtml(project)}" aria-expanded="${!collapsed}"><svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg><span class="issue-project-name">${escapeHtml(project)}</span><span class="issue-project-count">${[sorted.length - closed && `${sorted.length - closed} open`, closed && `${closed} closed`].filter(Boolean).join(" · ")}</span></button>${home ? `<a class="issue-project-link" href="${escapeHtml(home)}" target="_blank" rel="noreferrer" data-tip="${escapeHtml(project)} issues on GitHub">${icon("external")}</a>` : ""}</th><th class="code-col-when code-heat-${heat(latest)}" data-tip="Latest update in ${escapeHtml(project)}">${when(latest)}</th><th class="code-col-skills">${skillButtons(sorted.map((issue) => issue.key), project)}</th></tr>`;
     return { latest, html: `<tbody>${head}${collapsed ? "" : sorted.map((issue) => issueRow(issue, { columns, inGroup: true })).join("")}</tbody>` };
   }).sort((a, b) => b.latest.localeCompare(a.latest));
   return `<table class="code-table issue-table">${tableHead(columns)}${sections.map((section) => section.html).join("")}${quietRepos(issues, columns)}</table>`;
@@ -203,7 +212,7 @@ function quietRepos(issues, columns) {
 function allBody() {
   const issues = visibleIssues();
   if (!issues.length) return emptyState(ui.showDone ? "issues" : "open issues");
-  const columns = columnsFor(issues);
+  const columns = withPicks(issues, columnsFor(issues));
   return ui.group === "repo" ? byProject(issues, columns.map(([name, head]) => [name, name === "issue-col-key" ? "#" : head])) : grouped(issues, (issue) => issueRow(issue, { columns }), columns);
 }
 
@@ -212,7 +221,8 @@ function triageBody() {
   const issues = ui.hideSeen ? all.filter((issue) => !isSeen(issue)) : all;
   if (!all.length) return emptyState("issues waiting for triage");
   const done = all.length && !issues.length ? `<p class="code-muted issue-all-seen">All ${all.length} seen at their current version. <button type="button" class="code-bar-button" data-issue-hide-seen>Show them <kbd>U</kbd></button></p>` : "";
-  return done || `<table class="code-table issue-table">${tableHead([["issue-col-check", `<input type="checkbox" data-issue-select-all aria-label="Select all" ${issues.every((issue) => ui.selected.has(issue.key)) ? "checked" : ""}>`], ...COLUMNS])}<tbody>${issues.map((issue) => issueRow(issue, { check: true })).join("")}</tbody></table>`;
+  const columns = [["issue-col-check", checkHead(issues)], ...columnsFor(issues)];
+  return done || `<table class="code-table issue-table">${tableHead(columns)}<tbody>${issues.map((issue) => issueRow(issue, { columns })).join("")}</tbody></table>`;
 }
 
 // ---------- epics ----------
@@ -328,8 +338,18 @@ function activityBody() {
 
 // ---------- inspector and overview ----------
 
-function skillButtons(keys) {
-  return (ui.data.skills || []).map((skill, index) => iconButton(skill.icon || "review", `${skill.label}${keys.length > 1 ? ` ${keys.length} issues` : ""} in ${appName()} (${index + 1})`, `data-issue-skill="${escapeHtml(skill.id)}" data-keys="${escapeHtml(keys.join(","))}"`)).join("");
+// `scope` names what the keys are ("explorEDA" for a repository's header); one issue's buttons answer to 1–N.
+function skillButtons(keys, scope = "") {
+  const what = scope ? ` all ${keys.length} ${scope} issues` : keys.length > 1 ? ` ${keys.length} issues` : "";
+  return (ui.data.skills || []).map((skill, index) => iconButton(skill.icon || "review", `${skill.label}${what} in ${appName()}${scope ? "" : ` (${index + 1})`}`, `data-issue-skill="${escapeHtml(skill.id)}" data-keys="${escapeHtml(keys.join(","))}"`)).join("");
+}
+// The selection's own bar: labeled drafts for every picked issue, then Clear.
+function bulkBar() {
+  if (!ui.selected.size) return "";
+  const keys = [...ui.selected];
+  const repos = new Set(keys.map((key) => byKey().get(key)?.project));
+  const where = repos.size === 1 ? ` in ${escapeHtml([...repos][0])}` : repos.size > 1 ? ` across ${repos.size} ${groupNoun(keys.map((key) => byKey().get(key)).filter(Boolean))}s` : "";
+  return `<span class="issue-bulk"><b>${keys.length} selected</b><span class="code-muted">${where}</span>${(ui.data.skills || []).map((skill) => `<button type="button" class="code-bar-button is-primary" data-issue-skill="${escapeHtml(skill.id)}" data-keys="${escapeHtml(keys.join(","))}">${icon(skill.icon || "review")}${escapeHtml(skill.label)} in ${appName()}</button>`).join("")}<button type="button" class="code-bar-button" data-issue-select-none>Clear <kbd>Esc</kbd></button></span>`;
 }
 
 function issueFacts(issue, overlay = false) {
@@ -489,10 +509,9 @@ function renderDetail({ animate = false } = {}) {
   const pane = host?.querySelector(".issue-surface .code-detail"); // not another page's inspector in the same container
   if (!pane) return;
   const issue = byKey().get(ui.sel);
-  const multi = ui.selected.size > 1 ? `<p class="issue-multi">${ui.selected.size} selected · ${skillButtons([...ui.selected])} <button type="button" class="code-bar-button" data-issue-select-none>Clear</button></p>` : "";
   pane.innerHTML = issue
-    ? `${multi}<div class="code-detail-head">${typeIcon(issue)}<h3>${keyMark(issue)} ${escapeHtml(issue.summary)}</h3></div>${issueFacts(issue)}${codeSection(issue)}${relationsSection(issue)}${textSections(issue, false)}`
-    : `${multi}<p class="code-detail-empty">Select an issue to see its details, code, and comments.<br><br><kbd>J</kbd><kbd>K</kbd> move · <kbd>Enter</kbd> overview · <kbd>1</kbd>–<kbd>${(ui.data.skills || []).length}</kbd> agent drafts · <kbd>Space</kbd> select · <kbd>X</kbd> seen · <kbd>O</kbd> open · <kbd>Y</kbd> copy link · <kbd>A</kbd> people · <kbd>F</kbd> filter · <kbd>R</kbd> refresh</p>`;
+    ? `<div class="code-detail-head">${typeIcon(issue)}<h3>${keyMark(issue)} ${escapeHtml(issue.summary)}</h3></div>${issueFacts(issue)}${codeSection(issue)}${relationsSection(issue)}${textSections(issue, false)}`
+    : `<p class="code-detail-empty">Select an issue to see its details, code, and comments.<br><br><kbd>J</kbd><kbd>K</kbd> move · <kbd>Enter</kbd> overview · ${(ui.data.skills || []).length > 1 ? `<kbd>1</kbd>–<kbd>${ui.data.skills.length}</kbd> agent drafts` : "<kbd>1</kbd> agent draft"} · <kbd>Space</kbd> select · shift-click a range · ${ui.tab === "triage" ? "<kbd>X</kbd> seen · " : ""}<kbd>O</kbd> open · <kbd>Y</kbd> copy link · <kbd>A</kbd> people · <kbd>F</kbd> filter · <kbd>R</kbd> refresh</p>`;
   if (animate) { pane.scrollTop = 0; fadeIn(pane, 160); }
   if (issue) loadDetail(issue.key);
 }
@@ -612,14 +631,16 @@ function toolbar() {
   const tabs = `<div class="code-segment code-tabs">${Object.entries(TABS).filter(([id]) => (id !== "migration" || both) && (counts[id] !== 0 || ui.tab === id)).map(([id, label]) => `<button type="button" data-issue-tab="${id}" aria-pressed="${ui.tab === id}">${label}${counts[id] === "" ? "" : count(counts[id])}</button>`).join("")}</div>`;
   const people = `<button type="button" class="code-bar-button issue-people-trigger${ui.people.size ? " is-active" : ""}" popovertarget="issue-people" data-issue-people-trigger>${icon("person")}${ui.people.size === 1 ? escapeHtml([...ui.people][0] || "Unassigned") : ui.people.size ? `${ui.people.size} people` : "Everyone"} <kbd>A</kbd></button>`;
   let controls = "";
+  let selection = "";
   if (ui.tab === "all") {
     const total = scoped.filter(open).length;
     const scopes = Object.entries(SCOPES).map(([id, [label, test]]) => [id, label, scoped.filter(open).filter(test).length]).filter(([id, , value]) => id === "all" || id === ui.scope || (value > 0 && value < total));
     const noun = groupNoun(scoped);
     controls = segment("data-issue-group", ui.group, { repo: `By ${noun}`, recent: "By update" }) + (scopes.length > 1 ? segment("data-issue-scope", ui.scope, Object.fromEntries(scopes.map(([id, label, value]) => [id, `${label}${count(value)}`]))) : "");
+    selection = bulkBar();
   }
-  if (ui.tab === "triage") controls = `<label class="code-check"><input type="checkbox" data-issue-hide-seen-box ${ui.hideSeen ? "checked" : ""}> Hide seen <kbd>U</kbd>${count(scoped.filter(isTriage).filter(isSeen).length)}</label>${ui.selected.size ? `<span class="issue-bulk">${ui.selected.size} selected ${skillButtons([...ui.selected])}<button type="button" class="code-bar-button" data-issue-select-none>Clear</button></span>` : '<span class="code-muted">Space selects rows for one draft about several issues.</span>'}`;
-  if (ui.tab === "migration") controls = segment("data-issue-migration", ui.migration, Object.fromEntries(Object.entries(MIGRATION).map(([id, label]) => [id, `${label}${count(groups.filter((group) => group.kind === id).length)}`]))) + (ui.selected.size ? `<span class="issue-bulk">${ui.selected.size} selected ${skillButtons([...ui.selected])}<button type="button" class="code-bar-button" data-issue-select-none>Clear</button></span>` : "");
+  if (ui.tab === "triage") controls = `<label class="code-check"><input type="checkbox" data-issue-hide-seen-box ${ui.hideSeen ? "checked" : ""}> Hide seen <kbd>U</kbd>${count(scoped.filter(isTriage).filter(isSeen).length)}</label>${bulkBar() || '<span class="code-muted">Space selects rows for one draft about several issues.</span>'}`;
+  if (ui.tab === "migration") controls = segment("data-issue-migration", ui.migration, Object.fromEntries(Object.entries(MIGRATION).map(([id, label]) => [id, `${label}${count(groups.filter((group) => group.kind === id).length)}`]))) + bulkBar();
   if (ui.tab === "activity") controls = segment("data-issue-activity", ui.activityScope, ACTIVITY_SCOPES) + `<label class="code-check">Since <input type="date" data-issue-since value="${escapeHtml(ui.since)}"></label>`;
   const sourceCount = (source) => count(ui.data.issues.filter((issue) => issue.inScope && !issue.bot && !issue.mirrorOf && (issue.source || "jira") === source && open(issue)).length);
   const sources = ui.data.sources?.length > 1 && ui.tab !== "migration" ? segment("data-issue-source", ui.source, { all: "All", ...Object.fromEntries(ui.data.sources.map((source) => [source, `${TRACKERS[source]}${sourceCount(source)}`])) }) : "";
@@ -627,7 +648,7 @@ function toolbar() {
   const repos = ui.data.githubRepos || [];
   const reach = repos.length && ui.tab === "all" ? `${new Set(scoped.filter(open).filter((issue) => issue.source === "github").map((issue) => issue.project)).size} of ${repos.length} tracked repos · ` : "";
   const synced = ui.data.syncing ? escapeHtml(ui.data.progress || "Syncing issues…") : `${reach}${ui.data.syncedAt ? `synced ${ago(ui.data.syncedAt)} ago` : "never synced"}`;
-  return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-issue-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span><span class="code-muted issue-synced">${synced}</span>${iconButton("refresh", ui.data.syncing ? "Syncing issues…" : "Re-read every issue  (R)", `data-issue-refresh class="code-icon-button${ui.data.syncing ? " is-spinning" : ""}"`)}</div><div class="code-controls">${controls}${shared}</div></div></div>`;
+  return `<div class="code-toolbar"><div class="code-toolbar-rows"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-issue-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span><span class="code-muted issue-synced">${synced}</span>${iconButton("refresh", ui.data.syncing ? "Syncing issues…" : "Re-read every issue  (R)", `data-issue-refresh class="code-icon-button${ui.data.syncing ? " is-spinning" : ""}"`)}</div><div class="code-controls">${controls}${shared}${selection ? `<span class="code-spacer"></span>${selection}` : ""}</div></div></div>`;
 }
 
 const lastHtml = new WeakMap();
@@ -655,6 +676,7 @@ function render({ animate = false } = {}) {
   const body = ui.tab === "triage" ? triageBody() : ui.tab === "epics" ? epicsBody() : ui.tab === "activity" ? activityBody() : ui.tab === "migration" ? migrationBody() : allBody();
   const list = patch("list", body);
   if (list && animate) fadeIn(list);
+  for (const box of host.querySelectorAll("[data-indeterminate]")) box.indeterminate = true;
   if (!host.querySelector("#issue-people:popover-open")) patch("people", peoplePopover());
   renderDetail();
   if (focused) {
@@ -716,7 +738,7 @@ async function draft(skill, keys) {
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || "Could not open the draft.");
   const label = ui.data.skills.find((candidate) => candidate.id === skill)?.label || skill;
-  notify(`Drafted ${label} for ${keys.length === 1 ? keys[0] : `${keys.length} issues`} in ${appName()}. Review it and press Enter to send.`);
+  notify(`Drafted ${label} for ${keys.length === 1 ? keyLabel(keys[0]) : `${keys.length} issues`} in ${appName()}. Review it and press Enter to send.`);
 }
 
 async function handleClick(event) {
@@ -752,8 +774,21 @@ async function handleClick(event) {
     if ("issueReset" in dataset) { resetFilters(); return render({ animate: true }); }
     if (dataset.issuePerson !== undefined) { ui.people.has(dataset.issuePerson) ? ui.people.delete(dataset.issuePerson) : ui.people.add(dataset.issuePerson); render({ animate: true }); return patch("people", peoplePopover()); }
     if ("issuePeopleClear" in dataset) { ui.people.clear(); render({ animate: true }); return patch("people", peoplePopover()); }
-    if (dataset.issueSelect) { target.checked ? ui.selected.add(dataset.issueSelect) : ui.selected.delete(dataset.issueSelect); return render(); }
-    if ("issueSelectAll" in dataset) { for (const key of rowKeys()) target.checked ? ui.selected.add(key) : ui.selected.delete(key); return render(); }
+    if (dataset.issueSelect) {
+      // Shift-click sets every row between the last box clicked and this one to this box's state.
+      const keys = rowKeys();
+      const [from, to] = [keys.indexOf(ui.lastPick), keys.indexOf(dataset.issueSelect)].sort((a, b) => a - b);
+      const range = event.shiftKey && from >= 0 ? keys.slice(from, to + 1) : [dataset.issueSelect];
+      for (const key of range) target.checked ? ui.selected.add(key) : ui.selected.delete(key);
+      ui.lastPick = dataset.issueSelect;
+      return render();
+    }
+    if (dataset.issueSelectGroup !== undefined) {
+      const keys = visibleIssues().filter((issue) => issue.project === dataset.issueSelectGroup).map((issue) => issue.key);
+      for (const key of keys) target.checked ? ui.selected.add(key) : ui.selected.delete(key);
+      return render();
+    }
+    if ("issueSelectAll" in dataset) { for (const key of ui.tab === "all" ? visibleIssues().map((issue) => issue.key) : rowKeys()) target.checked ? ui.selected.add(key) : ui.selected.delete(key); return render(); }
     if ("issueSelectNone" in dataset) { ui.selected.clear(); return render(); }
     if (dataset.issueExpand) { ui.expanded.has(dataset.issueExpand) ? ui.expanded.delete(dataset.issueExpand) : ui.expanded.add(dataset.issueExpand); return render(); }
     if (dataset.issueOpen) return openIssue(dataset.issueOpen, rowKeys().includes(dataset.issueOpen) ? rowKeys() : null);
@@ -789,7 +824,7 @@ function handleKey(event) {
     u: () => { if (ui.tab !== "triage") return; ui.hideSeen = !ui.hideSeen; storage.set("issues-hide-seen", ui.hideSeen ? "on" : "off"); render({ animate: true }); },
     escape: () => { if (!host.querySelector("[data-issue-reset]") && !ui.selected.size) return; ui.selected.clear(); resetFilters(); render({ animate: true }); },
     enter: () => issue && openIssue(issue.key, rowKeys()),
-    " ": () => { if (!issue || !["triage", "migration"].includes(ui.tab)) return; ui.selected.has(issue.key) ? ui.selected.delete(issue.key) : ui.selected.add(issue.key); render(); },
+    " ": () => { if (!issue || !["all", "triage", "migration"].includes(ui.tab)) return; ui.selected.has(issue.key) ? ui.selected.delete(issue.key) : ui.selected.add(issue.key); render(); },
     x: () => { if (!issue) return; toggleSeen(issue); render(); if (ui.tab === "triage") move(ui.hideSeen ? 0 : 1); },
     o: () => issue && window.open(issueUrl(issue.key), "_blank", "noreferrer"),
     y: () => issue && navigator.clipboard.writeText(issueUrl(issue.key)).then(() => notify(`Copied ${issueUrl(issue.key)}`)),

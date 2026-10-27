@@ -213,7 +213,7 @@ export function clustersOf(pairs: Pair[]) {
 
 type Runner = (args: string[]) => Promise<string>;
 
-export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs: any[]; worktrees: { repo: string; path: string; branch: string }[] }>, repoSlugs: () => Promise<string[]> = async () => []) {
+export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs: any[]; worktrees: { repo: string; path: string; branch: string }[] }>, repos: () => Promise<{ path: string; slug: string }[]> = async () => []) {
   const cachePath = join(root, "tmp", "issues-cache.json");
   let cache: Cache = { at: 0, fullAt: 0, scope: [], issues: {}, activity: [], me: "", site: "", linearAt: 0, linearFullAt: 0, githubAt: 0, githubMe: "", githubRepos: [] };
   try { cache = { ...cache, ...JSON.parse(readFileSync(cachePath, "utf8")) }; } catch {}
@@ -292,10 +292,14 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
   }
 
   // GitHub issues in the tracked repositories are few, so every read is a full one that replaces the previous copy.
+  // Each tracked repository's checkout, by `owner/repo`, so a draft about one repository's issues opens there.
+  const checkouts = new Map<string, string>();
   async function runGithub() {
     const started = Date.now();
     cache.githubMe ||= await githubLogin();
-    cache.githubRepos = await repoSlugs();
+    const tracked = await repos();
+    for (const { path, slug } of tracked) checkouts.set(slug, path);
+    cache.githubRepos = tracked.map(({ slug }) => slug);
     const issues = await fetchGithub(cache.githubRepos, (text) => { progress = text; });
     const current = new Set(issues.map((issue) => issue.key));
     for (const key of Object.keys(cache.issues)) if (cache.issues[key].source === "github" && !current.has(key)) delete cache.issues[key];
@@ -416,7 +420,7 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
       .map(([role, key]) => cache.issues[key] ? `${role} ${name(cache.issues[key])} (${cache.issues[key].status}, ${issueUrl(cache.issues[key])})` : "");
     return [
       `- ${name(issue)}: ${issue.summary} (${issueUrl(issue)})`,
-      `  - ${issue.type} · ${issue.status} · ${issue.priority || "no priority"} · ${issue.assignee?.name || "unassigned"}`,
+      `  - ${[issue.type, issue.status, issue.priority, issue.assignee?.name || "unassigned"].filter(Boolean).join(" · ")}`,
       parent ? `  - Parent: ${name(parent)} ${parent.summary}` : "",
       prs.length ? `  - Pull requests: ${prs.map((pr) => pr.url).join(", ")}` : "",
       ...counterparts.filter(Boolean).map((text) => `  - Also ${text}`),
@@ -434,9 +438,12 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     const reading = [issues.some((issue) => issue.source === "jira") && "Jira issues with `acli jira workitem view <KEY> --json`", issues.some((issue) => issue.source === "linear") && "Linear issues with the Linear MCP", issues.some((issue) => issue.source === "github") && "GitHub issues with `gh issue view <URL> --comments`"].filter(Boolean).join(" and ");
     const noun = issues.length === 1 ? "this issue" : "these issues";
     const draft = chosen.id === "discuss"
-      ? `Let's talk through ${noun}. Read ${reading} first, then \n\n${list}\n`
+      ? `Let's talk through ${noun}. Read ${reading} first.\n\n${list}\n`
       : `${chosen.prompt}\n\n${list}\n\nRead ${reading} in full first. Don't change anything in the issue tracker until I say which way to go.`;
-    const folder = (settings().workspace || root).replace(/^~(?=\/)/, process.env.HOME || "~");
+    const slugs = new Set(issues.map((issue) => issue.source === "github" ? issue.key.slice("github:".length).split("#")[0] : ""));
+    const checkout = slugs.size === 1 ? checkouts.get([...slugs][0]) : "";
+    const folder = (checkout || settings().workspace || root).replace(/^~(?=\/)/, process.env.HOME || "~");
+    if (process.env.PLAN_VIEWER_DRY_RUN === "1") return console.log(`[dry run] ${app} draft in ${folder}:\n${draft}`);
     const url = app === "claude" ? claudeNewSessionUrl(folder, draft) : codexNewTaskUrl(draft, folder);
     await exec("/usr/bin/open", [url]);
   }

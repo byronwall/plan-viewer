@@ -67,7 +67,7 @@ That turns `#1234`, commit SHAs, and `ATL-12` in your Markdown into links with l
 | `issues.hideLabels` | Labels of machine-made issues (security scanners) hidden until **Bots** is checked. |
 | `issues.triage` | The Triage queue: `statuses` (default `Needs Triage`) plus open issues with a label starting with one of `labels` (a migration's review label). |
 | `issues.skills` | Agent drafts against issues (`1`…`N`): `{ id, label, icon, prompt }`; the selected issues follow the prompt as bullets. An open "Discuss" prompt always follows. |
-| `issues.workspace` | Folder issue drafts open in (the repository the issues are about); empty uses the planning workspace. Claude drafts open in the Claude Desktop preset whose folder this is. |
+| `issues.workspace` | Folder issue drafts open in (the repository the issues are about); empty uses the planning workspace. Drafts about one tracked GitHub repository's issues open in that repository's checkout instead. Claude drafts open in the Claude Desktop preset whose folder this is. |
 | `issues.fields` | Site-specific custom field ids: `start`, `confidence`, `statusUpdate`, `epicLink`. |
 | `issues.refreshMinutes` | Minutes between incremental syncs (default 5). |
 | `issues.linear.teams` | Linear team keys (`["ATL"]`) whose issues and projects sit beside the Jira ones, read with the Linear API key. With both trackers the page gains a source switch and a Migration tab. |

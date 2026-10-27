@@ -40,7 +40,7 @@ const codeDashboard = createCodeDashboard(ROOT);
 const people = createPeople(ROOT, { repos: codeDashboard.readRepos, slug: codeDashboard.githubSlug });
 const plans = createPlans(ROOT, { repos: codeDashboard.readRepos, slug: codeDashboard.githubSlug });
 const issueTracker = createIssueTracker(ROOT, async () => ({ prs: (await codeDashboard.prIndex()).prs, worktrees: await codeDashboard.worktreeIndex() }),
-  async () => (await Promise.all((await codeDashboard.readRepos()).map(codeDashboard.githubSlug))).filter(Boolean));
+  async () => (await Promise.all((await codeDashboard.readRepos()).map(async (path) => ({ path, slug: await codeDashboard.githubSlug(path) })))).filter(({ slug }) => slug));
 const PORT = Number(process.env.PLAN_VIEWER_PORT || process.env.PORT || config().port);
 const MAX_COMMENT_LENGTH = 12_000;
 const ASSET_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".dot"]);
