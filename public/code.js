@@ -10,7 +10,7 @@ export const TABS = { prs: "Pull requests", worktrees: "Worktrees", commits: "Co
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const ui = {
-  tab: "prs", data: null, filter: "", treeScope: "all", treeGroup: "changed", prScope: "all", prSort: "updated", hideDrafts: false, failingOnly: false,
+  tab: "prs", data: null, filter: "", treeScope: "all", treeGroup: "changed", prScope: "all", prState: "open", prSort: "updated", hideDrafts: false, failingOnly: false,
   showKeep: false, openDescriptions: new Set(), selected: new Set(), removed: new Set(), removing: null, poll: 0, sel: "", detail: new Map(),
   commitScope: "local", commits: new Map(), detailErrors: new Map(), branches: new Set(), prefixes: new Set(), branchQuery: "", branchActive: 0,
   authors: new Set(), authorQuery: "", authorActive: 0, repos: new Set(), runLogs: new Map(),
@@ -202,16 +202,18 @@ const REVIEW = { APPROVED: ["approved", "Approved"], CHANGES_REQUESTED: ["change
 const reviewTag = (pr) => { const [kind, label] = REVIEW[pr.reviewDecision] || ["", ""]; return kind ? `<span class="code-tag code-tag-${kind}">${label}</span>` : ""; };
 // One icon per row for the states that change what to do next, named on hover; an ordinary "needs review" stays blank.
 // Approval is a ringed check so it never reads as the bare CI check beside the PR number.
-const PR_STATES = { draft: ["draft", "draft"], CHANGES_REQUESTED: ["fail", "diff"], APPROVED: ["pass", "approved"], mine: ["review", "review"], requested: ["requested", "person"] };
+const PR_STATES = { MERGED: ["merged", "branch"], CLOSED: ["fail", "fail"], draft: ["draft", "draft"], CHANGES_REQUESTED: ["fail", "diff"], APPROVED: ["pass", "approved"], mine: ["review", "review"], requested: ["requested", "person"] };
 // Bots (Copilot, anything[bot]) are requested automatically, so they don't count as asking someone for a review.
 const humanReviewers = (pr) => (pr.reviewers || []).filter((login) => !/copilot|\[bot\]$/i.test(login));
 const prState = (pr) => {
   const people = humanReviewers(pr);
-  const key = pr.draft ? "draft" : PR_STATES[pr.reviewDecision] ? pr.reviewDecision : pr.requestedOfMe ? "mine" : people.length ? "requested" : "";
+  const key = pr.state === "MERGED" || pr.state === "CLOSED" ? pr.state : pr.draft ? "draft" : PR_STATES[pr.reviewDecision] ? pr.reviewDecision : pr.requestedOfMe ? "mine" : people.length ? "requested" : "";
   if (!key) return "";
   const [name, glyph] = PR_STATES[key];
   const by = (state) => (pr.reviews || []).filter((review) => review.state === state).map((review) => review.login).join(", ");
   const tip = {
+    MERGED: `Merged ${ago(pr.closedAt)} ago`,
+    CLOSED: `Closed without merging ${ago(pr.closedAt)} ago`,
     draft: "Draft",
     APPROVED: `Approved${by("APPROVED") ? ` by ${by("APPROVED")}` : ""}`,
     CHANGES_REQUESTED: `Changes requested${by("CHANGES_REQUESTED") ? ` by ${by("CHANGES_REQUESTED")}` : ""}`,
@@ -270,9 +272,9 @@ function treeRow(tree) {
 function emptyState(noun) {
   const scopes = { requested: "review requested", today: "last 24h", week: "this week", dirty: "uncommitted", pr: "with an open PR" };
   const narrowing = [
-    ui.tab === "prs" && ui.prScope !== "all" && scopes[ui.prScope],
-    ui.tab === "prs" && ui.hideDrafts && "no drafts",
-    ui.tab === "prs" && ui.failingOnly && "failing CI",
+    ui.tab === "prs" && ui.prState !== "done" && ui.prScope !== "all" && scopes[ui.prScope],
+    ui.tab === "prs" && ui.prState !== "done" && ui.hideDrafts && "no drafts",
+    ui.tab === "prs" && ui.prState !== "done" && ui.failingOnly && "failing CI",
     ui.tab === "worktrees" && ui.treeScope !== "all" && scopes[ui.treeScope],
     ui.tab === "commits" && (ui.branches.size || ui.prefixes.size) && "picked branches",
     ui.repos.size && (ui.repos.size === 1 ? [...ui.repos][0] : "picked repos"),
@@ -311,18 +313,22 @@ function worktreesBody() {
 
 // ---------- pull requests ----------
 
+// Open PRs by default; "done" swaps in the recently merged and closed ones.
+const prList = () => ui.prState === "done" ? ui.data.donePrs || [] : ui.data.prs;
+const prWhen = (pr) => pr.closedAt || pr.updatedAt;
+
 function visiblePrs() {
   const sorts = {
-    updated: (a, b) => b.updatedAt.localeCompare(a.updatedAt),
+    updated: (a, b) => prWhen(b).localeCompare(prWhen(a)),
     created: (a, b) => a.createdAt.localeCompare(b.createdAt),
     size: (a, b) => (b.additions + b.deletions) - (a.additions + a.deletions),
   };
-  return ui.data.prs
-    .filter((pr) => ui.prScope === "all" || pr.requestedOfMe)
+  return prList()
+    .filter((pr) => ui.prState === "done" || ui.prScope === "all" || pr.requestedOfMe)
     .filter(authorFilter)
     .filter(repoFilter)
-    .filter((pr) => !(ui.hideDrafts && pr.draft))
-    .filter((pr) => !ui.failingOnly || ["FAILURE", "ERROR"].includes(pr.ci))
+    .filter((pr) => ui.prState === "done" || !(ui.hideDrafts && pr.draft))
+    .filter((pr) => ui.prState === "done" || !ui.failingOnly || ["FAILURE", "ERROR"].includes(pr.ci))
     .filter((pr) => matches(`#${pr.number} ${pr.number} ${pr.title} ${pr.author} ${pr.branch} ${(pr.labels || []).map((label) => label.name).join(" ")}`))
     .sort(sorts[ui.prSort] || sorts.updated);
 }
@@ -410,7 +416,7 @@ function prRow(pr, rail) {
     <td class="code-col-labels">${labelDots(pr)}</td>
     <td class="code-col-state">${prState(pr)}</td>
     <td class="code-col-size">${sizeCount(pr)}</td>
-    <td class="code-col-when">${when(pr.updatedAt)}<span class="code-age" data-tip="Opened ${escapeHtml(new Date(pr.createdAt).toLocaleDateString())}">${ago(pr.createdAt)} old</span></td>
+    <td class="code-col-when">${when(prWhen(pr))}<span class="code-age" data-tip="Opened ${escapeHtml(new Date(pr.createdAt).toLocaleDateString())}">${ago(pr.createdAt)} old</span></td>
     <td class="code-col-skills">${skillButtons(pr, workspace, tree)}</td>
     <td class="code-col-actions">${runButton(pr.repo, tree, pr.branch)}${previewButton(pr)}${copyButton(pr.url, "Copy PR link (Y)")}${tree ? iconButton("vscode", "Open worktree in VS Code", `data-code-open="vscode" data-path="${escapeHtml(tree.path)}"`) : `<span class="code-icon-button is-blank"></span>`}</td></tr>`;
 }
@@ -427,7 +433,8 @@ const prFlags = (pr, tree) => flag("local", Boolean(tree), tree ? `Local worktre
 function prsBody() {
   const prs = visiblePrs();
   if (!prs.length) return emptyState("pull requests");
-  return `<table class="code-table">${tableHead([["code-col-stack", ""], ...repoHead(), ["code-col-num", "PR"], ["code-col-main", "Title · author · branch"], ["code-col-flags", "Flags"], ["code-col-labels", "Labels"], ["code-col-state", "State"], ["code-col-size", "Size"], ["code-col-when", "Updated"], ["code-col-skills", `Send to ${appName()}`], ["code-col-actions", "Open"]])}<tbody>${stackOrder(prs).map(({ pr, rail }) => prRow(pr, rail)).join("")}</tbody></table>`;
+  const rows = ui.prState === "done" ? prs.map((pr) => ({ pr, rail: null })) : stackOrder(prs);
+  return `<table class="code-table">${tableHead([["code-col-stack", ""], ...repoHead(), ["code-col-num", "PR"], ["code-col-main", "Title · author · branch"], ["code-col-flags", "Flags"], ["code-col-labels", "Labels"], ["code-col-state", "State"], ["code-col-size", "Size"], ["code-col-when", ui.prState === "done" ? "Closed" : "Updated"], ["code-col-skills", `Send to ${appName()}`], ["code-col-actions", "Open"]])}<tbody>${rows.map(({ pr, rail }) => prRow(pr, rail)).join("")}</tbody></table>`;
 }
 
 // ---------- commits ----------
@@ -530,7 +537,7 @@ function repoCell(repo) {
 
 // Repos with items on the current tab, busiest first; every tracked repo stays listed so the legend is complete.
 function repoStats() {
-  const items = ui.tab === "prs" ? ui.data.prs : ui.tab === "commits" ? commitsInScope() || [] : ui.tab === "plans" ? planItems() : ui.data.worktrees.filter((tree) => !ui.removed.has(tree.path) && (ui.tab === "worktrees" || (tree.cleanup && !tree.main)));
+  const items = ui.tab === "prs" ? prList() : ui.tab === "commits" ? commitsInScope() || [] : ui.tab === "plans" ? planItems() : ui.data.worktrees.filter((tree) => !ui.removed.has(tree.path) && (ui.tab === "worktrees" || (tree.cleanup && !tree.main)));
   const counts = new Map(ui.data.repos.map((repo) => [repo, 0]));
   for (const item of items) if (counts.has(item.repo)) counts.set(item.repo, counts.get(item.repo) + 1);
   return [...counts].map(([repo, count]) => ({ repo, name: repoName(repo), count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
@@ -598,7 +605,7 @@ function authorButton(key, login, tip, labelled = false) {
 function authorStats() {
   const stats = new Map();
   const add = (key, login) => stats.get(key) || stats.set(key, { key, login, names: new Set(), count: 0, latest: 0 }).get(key);
-  for (const item of ui.tab === "prs" ? ui.data.prs : commitsInScope() || []) {
+  for (const item of ui.tab === "prs" ? prList() : commitsInScope() || []) {
     const key = authorOf(item);
     if (!key) continue;
     const entry = add(key, item.sha ? item.login : item.author);
@@ -2147,7 +2154,7 @@ function cleanupBody() {
 function selectedItem() {
   if (!ui.sel || !host?.querySelector(`[data-code-row="${CSS.escape(ui.sel)}"]`)) return {};
   if (ui.sel.startsWith("tree:")) return { kind: "tree", tree: ui.data.worktrees.find((tree) => `tree:${tree.path}` === ui.sel) };
-  if (ui.sel.startsWith("pr:")) return { kind: "pr", pr: ui.data.prs.find((pr) => `pr:${pr.slug}#${pr.number}` === ui.sel) };
+  if (ui.sel.startsWith("pr:")) return { kind: "pr", pr: prList().find((pr) => `pr:${pr.slug}#${pr.number}` === ui.sel) };
   if (ui.sel.startsWith("commit:")) return { kind: "commit", commit: commitFor(ui.sel) };
   if (ui.sel.startsWith("plan:")) return { kind: "plan", plan: planFor(ui.sel) };
   return {};
@@ -2343,13 +2350,18 @@ function toolbar() {
     dirty: `Uncommitted${count(pending ? "…" : trees.filter((tree) => tree.dirty > 0).length)}`,
     pr: `Open PR${count(trees.filter((tree) => prFor(tree)).length)}`,
   }) + `<span class="code-group-pick"><span class="plan-group-label">Group</span>${segment("data-code-tree-group", ui.treeGroup, TREE_GROUPS)}</span>`;
-  if (ui.tab === "prs") controls = segment("data-code-scope", ui.prScope, {
-    all: `All${count(ui.data.prs.length)}`,
-    requested: `Review requested${count(ui.data.prs.filter((pr) => pr.requestedOfMe).length)}`,
+  const done = ui.prState === "done";
+  if (ui.tab === "prs") controls = segment("data-code-pr-state", ui.prState, {
+    open: `Open${count(ui.data.prs.length)}`,
+    done: `Merged & closed${count((ui.data.donePrs || []).length)}`,
   })
+    + (done ? "" : segment("data-code-scope", ui.prScope, {
+      all: `All${count(ui.data.prs.length)}`,
+      requested: `Review requested${count(ui.data.prs.filter((pr) => pr.requestedOfMe).length)}`,
+    }))
     + authorTrigger()
-    + segment("data-code-sort", ui.prSort, { updated: "Updated", created: "Oldest", size: "Largest" })
-    + `<label class="code-check"><input type="checkbox" data-code-drafts ${ui.hideDrafts ? "checked" : ""}> No drafts</label><label class="code-check"><input type="checkbox" data-code-failing ${ui.failingOnly ? "checked" : ""}> Failing CI${count(ui.data.prs.filter((pr) => ["FAILURE", "ERROR"].includes(pr.ci)).length)}</label>`;
+    + segment("data-code-sort", ui.prSort, { updated: done ? "Closed" : "Updated", created: "Oldest", size: "Largest" })
+    + (done ? "" : `<label class="code-check"><input type="checkbox" data-code-drafts ${ui.hideDrafts ? "checked" : ""}> No drafts</label><label class="code-check"><input type="checkbox" data-code-failing ${ui.failingOnly ? "checked" : ""}> Failing CI${count(ui.data.prs.filter((pr) => ["FAILURE", "ERROR"].includes(pr.ci)).length)}</label>`);
   if (ui.tab === "commits") controls = commitControls();
   if (ui.tab === "cleanup") controls = cleanupControls();
   if (ui.tab === "plans") controls = plansControls(segment, count);
@@ -2718,6 +2730,7 @@ async function handleClick(event) {
       return openDiff("", commitTarget(params, dataset.subject, `${dataset.codeCommitDiff.slice(0, 8)} · ${repoName(dataset.repo)}`));
     }
     if (dataset.codeRowDiff) { select(dataset.codeRowDiff); return openDiff(); }
+    if (dataset.codePrState) { ui.prState = dataset.codePrState; return render({ animate: true }); }
     if (dataset.codeScope) { ui.prScope = dataset.codeScope; return render({ animate: true }); }
     if (dataset.codeSort) { ui.prSort = dataset.codeSort; return render({ animate: true }); }
     if ("codeDrafts" in dataset) { ui.hideDrafts = target.checked; return render({ animate: true }); }

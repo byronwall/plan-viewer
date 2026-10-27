@@ -98,8 +98,8 @@ export function createCodeDashboard(root: string) {
   const statusCache = new Map<string, { at: number; dirty: number; editTime: number; files: string[]; ownCommits?: number }>();
   const prExtras = new Map<string, { at: number; byNumber: Map<number, any> }>();
   const prHistory = new Map<string, { at: number; prs: HistoryPr[]; byBranch: Map<string, HistoryPr> }>();
-  const openPrs = new Map<string, { at: number; prs: any[] }>();
-  const openPrsLoading = new Map<string, Promise<any[]>>();
+  const openPrs = new Map<string, { at: number; prs: any[]; done?: any[] }>(); // done: recently merged or closed
+  const openPrsLoading = new Map<string, Promise<{ at: number; prs: any[]; done?: any[] }>>();
   let scan: Promise<void> | null = null;
   let known = new Set<string>();
   let lastWorktrees: Worktree[] = [];
@@ -250,25 +250,30 @@ export function createCodeDashboard(root: string) {
   }
 
   async function listPrs(repo: string, slug: string) {
-    if (!slug) return [];
     const fields = "number,title,author,headRefName,baseRefName,isDraft,reviewDecision,updatedAt,createdAt,url,additions,deletions,reviewRequests";
-    const [all, requested] = await Promise.all([
+    const [all, requested, closed] = await Promise.all([
       exec("gh", ["pr", "list", "-R", slug, "--state", "open", "--limit", "500", "--json", fields], { maxBuffer: 32 << 20 }),
       exec("gh", ["pr", "list", "-R", slug, "--state", "open", "--limit", "500", "--search", "review-requested:@me", "--json", "number"]),
+      // The Done view: the most recently merged or closed PRs, newest first.
+      exec("gh", ["pr", "list", "-R", slug, "--state", "closed", "--limit", "60", "--search", "sort:updated-desc", "--json", `${fields},state,closedAt`], { maxBuffer: 32 << 20 }).catch(() => ({ stdout: "[]" })),
     ]);
     const requestedOfMe = new Set(JSON.parse(requested.stdout).map((pr: { number: number }) => pr.number));
-    return JSON.parse(all.stdout).map((pr: any) => ({
+    const shape = (pr: any) => ({
       repo, slug, number: pr.number, title: pr.title, url: pr.url, author: pr.author?.login || "", branch: pr.headRefName, base: pr.baseRefName,
       draft: pr.isDraft, reviewDecision: pr.reviewDecision || "", updatedAt: pr.updatedAt, createdAt: pr.createdAt,
       additions: pr.additions, deletions: pr.deletions, requestedOfMe: requestedOfMe.has(pr.number),
       reviewers: (pr.reviewRequests || []).map((request: any) => request.login || request.name || request.slug).filter(Boolean),
-    }));
+    });
+    return {
+      prs: JSON.parse(all.stdout).map(shape),
+      done: JSON.parse(closed.stdout).map((pr: any) => ({ ...shape(pr), requestedOfMe: false, state: pr.state, closedAt: pr.closedAt })),
+    };
   }
 
   function refreshOpenPrs(repo: string, slug: string) {
     let pending = openPrsLoading.get(repo);
     if (!pending) {
-      pending = listPrs(repo, slug).then((prs) => { openPrs.set(repo, { at: Date.now(), prs }); persist(); return prs; }).finally(() => openPrsLoading.delete(repo));
+      pending = listPrs(repo, slug).then(({ prs, done }) => { const entry = { at: Date.now(), prs, done }; openPrs.set(repo, entry); persist(); return entry; }).finally(() => openPrsLoading.delete(repo));
       openPrsLoading.set(repo, pending);
     }
     return pending;
@@ -276,10 +281,11 @@ export function createCodeDashboard(root: string) {
 
   // Stale-while-revalidate: any cached list answers at once; one older than PR_TTL_MS refreshes behind the response.
   async function cachedPrs(repo: string, slug: string, force: boolean) {
+    if (!slug) return [];
     const hit = openPrs.get(repo);
-    if (!hit || force) return refreshOpenPrs(repo, slug);
+    if (!hit || force) return [await refreshOpenPrs(repo, slug)];
     if (Date.now() - hit.at > PR_TTL_MS) refreshOpenPrs(repo, slug).catch(() => {});
-    return hit.prs;
+    return [hit];
   }
 
   // Everything ⌘K needs to find a PR by number without touching the network: open PRs with their CI and reviews,
@@ -322,10 +328,12 @@ export function createCodeDashboard(root: string) {
     if (!login) login = (await exec("gh", ["api", "user", "--jq", ".login"]).catch(() => ({ stdout: "" }))).stdout.trim();
     const errors: string[] = [];
     const settle = <T>(label: string, work: Promise<T[]>) => work.catch((error) => { errors.push(`${label}: ${error.message.split("\n")[0]}`); return [] as T[]; });
-    const [worktrees, prs] = await Promise.all([
+    const [worktrees, prLists] = await Promise.all([
       Promise.all(repos.map((repo) => settle(repo, listWorktrees(repo)))).then((lists) => lists.flat()),
       Promise.all(repos.map((repo) => settle(`${repo} PRs`, cachedPrs(repo, slugs.get(repo) || "", force)))).then((lists) => lists.flat()),
     ]);
+    const prs = prLists.flatMap((entry) => entry.prs);
+    const donePrs = prLists.flatMap((entry) => entry.done || []);
     known = new Set([...repos, ...worktrees.map((tree) => tree.path)]);
     lastWorktrees = worktrees;
     if (force) for (const cache of [statusCache, prHistory, prExtras] as Map<string, { at: number }>[]) for (const entry of cache.values()) entry.at = 0;
@@ -341,7 +349,7 @@ export function createCodeDashboard(root: string) {
     const richPrs = prs.map((pr: any) => ({ ...pr, ...prExtras.get(pr.slug)?.byNumber.get(pr.number) }));
     const previews = repos.filter(hasPreview);
     const runnable = repos.filter(hasRun);
-    return { repos, me: login, slugs: Object.fromEntries(slugs), worktrees, prs: richPrs, skills: prSkills(), previews, runnable, runs: runs.list(), scanning: scanning || Boolean(scan) || openPrsLoading.size > 0, errors };
+    return { repos, me: login, slugs: Object.fromEntries(slugs), worktrees, prs: richPrs, donePrs, skills: prSkills(), previews, runnable, runs: runs.list(), scanning: scanning || Boolean(scan) || openPrsLoading.size > 0, errors };
   }
 
   // The overview can open a worktree from a ?wt= URL before the Code page has scanned anything; one scan settles it.
