@@ -1425,6 +1425,19 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-diff-del td { background: #fdeceb; } .code-diff-del td:nth-child(-n+2) { background: #f9d8d6; }
 .code-diff-table tr.code-diff-hunk td { padding: 4px 8px; background: #eef2fd; color: var(--action-muted); text-align: left; user-select: text; }
 .code-diff-markdown { max-width: 860px; margin: 0; padding: 18px 28px 40px; }
+.code-discussion { max-width: 860px; padding: 0 28px 40px; }
+.code-discussion h4 { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 12px 0 6px; border-top: 1px solid var(--line); font-size: .86rem; }
+.code-discussion h4 .code-more { margin: 0 0 0 auto; }
+.code-comment { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.code-comment:last-child { border-bottom: 0; }
+.code-comment header { display: flex; align-items: center; gap: 6px; min-height: 26px; font-size: .8rem; }
+.code-comment header a { color: var(--muted); text-decoration: none; white-space: nowrap; }
+.code-comment header a:hover { color: var(--action); }
+.code-comment header .code-icon-button { margin-left: auto; }
+.code-comment .markdown { margin-top: 4px; font-size: .86rem; }
+.code-comment .markdown > :first-child { margin-top: 0; }
+.code-comment .markdown > :last-child { margin-bottom: 0; }
+.code-comment.is-bot { opacity: .75; }
 .code-col-num .code-path { white-space: nowrap; }
 .code-diff:focus { outline: none; }
 .code-diff-split-table col:nth-child(odd) { width: 4.5em; }

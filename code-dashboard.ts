@@ -33,6 +33,22 @@ const NOTE_PROMPTS = {
   "notes-work": (url: string, _slug: string, _number: number, where: string, path: string) => `Work through my draft review notes on ${url}.${where} They are below and in ${path}. For each one, read the code it points at and tell me whether it holds up, what change or reply you'd suggest, and anything nearby I missed. Don't change code, push, or post to GitHub until I say which way to go.`,
 };
 
+// Conversation comments, line comments and review summaries from GitHub's REST API, oldest first. Reviews with no
+// text (a bare approval) are left out; bots are flagged, not dropped, so the overview can hide them by default.
+export function prDiscussion(issueComments: any[], lineComments: any[], reviews: any[]) {
+  const entry = (kind: string, item: any, at: string) => ({
+    id: `${kind}-${item.id}`, kind, author: item.user?.login || "", bot: item.user?.type === "Bot" || /\[bot\]$|copilot/i.test(item.user?.login || ""),
+    body: item.body || "", at, url: item.html_url || "",
+    ...(kind === "line" ? { path: item.path || "", line: item.line ?? item.original_line ?? 0 } : {}),
+    ...(kind === "review" ? { state: item.state || "" } : {}),
+  });
+  return [
+    ...issueComments.map((item) => entry("comment", item, item.created_at)),
+    ...lineComments.map((item) => entry("line", item, item.created_at)),
+    ...reviews.filter((item) => item.body?.trim()).map((item) => entry("review", item, item.submitted_at)),
+  ].filter((item) => item.body.trim()).sort((a, b) => String(a.at).localeCompare(String(b.at)));
+}
+
 type HistoryPr = { number: number; branch: string; state: string; title: string; author: string };
 type Cleanup = { level: "safe" | "review" | "keep" | "pending"; reason: string };
 type Worktree = { repo: string; path: string; branch: string; head: string; commitTime: number; subject?: string; created: number; ownCommits?: number; dirty: number | null; files?: string[]; ahead?: number; behind?: number; editTime: number; activity: number; main: boolean; prState?: string; prNumber?: number; cleanup?: Cleanup };
@@ -520,7 +536,11 @@ export function createCodeDashboard(root: string) {
 
   async function loadPrDetail(slug: string, number: number) {
     const fields = "body,files,commits,title,url,state,author,headRefName,baseRefName,headRefOid,baseRefOid,isDraft,reviewDecision,additions,deletions,createdAt,updatedAt,mergedAt";
-    const { stdout } = await exec("gh", ["pr", "view", String(number), "-R", slug, "--json", fields], { maxBuffer: 32 << 20 });
+    const api = (path: string) => exec("gh", ["api", "--paginate", "--slurp", `repos/${slug}/${path}`], { maxBuffer: 32 << 20 }).then(({ stdout }) => JSON.parse(stdout).flat(), () => []);
+    const [{ stdout }, issueComments, lineComments, reviews] = await Promise.all([
+      exec("gh", ["pr", "view", String(number), "-R", slug, "--json", fields], { maxBuffer: 32 << 20 }),
+      api(`issues/${number}/comments`), api(`pulls/${number}/comments`), api(`pulls/${number}/reviews`),
+    ]);
     const pr = JSON.parse(stdout);
     const repo = (await readRepos()).find((candidate) => candidate.split("/").pop()!.toLowerCase() === slug.split("/")[1].toLowerCase()) || "";
     return {
@@ -528,6 +548,7 @@ export function createCodeDashboard(root: string) {
       draft: pr.isDraft, reviewDecision: pr.reviewDecision || "", additions: pr.additions, deletions: pr.deletions, createdAt: pr.createdAt, updatedAt: pr.updatedAt, mergedAt: pr.mergedAt,
       headSha: pr.headRefOid, baseSha: pr.baseRefOid,
       body: pr.body || "",
+      discussion: prDiscussion(issueComments, lineComments, reviews),
       files: (pr.files || []).map((file: any) => ({ path: file.path, additions: file.additions, deletions: file.deletions })),
       // Oldest first, full SHAs, so the PR overlay can walk them in order and fetch each diff.
       commits: (pr.commits || []).map((commit: any) => ({ sha: commit.oid, subject: commit.messageHeadline, time: new Date(commit.committedDate).getTime(), author: commit.authors?.[0]?.login || commit.authors?.[0]?.name || "" })),
@@ -553,9 +574,9 @@ export function createCodeDashboard(root: string) {
   }
 
   // Both desktop apps take a prefilled draft and wait for Enter, so the user can edit before sending.
-  async function launchAgent(app: string, skill: string, prUrl: string, workspace: string) {
+  async function launchAgent(app: string, skill: string, prUrl: string, workspace: string, commentId = "") {
     await knownWorktree(workspace);
-    if (!prSkills().some((candidate) => candidate.id === skill) && !Object.hasOwn(NOTE_PROMPTS, skill)) throw new Error("Unknown skill.");
+    if (!prSkills().some((candidate) => candidate.id === skill) && !Object.hasOwn(NOTE_PROMPTS, skill) && skill !== "discuss-comment") throw new Error("Unknown skill.");
     const pull = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)$/.exec(prUrl);
     if (!pull) throw new Error("Not a GitHub pull request URL.");
     // Open in the repo root so the app reuses its existing project and permissions; the prompt names the worktree.
@@ -568,6 +589,13 @@ export function createCodeDashboard(root: string) {
       const notes = await prNotes.drafts(pull[1], Number(pull[2]));
       if (!notes.text) throw new Error("No draft notes on this PR.");
       const draft = `${NOTE_PROMPTS[skill as keyof typeof NOTE_PROMPTS](prUrl, pull[1], Number(pull[2]), where, notes.path)}\n\n${notes.text}\n`;
+      url = app === "claude" ? claudeUrl(root, draft) : codexNewTaskUrl(draft, root);
+    } else if (skill === "discuss-comment") {
+      const comment = (await prDetail(pull[1], Number(pull[2]))).discussion.find((item) => item.id === commentId);
+      if (!comment) throw new Error("That comment is no longer on the PR.");
+      const place = comment.kind === "line" ? ` on ${comment.path}${comment.line ? `:${comment.line}` : ""}` : "";
+      const quote = comment.body.trim().split("\n").map((line) => `> ${line}`).join("\n");
+      const draft = `Let's talk through this comment from @${comment.author}${place} on ${prUrl} (${comment.url}).${where} Read the PR and the code it points at first.\n\n${quote}\n\n`;
       url = app === "claude" ? claudeUrl(root, draft) : codexNewTaskUrl(draft, root);
     } else if (skill === "discuss") {
       const draft = `Let's talk through this pull request: ${prUrl}.${where} Read it first, then `;

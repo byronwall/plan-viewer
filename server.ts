@@ -795,7 +795,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       if (action === "cleanup-prompt") return json(response, 200, codeDashboard.cleanupPrompt(paths));
       if (action === "cleanup-agent") return json(response, 200, await codeDashboard.launchCleanup(String(body.app || ""), paths).then(() => ({ opened: true })));
       if (action === "session") return json(response, 200, await codeDashboard.launchSession(String(body.app || ""), String(body.path || "")).then(() => ({ opened: true })));
-      if (action === "agent") return json(response, 200, await codeDashboard.launchAgent(String(body.app || ""), String(body.skill || ""), String(body.url || ""), String(body.path || "")).then(() => ({ opened: true })));
+      if (action === "agent") return json(response, 200, await codeDashboard.launchAgent(String(body.app || ""), String(body.skill || ""), String(body.url || ""), String(body.path || ""), String(body.comment || "")).then(() => ({ opened: true })));
     }
     if (request.method === "GET" && url.pathname === "/api/issues") return json(response, 200, await issueTracker.load(url.searchParams.has("refresh")));
     if (request.method === "GET" && url.pathname === "/api/issues/issue") return json(response, 200, issueTracker.detail(url.searchParams.get("key") || ""));

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyWorktree } from "./code-dashboard.ts";
+import { classifyWorktree, prDiscussion } from "./code-dashboard.ts";
 
 const DAY = 86_400_000;
 const now = 100 * DAY;
@@ -50,4 +50,15 @@ test("parsePatch numbers lines and reads file status", async () => {
 test("splitHighlightedLines reopens spans that cross line breaks", async () => {
   const { splitHighlightedLines } = await import("./public/code.js");
   assert.deepEqual(splitHighlightedLines('<span class="c">/* a\nb */</span> x\ny'), ['<span class="c">/* a</span>', '<span class="c">b */</span> x', "y"]);
+});
+
+test("prDiscussion merges comments oldest first, flags bots and drops bare approvals", () => {
+  const list = prDiscussion(
+    [{ id: 1, user: { login: "acme-ci[bot]", type: "Bot" }, body: "Coverage 90%", created_at: "2026-01-03T00:00:00Z" }],
+    [{ id: 2, user: { login: "wile", type: "User" }, body: "Why a loop?", created_at: "2026-01-02T00:00:00Z", path: "src/a.py", line: 4 }],
+    [{ id: 3, user: { login: "road", type: "User" }, body: "", state: "APPROVED", submitted_at: "2026-01-01T00:00:00Z" },
+      { id: 4, user: { login: "road", type: "User" }, body: "Looks good", state: "COMMENTED", submitted_at: "2026-01-04T00:00:00Z" }],
+  );
+  assert.deepEqual(list.map((item) => [item.id, item.bot]), [["line-2", false], ["comment-1", true], ["review-4", false]]);
+  assert.equal(list[0].path, "src/a.py");
 });

@@ -984,9 +984,10 @@ function ensureDiffDialog() {
       return;
     }
     if (event.target.closest("[data-code-skill], [data-code-open], [data-code-session], [data-code-preview], [data-code-run], [data-code-stop-run]")) return handleClick(event);
-    const button = event.target.closest("[data-diff-hide], [data-diff-list], [data-map-zoom], [data-map-move], [data-map-edges], [data-map-export], [data-map-full], [data-diff-viewed], [data-diff-collapse], [data-diff-local-dir], [data-diff-file], [data-diff-mode], [data-diff-layout], [data-diff-view], [data-diff-scope], [data-diff-pr], [data-diff-wt], [data-diff-local], [data-diff-load], [data-diff-close], [data-code-copy]");
+    const button = event.target.closest("[data-diff-hide], [data-diff-list], [data-map-zoom], [data-map-move], [data-map-edges], [data-map-export], [data-map-full], [data-diff-viewed], [data-diff-collapse], [data-diff-local-dir], [data-diff-file], [data-diff-mode], [data-diff-layout], [data-diff-view], [data-diff-scope], [data-diff-pr], [data-diff-wt], [data-diff-local], [data-diff-load], [data-diff-close], [data-diff-bots], [data-code-copy]");
     if (!button) return;
     const { dataset } = button;
+    if ("diffBots" in dataset) { showBotComments = !showBotComments; return renderDiff(); }
     if ("diffHide" in dataset) return toggleHideViewed();
     if (dataset.diffList) return setFileListMode(dataset.diffList);
     if ("mapZoom" in dataset) { diff.zoom = dataset.mapZoom; return renderDiffFiles(); }
@@ -1036,8 +1037,8 @@ function ensureDiffDialog() {
     else if (key === "t") setFileListMode(fileListMode === "map" ? "list" : "map");
     else if (event.key === "Backspace" && fileListMode === "map" && diff.zoom) { diff.zoom = diff.zoom.includes("/") ? diff.zoom.slice(0, diff.zoom.lastIndexOf("/")) : ""; renderDiffFiles(); }
     else if ((key === "[" || key === "]") && diff.pr) stepStack(key === "]" ? 1 : -1);
-    else if (event.key === "D" && diffDialog.querySelector('nav.code-diff-scopes [data-diff-scope="description"]')) selectScope("description");
-    else if (event.key === "d" && subject()) cycleMainView();
+    else if (key === "d" && diff.pr) selectScope("description");
+    else if (key === "d" && subject()) cycleMainView();
     else if (key === "c" && diff.pr && !isDocScope() && diff.files?.[diff.index]) selectedLines() ? openComposer(selectedLines()) : noteOnFile(diff.index); // no selection: a note on the whole current file
     else if (/^[1-9]$/.test(key) && diffDialog.querySelectorAll(".code-side-skills [data-code-skill]")[key - 1]) diffDialog.querySelectorAll(".code-side-skills [data-code-skill]")[key - 1].click();
     else if (key === "w" && diffDialog.querySelector(diff.pr ? ".code-side-facts [data-diff-wt]" : ".code-side-facts [data-diff-pr]")) diffDialog.querySelector(diff.pr ? ".code-side-facts [data-diff-wt]" : ".code-side-facts [data-diff-pr]").click();
@@ -1379,8 +1380,8 @@ function prStack() {
   return { stack: current ? stackOf(current, list) : [], current };
 }
 
-// d cycles the views listed above the commits (Description and All changes; Local files, All changes and
-// Uncommitted in a worktree). From a commit it starts at the first.
+// In a worktree, d cycles the views listed above the commits (Local files, All changes and Uncommitted); from a
+// commit it starts at the first. On a PR, d always opens the Description.
 function cycleMainView() {
   const views = [...diffDialog.querySelectorAll("nav.code-diff-scopes [data-diff-scope]")].map((button) => button.dataset.diffScope);
   if (views.length) selectScope(views[(views.indexOf(diff.scope) + 1) % views.length]);
@@ -1417,7 +1418,7 @@ function prColumn() {
   const wtPath = tree?.path || detail?.worktree;
   const stackTip = stack.length > 1 ? `Every PR in the stack, #${stack[0].number}–#${stack[stack.length - 1].number}, against ${stack[0].base}` : "";
   return prFacts(pr, tree, wtPath, true)
-    + sideViews(`${detail?.body ? scopeButton("description", "Description") : ""}${scopeButton("all", "Changes", countLabel(allFiles?.length))}${stack.length > 1 ? scopeButton("stack", `<span data-tip="${escapeHtml(stackTip)}">Stack</span>`, countLabel(stack.length)) : ""}`)
+    + sideViews(`${detail ? scopeButton("description", "Description") : ""}${scopeButton("all", "Changes", countLabel(allFiles?.length))}${stack.length > 1 ? scopeButton("stack", `<span data-tip="${escapeHtml(stackTip)}">Stack</span>`, countLabel(stack.length)) : ""}`)
     + notesSection(pr, tree?.path || pr.repo || "")
     + `<section>${sideHead("Commits", commits ? String(commits.length) : "")}${!commits ? `<p class="code-muted">${ui.detailErrors.has(`pr:${key}`) ? "Couldn't load commits." : "Loading…"}</p>` : scopeCommits(commits)}</section>`
     + (stack.length > 1 ? `<section>${sideHead("Stack", `${stack.indexOf(current) + 1} of ${stack.length} · on ${escapeHtml(stack[0].base)}`)}<ol class="code-stack-list code-diff-stack">${stack.map((item, index) => `<li class="${item === current ? "is-current" : ""}"><button type="button" class="code-diff-stack-row" data-diff-pr="${escapeHtml(prKey(item.slug, item.number))}" ${item === current ? 'aria-current="true"' : ""}><b class="code-stack-n">${index + 1}</b><span class="code-diff-stack-item">${ciBadge(item)}#${item.number}</span><span>${escapeHtml(item.title)}</span></button></li>`).join("")}</ol></section>` : "");
@@ -1992,6 +1993,22 @@ function syncSections() {
   }
 }
 
+// Under the description: people's comments, oldest first. Bots (CI, Copilot, linters) hide behind a toggle.
+let showBotComments = false;
+function discussionHtml(pr, info) {
+  const all = info.discussion;
+  const bots = all.filter((item) => item.bot).length;
+  const shown = showBotComments ? all : all.filter((item) => !item.bot);
+  const workspace = (ui.data && info.branch ? worktreeFor(info)?.path : "") || info.worktree || info.repo || "";
+  const toggle = bots ? `<button type="button" class="code-more" data-diff-bots>${showBotComments ? "Hide" : "Show"} ${bots} bot ${bots === 1 ? "comment" : "comments"}</button>` : "";
+  const rows = shown.map((item) => `<article class="code-comment${item.bot ? " is-bot" : ""}"><header>${avatar(item.author)}<b>${escapeHtml(item.author)}</b>`
+    + `${item.kind === "line" ? `<span class="code-muted" data-tip="${escapeHtml(item.path)}">${escapeHtml(item.path.split("/").pop())}${item.line ? `:${item.line}` : ""}</span>` : item.kind === "review" ? `<span class="code-muted">${escapeHtml({ APPROVED: "approved", CHANGES_REQUESTED: "requested changes", COMMENTED: "reviewed" }[item.state] || "reviewed")}</span>` : ""}`
+    + `<a class="code-muted" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer" data-tip="${escapeHtml(new Date(item.at).toLocaleString())}">${ago(new Date(item.at).getTime())} ago</a>`
+    + `${info.url && workspace ? iconButton("discuss", `Discuss with ${appName()}`, `data-code-skill="discuss-comment" data-comment="${escapeHtml(item.id)}" data-url="${escapeHtml(info.url)}" data-path="${escapeHtml(workspace)}"`) : ""}</header>`
+    + `<div class="markdown">${prBodyHtml(pr.slug, pr.number, item.body)}</div></article>`).join("");
+  return `<section class="code-discussion"><h4>Comments <span class="code-muted">${shown.length}</span>${toggle}</h4>${rows || `<p class="code-muted">No comments from people yet.</p>`}</section>`;
+}
+
 function renderDiff() {
   if (!diffDialog) return;
   const { files, pr, wt } = diff;
@@ -2016,7 +2033,7 @@ function renderDiff() {
   const viewedCount = subject() && files && !description && !local ? files.filter(isViewed).length : 0;
   const progress = subject() && files?.length && !description && !local
     ? ` · <span class="code-diff-progress${viewedCount === files.length ? " is-done" : viewedCount ? "" : " is-none"}">${viewedCount === files.length ? `All ${files.length} viewed` : `${viewedCount} of ${files.length} viewed`}</span>` : "";
-  const hints = `<kbd>J</kbd><kbd>K</kbd> file${subject() ? ` · <kbd>X</kbd> viewed · <kbd>U</kbd> unviewed only · <kbd>D</kbd> views · <kbd>N</kbd><kbd>P</kbd> ${wt ? "scope" : "commit"}` : ""} · <kbd>/</kbd> filter · <kbd>T</kbd> map · <kbd>V</kbd> view · <kbd>S</kbd> layout${markdown ? " · <kbd>M</kbd> rendered" : ""}${pr ? " · <kbd>C</kbd> note" : ""}${pr && prStack().stack.length > 1 ? " · <kbd>[</kbd><kbd>]</kbd> stack" : ""}`;
+  const hints = `<kbd>J</kbd><kbd>K</kbd> file${subject() ? ` · <kbd>X</kbd> viewed · <kbd>U</kbd> unviewed only · <kbd>D</kbd> ${wt ? "views" : "description"} · <kbd>N</kbd><kbd>P</kbd> ${wt ? "scope" : "commit"}` : ""} · <kbd>/</kbd> filter · <kbd>T</kbd> map · <kbd>V</kbd> view · <kbd>S</kbd> layout${markdown ? " · <kbd>M</kbd> rendered" : ""}${pr ? " · <kbd>C</kbd> note" : ""}${pr && prStack().stack.length > 1 ? " · <kbd>[</kbd><kbd>]</kbd> stack" : ""}`;
   diffRegion("head", `<div class="code-diff-title"><h3>${title}</h3><p class="code-muted">${sub}${files && !description && !local && !progress ? ` · ${files.length} ${files.length === 1 ? "file" : "files"}` : ""}${progress}</p></div><span class="code-diff-hints code-muted">${hints}</span>${diffSegment("data-diff-view", diffView, { single: "One file", all: "All files" })}${diffSegment("data-diff-layout", diffLayout, { split: "Split", unified: "Unified" })}<button type="button" class="code-icon-button" data-diff-close aria-label="Close (Esc)">${icon("fail")}</button>`);
   diffDialog.querySelector(".code-diff-split").classList.toggle("has-pr", Boolean(subject()));
   diffDialog.toggleAttribute("data-notes", Boolean(pr));
@@ -2024,7 +2041,7 @@ function renderDiff() {
   renderDiffFiles();
   diffRegion("filehead", file && !all ? `<div class="code-diff-file-head">${fileHeadInner(file, markdown ? diffSegment("data-diff-mode", rendered ? "rendered" : "diff", { rendered: "Rendered", diff: "Diff" }) : "")}${viewedBox(file)}</div>` : "");
   const body = local ? localFilesBody()
-    : description ? (info.body ? `<div class="markdown code-diff-markdown">${prBodyHtml(pr.slug, pr.number, info.body)}</div>` : `<p class="code-muted">Loading…</p>`)
+    : description ? (info.discussion ? `<div class="markdown code-diff-markdown">${info.body ? prBodyHtml(pr.slug, pr.number, info.body) : `<p class="code-muted">No description.</p>`}</div>${discussionHtml(pr, info)}` : `<p class="code-muted">Loading…</p>`)
     : !files ? `<p class="code-muted">Loading diff…</p>`
     : diff.error ? `<p class="work-warning code-diff-error">Couldn't load this diff: ${escapeHtml(diff.error)}</p>`
     : !files.length ? `<p class="code-muted">No changes.</p>`
@@ -2703,7 +2720,7 @@ async function handleClick(event) {
     if (dataset.codeOpen) { await post("open", { kind: dataset.codeOpen, path: dataset.path }); return; }
     if ("codeSession" in dataset) { await post("session", { app: agentApp(), path: dataset.path }); notify(`Opened a ${appName()} session in ${shortPath(dataset.path)}.`); return; }
     if (dataset.codeSkill) {
-      await post("agent", { app: agentApp(), skill: dataset.codeSkill, url: dataset.url, path: dataset.path });
+      await post("agent", { app: agentApp(), skill: dataset.codeSkill, url: dataset.url, path: dataset.path, comment: dataset.comment || "" });
       notify(`Drafted ${dataset.codeSkill} in ${appName()}. Review it and press Enter to send.`);
       return;
     }
