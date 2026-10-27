@@ -96,7 +96,8 @@ async function fetchGithub(keys: string[]) {
       // A commit never changes, so it settles as "done"; its state is the commit date.
       const commit = data[`k${i}`]?.object;
       if (commit?.messageHeadline) {
-        const date = new Date(commit.committedDate).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+        const at = new Date(commit.committedDate);
+        const date = at.toLocaleDateString("en-US", { month: "short", day: "numeric", year: at.getUTCFullYear() === new Date().getUTCFullYear() ? undefined : "numeric", timeZone: "UTC" });
         out[key] = { title: commit.messageHeadline, state: date, tone: "done", person: commit.author?.user?.login || commit.author?.name, when: commit.committedDate, fetchedAt: Date.now() };
         return;
       }

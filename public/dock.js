@@ -47,7 +47,7 @@ export function applyLinkMetadata(root, metadata) {
   for (const row of root.querySelectorAll(".dock-link[data-meta-key]")) {
     const meta = metadata[row.dataset.metaKey];
     if (!meta) continue;
-    if (meta.title) row.querySelector(".dock-link-detail").textContent = meta.title;
+    if (meta.title) Object.assign(row.querySelector(".dock-link-detail"), { textContent: meta.title, className: "dock-link-detail" });
     const state = row.querySelector(".dock-link-state");
     if (!row.dataset.metaKey.startsWith("slack:")) {
       state.textContent = meta.state;
@@ -105,12 +105,13 @@ export function collectLinks(root, documents, selfPath = "") {
     try { url = new URL(href); } catch { continue; }
     const text = linkText(a);
     let state = "";
+    let placeholder = false;
     let group = "web", label = url.hostname.replace(/^www\./, ""), detail = text !== label ? text : url.pathname;
     const github = url.hostname === "github.com" && url.pathname.match(/^\/([^/]+)\/([^/]+)\/(pull|issues|commit)\/(\w+)/);
     const issue = url.pathname.match(/\/(?:issue|browse)\/([A-Z][A-Z0-9]*-\d+)/);
-    if (url.hostname === "github.com") [group, label, detail] = ["github", github ? (github[3] === "commit" ? github[4].slice(0, 7) : `#${github[4]}`) : url.pathname.split("/")[2] || url.pathname.slice(1), github ? `${github[2]} · ${{ pull: "pull request", issues: "issue", commit: "commit" }[github[3]]}` : decodeURIComponent(url.pathname.split("/").filter(Boolean).at(-1) || "GitHub")];
-    else if (url.hostname === "linear.app") [group, label, detail] = ["linear", issue?.[1] || text, issue && text !== issue[1] ? text : "Linear issue"];
-    else if (url.hostname.endsWith(".atlassian.net")) [group, label, detail] = ["jira", issue?.[1] || text, issue && text !== issue[1] ? text : "Jira issue"];
+    if (url.hostname === "github.com") [group, label, detail, placeholder] = ["github", github ? (github[3] === "commit" ? github[4].slice(0, 7) : `#${github[4]}`) : url.pathname.split("/")[2] || url.pathname.slice(1), github ? `${github[2]} · ${{ pull: "pull request", issues: "issue", commit: "commit" }[github[3]]}` : decodeURIComponent(url.pathname.split("/").filter(Boolean).at(-1) || "GitHub"), Boolean(github)];
+    else if (url.hostname === "linear.app") [group, label, detail, placeholder] = ["linear", issue?.[1] || text, issue && text !== issue[1] ? text : "Linear issue", !(issue && text !== issue[1])];
+    else if (url.hostname.endsWith(".atlassian.net")) [group, label, detail, placeholder] = ["jira", issue?.[1] || text, issue && text !== issue[1] ? text : "Jira issue", !(issue && text !== issue[1])];
     else if (isSlackLink(href)) [group, label, detail, state] = ["slack", ...slackSummary(url, text)];
     else if (url.protocol === "codex:" || url.hostname === "chatgpt.com") [group, label, detail] = ["chats", url.protocol === "codex:" ? "Codex" : "ChatGPT", text || "Conversation"];
     // One row per thing linked: an issue's comment links and a commit's longer or shorter hash fold into its first row,
@@ -122,18 +123,19 @@ export function collectLinks(root, documents, selfPath = "") {
       if (!url.search && seen.href.includes("?")) seen.href = href;
       continue;
     }
-    groups.get(group).set(key, { href, label, detail, external: url.protocol !== "codex:", metaKey, state, slack: group === "slack", channel: group === "slack" ? url.pathname.split("/")[2] : "" });
+    groups.get(group).set(key, { href, label, detail, placeholder, external: url.protocol !== "codex:", metaKey, state, slack: group === "slack", channel: group === "slack" ? url.pathname.split("/")[2] : "" });
   }
   return SOURCES.map(([key, name, icon]) => ({ key, name, icon, items: [...groups.get(key).values()] })).filter((group) => group.items.length);
 }
 
+// Generic details ("Linear issue") stay quiet until the metadata lookup brings the real title.
 // Rows share their list's columns (label, title, state, arrow) so keys, titles and states line up from row to row.
 // The icon rides in the label cell; inside the link browser only tasks keep one, since the source rail names the kind.
 // Paths break only after a slash, never at a hyphen.
 const shownPath = (path) => escapeHtml(path).replaceAll("-", "\u2011").replaceAll("/", "/<wbr>");
 function linkRow(item, icon = "") {
-  const body = `<span class="dock-link-label">${icon ? `<span class="dock-link-icon">${icon}</span>` : ""}${escapeHtml(item.label || "")}</span><span class="dock-link-detail">${escapeHtml(item.detail || "")}${item.where ? `<span class="dock-link-path">${shownPath(item.where)}</span>` : ""}</span><span class="dock-link-state">${escapeHtml(item.state || "")}</span>`;
-  if (item.path) return `<a class="markdown-document-link dock-link${item.status ? ` task-status-ink-${item.status}` : ""}"${item.current ? ' aria-current="page"' : ""} href="?${new URLSearchParams({ path: item.path })}" data-document-path="${escapeHtml(item.path)}" data-document-anchor="" title="${escapeHtml(item.path)}">${body}<span class="dock-link-out" aria-hidden="true">→</span></a>`;
+  const body = `<span class="dock-link-label">${icon ? `<span class="dock-link-icon">${icon}</span>` : ""}${escapeHtml(item.label || "")}</span><span class="dock-link-detail${item.placeholder ? " is-placeholder" : ""}">${escapeHtml(item.detail || "")}${item.where ? `<span class="dock-link-path">${shownPath(item.where)}</span>` : ""}</span><span class="dock-link-state">${escapeHtml(item.state || "")}</span>`;
+  if (item.path) return `<a class="markdown-document-link dock-link${item.status ? ` task-status-ink-${item.status}` : ""}"${item.current ? ' aria-current="page"' : ""} href="?${new URLSearchParams({ path: item.path })}" data-document-path="${escapeHtml(item.path)}" data-document-anchor="">${body}<span class="dock-link-out" aria-hidden="true">→</span></a>`;
   return `<a class="dock-link${item.slack ? " slack-link" : ""}" href="${escapeHtml(item.href)}"${item.external ? ' target="_blank" rel="noreferrer"' : ""}${item.metaKey ? ` data-meta-key="${escapeHtml(item.metaKey)}"` : ""} title="${escapeHtml(item.href)}">${body}<span class="dock-link-out" aria-hidden="true">↗</span></a>`;
 }
 

@@ -1988,7 +1988,9 @@ function linkTipHtml(link, meta) {
   const github = key.match(/^github:(.+)#(\d+)$/);
   // Slack keys are channel/timestamp IDs, so a Slack card leads with its channel name instead.
   const name = github ? `${github[1]} #${github[2]}` : source === "slack" ? meta.state || "Slack message" : key.replace(/^\w+:/, "") || link.dataset.tip;
-  const state = meta.state && source !== "slack" ? `<span class="hover-card-state" data-tone="${escapeHtml(meta.tone || "")}">${escapeHtml(meta.state)}${meta.when ? ` <span>${ago(meta.when)} ago</span>` : ""}</span>` : "";
+  // A commit's state is its date, which the age already says.
+  const commit = key.includes("@");
+  const state = meta.state && source !== "slack" ? `<span class="hover-card-state" data-tone="${commit ? "" : escapeHtml(meta.tone || "")}">${escapeHtml(commit ? "Committed" : meta.state)}${meta.when ? ` <span>${ago(meta.when)} ago</span>` : ""}</span>` : "";
   const sourceIcon = link.querySelector(".service-icon")?.outerHTML || "";
   const lines = [];
   const pr = meta.pr;
@@ -2131,7 +2133,11 @@ elements.chunks.addEventListener("click", (event) => {
   if (source) {
     const browser = source.closest(".dock-link-browser");
     for (const tab of browser.querySelectorAll("[data-dock-source]")) tab.setAttribute("aria-selected", String(tab === source));
+    // Hold the panel at its current height so shorter tabs don't shrink it, and start each tab at its top.
+    const panel = browser.closest(".doc-dock-panel");
+    panel.style.minHeight = `${panel.offsetHeight}px`;
     for (const list of browser.querySelectorAll("[data-dock-source-list]")) list.hidden = list.dataset.dockSourceList !== source.dataset.dockSource;
+    browser.querySelector(".dock-source-lists").scrollTop = 0;
     return;
   }
   const dockPanel = event.target.closest(".doc-dock-panel");
@@ -2766,6 +2772,14 @@ document.addEventListener("keydown", (event) => {
     : key === "arrowright" ? linkTabs[(current + 1) % linkTabs.length]
     : key === "arrowleft" ? linkTabs[(current - 1 + linkTabs.length) % linkTabs.length] : null);
   if (linkTab) { event.preventDefault(); linkTab.click(); return; }
+  // ↑ ↓ step through the rows of an open dock list.
+  const rows = (key === "arrowdown" || key === "arrowup") && [...document.querySelectorAll(".doc-dock-panel:popover-open .dock-source-list:not([hidden]) .dock-link")];
+  if (rows?.length) {
+    event.preventDefault();
+    const at = rows.indexOf(document.activeElement);
+    rows[at < 0 ? (key === "arrowdown" ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, at + (key === "arrowdown" ? 1 : -1)))].focus();
+    return;
+  }
   if (state.openComposer || document.querySelector(":popover-open:not(.code-tip)")) return;
   const shortcut = shortcuts.find(shortcut => shortcut.run && shortcut.keys.some(binding => binding.toLowerCase() === key));
   if (shortcut) { event.preventDefault(); shortcut.run(); }
