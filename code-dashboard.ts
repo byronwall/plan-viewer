@@ -749,40 +749,6 @@ export function createCodeDashboard(root: string) {
     return { sha: commit.sha, subject: commit.commit.message.split("\n")[0], author: commit.commit.author?.name || commit.author?.login || "", time: new Date(commit.commit.author?.date).getTime(), files: commit.files?.length || 0, additions: commit.stats?.additions || 0, deletions: commit.stats?.deletions || 0, local: false, ...await context };
   }
 
-  // A PR is diffed in its tracked local clone when there is one: fetch the head and base commits by SHA (no refs or
-  // FETCH_HEAD written; only new objects cross the network) and diff from their merge base, as GitHub does. GitHub's
-  // diff is the fallback, for repos without a clone or a failed fetch; it refuses PRs over 300 files or 20,000 lines.
-  async function prPatch(slug: string, number: number) {
-    const { repo, headSha, baseSha } = await prDetail(slug, number);
-    if (repo && headSha && baseSha) {
-      try {
-        await git(repo, ["fetch", "--no-write-fetch-head", "--quiet", "origin", headSha, baseSha]);
-        return (await exec("git", ["-C", repo, "diff", "-M", "--no-color", `${baseSha}...${headSha}`], { maxBuffer: 256 << 20 })).stdout;
-      } catch {}
-    }
-    return gh(["pr", "diff", String(number), "-R", slug, "--color", "never"]).catch((error) => {
-      if (/too_large|exceeded the maximum/.test(error.message)) throw new Error(`This PR's diff is too large for GitHub to send; add a local clone of ${slug} to see it.`);
-      throw error;
-    });
-  }
-
-  // A stack diffs in the tracked clone like a PR, with both branch tips read by `git ls-remote` so no GitHub API call
-  // is needed; GitHub's compare diff is the fallback.
-  async function stackPatch(slug: string, base: string, head: string) {
-    const repo = await cloneFor(slug);
-    if (repo) {
-      try {
-        const tips = new Map((await git(repo, ["ls-remote", "origin", `refs/heads/${base}`, `refs/heads/${head}`])).trim().split("\n").map((line) => line.split("\t").reverse() as [string, string]));
-        const [baseSha, headSha] = [tips.get(`refs/heads/${base}`), tips.get(`refs/heads/${head}`)];
-        if (baseSha && headSha) {
-          await git(repo, ["fetch", "--no-write-fetch-head", "--quiet", "origin", headSha, baseSha]);
-          return (await exec("git", ["-C", repo, "diff", "-M", "--no-color", `${baseSha}...${headSha}`], { maxBuffer: 256 << 20 })).stdout;
-        }
-      } catch {}
-    }
-    return gh(["api", "-H", "Accept: application/vnd.github.diff", `repos/${slug}/compare/${base}...${head}`]);
-  }
-
   // Unified patch text for a commit, a worktree's uncommitted changes (tracked and untracked), or a pull request.
   async function diff(params: URLSearchParams) {
     const source = params.get("source");
@@ -803,15 +769,17 @@ export function createCodeDashboard(root: string) {
       ]);
       return { patch: tracked + added };
     }
-    if (source === "pr") {
-      const slug = params.get("slug") || "";
-      const number = Number(params.get("number"));
-      checkSlug(slug, number);
-      return { patch: await cachedPr("diff", slug, number, () => prPatch(slug, number)) };
-    }
-    if (source === "stack") {
-      const { slug, number, base, head, key } = stackTarget(params);
-      return { patch: await cachedPr(`stack-diff ${key}`, slug, number, () => stackPatch(slug, base, head)) };
+    if (source === "pr" || source === "stack") {
+      const { slug, number, refs } = await prRefs(params);
+      const stack = source === "stack" ? stackTarget(params) : null;
+      return { patch: await cachedPr(stack ? `stack-diff ${stack.key}` : "diff", slug, number, async () => {
+        if (refs.repo) return (await exec("git", ["-C", refs.repo, "diff", "-M", "--no-color", refs.base, refs.head], { maxBuffer: 256 << 20 })).stdout;
+        if (stack) return gh(["api", "-H", "Accept: application/vnd.github.diff", `repos/${slug}/compare/${stack.key}`]);
+        return gh(["pr", "diff", String(number), "-R", slug, "--color", "never"]).catch((error) => {
+          if (/too_large|exceeded the maximum/.test(error.message)) throw new Error(`This PR's diff is too large for GitHub to send; add a local clone of ${slug} to see it.`);
+          throw error;
+        });
+      }) };
     }
     throw new Error("Unknown diff source.");
   }
@@ -832,15 +800,10 @@ export function createCodeDashboard(root: string) {
       if ((await stat(target)).size > 2 << 20) throw new Error(`${file} is over 2 MB; open it in an editor.`);
       return { text: await readFile(target, "utf8") };
     }
-    if (source === "pr") {
-      const slug = params.get("slug") || "";
-      const number = Number(params.get("number"));
-      checkSlug(slug, number);
-      return { text: await gh(["api", "-H", "Accept: application/vnd.github.raw", `repos/${slug}/contents/${file.split("/").map(encodeURIComponent).join("/")}?ref=refs/pull/${number}/head`]) };
-    }
-    if (source === "stack") {
-      const { slug, head } = stackTarget(params);
-      return { text: await gh(["api", "-H", "Accept: application/vnd.github.raw", `repos/${slug}/contents/${file.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(head)}`]) };
+    if (source === "pr" || source === "stack") {
+      const { slug, refs } = await prRefs(params);
+      if (refs.repo) return { text: await git(refs.repo, ["show", `${refs.head}:${file}`]) };
+      return { text: await gh(["api", "-H", "Accept: application/vnd.github.raw", `repos/${slug}/contents/${file.split("/").map(encodeURIComponent).join("/")}?ref=${refs.head}`]) };
     }
     throw new Error("Unknown file source.");
   }
@@ -866,23 +829,45 @@ export function createCodeDashboard(root: string) {
     }
     if (source === "pr" || source === "stack") {
       const { slug, refs } = await prRefs(params);
-      const raw = (path: string, ref: string) => gh(["api", "-H", "Accept: application/vnd.github.raw", `repos/${slug}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${ref}`]).catch(() => null);
+      const raw = refs.repo ? (path: string, ref: string) => show(refs.repo, `${ref}:${path}`) : (path: string, ref: string) => gh(["api", "-H", "Accept: application/vnd.github.raw", `repos/${slug}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${ref}`]).catch(() => null);
       const [before, after] = await Promise.all([raw(old, refs.base), raw(file, refs.head)]);
       return { old: fit(before), new: fit(after) };
     }
     return { old: null, new: null };
   }
 
-  // Both diffs compare against the merge base, so the old side is read there rather than at the base tip.
+  // A PR's or stack's merge base and head. Both diffs compare against the merge base, so the old side is read there
+  // rather than at the base tip. With a tracked clone everything resolves locally: the PR details already carry both
+  // tips (a stack's branch tips come from `git ls-remote`), commits missing locally are fetched by SHA (no refs or
+  // FETCH_HEAD written), and git finds the merge base. Without a clone, or if that fails, GitHub answers and repo is "".
   async function prRefs(params: URLSearchParams) {
     const stack = params.get("source") === "stack" ? stackTarget(params) : null;
     const slug = params.get("slug") || "";
     const number = Number(params.get("number"));
     checkSlug(slug, number);
     const refs = await cachedPr(stack ? `stack-refs ${stack.key}` : "refs", slug, number, async () => {
+      const repo = await cloneFor(slug);
+      if (repo) {
+        try {
+          let tips: (string | undefined)[];
+          if (stack) {
+            const remote = new Map((await git(repo, ["ls-remote", "origin", `refs/heads/${stack.base}`, `refs/heads/${stack.head}`])).trim().split("\n").map((line) => line.split("\t").reverse() as [string, string]));
+            tips = [remote.get(`refs/heads/${stack.base}`), remote.get(`refs/heads/${stack.head}`)];
+          } else {
+            const detail = await prDetail(slug, number);
+            tips = [detail.baseSha, detail.headSha];
+          }
+          const [base, head] = tips;
+          if (base && head) {
+            const missing = await Promise.all([base, head].map((sha) => git(repo, ["cat-file", "-e", `${sha}^{commit}`]).then(() => false, () => true)));
+            if (missing.some(Boolean)) await git(repo, ["fetch", "--no-write-fetch-head", "--quiet", "--no-tags", "origin", head, base]);
+            return { repo, base: (await git(repo, ["merge-base", base, head])).trim(), head };
+          }
+        } catch {}
+      }
       const [base, head] = stack ? [stack.base, (await gh(["api", `repos/${slug}/commits/${stack.head}`, "--jq", ".sha"])).trim()]
         : (await gh(["api", `repos/${slug}/pulls/${number}`, "--jq", '.base.sha + " " + .head.sha'])).trim().split(" ");
-      return { base: (await gh(["api", `repos/${slug}/compare/${base}...${head}`, "--jq", ".merge_base_commit.sha"])).trim(), head };
+      return { repo: "", base: (await gh(["api", `repos/${slug}/compare/${base}...${head}`, "--jq", ".merge_base_commit.sha"])).trim(), head };
     });
     return { slug, number, refs };
   }
@@ -902,12 +887,8 @@ export function createCodeDashboard(root: string) {
       repo = await knownWorktree(params.get("path") || "");
       before = source === "branch" ? await branchBase(repo) : "HEAD";
     } else if (source === "pr" || source === "stack") {
-      const { slug, refs } = await prRefs(params);
-      repo = await cloneFor(slug);
-      if (repo && (await git(repo, ["cat-file", "-e", `${refs.base}^{commit}`]).then(() => git(repo, ["cat-file", "-e", `${refs.head}^{commit}`])).then(() => false, () => true))) {
-        await git(repo, ["fetch", "--quiet", "--no-tags", "origin", refs.base, refs.head]).catch(() => {});
-      }
-      [before, after] = [refs.base, refs.head];
+      const { refs } = await prRefs(params);
+      [repo, before, after] = [refs.repo, refs.base, refs.head];
     } else throw new Error("Unknown diff source.");
     if (!repo || !paths.length) return { before: {}, after: {} };
     const count = async (rev: string) => {
