@@ -32,6 +32,9 @@ export function metadataKey(href) {
   try { url = new URL(href); } catch { return ""; }
   const github = url.hostname === "github.com" && url.pathname.match(/^\/([^/]+)\/([^/]+)\/(?:pull|issues)\/(\d+)/);
   if (github) return `github:${github[1]}/${github[2]}#${github[3]}`;
+  // Commits key on their first seven hex digits, so `fa44974d8` and `fa44974d87` are one commit.
+  const commit = url.hostname === "github.com" && url.pathname.match(/^\/([^/]+)\/([^/]+)\/commit\/([0-9a-f]{7,40})\/?$/i);
+  if (commit) return `github:${commit[1]}/${commit[2]}@${commit[3].slice(0, 7).toLowerCase()}`;
   const issue = url.pathname.match(/\/(?:issue|browse)\/([A-Z][A-Z0-9]*-\d+)/);
   if (issue && url.hostname === "linear.app") return `linear:${issue[1]}`;
   if (issue && url.hostname.endsWith(".atlassian.net")) return `jira:${issue[1]}`;
@@ -48,7 +51,8 @@ export function applyLinkMetadata(root, metadata) {
     const state = row.querySelector(".dock-link-state");
     if (!row.dataset.metaKey.startsWith("slack:")) {
       state.textContent = meta.state;
-      state.dataset.tone = meta.tone;
+      // A commit's state is its date, which reads as plain metadata rather than a status color.
+      if (!row.dataset.metaKey.includes("@")) state.dataset.tone = meta.tone;
     }
     row.title = [row.querySelector(".dock-link-label").textContent, meta.title, meta.state, meta.person].filter(Boolean).join(" · ");
     const channel = row.closest(".dock-channel")?.querySelector(".dock-channel-name");
@@ -83,11 +87,12 @@ const docItem = (doc, path, where = path) => doc?.task ? { path, label: doc.task
   : { path, label: "", detail: doc?.title || path, where };
 
 // Outgoing links, read from the rendered document so every detector (markdown links, bare IDs, task paths) counts.
-export function collectLinks(root, documents) {
+export function collectLinks(root, documents, selfPath = "") {
   const byPath = new Map(documents.map((doc) => [doc.path, doc]));
   const groups = new Map(SOURCES.map(([key]) => [key, new Map()]));
   for (const a of root.querySelectorAll(".chunk-card a[href]")) {
     const path = a.dataset.documentPath;
+    if (path === selfPath) continue; // a document mentioning its own ID isn't a link out
     if (path) {
       const doc = byPath.get(path);
       const group = /^tasks\/TASK-\d{4}\.md$/.test(path) ? "tasks" : "docs";
@@ -95,21 +100,29 @@ export function collectLinks(root, documents) {
       continue;
     }
     const href = a.getAttribute("href");
-    if (a.classList.contains("markdown-asset-link") || groups.get("web").has(href)) continue;
+    if (a.classList.contains("markdown-asset-link")) continue;
     let url;
     try { url = new URL(href); } catch { continue; }
     const text = linkText(a);
     let state = "";
     let group = "web", label = url.hostname.replace(/^www\./, ""), detail = text !== label ? text : url.pathname;
-    const github = url.hostname === "github.com" && url.pathname.match(/^\/([^/]+)\/([^/]+)\/(pull|issues)\/(\d+)/);
+    const github = url.hostname === "github.com" && url.pathname.match(/^\/([^/]+)\/([^/]+)\/(pull|issues|commit)\/(\w+)/);
     const issue = url.pathname.match(/\/(?:issue|browse)\/([A-Z][A-Z0-9]*-\d+)/);
-    if (url.hostname === "github.com") [group, label, detail] = ["github", github ? `#${github[4]}` : url.pathname.split("/")[2] || url.pathname.slice(1), github ? `${github[2]} · ${github[3] === "pull" ? "pull request" : "issue"}` : decodeURIComponent(url.pathname.split("/").filter(Boolean).at(-1) || "GitHub")];
+    if (url.hostname === "github.com") [group, label, detail] = ["github", github ? (github[3] === "commit" ? github[4].slice(0, 7) : `#${github[4]}`) : url.pathname.split("/")[2] || url.pathname.slice(1), github ? `${github[2]} · ${{ pull: "pull request", issues: "issue", commit: "commit" }[github[3]]}` : decodeURIComponent(url.pathname.split("/").filter(Boolean).at(-1) || "GitHub")];
     else if (url.hostname === "linear.app") [group, label, detail] = ["linear", issue?.[1] || text, issue && text !== issue[1] ? text : "Linear issue"];
     else if (url.hostname.endsWith(".atlassian.net")) [group, label, detail] = ["jira", issue?.[1] || text, issue && text !== issue[1] ? text : "Jira issue"];
     else if (isSlackLink(href)) [group, label, detail, state] = ["slack", ...slackSummary(url, text)];
     else if (url.protocol === "codex:" || url.hostname === "chatgpt.com") [group, label, detail] = ["chats", url.protocol === "codex:" ? "Codex" : "ChatGPT", text || "Conversation"];
-    for (const items of groups.values()) if (items.has(href)) group = "";
-    if (group) groups.get(group).set(href, { href, label, detail, external: url.protocol !== "codex:", metaKey: metadataKey(href), state, slack: group === "slack", channel: group === "slack" ? url.pathname.split("/")[2] : "" });
+    // One row per thing linked: an issue's comment links and a commit's longer or shorter hash fold into its first row,
+    // which takes the plainest URL seen (no query string) so it opens the item itself.
+    const metaKey = metadataKey(href);
+    const key = metaKey && !metaKey.startsWith("slack:") ? metaKey : href;
+    const seen = [...groups.values()].find((items) => items.has(key))?.get(key);
+    if (seen) {
+      if (!url.search && seen.href.includes("?")) seen.href = href;
+      continue;
+    }
+    groups.get(group).set(key, { href, label, detail, external: url.protocol !== "codex:", metaKey, state, slack: group === "slack", channel: group === "slack" ? url.pathname.split("/")[2] : "" });
   }
   return SOURCES.map(([key, name, icon]) => ({ key, name, icon, items: [...groups.get(key).values()] })).filter((group) => group.items.length);
 }

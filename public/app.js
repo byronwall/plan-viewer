@@ -1377,7 +1377,7 @@ function chunkBody(doc, chunk) {
 // Panels repeat chunk content, so their copies drop ids (SVG markers excepted) to keep anchors and jumps unique.
 function renderDocumentDock(doc) {
   if (doc.format === "text") return;
-  const links = collectLinks(elements.chunks, state.documents);
+  const links = collectLinks(elements.chunks, state.documents, doc.path);
   elements.chunks.insertAdjacentHTML("afterbegin", renderDock({ doc, documents: state.documents, links, body: chunk => chunkBody(doc, chunk) }));
   for (const node of elements.chunks.querySelectorAll(".doc-dock-panel-body [id]")) if (node.localName !== "marker") node.removeAttribute("id");
   syncDockStuck();
@@ -1515,7 +1515,7 @@ function renderDocument() {
 }
 
 function enhanceTaskReferences() {
-  for (const link of elements.chunks.querySelectorAll('.markdown-document-link[data-document-path^="tasks/"]:not(.daily-action-more)')) {
+  for (const link of elements.chunks.querySelectorAll('.markdown-document-link[data-document-path^="tasks/"]:not(.daily-action-more, .dock-link)')) {
     const doc = state.documents.find((candidate) => candidate.path === link.dataset.documentPath);
     if (!doc?.task) continue;
     const before = link.previousSibling;

@@ -57,7 +57,7 @@ export function createLinkMetadataStore(root: string) {
   }
 
   return async function lookup(keys: string[]) {
-    const wanted = [...new Set(keys.filter((key) => /^(github:[\w.-]+\/[\w.-]+#\d+|linear:[A-Z]+-\d+|jira:[A-Z]+-\d+|slack:[A-Z0-9]+\/\d+\.\d+(\/\d+\.\d+)?)$/.test(key)))];
+    const wanted = [...new Set(keys.filter((key) => /^(github:[\w.-]+\/[\w.-]+(#\d+|@[0-9a-f]{7})|linear:[A-Z]+-\d+|jira:[A-Z]+-\d+|slack:[A-Z0-9]+\/\d+\.\d+(\/\d+\.\d+)?)$/.test(key)))];
     const store = await load();
     const isStale = (meta: LinkMetadata) => meta.v !== VERSION || Date.now() - meta.fetchedAt > (meta.tone === "done" || meta.tone === "closed" ? SETTLED_MS : FRESH_MS);
     const missing = wanted.filter((key) => !store[key]);
@@ -84,13 +84,22 @@ async function fetchGithub(keys: string[]) {
     const fields = "title state createdAt closedAt author { login }";
     const pull = "isDraft mergedAt reviewDecision mergeable baseRefName headRefName additions deletions changedFiles commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }";
     const query = `query { ${batch.map((key, i) => {
-      const [, owner, name, number] = key.match(/^github:([^/]+)\/([^#]+)#(\d+)$/)!;
-      return `k${i}: repository(owner: ${literal(owner)}, name: ${literal(name)}) { issueOrPullRequest(number: ${number}) { __typename ... on PullRequest { ${fields} ${pull} } ... on Issue { ${fields} } } }`;
+      const [, owner, name, kind, ref] = key.match(/^github:([^/]+)\/([^#@]+)([#@])(\w+)$/)!;
+      const repo = `k${i}: repository(owner: ${literal(owner)}, name: ${literal(name)})`;
+      return kind === "@" ? `${repo} { object(expression: ${literal(ref)}) { ... on Commit { messageHeadline committedDate author { user { login } name } } } }`
+        : `${repo} { issueOrPullRequest(number: ${ref}) { __typename ... on PullRequest { ${fields} ${pull} } ... on Issue { ${fields} } } }`;
     }).join(" ")} }`;
     // GraphQL reports unknown numbers as errors alongside partial data, so read stdout even when gh exits non-zero.
     const { stdout } = await run("gh", ["api", "graphql", "-f", `query=${query}`], { maxBuffer: 8 << 20 }).catch((error: { stdout?: string }) => ({ stdout: error.stdout || "{}" }));
     const data = JSON.parse(stdout).data || {};
     batch.forEach((key, i) => {
+      // A commit never changes, so it settles as "done"; its state is the commit date.
+      const commit = data[`k${i}`]?.object;
+      if (commit?.messageHeadline) {
+        const date = new Date(commit.committedDate).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+        out[key] = { title: commit.messageHeadline, state: date, tone: "done", person: commit.author?.user?.login || commit.author?.name, when: commit.committedDate, fetchedAt: Date.now() };
+        return;
+      }
       const item = data[`k${i}`]?.issueOrPullRequest;
       if (!item) return;
       const isPull = item.__typename === "PullRequest";

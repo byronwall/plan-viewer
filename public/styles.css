@@ -1011,6 +1011,9 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .dock-link-icon { display: inline-grid; place-items: center; margin-right: 6px; vertical-align: -3px; color: var(--status-ink); }
 .dock-source .dock-link-icon { height: auto; color: inherit; }
 .dock-link-detail { min-width: 0; overflow-wrap: anywhere; }
+/* A row with no key (a document by title) starts its title at the key column instead of leaving it blank. */
+.dock-link-label:empty { display: none; }
+.dock-source-list:not(.is-unlabeled) .dock-link-label:empty + .dock-link-detail { grid-column: 1 / span 2; }
 .dock-link-path { display: block; color: var(--quiet-text); font: 500 .7rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: normal; }
 .dock-link-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--action-ink); white-space: nowrap; font: 600 .72rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .dock-link-state { color: var(--muted); font-size: .72rem; font-weight: 600; white-space: nowrap; animation: dock-state-in 220ms var(--ease-out) both; }
