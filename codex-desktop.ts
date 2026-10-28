@@ -29,9 +29,10 @@ export function codexNewTaskUrl(prompt: string, workspace: string) {
 // deep links send `folder=<cwd>` for one. `environment=` names only cloud environment IDs, so a local preset's name
 // there is ignored and the draft lands in the default preset instead.
 // Claude Desktop sometimes drops `folder` between opening the draft and sending it, starting the session in a "No
-// folder" scratch workspace. The prompt names the folder too, so the agent can move itself there.
+// folder" scratch workspace. The prompt names the folder too, so the agent can move itself there. change_directory
+// only takes effect when the turn ends, so the first turn still runs without the folder's instructions and skills.
 export function claudeNewSessionUrl(folder: string, prompt = "") {
-  if (prompt) prompt += `\n\nThis session belongs in ${folder}. If your working directory is anything else, call change_directory with ${folder} before reading or editing anything.`;
+  if (prompt) prompt += `\n\nThis session belongs in ${folder}. If your working directory is anything else, call change_directory with ${folder} before reading or editing anything. The move takes effect only when your turn ends, so until then: use absolute paths under ${folder}, read ${folder}/CLAUDE.md (or AGENTS.md) yourself, and when a task matches a skill under ${folder}/.claude/skills/ or ${folder}/.agents/skills/, read its SKILL.md and follow it.`;
   return `claude://code/new?${new URLSearchParams({ ...(prompt ? { q: prompt } : {}), folder })}`;
 }
 
