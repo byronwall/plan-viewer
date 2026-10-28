@@ -1117,7 +1117,7 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 [data-code-skill="ruthless-simplify"]:hover { color: var(--merged); }
 
 /* one viewport-clamped tooltip, positioned by code.js */
-.code-tip { position: fixed; z-index: 80; inset: auto; margin: 0; overflow: visible; max-width: min(360px, calc(100vw - 24px)); border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 5px 9px; box-shadow: 0 6px 18px rgba(24, 33, 47, .1); color: var(--ink); font-size: .76rem; font-weight: 500; line-height: 1.4; pointer-events: none; opacity: 0; transform: scale(.96); transition: opacity 90ms ease-out, transform 90ms ease-out; }
+.code-tip { position: fixed; z-index: 80; inset: auto; margin: 0; overflow: visible; max-width: min(360px, calc(100vw - 24px)); border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 5px 9px; box-shadow: 0 6px 18px rgba(24, 33, 47, .1); color: var(--ink); font-size: .76rem; font-weight: 500; line-height: 1.4; pointer-events: none; white-space: pre-line; opacity: 0; transform: scale(.96); transition: opacity 90ms ease-out, transform 90ms ease-out; }
 .code-tip.is-visible { transition-duration: 160ms; transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1); }
 .code-tip.is-visible { opacity: 1; transform: none; }
 .code-tip.is-instant { transition-duration: 0ms; }
@@ -1623,8 +1623,9 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 
 /* PR overview: the diff overlay with a PR column, commit walking, and a scroll-all view. */
 .code-diff-title { flex: 1; min-width: 0; }
-.code-diff-hints { font-size: .7rem; white-space: nowrap; }
-.code-diff-hints kbd { border: 1px solid var(--line); border-radius: 4px; background: var(--paper); padding: 0 4px; font-size: .66rem; }
+.code-diff-head .code-side-views { flex: none; margin: 0; }
+.code-diff-keys { display: inline-grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: help; transition: background-color 140ms, color 140ms; }
+.code-diff-keys:hover { background: var(--hover-field); color: var(--ink); }
 .code-diff-pr { display: none; }
 .code-diff-split.has-pr { grid-template-columns: 320px minmax(200px, 300px) minmax(0, 1fr); }
 .code-diff-split.has-pr .code-diff-pr { display: block; overflow: auto; scrollbar-gutter: stable; overscroll-behavior: contain; border-right: 1px solid var(--line); padding: 4px 12px 16px; font-size: .8rem; overflow-wrap: anywhere; }
@@ -1675,13 +1676,12 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 .search-section { padding: 8px 10px 3px; color: var(--label-text); font-size: .64rem; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; }
 .search-section:first-child { padding-top: 2px; }
 .search-ci-fail { color: #c0392b; } .search-ci-pending { color: #a77500; }
-@media (max-width: 1320px) { .code-diff-split.has-pr { grid-template-columns: 220px 290px minmax(0, 1fr); } .code-diff-hints { display: none; } }
+@media (max-width: 1320px) { .code-diff-split.has-pr { grid-template-columns: 220px 290px minmax(0, 1fr); } }
 @media (max-width: 1100px) {
   .code-diff-split.has-pr { grid-template-columns: 260px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
   .code-diff-split.has-pr .code-diff-pr { grid-column: 1; grid-row: 1; border-bottom: 1px solid var(--line); }
   .code-diff-split.has-pr .code-diff-files { grid-column: 1; grid-row: 2; }
   .code-diff-split.has-pr .code-diff-main { grid-column: 2; grid-row: 1 / 3; }
-  .code-diff-hints { display: none; }
 }
 /* 100x: one focus ring for every button in the overlay; sizes and alignment for the palette's PR rows. */
 .code-diff :is(.code-diff-scope, .code-diff-stack-row, .code-diff-chevron, .code-icon-button, .code-segment button, .code-more):focus-visible { outline: 2px solid var(--action); outline-offset: -2px; }
@@ -1952,6 +1952,9 @@ button.code-pr-chip { border: 0; background: none; font: inherit; cursor: pointe
 section > .issue-progress-wrap { margin-bottom: 6px; }
 .issue-link-row { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; border: 0; border-radius: 6px; background: none; padding: 2px 4px; margin-left: -4px; color: var(--ink); font: inherit; text-align: left; transition: background-color 140ms; }
 a.issue-link-row { text-decoration: none; }
+a.issue-link-row[data-planning-path] { align-items: baseline; }
+a.issue-link-row[data-planning-path] > span:not(.code-tag) { white-space: normal; }
+a.issue-link-row[data-planning-path] > svg { align-self: center; }
 .issue-link-row:hover { background: var(--hover-field); }
 .issue-link-row > span:not(.code-tag):not(.issue-type) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .issue-link-row > .code-muted { flex: none !important; }

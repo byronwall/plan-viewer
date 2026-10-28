@@ -1,4 +1,4 @@
-import { escapeHtml, renderMarkdown, SERVICE_ICONS } from "./markdown.js";
+import { documentHref, escapeHtml, renderMarkdown, SERVICE_ICONS } from "./markdown.js";
 import { GLYPHS } from "./icons.js";
 import { agentApp, agentName as appName, config, escapeRegExp } from "./config.js";
 import { decorate, lineClasses, markWords } from "./word-diff.js";
@@ -67,6 +67,7 @@ const ICONS = {
   person: GLYPHS["user"],
   branch: GLYPHS["git-branch"],
   minimize: GLYPHS["minimize"],
+  keyboard: GLYPHS["keyboard"],
 };
 const icon = (name) => `<svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ICONS.review}</svg>`;
 const iconButton = (name, tip, attrs) => `<button type="button" class="code-icon-button" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}" ${attrs}>${icon(name)}</button>`;
@@ -997,6 +998,12 @@ function ensureDiffDialog() {
   diffDialog.addEventListener("pointerdown", (event) => { pressedBackdrop = event.target === diffDialog; });
   diffDialog.addEventListener("click", (event) => {
     if (event.target === diffDialog) return composerDirty() || !pressedBackdrop ? null : diffDialog.close();
+    const planningLink = event.target.closest("a[data-planning-path]");
+    if (planningLink && !event.metaKey && !event.ctrlKey) {
+      event.preventDefault();
+      diffDialog.close();
+      return planning.open(planningLink.dataset.planningPath);
+    }
     const commitPr = event.target.closest("[data-commit-pr]");
     if (commitPr) { const [slug, number] = commitPr.dataset.commitPr.split("#"); return openPrOverlay(slug, Number(number)); }
     const noteButton = event.target.closest("[data-note-file], [data-note-new], [data-note-save], [data-note-cancel], [data-note-edit], [data-note-delete], [data-note-jump]");
@@ -1246,6 +1253,19 @@ const sideFacts = (rows) => `<dl class="code-side-facts">${rows.filter(([, value
 const sideStatus = (kind, glyph, text, tip = "") => `<span class="code-side-status code-side-${kind}"${tip ? ` data-tip="${escapeHtml(tip)}"` : ""}>${icon(glyph)}${text}</span>`;
 const sideHead = (title, meta = "", tools = "") => `<header class="code-side-head"><h4>${title}${meta ? ` <span>${meta}</span>` : ""}</h4>${tools}</header>`;
 const sideViews = (buttons) => `<nav class="code-diff-scopes code-side-views">${buttons}</nav>`;
+
+// The app shell hands over its document library and how to open a document, for the planning sections of the PR and
+// issue overviews.
+export let planning = { documents: () => [], open: () => {} };
+export const connectPlanning = (next) => { planning = next; };
+// Tasks first, then every other planning document.
+const planningSection = (title, docs) => !docs.length ? "" : `<section>${sideHead(title, String(docs.length))}<ul class="issue-code-list">${[...docs].sort((a, b) => !!b.task - !!a.task).map((doc) => `<li><a class="issue-link-row" href="${escapeHtml(documentHref(doc.path, ""))}" data-planning-path="${escapeHtml(doc.path)}" data-tip="${escapeHtml(doc.path)}">${doc.task ? SERVICE_ICONS.task : icon("doc")}<code>${escapeHtml(doc.task?.id || doc.date || doc.kind)}</code><span>${escapeHtml(doc.task?.title || doc.title)}</span>${doc.task ? `<span class="code-tag">${escapeHtml(doc.task.status)}</span>` : ""}</a></li>`).join("")}</ul></section>`;
+// Planning documents that link this PR or name a tracker key from its title or branch (MOD-123, `alex/mod-123-fix`).
+function prPlanning(slug, number, pr) {
+  const ref = `${slug.toLowerCase()}#${number}`;
+  const keys = new Set((`${pr.title || ""} ${pr.branch || ""}`.toUpperCase().match(/(?<![A-Z0-9])[A-Z][A-Z0-9]*-\d+(?!\d)/g) || []));
+  return planningSection("Linked", planning.documents().filter((doc) => doc.pullRequests?.includes(ref) || doc.issueKeys?.some((key) => keys.has(key))));
+}
 const scopeCommits = (commits) => `<ol class="code-diff-scopes code-diff-commits">${commits.map((commit, index) => `<li>${scopeButton(commit.sha, `<b>${index + 1}</b><span>${escapeHtml(commit.subject)}</span>`, `<code>${commit.sha.slice(0, 7)}</code>`)}</li>`).join("")}</ol>`;
 
 function prStatus(pr) {
@@ -1316,12 +1336,10 @@ function wtColumn() {
   const tree = ui.data?.worktrees.find((candidate) => candidate.path === path) || detail?.tree;
   if (!tree) return `<p class="code-muted">${ui.detailErrors.has(`tree:${path}`) ? "Couldn't load this worktree." : "Loading…"}</p>`;
   const pr = detail?.pr || (ui.data ? prFor(tree) : null);
-  const branchFiles = patches.get(JSON.stringify({ source: "branch", path }));
   const commits = wtCommits();
   const prValue = pr
     ? `<button type="button" class="code-side-pr" data-diff-pr="${escapeHtml(prKey(pr.slug, pr.number))}" data-tip="Open the pull request (W)">${ciBadge(pr)}<b>#${pr.number}</b><span>${escapeHtml(pr.title || "")}</span></button>${{ MERGED: sideStatus("merged", "branch", "Merged"), CLOSED: sideStatus("quiet", "fail", "Closed") }[pr.state] || ""}`
     : `<span class="code-muted">None for this branch</span>`;
-  const local = detail ? detail.untrackedCount + detail.ignoredCount : null;
   return sideFacts([
     ["Path", `<button type="button" class="code-path code-side-path" data-code-copy="${escapeHtml(path)}" data-tip="${escapeHtml(path)} · click to copy">${escapeHtml(shortPath(path))}</button>`],
     ["Status", tree.main ? "Main checkout" : `<span data-tip="Commits ahead of and behind origin/main">↑${tree.ahead ?? "?"} ↓${tree.behind ?? "?"} vs main</span>${tree.activity ? `<span class="code-muted">changed ${when(tree.activity)} ago</span>` : ""}`],
@@ -1329,7 +1347,6 @@ function wtColumn() {
     [appName(), pr?.state === "OPEN" && pr.url ? sideSkills(pr, tree.path, tree) : ""],
     ["Open", `<span class="code-side-tools">${treeActions(tree)}</span>`],
   ])
-    + sideViews(`${scopeButton("local", "Local", countLabel(local))}${scopeButton("all", "Changes", countLabel(branchFiles?.length))}${scopeButton("uncommitted", "Uncommitted", countLabel(tree.dirty))}`)
     + `<section>${sideHead(tree.main ? "Recent commits" : "Commits", detail ? `${commits.length}${tree.main ? "" : ` not on ${escapeHtml(detail.base || "main")}`}` : "")}${!detail ? `<p class="code-muted">Loading…</p>` : !commits.length ? `<p class="code-muted">None. Everything committed here is on main.</p>` : scopeCommits(commits)}</section>`;
 }
 
@@ -1423,6 +1440,23 @@ function stepStack(step) {
   if (stack.length > 1 && next) openPrOverlay(next.slug, next.number);
 }
 
+// What the overlay's body shows, in the header beside the other view toggles: D cycles them.
+function diffViews() {
+  if (diff.wt) {
+    const { path } = diff.wt;
+    const detail = ui.detail.get(`tree:${path}`);
+    const tree = ui.data?.worktrees.find((candidate) => candidate.path === path) || detail?.tree;
+    const local = detail ? detail.untrackedCount + detail.ignoredCount : null;
+    return sideViews(`${scopeButton("local", "Local", countLabel(local))}${scopeButton("all", "Changes", countLabel(patches.get(JSON.stringify({ source: "branch", path }))?.length))}${scopeButton("uncommitted", "Uncommitted", countLabel(tree?.dirty))}`);
+  }
+  if (!diff.pr) return "";
+  const { slug, number, key } = diff.pr;
+  const { stack } = prStack();
+  const allFiles = patches.get(JSON.stringify({ source: "pr", slug, number })); // gh pr view caps its file list at 100
+  const stackTip = stack.length > 1 ? `Every PR in the stack, #${stack[0].number}–#${stack[stack.length - 1].number}, against ${stack[0].base}` : "";
+  return sideViews(`${ui.detail.get(`pr:${key}`) ? scopeButton("description", "Description") : ""}${scopeButton("all", "Changes", countLabel(allFiles?.length))}${stack.length > 1 ? scopeButton("stack", `<span data-tip="${escapeHtml(stackTip)}">Stack</span>`, countLabel(stack.length)) : ""}`);
+}
+
 // The PR facts and action rows, shared by the overview's left column and the Code page inspector.
 function prFacts(pr, tree, wtPath, overlay = false) {
   const open = pr.url && pr.repo && (!pr.state || pr.state === "OPEN"); // the Code page list holds only open PRs, without a state
@@ -1444,11 +1478,9 @@ function prColumn() {
   const tree = ui.data && pr.branch ? worktreeFor(pr) : null;
   const { stack, current } = prStack();
   const commits = detail?.commits;
-  const allFiles = patches.get(JSON.stringify({ source: "pr", slug, number })); // gh pr view caps its file list at 100
   const wtPath = tree?.path || detail?.worktree;
-  const stackTip = stack.length > 1 ? `Every PR in the stack, #${stack[0].number}–#${stack[stack.length - 1].number}, against ${stack[0].base}` : "";
   return prFacts(pr, tree, wtPath, true)
-    + sideViews(`${detail ? scopeButton("description", "Description") : ""}${scopeButton("all", "Changes", countLabel(allFiles?.length))}${stack.length > 1 ? scopeButton("stack", `<span data-tip="${escapeHtml(stackTip)}">Stack</span>`, countLabel(stack.length)) : ""}`)
+    + prPlanning(slug, number, pr)
     + notesSection(pr, tree?.path || pr.repo || "")
     + `<section>${sideHead("Commits", commits ? String(commits.length) : "")}${!commits ? `<p class="code-muted">${ui.detailErrors.has(`pr:${key}`) ? "Couldn't load commits." : "Loading…"}</p>` : scopeCommits(commits)}</section>`
     + (stack.length > 1 ? `<section>${sideHead("Stack", `${stack.indexOf(current) + 1} of ${stack.length} · on ${escapeHtml(stack[0].base)}`)}<ol class="code-stack-list code-diff-stack">${stack.map((item, index) => `<li class="${item === current ? "is-current" : ""}"><button type="button" class="code-diff-stack-row" data-diff-pr="${escapeHtml(prKey(item.slug, item.number))}" ${item === current ? 'aria-current="true"' : ""}><b class="code-stack-n">${index + 1}</b><span class="code-diff-stack-item">${ciBadge(item)}#${item.number}</span><span>${escapeHtml(item.title)}</span></button></li>`).join("")}</ol></section>` : "");
@@ -2063,8 +2095,9 @@ function renderDiff() {
   const viewedCount = subject() && files && !description && !local ? files.filter(isViewed).length : 0;
   const progress = subject() && files?.length && !description && !local
     ? ` · <span class="code-diff-progress${viewedCount === files.length ? " is-done" : viewedCount ? "" : " is-none"}">${viewedCount === files.length ? `All ${files.length} viewed` : `${viewedCount} of ${files.length} viewed`}</span>` : "";
-  const hints = `<kbd>J</kbd><kbd>K</kbd> file${subject() ? ` · <kbd>X</kbd> viewed · <kbd>U</kbd> unviewed only · <kbd>D</kbd> ${wt ? "views" : "description"} · <kbd>N</kbd><kbd>P</kbd> ${wt ? "scope" : "commit"}` : ""} · <kbd>/</kbd> filter · <kbd>T</kbd> map · <kbd>V</kbd> view · <kbd>S</kbd> layout · <kbd>G</kbd> full width${markdown ? " · <kbd>M</kbd> rendered" : ""}${pr ? " · <kbd>C</kbd> note" : ""}${pr && prStack().stack.length > 1 ? " · <kbd>[</kbd><kbd>]</kbd> stack" : ""}`;
-  diffRegion("head", `<div class="code-diff-title"><h3>${title}</h3><p class="code-muted">${sub}${files && !description && !local && !progress ? ` · ${files.length} ${files.length === 1 ? "file" : "files"}` : ""}${progress}</p></div><span class="code-diff-hints code-muted">${hints}</span>${diffSegment("data-diff-view", diffView, { single: "One file", all: "All files" })}${diffSegment("data-diff-layout", diffLayout, { split: "Split", unified: "Unified" })}${iconButton(diffWide ? "minimize" : "expand", diffWide ? "Restore size (G)" : "Full width (G)", `data-diff-wide aria-pressed="${diffWide}"`)}<button type="button" class="code-icon-button" data-diff-close aria-label="Close (Esc)">${icon("fail")}</button>`);
+  const keys = [["J K", "next / previous file"], ...(subject() ? [["X", "mark viewed"], ["U", "unviewed only"], ["D", wt ? "next view" : "description"], ["N P", wt ? "next / previous scope" : "next / previous commit"]] : []), ["/", "filter files"], ["T", "change map"], ["V", "one file / all files"], ["S", "split / unified"], ["G", "full width"], ...(markdown ? [["M", "rendered markdown"]] : []), ...(pr ? [["C", "note on selected lines"]] : []), ...(pr && prStack().stack.length > 1 ? [["[ ]", "down / up the stack"]] : [])];
+  const hints = `<button type="button" class="code-diff-keys" data-tip="${escapeHtml(keys.map(([key, what]) => `${key} — ${what}`).join("\n"))}" aria-label="Keyboard shortcuts">${icon("keyboard")}</button>`;
+  diffRegion("head", `<div class="code-diff-title"><h3>${title}</h3><p class="code-muted">${sub}${files && !description && !local && !progress ? ` · ${files.length} ${files.length === 1 ? "file" : "files"}` : ""}${progress}</p></div>${diffViews()}${diffSegment("data-diff-view", diffView, { single: "One file", all: "All files" })}${diffSegment("data-diff-layout", diffLayout, { split: "Split", unified: "Unified" })}${iconButton(diffWide ? "minimize" : "expand", diffWide ? "Restore size (G)" : "Full width (G)", `data-diff-wide aria-pressed="${diffWide}"`)}${hints}<button type="button" class="code-icon-button" data-diff-close aria-label="Close (Esc)">${icon("fail")}</button>`);
   diffDialog.toggleAttribute("data-wide", diffWide);
   diffDialog.querySelector(".code-diff-split").classList.toggle("has-pr", Boolean(subject()));
   diffDialog.toggleAttribute("data-notes", Boolean(pr));
@@ -3093,4 +3126,4 @@ export function renderCodePage(container, { tab, showNotice }) {
 }
 
 // Pieces the Issues page shares, so an issue reads like a PR: icons, tooltips, the facts grid, avatars, PR chips.
-export { icon, iconButton, avatar, sideFacts, sideHead, sideStatus, showTip, hideTip, fadeIn, when, heat, ciBadge, prChip, copied, reviewTag, prBodyHtml };
+export { planningSection, icon, iconButton, avatar, sideFacts, sideHead, sideStatus, showTip, hideTip, fadeIn, when, heat, ciBadge, prChip, copied, reviewTag, prBodyHtml };

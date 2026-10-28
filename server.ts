@@ -141,6 +141,7 @@ type DocumentSummary = {
   isToday: boolean;
   backlinks?: string[];
   issueKeys?: string[];
+  pullRequests?: string[];
   task?: TaskSummary;
   digest?: DailyDigest;
   modified?: number;
@@ -458,6 +459,9 @@ export async function listDocuments() {
   for (const [index, { contents }] of files.entries()) {
     const keys = [...new Set(contents.match(/\b[A-Z][A-Z0-9]+-\d+\b/g) || [])].filter((key) => !key.startsWith("TASK-"));
     if (keys.length) docs[index].issueKeys = keys;
+    // GitHub PR links as `owner/repo#N`, so a PR overview can list the planning docs that link it.
+    const prs = [...new Set([...contents.matchAll(/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g)].map(([, slug, n]) => `${slug.toLowerCase()}#${n}`))];
+    if (prs.length) docs[index].pullRequests = prs;
   }
   // Work breakdown items, so ⌘K can find one without opening its task.
   for (const [index, { path, contents }] of files.entries()) {
