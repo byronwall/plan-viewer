@@ -48,8 +48,9 @@ export function createPrNotes(root: string, dir = "plans/pr-notes") {
     return { path: relative(slug, number), notes: entries.filter(isNote) };
   }
 
-  type Change = { op: "add" | "update" | "delete"; id?: string; title?: string; note?: Partial<Note> };
-  async function change(slug: string, number: number, { op, id, title, note = {} }: Change) {
+  // `delete` with `ids` removes several notes at once (Clear stale); ids already gone are skipped.
+  type Change = { op: "add" | "update" | "delete"; id?: string; ids?: string[]; title?: string; note?: Partial<Note> };
+  async function change(slug: string, number: number, { op, id, ids, title, note = {} }: Change) {
     let { preamble, entries } = await load(slug, number);
     if (op === "add") {
       const file = String(note.file || "");
@@ -62,6 +63,9 @@ export function createPrNotes(root: string, dir = "plans/pr-notes") {
         commit: /^[0-9a-f]{7,40}$/.test(String(note.commit || "")) ? String(note.commit) : "", sig: /^[0-9a-z]{1,16}$/.test(String(note.sig || "")) ? String(note.sig) : "", status: "draft",
         at: localStamp(), quote: String(note.quote || "").replace(/\r/g, "").slice(0, 600), body: String(note.body).replace(/\r/g, "").trim(),
       });
+    } else if (op === "delete" && ids) {
+      const gone = new Set(ids);
+      entries = entries.filter((entry) => !(isNote(entry) && gone.has(entry.id)));
     } else {
       const target = entries.find((entry) => isNote(entry) && entry.id === id) as Note | undefined;
       if (!target) throw new Error("That note is gone; reload the overlay.");

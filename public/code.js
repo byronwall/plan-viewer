@@ -921,7 +921,7 @@ function syncViewUrl() {
 function ensureDiffDialog() {
   if (diffDialog) return;
   diffDialog = Object.assign(document.body.appendChild(document.createElement("dialog")), { className: "code-diff", tabIndex: -1 });
-  diffDialog.innerHTML = `<header class="code-diff-head" data-d="head"></header><div class="code-diff-split"><aside class="code-diff-pr" data-d="pr"></aside><div class="code-diff-files"><div class="code-diff-filter-row"><label class="code-filter code-diff-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-diff-filter placeholder="Filter files  /" spellcheck="false" autocomplete="off"></label><button type="button" class="code-diff-hide" data-diff-hide></button><span data-d="listmode"></span></div><div data-d="files"></div><div class="code-diff-resize" data-diff-resize title="Drag to resize · double-click to reset"></div></div><div class="code-diff-main"><div data-d="filehead"></div><div class="code-diff-body" data-d="body"></div></div></div><button type="button" class="code-note-add" data-note-new hidden>${icon("comment")}Comment <kbd>C</kbd></button><div class="code-note-composer" hidden><div class="code-note-where"><b data-composer-where></b><span class="code-muted">saved to plans/pr-notes</span></div><blockquote></blockquote><textarea rows="2" placeholder="Note for this PR" spellcheck="true"></textarea><div class="code-note-buttons"><button type="button" class="code-bar-button" data-note-cancel>Cancel</button><button type="button" class="code-bar-button is-primary" data-note-save>Save <kbd>↵</kbd></button></div></div>`;
+  diffDialog.innerHTML = `<header class="code-diff-head" data-d="head"></header><div class="code-diff-split"><aside class="code-diff-pr" data-d="pr"></aside><div class="code-diff-pr-resize" data-pr-resize title="Drag to resize · double-click to reset"></div><div class="code-diff-files"><div class="code-diff-filter-row"><label class="code-filter code-diff-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-diff-filter placeholder="Filter files  /" spellcheck="false" autocomplete="off"></label><button type="button" class="code-diff-hide" data-diff-hide></button><span data-d="listmode"></span></div><div data-d="files"></div><div class="code-diff-resize" data-diff-resize title="Drag to resize · double-click to reset"></div></div><div class="code-diff-main"><div data-d="filehead"></div><div class="code-diff-body" data-d="body"></div></div></div><button type="button" class="code-note-add" data-note-new hidden>${icon("comment")}Comment <kbd>C</kbd></button><div class="code-note-composer" hidden><div class="code-note-where"><b data-composer-where></b><span class="code-muted">saved to plans/pr-notes</span></div><blockquote></blockquote><textarea rows="2" placeholder="Note for this PR" spellcheck="true"></textarea><div class="code-note-buttons"><button type="button" class="code-bar-button" data-note-cancel>Cancel</button><button type="button" class="code-bar-button is-primary" data-note-save>Save <kbd>↵</kbd></button></div></div>`;
   const body = diffDialog.querySelector('[data-d="body"]');
   // While selecting, the other side of a split diff can't be selected, so a drag down one column stays in it.
   body.addEventListener("mousedown", (event) => {
@@ -987,6 +987,24 @@ function ensureDiffDialog() {
     }, { once: true });
   });
   handle.addEventListener("dblclick", () => { split.style.removeProperty("--map-fr"); storage.set("code-diff-map-fr", ""); });
+  // The PR column's right edge: a width in px, remembered per browser; the handle follows the column's actual edge.
+  const prColumn = diffDialog.querySelector(".code-diff-pr");
+  const prHandle = diffDialog.querySelector("[data-pr-resize]");
+  const prWidth = storage.get("code-diff-pr-w", "");
+  if (prWidth) split.style.setProperty("--pr-w", `${prWidth}px`);
+  new ResizeObserver(() => { prHandle.style.left = `${prColumn.offsetWidth - 3}px`; }).observe(prColumn);
+  prHandle.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    prHandle.setPointerCapture(event.pointerId);
+    const box = split.getBoundingClientRect();
+    const move = (moved) => split.style.setProperty("--pr-w", `${Math.round(Math.min(Math.max(moved.clientX - box.left, 200), Math.min(720, box.width - 560)))}px`);
+    prHandle.addEventListener("pointermove", move);
+    prHandle.addEventListener("lostpointercapture", () => {
+      prHandle.removeEventListener("pointermove", move);
+      storage.set("code-diff-pr-w", split.style.getPropertyValue("--pr-w").replace("px", ""));
+    }, { once: true });
+  });
+  prHandle.addEventListener("dblclick", () => { split.style.removeProperty("--pr-w"); storage.set("code-diff-pr-w", ""); });
   const filter = diffDialog.querySelector("[data-diff-filter]");
   filter.addEventListener("input", () => { diff.filter = filter.value; renderDiffFiles(); });
   filter.addEventListener("keydown", (event) => {
@@ -1012,7 +1030,7 @@ function ensureDiffDialog() {
     }
     const commitPr = event.target.closest("[data-commit-pr]");
     if (commitPr) { const [slug, number] = commitPr.dataset.commitPr.split("#"); return openPrOverlay(slug, Number(number)); }
-    const noteButton = event.target.closest("[data-note-file], [data-note-new], [data-note-save], [data-note-cancel], [data-note-edit], [data-note-delete], [data-note-jump]");
+    const noteButton = event.target.closest("[data-note-file], [data-note-new], [data-note-save], [data-note-cancel], [data-note-edit], [data-note-delete], [data-note-jump], [data-note-filter], [data-note-clear]");
     if (noteButton) {
       const { dataset } = noteButton;
       if (dataset.noteFile) noteOnFile(Number(dataset.noteFile));
@@ -1022,6 +1040,8 @@ function ensureDiffDialog() {
       else if (dataset.noteEdit) openComposer(null, prNotes().find((note) => note.id === dataset.noteEdit));
       else if (dataset.noteDelete) changeNote({ op: "delete", id: dataset.noteDelete });
       else if (dataset.noteJump) jumpToNote(dataset.noteJump);
+      else if (dataset.noteFilter) { notesFilter = dataset.noteFilter; renderDiff(); }
+      else if ("noteClear" in dataset) clearStaleNotes(noteButton);
       return;
     }
     if (event.target.closest("[data-code-skill], [data-code-open], [data-code-session], [data-code-preview], [data-code-run], [data-code-stop-run]")) return handleClick(event);
@@ -1770,16 +1790,39 @@ function jumpToNote(id) {
   if (index >= 0 && (note.commit || "all") === diff.scope) reveal(); else setTimeout(reveal, 600);
 }
 
+// Stale notes point at code that changed since (edited, outdated, or a whole file whose diff changed); a moved note's
+// code is intact. Clear stale deletes them all for a fresh round of review; the Stale filter reads them first.
+const STALE_NOTES = new Set(["edited", "outdated", "changed"]);
+const isStaleNote = (note) => STALE_NOTES.has(noteAt(note).state);
+let notesFilter = "all";
+function clearStaleNotes(button) {
+  const ids = prNotes().filter(isStaleNote).map((note) => note.id);
+  if (!ids.length) return;
+  // Two clicks: the first arms the button for a few seconds, so a stray click never deletes.
+  if (!button.classList.contains("is-armed")) {
+    button.classList.add("is-armed");
+    button.textContent = `Delete ${ids.length} note${ids.length === 1 ? "" : "s"}?`;
+    setTimeout(() => { if (button.isConnected) { button.classList.remove("is-armed"); button.textContent = `Clear ${ids.length} stale`; } }, 3000);
+    return;
+  }
+  notesFilter = "all";
+  changeNote({ op: "delete", ids }).then((done) => done && notify(`Deleted ${ids.length} stale note${ids.length === 1 ? "" : "s"}.`));
+}
+
 function notesSection(pr, workspace) {
-  const notes = prNotes();
-  const drafts = notes.filter((note) => note.status === "draft").length;
-  const list = notes.map((note) => `<li><button type="button" class="code-diff-scope" data-note-jump="${note.id}"><b>${note.status === "draft" ? "" : "✓"}</b><span><code>${escapeHtml(note.file.split("/").pop())}${note.line ? `:${note.line}` : ""}</code>${noteState(noteAt(note))} ${escapeHtml(note.body.split("\n")[0])}</span></button></li>`).join("");
+  const all = prNotes();
+  const drafts = all.filter((note) => note.status === "draft").length;
+  const stale = all.filter(isStaleNote).length;
+  const filter = stale ? notesFilter : "all"; // kept while the diff reloads and nothing reads as stale yet
+  const notes = filter === "stale" ? all.filter(isStaleNote) : all;
+  const remove = `<svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.x}</svg>`;
+  const list = notes.map((note) => `<li><button type="button" class="code-diff-scope" data-note-jump="${note.id}"><b>${note.status === "draft" ? "" : "✓"}</b><span><code>${escapeHtml(note.file.split("/").pop())}${note.line ? `:${note.line}` : ""}</code>${noteState(noteAt(note))} ${escapeHtml(note.body)}</span></button><button type="button" class="code-notes-x" data-note-delete="${note.id}" data-tip="Delete this note" aria-label="Delete this note">${remove}</button></li>`).join("");
+  const bar = stale ? `<div class="code-notes-bar">${diffSegment("data-note-filter", filter, { all: `All ${all.length}`, stale: `Stale ${stale}` })}<button type="button" class="code-notes-clear" data-note-clear data-tip="Delete every edited, outdated and file-changed note">Clear ${stale} stale</button></div>` : "";
   const file = diff.notes?.path && notes.length ? `<a class="code-icon-button" href="/?path=${encodeURIComponent(diff.notes.path)}" target="_blank" rel="noreferrer" data-tip="Open the notes file" aria-label="Open the notes file">${icon("external")}</a>` : "";
   const target = `data-url="${escapeHtml(pr.url || "")}" data-path="${escapeHtml(workspace)}"`;
   const actions = drafts && pr.url ? iconButton("comment", `Post ${drafts} draft${drafts === 1 ? "" : "s"} as a pending GitHub review in ${appName()}`, `data-code-skill="notes-post" ${target}`) + iconButton("discuss", `Work through the drafts in ${appName()}`, `data-code-skill="notes-work" ${target}`) : "";
-  const outdated = notes.filter((note) => noteAt(note).state === "outdated").length;
-  const meta = notes.length ? `${drafts} draft${drafts === 1 ? "" : "s"}${notes.length > drafts ? `, ${notes.length - drafts} posted` : ""}${outdated ? `, ${outdated} outdated` : ""}` : "select code, press <kbd>C</kbd>";
-  return `<section>${sideHead("Notes", meta, `<span class="code-side-tools">${actions}${file}</span>`)}${list ? `<ol class="code-diff-scopes code-notes-list">${list}</ol>` : ""}</section>`;
+  const meta = all.length ? `${drafts} draft${drafts === 1 ? "" : "s"}${all.length > drafts ? `, ${all.length - drafts} posted` : ""}` : "select code, press <kbd>C</kbd>";
+  return `<section>${sideHead("Notes", meta, `<span class="code-side-tools">${actions}${file}</span>`)}${bar}${list ? `<ol class="code-diff-scopes code-notes-list">${list}</ol>` : ""}</section>`;
 }
 
 const lineHtml = (line) => {

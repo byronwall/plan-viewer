@@ -30,6 +30,9 @@ test("notes round-trip through readable Markdown and keep hand-written text", as
   assert.equal((await notes.drafts("Org/repo", 7)).text.includes("Gone for good?"), true);
   await notes.change("Org/repo", 7, { op: "delete", id: list[0].id });
   assert.equal((await notes.list("Org/repo", 7)).notes.length, 2);
+  await notes.change("Org/repo", 7, { op: "delete", ids: [list[1].id, list[2].id, "gone00"] });
+  assert.equal((await notes.list("Org/repo", 7)).notes.length, 0);
+  assert.match(await readFile(path, "utf8"), /### `odd` heading by hand/);
 });
 
 test("a note follows its quoted code, and is outdated once the code is gone", () => {

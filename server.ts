@@ -832,7 +832,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (request.method === "POST" && url.pathname.startsWith("/api/code/")) {
       const body = await readJson(request);
       const action = url.pathname.slice("/api/code/".length);
-      if (action === "notes") return json(response, 200, await codeDashboard.notes.change(...checkedPr(body.slug, body.number), { op: body.op, id: String(body.id || ""), title: String(body.title || ""), note: body.note || {} }));
+      if (action === "notes") return json(response, 200, await codeDashboard.notes.change(...checkedPr(body.slug, body.number), { op: body.op, id: String(body.id || ""), ids: Array.isArray(body.ids) ? body.ids.map(String) : undefined, title: String(body.title || ""), note: body.note || {} }));
       if (action === "plan-agent") return json(response, 200, await plans.launch(String(body.app || ""), String(body.id || ""), String(body.kind || ""), String(body.doc || "")).then(() => ({ opened: true })));
       if (action === "plan-prompt") return json(response, 200, await plans.prompt(String(body.app || ""), String(body.id || ""), String(body.kind || ""), String(body.doc || "")));
       if (action === "add-repo") return json(response, 200, { repo: await codeDashboard.addRepo(String(body.path || "")) });
