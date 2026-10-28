@@ -1089,12 +1089,12 @@ function ensureDiffDialog() {
   });
 }
 
-// The keys that reach the page from inside any overlay: ⌘K (search), ⌘D (favorite what's open), and H / Shift+H
-// (Recently viewed / Favorites).
+// The keys that reach the page from inside any overlay: ⌘K (search), ⌘D (favorite what's open), and a bare H
+// (Recently viewed).
 export function isSummonKey(event) {
   const key = event.key.toLowerCase();
   if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) return key === "k" || key === "d";
-  return key === "h" && !event.altKey && !event.metaKey && !event.ctrlKey && !event.target.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])");
+  return key === "h" && !event.altKey && !event.shiftKey && !event.target.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])");
 }
 
 function showDiffDialog() {

@@ -52,6 +52,7 @@
             <span>Reference</span>
           </button>
         </nav>
+        <nav id="favorites" class="favorites" aria-label="Favorites" hidden></nav>
         <nav id="documents" class="documents" aria-live="polite"></nav>
       </aside>
 
@@ -71,6 +72,7 @@
             <h1 id="document-title">Daily plan</h1>
           </div>
           <div class="document-tools">
+            <button id="favorite-star" class="code-icon-button favorite-star" type="button" aria-pressed="false" aria-label="Favorite (⌘D)" aria-keyshortcuts="Meta+D Control+D"><svg viewBox="0 0 24 24" aria-hidden="true"></svg></button>
             <div id="chunk-count" class="chunk-count" aria-label="Chunk count"></div>
           </div>
         </header>

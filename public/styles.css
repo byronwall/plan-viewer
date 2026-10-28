@@ -56,6 +56,14 @@ button { cursor: pointer; }
 .view-navigation-link:hover { background: var(--quiet-field); }
 .view-navigation-link[aria-current="page"] { background: var(--selected); color: var(--action-ink); }
 .view-navigation-count { margin-left: auto; color: #8a5a00; font-size: .7rem; font-variant-numeric: tabular-nums; }
+.favorites { flex: none; max-height: 40vh; overflow: auto; margin: 0 6px; padding: 6px 0; border-bottom: 1px solid var(--line); scrollbar-width: thin; }
+.document-link.favorite-link { display: flex; align-items: center; gap: 6px; text-decoration: none; }
+.favorite-link .search-icon { flex: none; width: 14px; height: 14px; }
+.favorite-link .search-icon svg { width: 13px; height: 13px; }
+.favorite-link strong { flex: 1; }
+.favorite-star svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.favorite-star[aria-pressed="true"], .favorite-star[aria-pressed="true"]:hover { color: #d99a06; }
+.favorite-star[aria-pressed="true"] svg { fill: currentColor; }
 .documents { overflow: auto; padding: 0 6px 20px; scrollbar-width: thin; }
 .document-group { margin-top: 12px; }
 .group-label { position: sticky; top: 0; z-index: 1; margin: 0; background: #f8f9fb; padding: 4px 8px; color: var(--label-text); font: 650 .64rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; text-transform: uppercase; }
