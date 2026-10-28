@@ -1110,10 +1110,12 @@ function resetDiffView() {
   if (filter) filter.value = "";
 }
 
-// Space-free review loop: mark the current file viewed and move to the next one not yet viewed.
+// Space-free review loop: mark the current file viewed and move to the next one not yet viewed, wrapping to the top
+// so a file picked out of order never leaves the selection parked on a viewed file (where X would unview it).
 function markViewedAndAdvance() {
   const viewed = toggleViewed(diff.files[diff.index]);
-  const next = viewed ? visibleFileIndexes().find((index) => index > diff.index && !isViewed(diff.files[index])) : undefined;
+  const unviewed = viewed ? visibleFileIndexes().filter((index) => !isViewed(diff.files[index])) : [];
+  const next = unviewed.find((index) => index > diff.index) ?? unviewed[0];
   if (next !== undefined) focusFile(next); else renderDiff();
 }
 
