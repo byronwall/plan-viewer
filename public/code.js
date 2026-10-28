@@ -1625,8 +1625,41 @@ function noteAt(note) {
   const file = note.commit === noteScope() && diff.files?.find((candidate) => candidate.path === note.file);
   if (!file) return { state: diff.files && !diff.error && note.commit === noteScope() ? "outdated" : "current", line: note.line, end: note.end };
   const cache = (file.anchors ||= new Map());
-  if (!cache.has(note.id)) cache.set(note.id, anchorNote(note, file.lines, fileSig(file)));
+  if (!cache.has(note.id)) {
+    let at = anchorNote(note, file.lines, fileSig(file));
+    if (!note.line && !note.sig) {
+      const touched = touchedSince(note);
+      if (touched === null) return at; // commits still loading; asked again on the next render
+      if (touched) at = { ...at, state: "changed" };
+    }
+    cache.set(note.id, at);
+  }
   return cache.get(note.id);
+}
+
+// Whole-file notes written before notes kept the file's hash fall back to the PR's commits: changed when one committed
+// after the note touches the file. A rebase restamps every commit, so it reads as changing every file it carries.
+const commitFiles = new Map(); // sha → Set of paths, or null while loading
+function touchedSince(note) {
+  const since = new Date(note.at.replace(" ", "T")).getTime() + 60_000; // the note's minute counts as before it
+  const commits = ui.detail.get(`pr:${diff.pr.key}`)?.commits;
+  if (!commits) return null; // the PR's details haven't loaded
+  const later = commits.filter((commit) => commit.time > since);
+  let unknown = false;
+  for (const { sha } of later) {
+    if (!commitFiles.has(sha)) loadCommitFiles(sha);
+    const files = commitFiles.get(sha);
+    if (!files) unknown = true;
+    else if (files.has(note.file)) return true;
+  }
+  return unknown ? null : false;
+}
+async function loadCommitFiles(sha) {
+  commitFiles.set(sha, null);
+  const response = await fetch(`/api/code/diff?${new URLSearchParams(scopeParams(sha))}`).catch(() => null);
+  const patch = response?.ok ? (await response.json()).patch || "" : "";
+  commitFiles.set(sha, new Set([...patch.matchAll(/^diff --git a\/.* b\/(.*)$/gm)].map((match) => match[1])));
+  if ([...commitFiles.values()].every(Boolean) && diffDialog.open) renderDiff(); // one render once the last one lands
 }
 const NOTE_STATES = { moved: (at) => `moved to ${at.line}`, edited: () => "edited", outdated: () => "outdated", changed: () => "file changed" };
 const NOTE_TIPS = { moved: "The quoted code moved since this note", edited: "Some of the quoted code changed since this note", outdated: "The quoted code is no longer in this diff", changed: "The file's diff changed since this note" };
