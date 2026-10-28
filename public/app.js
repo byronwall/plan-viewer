@@ -176,23 +176,57 @@ function renderLibrary() {
 }
 
 const TASK_STATUS_LABELS = { open: "Open", active: "Active", waiting: "Waiting", deferred: "Deferred", completed: "Completed" };
-// Waiting tasks sit below open work until their check-in date, then lead the list.
+// Waiting tasks sit below open work until they need a look: their check-in date arrives, or something their Next
+// actions name moves (/api/waiting: a PR merges, a tracker issue changes). Then they lead the list as "Check in".
 const TASK_STATUS_ORDER = { active: 0, open: 1, waiting: 2, deferred: 3, completed: 4 };
-const checkInDue = (task) => task.status === "waiting" && Boolean(task.checkIn) && task.checkIn <= localTodayKey();
-const statusRank = (task) => checkInDue(task) ? -1 : TASK_STATUS_ORDER[task.status];
+let waitingSignals = {};
+const movedItems = (path) => (waitingSignals[path] || []).filter((item) => item.moved);
+const itemLabel = (item) => metadataLabel(item.key);
+const metadataLabel = (key) => key.replace(/^github:[^/]+\/([^#]+)#/, "$1#").replace(/^(jira|linear):/, "");
+function checkInReason(task, path) {
+  if (task.status !== "waiting") return "";
+  const moved = movedItems(path);
+  if (moved.length) return moved.map((item) => `${itemLabel(item)} ${item.tone === "done" || item.tone === "closed" ? item.state.toLowerCase() : "changed"} ${shortDate(item.when.slice(0, 10))}`).join(" · ");
+  return task.checkIn && task.checkIn <= localTodayKey() ? `Check-in date ${shortDate(task.checkIn)}` : "";
+}
+const statusRank = (doc) => checkInReason(doc.task, doc.path) ? -1 : TASK_STATUS_ORDER[doc.task.status];
 const shortDate = (date) => new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
 function statusPill(task, path) {
-  const checkIn = task.status === "waiting" && task.checkIn;
-  const label = checkInDue(task) ? "Check in" : checkIn ? `Waiting · ${shortDate(task.checkIn)}` : TASK_STATUS_LABELS[task.status];
-  const title = checkIn ? `Check in ${formatDate(task.checkIn, true)} · change status` : "Change status";
-  return `<button type="button" class="task-status task-status-${task.status}${checkInDue(task) ? " task-status-due" : ""}" data-status-path="${escapeHtml(path)}" data-status="${task.status}" aria-haspopup="menu" title="${escapeHtml(title)}">${label}</button>`;
+  const reason = checkInReason(task, path);
+  const waiting = task.status === "waiting" && task.checkIn;
+  const label = reason ? "Check in" : waiting ? `Waiting · ${shortDate(task.checkIn)}` : TASK_STATUS_LABELS[task.status];
+  const title = reason ? `${reason} · change status` : waiting ? `Check in ${formatDate(task.checkIn, true)}${task.checkInDerived ? " (a week after its last update)" : ""} · change status` : "Change status";
+  return `<button type="button" class="task-status task-status-${task.status}${reason ? " task-status-due" : ""}" data-status-path="${escapeHtml(path)}" data-status="${task.status}" aria-haspopup="menu" title="${escapeHtml(title)}">${label}</button>`;
 }
+
+// Due check-ins count on the rail's Tasks link, so they surface from any page.
+function updateCheckInCount() {
+  const due = state.documents.filter((doc) => doc.task && checkInReason(doc.task, doc.path)).length;
+  let badge = elements.tasksButton.querySelector(".view-navigation-count");
+  if (!badge) elements.tasksButton.insertAdjacentHTML("beforeend", '<span class="view-navigation-count"></span>');
+  badge = elements.tasksButton.querySelector(".view-navigation-count");
+  badge.textContent = due || "";
+  badge.title = due ? `${due} waiting ${due === 1 ? "task needs" : "tasks need"} a check-in` : "";
+}
+
+async function loadWaiting() {
+  try {
+    const response = await fetch("/api/waiting");
+    if (!response.ok) return;
+    const { waiting } = await response.json();
+    const changed = JSON.stringify(waiting) !== JSON.stringify(waitingSignals);
+    waitingSignals = waiting;
+    updateCheckInCount();
+    if (changed && state.view === "tasks") renderTasksPage();
+  } catch {}
+}
+setInterval(loadWaiting, 10 * 60 * 1000);
 
 const TASK_SORTS = {
   id: (a, b) => a.task.id.localeCompare(b.task.id),
   title: (a, b) => a.task.title.localeCompare(b.task.title),
-  status: (a, b) => statusRank(a.task) - statusRank(b.task) || b.task.updated.localeCompare(a.task.updated),
+  status: (a, b) => statusRank(a) - statusRank(b) || b.task.updated.localeCompare(a.task.updated),
   project: (a, b) => a.task.project.localeCompare(b.task.project),
   refs: (a, b) => (a.task.referencedBy?.length || 0) - (b.task.referencedBy?.length || 0),
   updated: (a, b) => a.task.updated.localeCompare(b.task.updated),
@@ -269,6 +303,15 @@ function renderTasksPage() {
   renderTaskDetail();
 }
 
+// What a waiting task is waiting for: its check-in date and the items its Next actions name, moved ones first.
+function waitingSection(task, path) {
+  if (task.status !== "waiting") return "";
+  const items = [...(waitingSignals[path] || [])].sort((a, b) => b.moved - a.moved);
+  const date = `<p class="task-detail-checkin">Check in <strong>${escapeHtml(formatDate(task.checkIn))}</strong>${task.checkInDerived ? " · a week after its last update" : ""}</p>`;
+  const rows = items.map((item) => `<li><a class="ref-row waiting-item${item.moved ? " is-moved" : ""}" href="${escapeHtml(item.href)}" target="_blank" rel="noreferrer"><code>${escapeHtml(itemLabel(item))}</code><span>${escapeHtml(item.title || "")}</span><em data-tone="${escapeHtml(item.tone)}">${escapeHtml(item.state)}${item.moved ? ` · ${escapeHtml(shortDate(item.when.slice(0, 10)))}` : ""}</em></a></li>`).join("");
+  return `<section class="task-detail-section task-detail-waiting"><h4>Waiting on${items.length ? ` <span>${items.length}</span>` : ""}</h4>${date}${rows ? `<ul>${rows}</ul>` : '<p class="task-detail-empty">Its Next actions name no PR or issue to watch, so only the date brings it back.</p>'}</section>`;
+}
+
 async function renderTaskDetail() {
   const pane = document.getElementById("task-detail");
   const summary = state.documents.find((doc) => doc.path === selectedTaskPath);
@@ -284,7 +327,7 @@ async function renderTaskDetail() {
     </header>
     <h3>${escapeHtml(task.title)}</h3>
     <p class="task-detail-summary">${escapeHtml(task.summary)}</p>
-    <p class="task-detail-meta"><span>${escapeHtml(task.project)}</span><span>Updated ${escapeHtml(formatDate(task.updated))}</span>${task.status === "waiting" && task.checkIn ? `<span>Check in ${escapeHtml(formatDate(task.checkIn))}</span>` : ""}${task.tags.map((tag) => `<span class="task-detail-tag">${escapeHtml(tag)}</span>`).join("")}</p>`;
+    <p class="task-detail-meta"><span>${escapeHtml(task.project)}</span><span>Updated ${escapeHtml(formatDate(task.updated))}</span>${task.tags.map((tag) => `<span class="task-detail-tag">${escapeHtml(tag)}</span>`).join("")}</p>`;
   // Chats are the lowest-value links here, so they wait behind a disclosure at the end.
   const chats = task.chatLinks?.length ? `<details class="task-detail-chats"><summary>Chats <span>${task.chatLinks.length}</span></summary>${renderChatLinks(task.chatLinks)}</details>` : "";
   // References group by what they are: days (plan/done/notes on one line), other tasks, then topics and notes.
@@ -298,7 +341,7 @@ async function renderTaskDetail() {
   const refs = `<section class="task-detail-section"><h4>Referenced in <span>${references.length}</span></h4>${references.length
     ? `${refGroup("Days", dayRows)}${refGroup("Tasks", taskRows)}${refGroup("Documents", otherRows)}`
     : `<p class="task-detail-empty">Not referenced from any plan or note yet.</p>`}</section>`;
-  pane.innerHTML = `${head}<section class="task-detail-section task-detail-actions"><h4>Next actions</h4><p class="task-detail-empty">Loading…</p></section>${refs}${chats}`;
+  pane.innerHTML = `${head}${waitingSection(task, summary.path)}<section class="task-detail-section task-detail-actions"><h4>Next actions</h4><p class="task-detail-empty">Loading…</p></section>${refs}${chats}`;
   try {
     const response = await fetch(`/api/document?path=${encodeURIComponent(summary.path)}`);
     const doc = await response.json();
@@ -1675,6 +1718,8 @@ async function refreshFromMarkdown(changedPaths) {
     const libraryBody = await libraryResponse.json();
     if (!libraryResponse.ok) throw new Error(libraryBody.error || "Could not refresh the document list.");
     state.documents = libraryBody.documents;
+    updateCheckInCount();
+    loadWaiting();
 
     if (state.view in LIBRARY_VIEWS) {
       renderLibrary();
@@ -2887,7 +2932,9 @@ elements.handoffPopover.addEventListener("keydown", (event) => {
 // Status menu: click a status pill, or right-click a pill or task row.
 const statusMenu = document.querySelector("#status-menu");
 function openStatusMenu(path, status, x, y) {
-  statusMenu.innerHTML = Object.entries(TASK_STATUS_LABELS).map(([value, label]) => `<button type="button" role="menuitemradio" aria-checked="${value === status}" data-set-status="${value}" data-path="${escapeHtml(path)}"><span class="task-status task-status-${value}">${label}</span></button>`).join("");
+  // Waiting picks when to look again; on a waiting task the same buttons push the check-in out.
+  const checkIns = `<div class="status-menu-checkins" role="group" aria-label="Check in after">${[[3, "3d"], [7, "1w"], [14, "2w"], [28, "4w"]].map(([days, label]) => `<button type="button" role="menuitem" data-set-status="waiting" data-days="${days}" data-path="${escapeHtml(path)}" title="Waiting, check in ${escapeHtml(formatDate(dateKey(addDays(parseDateKey(localTodayKey()), days))))}">${label}</button>`).join("")}</div>`;
+  statusMenu.innerHTML = Object.entries(TASK_STATUS_LABELS).map(([value, label]) => `<button type="button" role="menuitemradio" aria-checked="${value === status}" data-set-status="${value}" data-path="${escapeHtml(path)}"><span class="task-status task-status-${value}">${label}</span></button>${value === "waiting" ? checkIns : ""}`).join("");
   statusMenu.showPopover();
   statusMenu.style.left = `${Math.min(x, innerWidth - statusMenu.offsetWidth - 8)}px`;
   statusMenu.style.top = `${Math.min(y, innerHeight - statusMenu.offsetHeight - 8)}px`;
@@ -2924,10 +2971,11 @@ statusMenu.addEventListener("click", async (event) => {
   statusMenu.hidePopover();
   if (choice.getAttribute("aria-checked") === "true") return;
   try {
-    const response = await fetch("/api/task-status", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: choice.dataset.path, status: choice.dataset.setStatus }) });
+    const days = choice.dataset.days ? Number(choice.dataset.days) : undefined;
+    const response = await fetch("/api/task-status", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: choice.dataset.path, status: choice.dataset.setStatus, days }) });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || "Could not change the task status.");
-    showNotice(`${body.task.id} is now ${TASK_STATUS_LABELS[body.task.status].toLowerCase()}.`);
+    showNotice(body.task.status === "waiting" ? `${body.task.id} is waiting; check in ${formatDate(body.task.checkIn)}.` : `${body.task.id} is now ${TASK_STATUS_LABELS[body.task.status].toLowerCase()}.`);
     await refreshFromMarkdown(new Set([choice.dataset.path]));
   } catch (error) {
     showNotice(error.message, true);
@@ -3141,6 +3189,8 @@ async function boot() {
     if (!response.ok) throw new Error(body.error || "Could not load the document list.");
     state.documents = body.documents;
     state.defaultPath = body.defaultPath;
+    updateCheckInCount();
+    loadWaiting();
     const requested = new URLSearchParams(location.search).get("path");
     const requestedView = new URLSearchParams(location.search).get("view");
     const initial = state.documents.find((doc) => doc.path === requested)?.path

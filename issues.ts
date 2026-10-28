@@ -454,11 +454,11 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     const aliases = new Map<string, Issue>();
     for (const issue of Object.values(cache.issues)) for (const alias of aliasesOf(issue, prefixes)) aliases.set(alias, issue);
     const tones: Record<string, string> = { done: "done", indeterminate: "progress", new: "open" };
-    const out: Record<string, { title: string; state: string; tone: string; person?: string; fetchedAt: number }> = {};
+    const out: Record<string, { title: string; state: string; tone: string; person?: string; when?: string; fetchedAt: number }> = {};
     for (const key of keys) {
       const [service, id] = key.split(":");
       const issue = service === "jira" ? cache.issues[id] : aliases.get(id);
-      if (issue && issue.source === "jira") out[key] = { title: issue.summary, state: service === "jira" ? issue.status : `${issue.status} · now ${issue.key}`, tone: tones[issue.category] || "open", person: issue.assignee?.name, fetchedAt: cache.at };
+      if (issue && issue.source === "jira") out[key] = { title: issue.summary, state: service === "jira" ? issue.status : `${issue.status} · now ${issue.key}`, tone: tones[issue.category] || "open", person: issue.assignee?.name, when: issue.updated, fetchedAt: cache.at };
     }
     return out;
   }

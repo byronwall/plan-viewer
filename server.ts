@@ -7,7 +7,8 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseActions, parseWorkBreakdown, stalledTaskReason } from "./public/actions.js";
-import { extractChatLinks } from "./public/markdown.js";
+import { extractChatLinks, inlineMarkdown } from "./public/markdown.js";
+import { metadataKey } from "./public/dock.js";
 import { CodexDesktopClient, taskTitle } from "./codex-desktop.ts";
 import { createLinkMetadataStore } from "./link-metadata.ts";
 import { createCodeDashboard, githubImage } from "./code-dashboard.ts";
@@ -110,8 +111,11 @@ export type TaskSummary = {
   tags: string[];
   created: string;
   updated: string;
-  // `check_in: YYYY-MM-DD`: when a waiting task comes back onto the radar.
+  // When a waiting task comes back onto the radar: `check_in: YYYY-MM-DD`, else `checkInDays` after `updated` (derived).
   checkIn?: string;
+  checkInDerived?: boolean;
+  // The PRs and tracker issues a waiting task's Next actions name; /api/waiting reports which of them moved.
+  watch?: { key: string; href: string }[];
   referencedBy?: string[];
   work?: { id: string; title: string; status: string }[];
   chatLinks?: { href: string; provider: string; label: string }[];
@@ -206,6 +210,9 @@ export function parseTaskDocument(path: string, markdown: string) {
   if (checkIn !== undefined) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(checkIn)) throw new Error(`${path} must write check_in as YYYY-MM-DD.`);
     task.checkIn = checkIn;
+  } else if (status === "waiting") {
+    task.checkIn = addDays(task.updated, config().checkInDays);
+    task.checkInDerived = true;
   }
   const body = markdown.slice(match[0].length).trimStart();
   const chatLinks = extractChatLinks(body);
@@ -224,18 +231,52 @@ function todayPath() {
   return `daily/${get("year")}/${get("month")}/${get("day")}/plan.md`;
 }
 
-// Rewrites only the status and updated lines of a task's front matter.
-export async function setTaskStatus(path: string, status: string, root = ROOT, today = todayDate()) {
+// Rewrites only the status and updated lines of a task's front matter. Waiting sets `check_in` (`days` out, or the
+// configured default); any other status drops it.
+export async function setTaskStatus(path: string, status: string, root = ROOT, today = todayDate(), days = config().checkInDays) {
   if (!/^tasks\/TASK-\d{4}\.md$/.test(path)) throw new Error("Only task files can change status.");
   if (!TASK_STATUSES.has(status as TaskStatus)) throw new Error(`Unsupported task status “${status}”.`);
+  if (!Number.isInteger(days) || days < 1 || days > 365) throw new Error("A check-in must be 1 to 365 days out.");
   const file = join(root, path);
   const contents = await readFile(file, "utf8");
   parseTaskDocument(path, contents);
   const end = contents.indexOf("\n---", 3);
-  const front = contents.slice(0, end).replace(/^status:.*$/m, `status: ${status}`).replace(/^updated:.*$/m, `updated: ${today}`);
+  const front = contents.slice(0, end).replace(/^status:.*$/m, `status: ${status}`).replace(/^updated:.*$/m, `updated: ${today}`).replace(/\ncheck_in:[^\n]*/, "")
+    + (status === "waiting" ? `\ncheck_in: ${addDays(today, days)}` : "");
   const next = front + contents.slice(end);
   await writeFile(file, next);
   return parseTaskDocument(path, next).task;
+}
+
+export function addDays(date: string, days: number) {
+  const next = new Date(`${date}T12:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next.toISOString().slice(0, 10);
+}
+
+// The references a waiting task watches: PRs, GitHub issues, and Linear and Jira issues its Next actions name, found
+// by the same detectors the reader uses. Commits never change and Slack has no activity date, so they are left out.
+export function watchedReferences(body: string, path: string) {
+  const actions = body.match(/^## Next actions[ \t]*\n([\s\S]*?)(?=^## |(?![\s\S]))/im)?.[1] || "";
+  const found = new Map<string, string>();
+  for (const [, raw] of actions.split("\n").map((line) => inlineMarkdown(line, path)).join("\n").matchAll(/href="(https:[^"]+)"/g)) {
+    const href = raw.replaceAll("&amp;", "&");
+    const key = metadataKey(href);
+    if (/^(github:[^@]+#\d+|linear:|jira:)/.test(key) && !found.has(key)) found.set(key, href);
+  }
+  return [...found].map(([key, href]) => ({ key, href }));
+}
+
+// Day of an ISO timestamp in the server's time zone, to compare with front-matter dates.
+const localDay = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: process.env.TZ || undefined }).format(new Date(iso));
+
+// A watched item moved when its dated state (merged, closed, opened, or a tracker's last update) falls after the day the
+// task last changed. Setting a task to waiting, or an agent recording a check-in, moves that day forward.
+export function waitingSignals(task: TaskSummary, metadata: Record<string, { title: string; state: string; tone: string; when?: string }>) {
+  return (task.watch || []).map(({ key, href }) => {
+    const meta = metadata[key];
+    return { key, href, title: meta?.title || "", state: meta?.state || "", tone: meta?.tone || "", when: meta?.when || "", moved: Boolean(meta?.when) && localDay(meta!.when!) > task.updated };
+  });
 }
 
 function todayDate() {
@@ -424,6 +465,7 @@ export async function listDocuments() {
     const breakdown = parseChunks(parseTaskDocument(path, contents).body).find((chunk) => /^work breakdown$/i.test(chunk.title));
     const nodes = breakdown ? parseWorkBreakdown(breakdown.markdown).nodes : [];
     if (nodes.length) docs[index].task!.work = nodes.map(({ id, title, status }) => ({ id, title, status }));
+    if (docs[index].task!.status === "waiting") docs[index].task!.watch = watchedReferences(parseTaskDocument(path, contents).body, path);
   }
   for (const doc of docs) {
     const sources = [...(backlinks.get(doc.path) || [])];
@@ -821,7 +863,13 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (request.method === "POST" && url.pathname === "/api/task-status") {
       const body = await readJson(request);
       viewerWrites.add(String(body.path || ""));
-      return json(response, 200, { task: await setTaskStatus(String(body.path || ""), String(body.status || "")) });
+      return json(response, 200, { task: await setTaskStatus(String(body.path || ""), String(body.status || ""), ROOT, todayDate(), body.days === undefined ? config().checkInDays : Number(body.days)) });
+    }
+    if (request.method === "GET" && url.pathname === "/api/waiting") {
+      const tasks = (await listDocuments()).filter((doc) => doc.task?.watch?.length);
+      const keys = tasks.flatMap((doc) => doc.task!.watch!.map(({ key }) => key));
+      const metadata = { ...await lookupLinkMetadata(keys), ...issueTracker.aliasMetadata(keys) };
+      return json(response, 200, { waiting: Object.fromEntries(tasks.map((doc) => [doc.path, waitingSignals(doc.task!, metadata)])) });
     }
     if (request.method === "POST" && url.pathname === "/api/dispatch") {
       const requestId = `dispatch-${Date.now()}-${++dispatchSequence}`;

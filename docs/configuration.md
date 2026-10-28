@@ -49,6 +49,7 @@ That turns `#1234`, commit SHAs, and `ATL-12` in your Markdown into links with l
 | `port` | Default port. |
 | `exclude` | Folders under the four content roots that the library, watcher, and lint skip, such as a generated issue export. |
 | `people` | People the avatar index can't join on its own: `[{ "names": ["Ada Lovelace"], "emails": ["ada@acme.test"], "github": "ada-acme", "avatar": "https://…" }]`. Every field is optional; `github` picks the GitHub photo and `avatar` overrides it. The index otherwise joins GitHub commit authors, Linear users and, with a Slack user token (`SLACK_TOKEN` or `[slack] TOKEN` in `config.toml`, scopes `users:read` and `users:read.email`), Slack profiles. |
+| `checkInDays` | Days after a waiting task's last update that it comes back as **Check in** when it has no `check_in` date, and how far out **Waiting** in the status menu sets one. Default `7`. |
 | `github.owner` | GitHub owner for every PR and commit reference. Empty disables PR and commit links. |
 | `github.defaultRepo` | Repository a bare `#1234` or bare commit SHA means. Empty leaves them as text. |
 | `github.repos` | Other repositories written as `Orbit#1234` or `Orbit@abc1234` (case-insensitive). |

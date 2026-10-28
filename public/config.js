@@ -10,6 +10,8 @@ export const DEFAULT_CONFIG = {
   exclude: [],
   // People the identity index can't join on its own: [{ names, emails, github, avatar }], so every avatar matches.
   people: [],
+  // Days from a task's last update until a waiting task comes back as "Check in", when it names no `check_in` date.
+  checkInDays: 7,
   github: {
     // `owner/<repo>` for every reference below.
     owner: "",

@@ -34,7 +34,7 @@ project: Atlas
 tags: [atlas, onboarding]
 created: 2026-10-12
 updated: 2026-10-21
-check_in: 2026-10-28  # optional, for a waiting task: when to look at it again
+check_in: 2026-10-28  # optional; the viewer's status menu writes it for waiting tasks
 ---
 ```
 

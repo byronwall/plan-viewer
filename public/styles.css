@@ -55,6 +55,7 @@ button { cursor: pointer; }
 .view-navigation-link { min-height: 26px; display: flex; align-items: center; border: 0; border-radius: 6px; background: transparent; padding: 4px 8px; color: #344057; font-size: .8rem; font-weight: 600; text-align: left; }
 .view-navigation-link:hover { background: var(--quiet-field); }
 .view-navigation-link[aria-current="page"] { background: var(--selected); color: var(--action-ink); }
+.view-navigation-count { margin-left: auto; color: #8a5a00; font-size: .7rem; font-variant-numeric: tabular-nums; }
 .documents { overflow: auto; padding: 0 6px 20px; scrollbar-width: thin; }
 .document-group { margin-top: 12px; }
 .group-label { position: sticky; top: 0; z-index: 1; margin: 0; background: #f8f9fb; padding: 4px 8px; color: var(--label-text); font: 650 .64rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; text-transform: uppercase; }
@@ -535,6 +536,14 @@ button.task-list-id:hover { text-decoration: underline; }
 .task-detail .ref-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-detail .ref-row code { flex: none; color: var(--action-ink); font: 650 .7rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .task-detail .ref-chip::after, .task-detail .ref-row::after { content: none; }
+.task-detail-waiting ul { margin: 0; padding: 0; list-style: none; }
+.task-detail-checkin { margin: 0 0 4px; color: var(--muted); font-size: .76rem; }
+.task-detail-checkin strong { color: var(--ink); font-weight: 650; }
+.task-detail .waiting-item span { white-space: normal; }
+.task-detail .waiting-item em { flex: none; margin-left: auto; color: var(--muted); font-size: .7rem; font-style: normal; }
+.task-detail .waiting-item em[data-tone="done"] { color: var(--success-ink); }
+.task-detail .waiting-item em[data-tone="closed"] { color: #8a2f2f; }
+.task-detail .waiting-item.is-moved em { font-weight: 700; }
 .task-detail-empty { margin: 0; color: var(--muted); font-size: .8rem; }
 /* One quiet style in the detail pane: ink text, muted IDs, blue only on hover and the Open button. */
 .task-detail .action-card { margin-inline: -8px; width: calc(100% + 16px); }
@@ -860,6 +869,8 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .status-menu button { display: flex; align-items: center; justify-content: space-between; border: 0; border-radius: 5px; background: transparent; padding: 5px 7px; text-align: left; }
 .status-menu button:hover, .status-menu button:focus-visible { background: var(--hover-field); outline: none; }
 .status-menu button[aria-checked="true"]::after { content: "✓"; color: var(--action-ink); font-size: .72rem; }
+.status-menu-checkins { display: flex; gap: 2px; padding: 0 3px 3px 10px; }
+.status-menu .status-menu-checkins button { padding: 2px 6px; color: #754b00; font-size: .66rem; font-weight: 650; }
 
 .chat-links { display: inline-flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
 .chat-link { display: inline-block; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; color: var(--action); font-size: .75rem; text-decoration: none; }

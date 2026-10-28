@@ -7,7 +7,7 @@ import { createLinkMetadataStore, refreshSlackChannels } from "./link-metadata.t
 import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle, withImages } from "./codex-desktop.ts";
 import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
 import { buildWeeks, dateKey, parseDateKey, startOfWeek } from "./public/weeks.js";
-import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, dailyDigest, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize } from "./server.ts";
+import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, dailyDigest, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
   const previous = process.env.SLACK_TOKEN;
@@ -145,6 +145,8 @@ updated: 2026-08-04
     tags: ["tasks", "viewer"],
     created: "2026-08-03",
     updated: "2026-08-04",
+    checkIn: "2026-08-11",
+    checkInDerived: true,
   });
   assert.match(parsed.body, /^# Prove the loop/);
   assert.doesNotMatch(parsed.body, /^---/);
@@ -660,6 +662,40 @@ test("setTaskStatus rewrites only status and updated front matter", async () => 
   assert.ok(contents.endsWith(body));
   await assert.rejects(setTaskStatus("tasks/TASK-0042.md", "bogus", root));
   await assert.rejects(setTaskStatus("daily/2026/10/01/plan.md", "open", root));
+  // Waiting writes a check-in; picking it again pushes the date; leaving waiting drops the line.
+  assert.equal((await setTaskStatus("tasks/TASK-0042.md", "waiting", root, "2026-10-01")).checkIn, "2026-10-08");
+  assert.equal((await setTaskStatus("tasks/TASK-0042.md", "waiting", root, "2026-10-03", 14)).checkIn, "2026-10-17");
+  assert.equal((await readFile(join(root, "tasks/TASK-0042.md"), "utf8")).match(/^check_in:/gm)?.length, 1);
+  await setTaskStatus("tasks/TASK-0042.md", "open", root, "2026-10-04");
+  const reopened = await readFile(join(root, "tasks/TASK-0042.md"), "utf8");
+  assert.doesNotMatch(reopened, /check_in/);
+  assert.ok(reopened.endsWith(body));
+  await assert.rejects(setTaskStatus("tasks/TASK-0042.md", "waiting", root, "2026-10-04", 0), /1 to 365 days/);
+});
+
+test("a waiting task watches what its Next actions name and wakes when one moves", () => {
+  const body = `# T
+
+See [#9](https://github.com/acme/atlas/pull/9) in the background.
+
+## Next actions
+
+### Follow up
+
+\`\`\`prompt
+Check [OPS-7](https://acme.atlassian.net/browse/OPS-7) and whether [#12](https://github.com/acme/atlas/pull/12) merged; ignore [abcdef1](https://github.com/acme/atlas/commit/abcdef1).
+\`\`\`
+
+## Updates
+`;
+  const watch = watchedReferences(body, "tasks/TASK-0042.md");
+  assert.deepEqual(watch.map((item) => item.key), ["jira:OPS-7", "github:acme/atlas#12"]);
+  const task = { updated: "2026-10-20", watch } as any;
+  const signals = waitingSignals(task, {
+    "jira:OPS-7": { title: "Queue", state: "In Progress", tone: "progress", when: "2026-10-19T09:00:00Z" },
+    "github:acme/atlas#12": { title: "Queue API", state: "Merged", tone: "done", when: "2026-10-23T15:00:00Z" },
+  });
+  assert.deepEqual(signals.map((item) => [item.key, item.moved]), [["jira:OPS-7", false], ["github:acme/atlas#12", true]]);
 });
 
 test("related chats preserve conversation links and ignore examples and snapshots", async () => {
