@@ -1058,7 +1058,7 @@ function ensureDiffDialog() {
   diffDialog.addEventListener("pointerover", (event) => { const target = event.target.closest("[data-tip]"); if (target) showTip(target); else hideTip(); });
   diffDialog.addEventListener("pointerleave", hideTip);
   diffDialog.addEventListener("keydown", (event) => {
-    if (isSummonKey(event)) return; // H and ⌘K open Recently viewed and search above the overlay
+    if (isSummonKey(event)) return; // H, ⌘K and ⌘D open Recently viewed, search and favorite above the overlay
     event.stopPropagation(); // keep the page's J/K and other global shortcuts out of the overlay
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !diffDialog.querySelector(".code-note-composer").hidden) { event.preventDefault(); return saveComposer(); }
     if (event.metaKey || event.ctrlKey || event.altKey || event.target.closest?.("input, textarea")) return;
@@ -1089,11 +1089,12 @@ function ensureDiffDialog() {
   });
 }
 
-// The two keys that reach the page from inside any overlay: ⌘K (search) and a bare H (Recently viewed).
+// The keys that reach the page from inside any overlay: ⌘K (search), ⌘D (favorite what's open), and H / Shift+H
+// (Recently viewed / Favorites).
 export function isSummonKey(event) {
   const key = event.key.toLowerCase();
-  if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) return key === "k";
-  return key === "h" && !event.altKey && !event.shiftKey && !event.target.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])");
+  if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) return key === "k" || key === "d";
+  return key === "h" && !event.altKey && !event.metaKey && !event.ctrlKey && !event.target.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])");
 }
 
 function showDiffDialog() {

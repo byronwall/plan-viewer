@@ -2372,6 +2372,8 @@ const shortcuts = [
   { keys: ["V"], description: "Open Activity: tasks, daily plans, issues and PRs, newest first", run: () => showActivity() },
   { keys: ["G"], description: "Open Code: worktrees, pull requests, cleanup", run: () => showCode() },
   { keys: ["I"], description: "Open Issues: triage, epics, activity", run: () => issuesOn() && showIssues() },
+  { keys: ["⌘D", "Ctrl+D"], description: "Favorite (or unfavorite) whatever is open: a document, task, page, PR, worktree, issue, or initiative, even from an overview" },
+  { keys: ["Shift+H"], description: "Favorites, from anywhere: the same menu as H, on its Favorites tab" },
   { keys: ["H"], description: "Recently viewed, from anywhere (even the PR overview): type to filter, ↑↓ to move, Enter to go back, 1–9 to jump, Esc clears the filter" },
   { keys: ["J"], description: "Jump to the next document section", run: () => jumpSection(1) },
   { keys: ["K"], description: "Jump to the previous document section", run: () => jumpSection(-1) },
@@ -2809,9 +2811,14 @@ document.addEventListener("keydown", (event) => {
     openSearch(); // over any overlay, so it is always one keystroke away
     return;
   }
+  if ((event.metaKey || event.ctrlKey) && key === "d") {
+    event.preventDefault(); // instead of the browser's own bookmark
+    toggleFavorite();
+    return;
+  }
   if (isSummonKey(event) && !historyMenu.matches(":popover-open")) {
     event.preventDefault();
-    openHistoryMenu();
+    openHistoryMenu(event.shiftKey ? "favorites" : "viewed");
     return;
   }
   if (modal) return;
@@ -3007,6 +3014,24 @@ for (const method of ["pushState", "replaceState"]) {
 }
 window.addEventListener("popstate", recordVisit);
 
+// Places you return to often, pinned by ⌘D until you press it again. Keyed like visits, so a PR is one favorite
+// whichever file or scope was open, and the href reopens it as you left it.
+const FAVORITES_KEY = "viewer-favorites";
+let favorites = [];
+try { favorites = JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]"); } catch {}
+const isFavorite = (href) => favorites.some((favorite) => favorite.key === visitKey(new URL(href, location.href)));
+function toggleFavorite(href = location.href) {
+  const url = new URL(href, location.href);
+  const key = visitKey(url);
+  const removing = isFavorite(href);
+  favorites = removing ? favorites.filter((favorite) => favorite.key !== key) : [{ key, href: url.pathname + url.search + url.hash, at: Date.now() }, ...favorites];
+  try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites)); } catch {}
+  const title = document.createElement("span");
+  title.innerHTML = visitResult(href).title;
+  showNotice(removing ? "Removed from favorites" : "Added to favorites", false, { kind: removing ? "info" : "success", description: title.textContent, action: { label: "Undo", run: () => toggleFavorite(href) } });
+  if (historyMenu.matches(":popover-open")) historyMenu.querySelector(".history-here .search-kind").textContent = isFavorite(location.href) ? "★ Favorite" : "";
+}
+
 const prNumberLabel = (slug, number) => `${slug === referenceConfig().defaultSlug ? "" : slug.split("/")[1]}#${number}`;
 const findPr = (slug, number) => cachedPrIndex()?.prs.find((pr) => pr.slug === slug && pr.number === number);
 
@@ -3069,9 +3094,10 @@ document.addEventListener("overview-closed", (event) => {
 
 const historyMenu = document.querySelector("#history-menu");
 const historyRows = () => [...historyMenu.querySelectorAll(".search-results:not([hidden]) [data-visit-href]:not([hidden])")];
-// Viewed and Changed are separate tabs so a burst of agent edits can't bury where you've been. The row under
-// "You are here" names the open one; Tab, or a click anywhere on that row, flips to the other.
-function showHistoryTab(tab = historyMenu.querySelector('[data-history-tab][aria-selected="false"]').dataset.historyTab) {
+// Viewed, Favorites and Changed are separate tabs so a burst of agent edits can't bury where you've been. The row
+// under "You are here" names the open one; Tab, or a click anywhere on that row, moves to the next.
+const nextHistoryTab = () => { const tabs = [...historyMenu.querySelectorAll("[data-history-tab]")]; return tabs[(tabs.findIndex((tab) => tab.getAttribute("aria-selected") === "true") + 1) % tabs.length].dataset.historyTab; };
+function showHistoryTab(tab = nextHistoryTab()) {
   for (const button of historyMenu.querySelectorAll("[data-history-tab]")) button.setAttribute("aria-selected", String(button.dataset.historyTab === tab));
   for (const list of historyMenu.querySelectorAll("[data-history-list]")) list.hidden = list.dataset.historyList !== tab;
   historyFilter().focus(); // a click on the row shouldn't take typing away from the filter
@@ -3104,15 +3130,21 @@ historyMenu.addEventListener("beforetoggle", (event) => {
     tag: "button",
     attrs: `type="button" role="option" aria-selected="false" data-visit-href="${escapeHtml(visit.href)}"`,
   }));
+  const favoriteRows = favorites.map((favorite, index) => resultRow({
+    ...visitResult(favorite.href),
+    marker: index < 9 ? index + 1 : "",
+    tag: "button",
+    attrs: `type="button" role="option" aria-selected="false" data-visit-href="${escapeHtml(favorite.href)}"`,
+  }));
   // The page you're on, pinned above the list, so it's clear what picking a row will replace.
-  const here = resultRow({ ...visitResult(location.href), side: "", className: "history-here", marker: "" });
+  const here = resultRow({ ...visitResult(location.href), side: isFavorite(location.href) ? "★ Favorite" : "", className: "history-here", marker: "" });
   historyMenu.style.height = "";
   const empty = (title, text) => `<div class="search-empty"><strong>${title}</strong><span>${text}</span></div>`;
-  const tabs = [["viewed", "Recently viewed"], ["changed", "Recently changed"]].map(([tab, label]) => `<button type="button" role="tab" tabindex="-1" data-history-tab="${tab}" aria-selected="${tab === "viewed"}">${label}<span class="history-tab-count"></span></button>`).join("");
-  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recent places</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="history-switch" data-history-switch><span role="tablist" aria-label="Recent places">${tabs}</span><span class="history-switch-key"><kbd>Tab</kbd> switch</span></div><div class="search-results" role="listbox" aria-label="Recently viewed" data-history-list="viewed">${rows.join("") || empty("Nothing yet", "Pages, PRs and worktrees you open will appear here.")}</div><div class="search-results" role="listbox" aria-label="Recently changed" data-history-list="changed" hidden>${changeRows.join("") || empty("No changes yet", "Documents edited outside the viewer will appear here.")}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>Esc</kbd> close</span></footer>`;
+  const tabs = [["viewed", "Recently viewed"], ["favorites", "Favorites"], ["changed", "Recently changed"]].map(([tab, label]) => `<button type="button" role="tab" tabindex="-1" data-history-tab="${tab}" aria-selected="${tab === "viewed"}">${label}<span class="history-tab-count"></span></button>`).join("");
+  historyMenu.innerHTML = `<label class="search-field history-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><span class="sr-only">Filter recent places</span><input type="search" placeholder="Type to filter…" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">Esc</kbd></label><section class="history-here-wrap" aria-label="You are here"><div class="search-section">You are here</div>${here}</section><div class="history-switch" data-history-switch><span role="tablist" aria-label="Recent places">${tabs}</span><span class="history-switch-key"><kbd>Tab</kbd> switch</span></div><div class="search-results" role="listbox" aria-label="Recently viewed" data-history-list="viewed">${rows.join("") || empty("Nothing yet", "Pages, PRs and worktrees you open will appear here.")}</div><div class="search-results" role="listbox" aria-label="Favorites" data-history-list="favorites" hidden>${favoriteRows.join("") || empty("No favorites yet", `Press ${modKey}D on anything open to keep it here.`)}</div><div class="search-results" role="listbox" aria-label="Recently changed" data-history-list="changed" hidden>${changeRows.join("") || empty("No changes yet", "Documents edited outside the viewer will appear here.")}</div><footer class="viewer-dialog-footer search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select <kbd>↵</kbd> open <kbd>1</kbd>–<kbd>9</kbd> jump <kbd>${modKey}D</kbd> favorite <kbd>Esc</kbd> close</span></footer>`;
 });
 // Every word must appear in the row's title or detail; the 1–9 markers renumber over what's left. The filter covers
-// both tabs, so each tab's count says whether the other one has matches.
+// every tab, so each tab's count says whether another one has matches.
 function filterHistory() {
   const words = historyFilter().value.toLowerCase().split(/\s+/).filter(Boolean);
   for (const row of historyMenu.querySelectorAll("[data-history-list] [data-visit-href]")) row.hidden = !words.every((word) => row.textContent.toLowerCase().includes(word));
@@ -3123,8 +3155,8 @@ function filterHistory() {
   const rows = historyRows();
   rows.forEach((row, index) => { row.querySelector(".result-marker").textContent = index < 9 ? index + 1 : ""; });
   historyMenu.querySelector(".history-none")?.remove();
-  const other = historyMenu.querySelector('[data-history-tab][aria-selected="false"]');
-  const elsewhere = Number(other.querySelector(".history-tab-count").textContent);
+  const other = [...historyMenu.querySelectorAll('[data-history-tab][aria-selected="false"]')].find((tab) => Number(tab.querySelector(".history-tab-count").textContent));
+  const elsewhere = Number(other?.querySelector(".history-tab-count").textContent);
   const hint = elsewhere ? `${elsewhere} ${elsewhere === 1 ? "match" : "matches"} in ${other.firstChild.textContent}. Press Tab.` : "Esc clears the filter.";
   if (all.length && !rows.length) historyMenu.querySelector(".search-results:not([hidden])").insertAdjacentHTML("beforeend", `<div class="search-empty history-none"><strong>No matches</strong><span>${hint}</span></div>`);
   selectHistoryRow(rows[0]);
@@ -3148,17 +3180,15 @@ historyButton.addEventListener("click", () => (historyMenu.matches(":popover-ope
 historyMenu.addEventListener("toggle", (event) => historyButton.setAttribute("aria-expanded", String(event.newState === "open")));
 historyMenu.addEventListener("toggle", (event) => { if (event.newState === "open" && !historyMenu.contains(document.activeElement)) { historyFilter().focus(); selectHistoryRow(historyRows()[0]); } });
 // A modal dialog makes everything outside it inert, so the menu moves into the top open dialog to stay usable above it.
-function openHistoryMenu() {
+function openHistoryMenu(tab = "viewed") {
   const host = [...document.querySelectorAll("dialog[open]")].at(-1) || document.body;
   if (historyMenu.parentElement !== host) host.append(historyMenu);
   historyMenu.showPopover();
   // Sized to the taller tab, so flipping between them doesn't resize the menu.
   const lists = [...historyMenu.querySelectorAll("[data-history-list]")];
   const heights = lists.map((shown) => { for (const list of lists) list.hidden = list !== shown; return historyMenu.offsetHeight; });
-  lists.forEach((list, index) => { list.hidden = index > 0; });
   historyMenu.style.height = `${Math.max(...heights)}px`;
-  historyFilter().focus(); // now, not on the async toggle event, so typing right after H lands in the filter
-  filterHistory(); // fills the tab counts and selects the newest row
+  showHistoryTab(tab); // focuses the filter now, not on the async toggle event, so typing right after H lands in it; fills the tab counts and selects the first row
 }
 historyMenu.addEventListener("keydown", (event) => {
   event.stopPropagation(); // inside the PR overview, its J/K/arrow keys must not also fire
@@ -3167,6 +3197,13 @@ historyMenu.addEventListener("keydown", (event) => {
   const typing = !event.metaKey && !event.ctrlKey && !event.altKey;
   if (/^[1-9]$/.test(event.key) && typing && rows[event.key - 1]) { event.preventDefault(); rows[event.key - 1].click(); return; }
   if (event.key === "Tab") { event.preventDefault(); showHistoryTab(); return; }
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "d") { // the selected row, so a favorite comes off the list without opening it
+    event.preventDefault();
+    const row = historyMenu.querySelector('[data-visit-href][aria-selected="true"]:not([hidden])');
+    toggleFavorite(row?.dataset.visitHref || location.href);
+    if (row && historyMenu.querySelector('[data-history-tab="favorites"][aria-selected="true"]')) { row.remove(); filterHistory(); }
+    return;
+  }
   if (event.key === "Escape" && filter.value) { event.preventDefault(); filter.value = ""; filterHistory(); return; } // a second Esc closes
   if (event.key === "Enter" && event.target === filter) { event.preventDefault(); historyMenu.querySelector('[data-visit-href][aria-selected="true"]:not([hidden])')?.click(); return; }
   // Letters typed anywhere in the menu go to the filter, so H then "snow" narrows the list.
