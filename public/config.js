@@ -31,7 +31,7 @@ export const DEFAULT_CONFIG = {
     // Commands for the worktree open buttons; `{path}` is the worktree.
     editor: ["/usr/bin/open", "-n", "-b", "com.microsoft.VSCode", "--args", "{path}"],
     terminal: { label: "Terminal", command: ["/usr/bin/open", "-a", "Terminal", "{path}"] },
-    // Review skills drafted against a PR; each lives under the repo's `.claude/skills/<id>/`. `icon` names a built-in icon.
+    // Review skills drafted against a PR; each lives under the repo's `.claude/skills/<id>/` or the user's `~/.agents/skills/<id>/`. `icon` names a built-in icon.
     // An open "Discuss" prompt always follows them.
     prSkills: [],
     // Skill file the "Post as review" notes prompt follows; empty asks the agent to post without one.

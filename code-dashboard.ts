@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -578,6 +579,11 @@ export function createCodeDashboard(root: string) {
       const file = join(workspace, ".claude", "skills", skill, name);
       if (existsSync(file)) return `.claude/skills/${skill}/${name}`;
     }
+    // Then the user's global skills, which Claude finds by name but Codex needs a path to.
+    for (const dir of [".agents/skills", ".claude/skills"]) {
+      const file = join(homedir(), dir, skill, "SKILL.md");
+      if (existsSync(file)) return file;
+    }
     return "";
   }
 
@@ -612,7 +618,7 @@ export function createCodeDashboard(root: string) {
       // Claude turns a leading "/" from a link into a full-width "／" so links can't run commands, so the command goes mid-sentence.
       url = claudeUrl(root, `Run /${skill} on ${prUrl}.${where}`);
     } else if (app === "codex") {
-      if (!file) throw new Error(`No ${skill} skill under ${root}/.claude/skills.`);
+      if (!file) throw new Error(`No ${skill} skill under ${root}/.claude/skills or ~/.agents/skills.`);
       url = codexNewTaskUrl(`Read and follow the ${skill} skill at ${file} for this pull request: ${prUrl}.${where}`, root);
     } else throw new Error("Unknown agent app.");
     await exec("/usr/bin/open", [url]);

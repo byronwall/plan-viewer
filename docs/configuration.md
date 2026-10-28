@@ -57,7 +57,7 @@ That turns `#1234`, commit SHAs, and `ATL-12` in your Markdown into links with l
 | `code.checkoutsDir` | Where a repository named in a document is found when it isn't tracked. |
 | `code.prNotesDir` | Local PR review notes, one Markdown file per PR. |
 | `code.editor`, `code.terminal.command` | Commands for the worktree buttons (`E`, `X`); `{path}` is the worktree. |
-| `code.prSkills` | Review skills drafted against a PR (`1`…`N`). Each `id` is a skill under the repository's `.claude/skills/`; `icon` names a built-in icon. An open "Discuss" prompt always follows. |
+| `code.prSkills` | Review skills drafted against a PR (`1`…`N`). Each `id` is a skill under the repository's `.claude/skills/`, or a global one under `~/.agents/skills/` (or `~/.claude/skills/`); `icon` names a built-in icon. An open "Discuss" prompt always follows. |
 | `code.postNotesSkill` | Skill the "Post as review" notes prompt tells the agent to follow. |
 | `code.planSkill` | Skill the Plans tab's **Update** and **Retire** drafts tell the agent to use (`/<skill>` in Claude, "the <skill> skill" in Codex). Empty leaves the skill out of the prompt. |
 | `code.prPreview` | Preview button for repositories containing every `requires` file; runs `command` with `{number}`. `null` hides it. |
