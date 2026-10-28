@@ -1667,6 +1667,9 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 .code-diff-viewed:has(input:checked) { color: #105b49; }
 .code-diff-viewed:has(:focus-visible) { outline: 2px solid var(--action); outline-offset: 1px; }
 .code-diff-viewed input { margin: 0; accent-color: var(--pass); }
+.code-diff-viewed.is-changed, .code-ftree-viewed.is-changed { color: var(--status-waiting-ink); }
+.code-note-state { margin-left: 6px; color: var(--status-waiting-ink); font-size: .7rem; font-weight: 600; white-space: nowrap; }
+.code-note-state.is-outdated { color: var(--fail); }
 .code-diff-chevron { flex: none; display: grid; place-items: center; width: 24px; height: 24px; margin: -4px -2px -4px -4px; border: 0; border-radius: 4px; background: none; padding: 0; color: var(--muted); cursor: pointer; transition: background-color 140ms; }
 .code-diff-chevron:hover { background: var(--paper); }
 .code-diff-chevron::before { content: ""; width: 5px; height: 5px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: translateY(-1px) rotate(45deg); transition: transform 140ms; }

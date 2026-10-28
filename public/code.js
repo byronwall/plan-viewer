@@ -3,6 +3,7 @@ import { GLYPHS } from "./icons.js";
 import { agentApp, agentName as appName, config, escapeRegExp } from "./config.js";
 import { decorate, lineClasses, markWords } from "./word-diff.js";
 import { mapHtml, mapSvg, moveGroups, svgToPng, tileCard } from "./diff-map.js";
+import { anchorNote } from "./note-anchor.js";
 import { initPlans, loadPlans, openPlan, planClick, planDetail, planEmptyHint, planFor, planItems, planKey, planScopeParam, plansBody, plansControls, plansCount } from "./plans.js";
 
 // Code dashboard: tracked repos' worktrees (most recent first), their open PRs, and worktree cleanup.
@@ -852,8 +853,8 @@ const BIG_FILE = 1500;
 const meta = () => ui.data || prIndexData || {};
 const prKey = (slug, number) => `${slug}#${number}`;
 
-// GitHub-style "Viewed" for the PR overview, per PR in localStorage. Each mark stores a hash of the file's diff, so a
-// file that changes after it was viewed comes back unviewed.
+// GitHub-style "Viewed" for the PR overview, per PR in localStorage. Each mark stores a hash of the file's diff and when
+// it was checked, so a file that changes after it was viewed comes back unviewed and marked as changed since.
 function hashText(text) {
   let hash = 5381;
   for (let index = 0; index < text.length; index++) hash = (hash * 33 + text.charCodeAt(index)) | 0;
@@ -872,11 +873,14 @@ function viewedMap() {
   }
   return diff.viewed.map;
 }
-const isViewed = (file) => Boolean(subject()) && viewedMap()[file.path] === fileSig(file);
+const viewedMark = (file) => { const mark = subject() && viewedMap()[file.path]; return typeof mark === "string" ? { sig: mark } : mark || null; };
+const isViewed = (file) => viewedMark(file)?.sig === fileSig(file);
+const changedSinceViewed = (file) => Boolean(viewedMark(file)) && !isViewed(file);
+const viewedTip = (file) => { const mark = viewedMark(file); return !mark ? "" : `${isViewed(file) ? "Viewed" : "Changed since you viewed it"}${mark.at ? ` ${ago(mark.at)} ago` : ""}`; };
 function toggleViewed(file) {
   const map = viewedMap();
   if (!map) return false;
-  if (isViewed(file)) delete map[file.path]; else map[file.path] = fileSig(file);
+  if (isViewed(file)) delete map[file.path]; else map[file.path] = { sig: fileSig(file), at: Date.now() };
   diff.collapsed.delete(file.path); // collapse follows Viewed again until toggled by hand
   storage.set(`code-pr-viewed:${subject().key}`, JSON.stringify(map));
   return isViewed(file);
@@ -1595,13 +1599,31 @@ async function changeNote(change) {
   }
 }
 
-// Notes sit under the last line they cover, in the scope (whole PR or one commit) they were written against.
+// Where each note sits in the diff on screen (note-anchor.js), cached on the file's parsed diff. Notes from another
+// scope, or before the diff loads, stay where they were written.
+function noteAt(note) {
+  const file = note.commit === noteScope() && diff.files?.find((candidate) => candidate.path === note.file);
+  if (!file) return { state: diff.files && !diff.error && note.commit === noteScope() ? "outdated" : "current", line: note.line, end: note.end };
+  const cache = (file.anchors ||= new Map());
+  if (!cache.has(note.id)) cache.set(note.id, anchorNote(note, file.lines, fileSig(file)));
+  return cache.get(note.id);
+}
+const NOTE_STATES = { moved: (at) => `moved to ${at.line}`, edited: () => "edited", outdated: () => "outdated", changed: () => "file changed" };
+const NOTE_TIPS = { moved: "The quoted code moved since this note", edited: "Some of the quoted code changed since this note", outdated: "The quoted code is no longer in this diff", changed: "The file's diff changed since this note" };
+const noteState = (at) => NOTE_STATES[at.state] ? `<span class="code-note-state is-${at.state}" data-tip="${NOTE_TIPS[at.state]}">${NOTE_STATES[at.state](at)}</span>` : "";
+
+// Notes sit under the last line they cover now, in the scope (whole PR or one commit) they were written against. An
+// outdated note has no line left, so it joins the whole-file notes at the top.
 function noteRow(file, side, line, before, after) {
   if (line === undefined || line === null) return "";
   const scope = noteScope();
-  const notes = prNotes().filter((note) => note.file === file.path && note.side === side && note.end === line && note.commit === scope);
+  const notes = prNotes().filter((note) => {
+    if (note.file !== file.path || note.commit !== scope) return false;
+    const at = noteAt(note);
+    return at.state === "outdated" ? side === "new" && line === 0 : note.side === side && at.end === line;
+  });
   if (!notes.length) return "";
-  const cards = notes.map((note) => `<div class="code-note" data-note="${note.id}"><p>${escapeHtml(note.body)}</p><span class="code-note-meta">${note.status === "draft" ? "Local draft" : escapeHtml(note.status)} · ${noteRange(note)}<button type="button" data-note-edit="${note.id}">Edit</button><button type="button" data-note-delete="${note.id}">Delete</button></span></div>`).join("");
+  const cards = notes.map((note) => `<div class="code-note" data-note="${note.id}"><p>${escapeHtml(note.body)}</p><span class="code-note-meta">${note.status === "draft" ? "Local draft" : escapeHtml(note.status)} · ${noteRange(note)}${noteState(noteAt(note))}<button type="button" data-note-edit="${note.id}">Edit</button><button type="button" data-note-delete="${note.id}">Delete</button></span></div>`).join("");
   return `<tr class="code-diff-note">${before}${cards}${after}</tr>`;
 }
 
@@ -1646,7 +1668,8 @@ function showNoteButton() {
 function openComposer(target, note = null) {
   if (diff.scope === "stack" && !note) return notify("Notes belong to one PR. Open All changes or a commit to add one.");
   const composer = diffDialog.querySelector(".code-note-composer");
-  composer.note = note ? { id: note.id } : { ...target, rect: undefined, commit: noteScope() };
+  const file = diff.files?.find((candidate) => candidate.path === target?.file);
+  composer.note = note ? { id: note.id } : { ...target, rect: undefined, commit: noteScope(), sig: file ? fileSig(file) : "" };
   const where = note || target;
   composer.querySelector("[data-composer-where]").textContent = `${where.file.split("/").pop()} · ${noteRange(where)}${noteScope() ? ` · commit ${noteScope().slice(0, 7)}` : ""}`;
   const quote = composer.querySelector("blockquote");
@@ -1738,6 +1761,8 @@ function jumpToNote(id) {
   const reveal = () => {
     const at = diff.files?.findIndex((file) => file.path === note.file) ?? -1;
     if (at < 0) return;
+    // A viewed file is collapsed (or hidden), so following a note back to it puts it back in review.
+    if (isViewed(diff.files[at])) toggleViewed(diff.files[at]);
     focusFile(at);
     // "All files" renders sections as they near the viewport, so look for the card after a couple of frames.
     setTimeout(() => diffDialog.querySelector(`[data-note="${id}"]`)?.scrollIntoView({ block: "center" }), 120);
@@ -1748,11 +1773,12 @@ function jumpToNote(id) {
 function notesSection(pr, workspace) {
   const notes = prNotes();
   const drafts = notes.filter((note) => note.status === "draft").length;
-  const list = notes.map((note) => `<li><button type="button" class="code-diff-scope" data-note-jump="${note.id}"><b>${note.status === "draft" ? "" : "✓"}</b><span><code>${escapeHtml(note.file.split("/").pop())}${note.line ? `:${note.line}` : ""}</code> ${escapeHtml(note.body.split("\n")[0])}</span></button></li>`).join("");
+  const list = notes.map((note) => `<li><button type="button" class="code-diff-scope" data-note-jump="${note.id}"><b>${note.status === "draft" ? "" : "✓"}</b><span><code>${escapeHtml(note.file.split("/").pop())}${note.line ? `:${note.line}` : ""}</code>${noteState(noteAt(note))} ${escapeHtml(note.body.split("\n")[0])}</span></button></li>`).join("");
   const file = diff.notes?.path && notes.length ? `<a class="code-icon-button" href="/?path=${encodeURIComponent(diff.notes.path)}" target="_blank" rel="noreferrer" data-tip="Open the notes file" aria-label="Open the notes file">${icon("external")}</a>` : "";
   const target = `data-url="${escapeHtml(pr.url || "")}" data-path="${escapeHtml(workspace)}"`;
   const actions = drafts && pr.url ? iconButton("comment", `Post ${drafts} draft${drafts === 1 ? "" : "s"} as a pending GitHub review in ${appName()}`, `data-code-skill="notes-post" ${target}`) + iconButton("discuss", `Work through the drafts in ${appName()}`, `data-code-skill="notes-work" ${target}`) : "";
-  const meta = notes.length ? `${drafts} draft${drafts === 1 ? "" : "s"}${notes.length > drafts ? `, ${notes.length - drafts} posted` : ""}` : "select code, press <kbd>C</kbd>";
+  const outdated = notes.filter((note) => noteAt(note).state === "outdated").length;
+  const meta = notes.length ? `${drafts} draft${drafts === 1 ? "" : "s"}${notes.length > drafts ? `, ${notes.length - drafts} posted` : ""}${outdated ? `, ${outdated} outdated` : ""}` : "select code, press <kbd>C</kbd>";
   return `<section>${sideHead("Notes", meta, `<span class="code-side-tools">${actions}${file}</span>`)}${list ? `<ol class="code-diff-scopes code-notes-list">${list}</ol>` : ""}</section>`;
 }
 
@@ -1811,7 +1837,7 @@ function splitTable(file) {
 }
 
 const diffSegment = (attr, current, options) => `<div class="code-segment">${Object.entries(options).map(([id, label]) => `<button type="button" ${attr}="${id}" aria-pressed="${current === id}">${label}</button>`).join("")}</div>`;
-const viewedBox = (file) => subject() ? `<label class="code-diff-viewed"><input type="checkbox" data-diff-viewed="${diff.files.indexOf(file)}" ${isViewed(file) ? "checked" : ""}> Viewed</label>` : "";
+const viewedBox = (file) => subject() ? `<label class="code-diff-viewed${changedSinceViewed(file) ? " is-changed" : ""}" data-tip="${viewedTip(file)}"><input type="checkbox" data-diff-viewed="${diff.files.indexOf(file)}" ${isViewed(file) ? "checked" : ""}> Viewed</label>` : "";
 const fileHeadInner = (file, controls = "") => `<b>${escapeHtml(file.path)}</b>${file.symlink ? '<span class="code-muted">symlink</span>' : ""}${file.status === "R" ? `<span class="code-muted code-diff-from" title="from ${escapeHtml(file.old)}">from ${escapeHtml(file.old)}</span>` : ""}${copyButton(file.path, "Copy path")}${isGenerated(file) ? '<span class="code-muted">generated</span>' : ""}<span class="code-spacer"></span>${controls}${diff.pr && !file.binary ? iconButton("comment", "Note on the whole file", `data-note-file="${diff.files.indexOf(file)}"`) : ""}<span class="code-ftree-delta"><b class="code-file-add">+${file.additions}</b><b class="code-file-del">−${file.deletions}</b></span>`;
 let lastBodyKey = "";
 
@@ -2056,7 +2082,10 @@ function syncSections() {
     section.classList.toggle("is-collapsed", collapsed);
     section.querySelector("[data-diff-lazy]").hidden = collapsed;
     const box = section.querySelector("[data-diff-viewed]");
-    if (box) box.checked = isViewed(file);
+    if (!box) continue;
+    box.checked = isViewed(file);
+    box.parentElement.classList.toggle("is-changed", changedSinceViewed(file));
+    box.parentElement.dataset.tip = viewedTip(file);
   }
 }
 
@@ -2302,7 +2331,8 @@ function fileTree(files, attrs, current = null, viewed = null) {
     const status = file.status ? `<b class="code-file-code code-file-${statusTone(file.status)}">${escapeHtml(file.status)}</b>` : "";
     const delta = file.additions === undefined ? "" : `<span class="code-ftree-delta"><b class="code-file-add">+${file.additions}</b><b class="code-file-del">−${file.deletions}</b></span>`;
     const seen = viewed?.(file);
-    const check = viewed ? `<span class="code-ftree-viewed" aria-label="${seen ? "Viewed" : ""}">${seen ? "✓" : ""}</span>` : "";
+    const changed = viewed && !seen && changedSinceViewed(file);
+    const check = viewed ? `<span class="code-ftree-viewed${changed ? " is-changed" : ""}" aria-label="${seen ? "Viewed" : changed ? "Changed since viewed" : ""}"${changed ? ` data-tip="${viewedTip(file)}"` : ""}>${seen ? "✓" : changed ? "●" : ""}</span>` : "";
     return `<li class="is-link${seen ? " is-viewed" : ""}" ${attrs(file)} aria-current="${file === current}" title="${escapeHtml(file.path)}">${guides}${status}${file.symlink ? '<span class="code-ftype" style="--ft:#0f8a8a">link</span>' : fileType(file.path)}<span class="code-ftree-name">${escapeHtml(row.name)}</span>${delta}${check}</li>`;
   });
   return `<ul class="code-ftree">${rows.join("")}</ul>`;
