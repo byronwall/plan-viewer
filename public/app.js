@@ -176,16 +176,23 @@ function renderLibrary() {
 }
 
 const TASK_STATUS_LABELS = { open: "Open", active: "Active", waiting: "Waiting", deferred: "Deferred", completed: "Completed" };
-const TASK_STATUS_ORDER = { active: 0, waiting: 1, open: 2, deferred: 3, completed: 4 };
+// Waiting tasks sit below open work until their check-in date, then lead the list.
+const TASK_STATUS_ORDER = { active: 0, open: 1, waiting: 2, deferred: 3, completed: 4 };
+const checkInDue = (task) => task.status === "waiting" && Boolean(task.checkIn) && task.checkIn <= localTodayKey();
+const statusRank = (task) => checkInDue(task) ? -1 : TASK_STATUS_ORDER[task.status];
+const shortDate = (date) => new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
 function statusPill(task, path) {
-  return `<button type="button" class="task-status task-status-${task.status}" data-status-path="${escapeHtml(path)}" data-status="${task.status}" aria-haspopup="menu" title="Change status">${TASK_STATUS_LABELS[task.status]}</button>`;
+  const checkIn = task.status === "waiting" && task.checkIn;
+  const label = checkInDue(task) ? "Check in" : checkIn ? `Waiting · ${shortDate(task.checkIn)}` : TASK_STATUS_LABELS[task.status];
+  const title = checkIn ? `Check in ${formatDate(task.checkIn, true)} · change status` : "Change status";
+  return `<button type="button" class="task-status task-status-${task.status}${checkInDue(task) ? " task-status-due" : ""}" data-status-path="${escapeHtml(path)}" data-status="${task.status}" aria-haspopup="menu" title="${escapeHtml(title)}">${label}</button>`;
 }
 
 const TASK_SORTS = {
   id: (a, b) => a.task.id.localeCompare(b.task.id),
   title: (a, b) => a.task.title.localeCompare(b.task.title),
-  status: (a, b) => TASK_STATUS_ORDER[a.task.status] - TASK_STATUS_ORDER[b.task.status] || b.task.updated.localeCompare(a.task.updated),
+  status: (a, b) => statusRank(a.task) - statusRank(b.task) || b.task.updated.localeCompare(a.task.updated),
   project: (a, b) => a.task.project.localeCompare(b.task.project),
   refs: (a, b) => (a.task.referencedBy?.length || 0) - (b.task.referencedBy?.length || 0),
   updated: (a, b) => a.task.updated.localeCompare(b.task.updated),
@@ -254,7 +261,7 @@ function renderTasksPage() {
         <td class="task-col-status">${statusPill(doc.task, doc.path)}</td>
         <td class="task-col-project">${escapeHtml(doc.task.project)}</td>
         <td class="task-col-refs">${doc.task.referencedBy?.length || "—"}</td>
-        <td class="task-col-updated"><time datetime="${escapeHtml(doc.task.updated)}" title="${escapeHtml(formatDate(doc.task.updated, true))}">${escapeHtml(new Date(`${doc.task.updated}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }))}</time></td>
+        <td class="task-col-updated"><time datetime="${escapeHtml(doc.task.updated)}" title="${escapeHtml(formatDate(doc.task.updated, true))}">${escapeHtml(shortDate(doc.task.updated))}</time></td>
       </tr>`).join("")}</tbody>
     </table>` : `<p class="task-empty">No unfinished tasks found.</p>`}</div>
     <aside class="task-detail" id="task-detail" aria-live="polite"></aside>
@@ -277,7 +284,7 @@ async function renderTaskDetail() {
     </header>
     <h3>${escapeHtml(task.title)}</h3>
     <p class="task-detail-summary">${escapeHtml(task.summary)}</p>
-    <p class="task-detail-meta"><span>${escapeHtml(task.project)}</span><span>Updated ${escapeHtml(formatDate(task.updated))}</span>${task.tags.map((tag) => `<span class="task-detail-tag">${escapeHtml(tag)}</span>`).join("")}</p>`;
+    <p class="task-detail-meta"><span>${escapeHtml(task.project)}</span><span>Updated ${escapeHtml(formatDate(task.updated))}</span>${task.status === "waiting" && task.checkIn ? `<span>Check in ${escapeHtml(formatDate(task.checkIn))}</span>` : ""}${task.tags.map((tag) => `<span class="task-detail-tag">${escapeHtml(tag)}</span>`).join("")}</p>`;
   // Chats are the lowest-value links here, so they wait behind a disclosure at the end.
   const chats = task.chatLinks?.length ? `<details class="task-detail-chats"><summary>Chats <span>${task.chatLinks.length}</span></summary>${renderChatLinks(task.chatLinks)}</details>` : "";
   // References group by what they are: days (plan/done/notes on one line), other tasks, then topics and notes.

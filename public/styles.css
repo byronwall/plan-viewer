@@ -435,6 +435,7 @@ button { cursor: pointer; }
 .task-status-open { background: #e3e7ed; color: #465268; }
 .task-status-active { background: var(--selected); color: var(--action-ink); }
 .task-status-waiting { background: #f8e9c9; color: #754b00; }
+.task-status-due { background: #f0c25e; color: #4a2f00; }
 .task-status-deferred { background: #ece7f5; color: #5d477b; }
 .task-status-completed { background: var(--success-field); color: var(--success-ink); }
 .code-file-link { font-weight: inherit !important; text-decoration: none; }

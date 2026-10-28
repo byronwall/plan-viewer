@@ -52,7 +52,7 @@ Issues come from `acli`: a search lists the scope's keys, each issue is read wit
 
 ## Tasks, next actions, and links
 
-The Tasks page (`A`) lists unfinished tasks; **Show N completed or deferred** adds the rest below them, in the same sort, and `&done=1` keeps that on the URL. It is the same control, wording, and rule as a task's work breakdown.
+The Tasks page (`A`) lists unfinished tasks; **Show N completed or deferred** adds the rest below them, in the same sort, and `&done=1` keeps that on the URL. It is the same control, wording, and rule as a task's work breakdown. A waiting task can carry `check_in: YYYY-MM-DD` in its front matter: until that date it sorts below open tasks and its status reads **Waiting · Nov 4**; from that date it sorts above everything else and reads **Check in**, so work handed to another team stays tracked without staying in focus. The task's detail pane shows the date too.
 
 Each task's `## Next actions` contains short action headings and fenced `prompt` blocks. Write each prompt so an agent can advance one bounded step with the supplied repository context and a clear result to verify. An optional `Work item: W1.1` links it to the task's work breakdown. The viewer also gives existing bullet actions individual buttons.
 

@@ -110,6 +110,8 @@ export type TaskSummary = {
   tags: string[];
   created: string;
   updated: string;
+  // `check_in: YYYY-MM-DD`: when a waiting task comes back onto the radar.
+  checkIn?: string;
   referencedBy?: string[];
   work?: { id: string; title: string; status: string }[];
   chatLinks?: { href: string; provider: string; label: string }[];
@@ -200,6 +202,11 @@ export function parseTaskDocument(path: string, markdown: string) {
     created: fields.get("created")!,
     updated: fields.get("updated")!,
   };
+  const checkIn = fields.get("check_in");
+  if (checkIn !== undefined) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(checkIn)) throw new Error(`${path} must write check_in as YYYY-MM-DD.`);
+    task.checkIn = checkIn;
+  }
   const body = markdown.slice(match[0].length).trimStart();
   const chatLinks = extractChatLinks(body);
   if (chatLinks.length) task.chatLinks = chatLinks;

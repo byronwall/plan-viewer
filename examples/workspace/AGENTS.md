@@ -22,7 +22,7 @@ reference/                 # stable reference documents
 
 ## Tasks
 
-Each task begins with this front matter (every field is required; `tags` is an inline list):
+Each task begins with this front matter (every field but `check_in` is required; `tags` is an inline list):
 
 ```yaml
 ---
@@ -34,6 +34,7 @@ project: Atlas
 tags: [atlas, onboarding]
 created: 2026-10-12
 updated: 2026-10-21
+check_in: 2026-10-28  # optional, for a waiting task: when to look at it again
 ---
 ```
 

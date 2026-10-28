@@ -166,6 +166,23 @@ updated: 2026-08-03
   assert.throws(() => parseTaskDocument("tasks/TASK-0042.md", source), /unsupported task status/);
 });
 
+test("reads a waiting task's check-in date", () => {
+  const source = (checkIn: string) => `---
+id: TASK-0042
+title: Prove the loop
+summary: Keep one authoritative description.
+status: waiting
+project: Daily planning
+tags: []
+created: 2026-08-03
+updated: 2026-08-03
+check_in: ${checkIn}
+---
+`;
+  assert.equal(parseTaskDocument("tasks/TASK-0042.md", source("2026-08-10")).task.checkIn, "2026-08-10");
+  assert.throws(() => parseTaskDocument("tasks/TASK-0042.md", source("next week")), /check_in as YYYY-MM-DD/);
+});
+
 test("renders internal and external links with distinct safe behavior", () => {
   const html = inlineMarkdown("See [Done](done.md#completed-outcomes) and [PR](https://github.com/example/repo/pull/1).", "daily/2026/07/31/plan.md");
   assert.match(html, /class="markdown-document-link"/);
