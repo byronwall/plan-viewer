@@ -530,7 +530,7 @@ function ensureDialog() {
   dialog.innerHTML = `<header class="code-diff-head" data-o="head"></header><div class="issue-overview-split"><aside class="code-diff-pr" data-o="side"></aside><div class="issue-overview-main" data-o="main"></div></div>`;
   dialog.addEventListener("close", () => {
     if (dialog.open) return;
-    document.dispatchEvent(new CustomEvent("overview-closed", { detail: location.href }));
+    if (overview.key) document.dispatchEvent(new CustomEvent("overview-closed", { detail: location.href })); // not after a failed read
     syncIssueUrl("");
     overview.key = "";
   });
@@ -592,10 +592,20 @@ function syncIssueUrl(key) {
 // Opens the overview from anywhere (the Issues page, ⌘K, an ?issue= URL, Recently viewed).
 export async function openIssue(key, list = null) {
   if (!ui.data) await load().catch(() => {});
-  // A Jira key outside the synced scope is read once, then opens like any other.
+  // A Jira key outside the synced scope is read once, then opens like any other. The overview opens at once and
+  // shows the read; closing it (or opening another issue) while it runs leaves it closed.
   if (!byKey().has(key) && ui.data?.sources?.includes("jira") && !key.includes(":")) {
+    ensureDialog();
+    overview.key = key;
+    syncIssueUrl(key);
+    dialog.querySelector('[data-o="head"]').innerHTML = `<span class="issue-reading">${icon("refresh")}</span><div class="issue-overview-title"><h3>${escapeHtml(key)}</h3><p class="code-muted">Reading from Jira…</p></div><span class="code-spacer"></span>${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
+    dialog.querySelector('[data-o="side"]').innerHTML = "";
+    dialog.querySelector('[data-o="main"]').innerHTML = `<p class="code-muted issue-overview-text">Loading…</p>`;
+    if (!dialog.open) { dialog.showModal(); dialog.focus({ preventScroll: true }); }
     const response = await fetch("/api/issues/fetch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key }) }).catch(() => null);
     if (response?.ok) await load().catch(() => {});
+    if (overview.key !== key || !dialog.open) return true;
+    if (!byKey().has(key)) { overview.key = ""; dialog.close(); return false; }
   }
   if (!byKey().has(key)) return notify(`${key} isn't in the cached issues.`, true), false;
   ensureDialog();
