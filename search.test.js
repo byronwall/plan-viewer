@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { contextScore, searchDocuments, searchPrs, textScore } from './public/search.js';
+import { contextScore, searchDocuments, searchPrs, termMatch, textScore } from './public/search.js';
 
 const documents = [
   { title: 'Daily plan', path: 'daily/2026/10/01/plan.md', kind: 'Plan' },
@@ -50,4 +50,18 @@ test('ranking: title word starts beat substrings, and a recent open item beats a
   const recentTask = textScore(['delete'], 'Soft delete for drafts') + contextScore({ live: true, updated: '2026-10-22', mine: true }, now);
   const oldIssue = textScore(['delete'], 'Delete modal does not look good') + contextScore({ done: true, updated: '2026-08-01' }, now);
   assert.ok(recentTask > oldIssue);
+});
+
+test('fuzzy: a term with missing characters matches long runs, below exact matches', () => {
+  assert.equal(termMatch('sweep', '#1974 quick-view sweep findings'), 1);
+  assert.ok(termMatch('sweepf', 'sweep-findings') > 0.5);
+  assert.ok(termMatch('deployerrorsatlas', 'atlas: deploy errors atlas') > 0, 'three words run together');
+  assert.ok(termMatch('sweepfind', 'sweep findings') > termMatch('sweepf', 'sweep findings'));
+  assert.ok(termMatch('sweeep', 'sweep findings') > 0, 'one typo in five characters');
+  assert.equal(termMatch('swpfnd', 'sweep findings'), 0, 'scattered letters do not match');
+  assert.equal(termMatch('swf', 'sweep findings'), 0, 'short terms must match as typed');
+  const notes = [{ title: '#1974 quick-view sweep findings', path: 'tasks/TASK-0080-assets/sweep-findings.md', kind: 'Task document' }, ...documents];
+  assert.deepEqual(searchDocuments(notes, 'sweepf'), [notes[0]]);
+  assert.ok(textScore(['sweep'], 'Sweep findings') > textScore(['sweepf'], 'Sweep findings'));
+  assert.ok(textScore(['sweepf'], 'Sweep findings') > textScore(['sweepf'], 'Other', 'sweep findings'));
 });

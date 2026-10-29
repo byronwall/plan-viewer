@@ -1,3 +1,30 @@
+// The pieces of `term` found in order in `text` (both lowercase), taking the longest piece at each step, and how many
+// characters of the term were not found at all: "sweepf" in "sweep-findings" is ["sweep", "f"] with none skipped.
+export function fuzzyChunks(term, text) {
+  const chunks = [];
+  let cursor = 0, skipped = 0;
+  for (let i = 0; i < term.length;) {
+    let length = term.length - i, at = -1;
+    for (; length > 0; length--) if ((at = text.indexOf(term.slice(i, i + length), cursor)) >= 0) break;
+    if (!length) { skipped++; i++; continue; }
+    chunks.push(term.slice(i, i + length));
+    cursor = at + length;
+    i += length;
+  }
+  return { chunks, skipped };
+}
+
+// How well one lowercase term matches lowercase text: 1 when it appears as typed; otherwise, for terms of four or more
+// characters, its characters in order in runs averaging 2.5 characters or more, allowing one typo'd character in five,
+// scored below 1 by each break and skip; 0 when it does not match.
+export function termMatch(term, text) {
+  if (text.includes(term)) return 1;
+  if (term.length < 4) return 0;
+  const { chunks, skipped } = fuzzyChunks(term, text);
+  if (skipped > Math.floor(term.length / 5) || 2 * (term.length - skipped) < 5 * chunks.length) return 0;
+  return (term.length - skipped - chunks.length + 1) / term.length;
+}
+
 // Search the document index without changing the rail or the Tasks view.
 export function searchDocuments(documents, query) {
   const normalized = query.trim().toLowerCase();
@@ -8,9 +35,9 @@ export function searchDocuments(documents, query) {
     const path = doc.path.toLowerCase();
     const task = doc.task;
     const text = `${title} ${path} ${doc.kind || ""} ${task?.id || ""} ${task?.title || ""} ${task?.summary || ""} ${task?.project || ""} ${task?.status || ""} ${(task?.tags || []).join(" ")}`.toLowerCase();
-    if (!terms.every(term => text.includes(term))) return null;
+    if (!terms.every(term => termMatch(term, text))) return null;
     const score = (title === normalized ? 100 : title.startsWith(normalized) ? 50 : title.includes(normalized) ? 25 : 0)
-      + terms.reduce((sum, term) => sum + (title.includes(term) ? 10 : path.includes(term) ? 5 : 1), 0);
+      + terms.reduce((sum, term) => sum + (title.includes(term) ? 10 : path.includes(term) ? 5 : 1 + 4 * termMatch(term, title)), 0);
     return { doc, index, score };
   }).filter(Boolean).sort((a, b) => b.score - a.score || a.index - b.index).map(result => result.doc);
 }
@@ -31,19 +58,22 @@ export function searchPrs(prs, query) {
   const terms = text.toLowerCase().split(/\s+/).filter(Boolean);
   if (text.length < 3) return [];
   return prs
-    .filter((pr) => { const haystack = `${pr.title} ${pr.branch} ${pr.author} ${pr.slug.split("/")[1]}`.toLowerCase(); return terms.every((term) => haystack.includes(term)); })
+    .filter((pr) => { const haystack = `${pr.title} ${pr.branch} ${pr.author} ${pr.slug.split("/")[1]}`.toLowerCase(); return terms.every((term) => termMatch(term, haystack)); })
     .sort((a, b) => (b.state === "OPEN") - (a.state === "OPEN") || b.number - a.number)
     .slice(0, 6);
 }
 
 // ⌘K ranking. How well the terms match: an exact ID wins, then the whole query in the title, then each term at the
-// start of a title word, inside the title, or only in the other text. 0 means some term did not match at all.
+// start of a title word, inside the title, fuzzily in the title (scaled by how much of it ran together), or only in the
+// other text. 0 means some term did not match at all, even fuzzily.
 export function textScore(terms, title, rest = "", id = "") {
   const heading = title.toLowerCase();
-  if (!terms.length || !terms.every((term) => `${id} ${heading} ${rest}`.toLowerCase().includes(term))) return 0;
+  const all = `${id} ${heading} ${rest}`.toLowerCase();
+  if (!terms.length || !terms.every((term) => termMatch(term, all))) return 0;
   const query = terms.join(" ");
   const whole = id.toLowerCase() === query ? 60 : heading === query ? 40 : heading.startsWith(query) ? 20 : heading.includes(query) ? 10 : 0;
-  return whole + terms.reduce((sum, term) => sum + (new RegExp(`(^|[^a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(heading) ? 10 : heading.includes(term) ? 6 : 2), 0);
+  return whole + terms.reduce((sum, term) => sum + (new RegExp(`(^|[^a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(heading) ? 10 : heading.includes(term) ? 6
+    : Math.max(5 * termMatch(term, heading), 2 * termMatch(term, all))), 0);
 }
 
 // Then context: live work rises, finished work sinks, recent edits rise (half-life about ten days), and yours rises.

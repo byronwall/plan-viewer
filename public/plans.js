@@ -1,5 +1,6 @@
 import { escapeHtml, markdownOutline, renderMarkdown } from "./markdown.js";
 import { agentApp, agentName as appName } from "./config.js";
+import { termMatch } from "./search.js";
 import { ago, copied, fadeIn, hideTip, iconButton, isSummonKey, openPrOverlay, showTip, sideFacts, when, heat } from "./code.js";
 
 // The Code view's Plans tab: initiatives on each tracked repo's origin/main (and proposed in open PRs), as a list, an
@@ -747,7 +748,7 @@ export async function openPlan(id, doc = "", { keepBack = false, anchor = "" } =
 export function searchPlans(query) {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (!terms.length) return [];
-  return all().filter((item) => terms.every((term) => `${item.title} ${item.slug} ${item.summary} ${repoName(item.repo)}`.toLowerCase().includes(term)))
+  return all().filter((item) => terms.every((term) => termMatch(term, `${item.title} ${item.slug} ${item.summary} ${repoName(item.repo)}`.toLowerCase())))
     .sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)) || b.edited - a.edited).slice(0, 6);
 }
 export { statusMark as planStatusMark };

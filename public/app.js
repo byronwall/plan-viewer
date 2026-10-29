@@ -1,4 +1,4 @@
-import { contextScore, searchDocuments, searchPrs, textScore } from "./search.js";
+import { contextScore, fuzzyChunks, searchDocuments, searchPrs, termMatch, textScore } from "./search.js";
 import { isSettled, renderActions, renderWorkBreakdown, showDoneToggle, workStatusIcon, workStatusLabel } from "./actions.js";
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock.js";
 import { GLYPHS } from "./icons.js";
@@ -2459,7 +2459,10 @@ function searchIconKey(doc) {
   return "file";
 }
 
+// A term that matched only fuzzily marks its runs of two or more characters.
 function highlightTerms(text, terms) {
+  const lower = text.toLowerCase();
+  terms = terms.flatMap((term) => lower.includes(term) || !termMatch(term, lower) ? [term] : fuzzyChunks(term, lower).chunks.filter((chunk) => chunk.length > 1));
   if (!terms.length) return escapeHtml(text);
   const pattern = new RegExp(`(${terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "gi");
   return text.split(pattern).map((part, index) => index % 2 ? `<mark>${escapeHtml(part)}</mark>` : escapeHtml(part)).join("");
@@ -2539,7 +2542,7 @@ const PAGES = [
   ...Object.entries(CODE_TABS).map(([tab, title]) => ({ title, detail: `Code · ${title}`, icon: tab === "prs" ? "pr" : tab === "commits" ? "branch" : "code", run: () => showCode({ tab: tab === "prs" ? "" : tab }) })),
   ...Object.entries(ISSUE_TABS).map(([tab, title]) => ({ title: tab === "all" ? "Issues" : `${title} issues`, detail: `Issues · ${title}`, icon: "issue", issues: true, run: () => showIssues({ tab: tab === "all" ? "" : tab }) })),
 ];
-const searchPages = (query) => { const terms = query.toLowerCase().split(/\s+/).filter(Boolean); return PAGES.filter((page) => (!page.issues || issuesOn()) && terms.every((term) => `${page.title} ${page.detail}`.toLowerCase().includes(term))).map((page) => ({ page })); };
+const searchPages = (query) => { const terms = query.toLowerCase().split(/\s+/).filter(Boolean); return PAGES.filter((page) => (!page.issues || issuesOn()) && terms.every((term) => termMatch(term, `${page.title} ${page.detail}`.toLowerCase()))).map((page) => ({ page })); };
 const renderPageResult = ({ page }, index) => resultRow({ icon: page.icon, title: escapeHtml(page.title), detail: escapeHtml(page.detail), side: "Page", attrs: searchAttrs(index) });
 
 const LIVE_TASK = new Set(["open", "active"]);
