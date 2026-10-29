@@ -852,6 +852,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
     if (request.method === "GET" && url.pathname === "/api/issues") return json(response, 200, await issueTracker.load(url.searchParams.has("refresh")));
     if (request.method === "GET" && url.pathname === "/api/issues/issue") return json(response, 200, issueTracker.detail(url.searchParams.get("key") || ""));
+    if (request.method === "POST" && url.pathname === "/api/issues/fetch") return json(response, 200, await issueTracker.fetchIssue(String((await readJson(request)).key || "")));
     if (request.method === "POST" && url.pathname === "/api/issues/agent") {
       const body = await readJson(request);
       await issueTracker.launchAgent(String(body.app || ""), String(body.skill || ""), Array.isArray(body.keys) ? body.keys.map(String).slice(0, 50) : []);

@@ -2153,7 +2153,10 @@ function inAppTarget(link) {
   }
   if (kind !== "linear" && kind !== "jira") return null;
   const key = kind === "linear" ? `linear:${ref}` : ref;
-  return cachedIssues()?.issues?.some(issue => issue.key === key) ? { open: () => openIssue(key), site: kind === "linear" ? "Linear" : "Jira" } : null;
+  if (cachedIssues()?.issues?.some(issue => issue.key === key)) return { open: () => openIssue(key), site: kind === "linear" ? "Linear" : "Jira" };
+  // Jira keys outside the synced scope are read on click; if Jira can't answer, the link goes out after all.
+  if (kind === "jira" && cachedIssues()?.sources?.includes("jira")) return { open: () => openIssue(key).then(opened => opened || window.open(link.href, "_blank", "noreferrer")), site: "Jira" };
+  return null;
 }
 // Plain clicks on PR and issue links in written content open the in-app overview first; modified clicks still go out.
 document.addEventListener("click", (event) => {

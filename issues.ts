@@ -410,6 +410,17 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     return issue;
   }
 
+  // A Jira issue a document links to outside the configured scope, read on its first click and kept as context.
+  async function fetchIssue(key: string) {
+    if (!settings().jql || !/^[A-Z][A-Z0-9]+-\d+$/.test(key)) throw new Error(`Can't read ${key} from Jira.`);
+    if (!cache.issues[key]) {
+      cache.issues[key] = await view(key);
+      await mkdir(join(root, "tmp"), { recursive: true });
+      await writeFile(cachePath, JSON.stringify(cache));
+    }
+    return { key };
+  }
+
   const issueUrl = (issue: Issue) => issue.url || `https://${cache.site}/browse/${issue.key}`;
   const name = (issue: Issue) => issue.source === "linear" ? `Linear ${issue.type === "Project" ? "project" : issue.label}` : issue.source === "github" ? `GitHub ${issue.label}` : issue.key;
   const ROLE = { mirror: ["synced into Linear as", "a Linear copy of"], import: ["imported into Jira from", "imported into Jira as"], title: ["same title as", "same title as"] };
@@ -463,7 +474,7 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     return out;
   }
 
-  return { load, detail, refresh, startBackgroundRefresh, launchAgent, aliasMetadata };
+  return { load, detail, fetchIssue, refresh, startBackgroundRefresh, launchAgent, aliasMetadata };
 }
 
 // The configured issue skills, then an open "Discuss" prompt.

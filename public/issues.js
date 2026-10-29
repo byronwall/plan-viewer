@@ -592,7 +592,12 @@ function syncIssueUrl(key) {
 // Opens the overview from anywhere (the Issues page, ⌘K, an ?issue= URL, Recently viewed).
 export async function openIssue(key, list = null) {
   if (!ui.data) await load().catch(() => {});
-  if (!byKey().has(key)) return notify(`${key} isn't in the cached issues.`, true);
+  // A Jira key outside the synced scope is read once, then opens like any other.
+  if (!byKey().has(key) && ui.data?.sources?.includes("jira") && !key.includes(":")) {
+    const response = await fetch("/api/issues/fetch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key }) }).catch(() => null);
+    if (response?.ok) await load().catch(() => {});
+  }
+  if (!byKey().has(key)) return notify(`${key} isn't in the cached issues.`, true), false;
   ensureDialog();
   overview.key = key;
   if (list) overview.list = list;
@@ -603,6 +608,7 @@ export async function openIssue(key, list = null) {
   dialog.querySelector(".issue-overview-main").scrollTop = 0;
   loadDetail(key);
   if (host?.isConnected && ui.sel !== key && host.querySelector(`[data-issue-row="${CSS.escape(key)}"]`)) select(key, true);
+  return true;
 }
 
 // ---------- page ----------

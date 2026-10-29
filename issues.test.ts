@@ -65,6 +65,17 @@ test("a sync reads the scope, its parents and epic children, and joins issues to
   assert.match(tracker.detail("OPS-112").description, /Show three templates/);
 });
 
+test("a Jira key outside the scope is read on demand as context", async (t) => {
+  const saved = config();
+  t.after(() => setConfig(saved));
+  setConfig({ ...saved, issues: { ...saved.issues, jql: "component = Atlas", command: ["node", resolve("fixtures/jira/fake-acli.js")] } });
+  const tracker = createIssueTracker(await mkdtemp(join(tmpdir(), "issues-")), async () => ({ prs: [], worktrees: [] }));
+  await tracker.fetchIssue("OPS-122");
+  const data: any = await tracker.load();
+  assert.equal(data.issues.find((issue: any) => issue.key === "OPS-122").inScope, false);
+  await assert.rejects(tracker.fetchIssue("--help"), /Can't read/);
+});
+
 const linearRaw = (identifier: string, title: string, state: [string, string], extra: Record<string, unknown> = {}) => ({
   identifier, title, url: `https://linear.app/acme/issue/${identifier}`, description: "", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-10T00:00:00Z",
   priorityLabel: "High", state: { name: state[0], type: state[1] }, team: { key: "ATL" }, labels: { nodes: [] }, relations: { nodes: [] },
