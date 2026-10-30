@@ -2041,7 +2041,7 @@ a.issue-link-row[data-planning-path] > svg { align-self: center; }
 .slack-planning .service-icon, .slack-planning .code-icon, .slack-cites .service-icon, .slack-cites .code-icon { width: 13px; height: 13px; margin: 0; flex: none; }
 .slack-scroll { overflow: auto; overscroll-behavior: contain; }
 .slack-thread { max-width: 940px; margin: 0; padding: 6px 12px 28px; list-style: none; }
-.slack-message { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: 10px; padding: 6px 36px 4px 8px; border-radius: 6px; transition: background-color 140ms ease, opacity 140ms ease; }
+.slack-message { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: 10px; padding: 6px 62px 4px 8px; border-radius: 6px; transition: background-color 140ms ease, opacity 140ms ease; }
 .slack-message:hover { background: var(--hover-field); }
 .slack-message > .code-avatar { grid-row: 1 / span 2; width: 36px; height: 36px; border-radius: 8px; font-size: .78rem; vertical-align: 0; margin-top: 2px; }
 .slack-message > header { display: flex; align-items: baseline; gap: 8px; font-size: .86rem; line-height: 1.3; }
@@ -2062,6 +2062,9 @@ a.issue-link-row[data-planning-path] > svg { align-self: center; }
 .slack-message.is-parent .issue-markdown { font-size: .95rem; }
 .slack-message.is-linked, .slack-message.is-linked:hover { margin-top: 4px; background: var(--selected); }
 .slack-message.is-dimmed { opacity: .32; }
+.slack-files { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 3px; color: var(--muted); font-size: .78rem; }
+.slack-files span { display: inline-flex; align-items: center; gap: 4px; }
+.slack-files .code-icon { width: 13px; height: 13px; }
 .slack-reactions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 3px; font-size: .9rem; }
 .slack-reactions span { display: inline-flex; align-items: center; gap: 3px; line-height: 1.4; }
 .slack-reactions small { color: var(--muted); font-size: .72rem; font-variant-numeric: tabular-nums; }
@@ -2086,10 +2089,38 @@ mark.slack-hit.is-current { background: #f59e0b; }
 @media (max-width: 900px) { .slack-keys { display: none; } }
 .slack-links.doc-dock-panel-links { width: fit-content; min-width: min(420px, calc(100vw - 24px)); max-width: min(860px, calc(100vw - 24px)); }
 .slack-cites { display: inline-flex; gap: 8px; margin-left: 6px; font-size: .74rem; }
-.slack-message.is-continued > .slack-cites { position: absolute; top: 2px; right: 40px; }
-.slack-message > .code-icon-button { position: absolute; top: 4px; right: 6px; width: 24px; height: 24px; border-radius: 6px; background: var(--paper); opacity: 0; transition: opacity 140ms ease; }
-.slack-message:hover > .code-icon-button, .slack-message > .code-icon-button:focus-visible { opacity: 1; }
-@media (prefers-reduced-motion: reduce) { .slack-message, .slack-gutter-time, .slack-message > .code-icon-button { transition: none; } .slack-skeleton i { animation: none; } }
+.slack-message.is-continued > .slack-cites { position: absolute; top: 2px; right: 66px; }
+.slack-message-actions { position: absolute; top: 4px; right: 6px; display: inline-flex; gap: 2px; }
+.slack-message-actions .code-icon-button { width: 24px; height: 24px; border-radius: 6px; background: var(--paper); opacity: 0; transition: opacity 140ms ease; }
+.slack-message:hover .slack-message-actions .code-icon-button, .slack-message-actions .code-icon-button:focus-visible, .slack-message-actions .slack-star.is-on { opacity: 1; }
+.slack-star svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.slack-star.is-on, .slack-star.is-on:hover { color: #d99a06; }
+.slack-star.is-on svg { fill: currentColor; }
+@media (prefers-reduced-motion: reduce) { .slack-message, .slack-gutter-time, .slack-message-actions .code-icon-button { transition: none; } .slack-skeleton i { animation: none; } }
+.slack-table { width: 100%; max-width: 1100px; }
+.slack-table .slack-col-star { width: 28px; padding-right: 0; }
+.slack-row .slack-star { opacity: 0; transition: opacity 140ms ease; }
+.slack-row:hover .slack-star, .slack-row[aria-selected="true"] .slack-star, .slack-row .slack-star.is-on, .slack-row .slack-star:focus-visible { opacity: 1; }
+.slack-table .slack-col-channel { width: 1%; white-space: nowrap; color: var(--muted); font-size: .8rem; }
+.slack-row-title { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.slack-row-title .code-avatar { align-self: center; flex: none; }
+.slack-row-title > span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.4; }
+.slack-row-title b { color: var(--ink); font-weight: 650; }
+.slack-row.is-unsynced .slack-row-title { padding-left: 25px; }
+.slack-row-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 2px; padding-left: 25px; font-size: .76rem; }
+.slack-row-docs { display: inline-flex; flex-wrap: wrap; gap: 10px; }
+.slack-row-docs a, .slack-detail-message a { display: inline-flex; align-items: center; gap: 4px; color: var(--action-ink); text-decoration: none; }
+.slack-row-docs code { color: var(--muted); font-size: .74rem; }
+.slack-row-docs a:hover code { color: var(--action-deep); }
+.slack-row-docs .service-icon, .slack-row-docs .code-icon { width: 12px; height: 12px; margin: 0; }
+.slack-sync-status { font-size: .76rem; font-variant-numeric: tabular-nums; }
+.slack-loading { padding: 12px 4px; }
+.slack-detail-message { margin: 10px 0 6px; }
+.slack-detail-message header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: .8rem; }
+.slack-detail-message header time { color: var(--quiet-text); }
+.slack-detail-head { margin: 16px 0 6px; color: var(--label-text); font-size: .66rem; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; }
+.slack-detail-head span { color: var(--quiet-text); font-weight: 500; }
+.code-detail-head > .service-icon { width: 16px; height: 16px; margin: 0; }
 .code-detail-head > .issue-type { margin-top: 3px; }
 .code-detail-head h3 code { font-size: .8rem; color: var(--muted); }
 .search-icon.is-issue { color: #3157d5; } .search-icon.is-issue.is-done { color: var(--pass, #1f9d6b); } .search-icon.is-issue.is-indeterminate { color: #e8590c; }

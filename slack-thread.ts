@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import { claudeNewSessionUrl, codexNewTaskUrl } from "./codex-desktop.ts";
 
-export type SlackMessage = { author: string; email: string; user: string; ts: string; text: string; reactions: string };
+export type SlackMessage = { author: string; email: string; user: string; ts: string; text: string; reactions: string; files?: string[] };
 export type SlackThread = { channelName: string; messages: SlackMessage[]; fetchedAt: string };
 
 // A permalink's channel and the thread it belongs to: `thread_ts` for a reply, else the message itself.
@@ -28,8 +28,15 @@ export function parseSlackThread(text: string): SlackMessage[] {
     const [, author = "", email = "", user = ""] = lines[0]?.match(/^From: (.*?)(?: <([^>]*)>)?(?: \((\w+)\))?$/) || [];
     const ts = lines.find((line) => line.startsWith("Message TS: "))?.slice(12) || "";
     const body = lines.slice(lines.findIndex((line) => line.startsWith("Message TS: ")) + 1);
-    const reactions = body.at(-1)?.startsWith("Reactions: ") ? body.pop()!.slice(11) : "";
-    return { author, email, user, ts, text: body.join("\n").trim(), reactions };
+    // Trailing metadata, in any order: `Reactions: …`, `Files: name (ID: F…, type, size), …`, and a parent with no
+    // replies ends `No thread messsages` (sic).
+    let reactions = "", files: string[] = [];
+    for (let line = body.at(-1); line !== undefined && /^(Reactions: |Files: |No thread mess+ages$|\s*$)/.test(line); line = body.at(-1)) {
+      body.pop();
+      if (line.startsWith("Reactions: ")) reactions = line.slice(11);
+      if (line.startsWith("Files: ")) files = [...line.slice(7).matchAll(/([^,(]+?) \(ID: /g)].map((match) => match[1].trim());
+    }
+    return { author, email, user, ts, text: body.join("\n").trim(), reactions, files };
   }).filter((message) => message.ts);
 }
 
@@ -61,23 +68,58 @@ export function createSlackThreads(root: string, command: () => string[]) {
     return { ...await inFlight.get(ref.key)!, ...ref };
   }
 
-  async function fetchThread(ref: ReturnType<typeof slackThreadRef>) {
-    const [threadResult, channelResult] = await withConnector(command(), (call) => Promise.all([
-      // ponytail: one page of up to 1000 messages; follow the connector's cursor if longer threads turn up.
-      call("slack.slack_read_thread", { channel_id: ref.channel, message_ts: ref.thread, limit: 1000, response_format: "detailed" }),
+  // One thread through an open connector session; `names` remembers channel names across a sync.
+  async function readWith(call: ToolCall, ref: { channel: string; thread: string }, names = new Map<string, Promise<string>>()) {
+    if (!names.has(ref.channel)) {
       // The newest message is just the header carrier: `Channel: #name (C…)`, or `Channel: DM (D…)`.
-      call("slack.slack_read_channel", { channel_id: ref.channel, limit: 1, response_format: "concise" }).catch(() => null),
-    ]));
-    const body = toolJson(threadResult);
+      names.set(ref.channel, call("slack.slack_read_channel", { channel_id: ref.channel, limit: 1, response_format: "concise" })
+        .then((result) => toolJson(result).messages?.match(/^Channel: (#[\w.-]+)/)?.[1] || "", () => ""));
+    }
+    // ponytail: one page of up to 1000 messages; follow the connector's cursor if longer threads turn up.
+    const body = toolJson(await call("slack.slack_read_thread", { channel_id: ref.channel, message_ts: ref.thread, limit: 1000, response_format: "detailed" }));
     const messages = parseSlackThread(body.messages || "");
     if (!messages.length) throw new Error(`Slack: ${body.error || "no messages in that thread"}`);
-    const channelName = (() => { try { return toolJson(channelResult).messages?.match(/^Channel: (#[\w.-]+)/)?.[1] || ""; } catch { return ""; } })();
-    const thread: SlackThread = { channelName, messages, fetchedAt: new Date().toISOString() };
+    return { channelName: await names.get(ref.channel)!, messages, fetchedAt: new Date().toISOString() } as SlackThread;
+  }
+
+  // Cache writes queue behind each other so a sync's parallel reads can't drop one another's threads.
+  let writing = Promise.resolve();
+  const save = (key: string, thread: SlackThread) => writing = writing.then(async () => {
     const cache = await readCache();
-    cache[ref.key] = thread;
+    cache[key] = thread;
     await mkdir(dirname(cachePath), { recursive: true });
     await writeFile(cachePath, JSON.stringify(cache));
+  }).catch(() => {});
+
+  async function fetchThread(ref: ReturnType<typeof slackThreadRef>) {
+    const thread = await withConnector(command(), (call) => readWith(call, ref));
+    await save(ref.key, thread);
     return thread;
+  }
+
+  // Reads every given thread in the background through one session, four at a time; `status` reports progress.
+  let syncing: { done: number; total: number; failed: number } | null = null;
+  function sync(refs: { channel: string; thread: string }[]) {
+    if (syncing || !refs.length) return syncing;
+    const state = syncing = { done: 0, total: refs.length, failed: 0 };
+    const queue = [...refs];
+    const names = new Map<string, Promise<string>>();
+    withConnector(command(), (call) => Promise.all(Array.from({ length: 4 }, async () => {
+      for (let ref = queue.shift(); ref; ref = queue.shift()) {
+        try { await save(`${ref.channel}/${ref.thread}`, await readWith(call, ref, names)); } catch { state.failed++; }
+        state.done++;
+      }
+    })), 30 * 60_000).catch(() => { state.failed += queue.length; }).finally(() => { syncing = null; });
+    return syncing;
+  }
+
+  // What the Slack page lists for each read thread: channel, opener, size and last activity, without the bodies.
+  async function summaries() {
+    const cache = await readCache();
+    return Object.fromEntries(Object.entries(cache).map(([key, thread]) => {
+      const [parent] = thread.messages;
+      return [key, { channelName: thread.channelName, author: parent.author, email: parent.email, text: parent.text.slice(0, 400), replies: thread.messages.length - 1, last: thread.messages.at(-1)!.ts, people: [...new Set(thread.messages.map((message) => message.author))], fetchedAt: thread.fetchedAt }];
+    }));
   }
 
   // A prefilled Codex or Claude draft about the thread, opened in the planning workspace. The agent gets the thread
@@ -97,7 +139,7 @@ export function createSlackThreads(root: string, command: () => string[]) {
     await promisify(execFile)("/usr/bin/open", [app === "claude" ? claudeNewSessionUrl(root, draft) : codexNewTaskUrl(draft, root)]);
   }
 
-  return { read, discuss };
+  return { read, discuss, sync, summaries, status: () => syncing };
 }
 
 // The connector's user search, detailed: `### Result n of m` blocks with `Name:`, `User ID:`, `Email:` and

@@ -171,7 +171,7 @@ const slackNames = new Map<string, Promise<string>>();
 
 // Hand-kept `- C0ACME0001: #channel-name` and `- D0ACME0001: @Person` lines; re-read on every lookup so edits show
 // up on the next page load.
-async function slackChannelNames(root: string) {
+export async function slackChannelNames(root: string) {
   const text = await readFile(join(root, "reference", "slack-channels.md"), "utf8").catch(() => "");
   return new Map([...text.matchAll(/^[-*][ \t]*`?([CDG][A-Z0-9]{8,})`?[ \t]*:[ \t]*(#[\w.-]+|@[^\n]*[^\s])/gm)].map(([, id, name]) => [id, name] as [string, string]));
 }

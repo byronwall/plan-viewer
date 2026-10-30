@@ -7,7 +7,8 @@ import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, isSlackLink, 
 import { TABS as CODE_TABS, connectPlanning, setPeople, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { renderActivityPage } from "./activity.js";
-import { openSlackThread, setSlackNotice, slackThreadTitle } from "./slack.js";
+import { openSlackThread, refreshSlackStars, setSlackFavorites, setSlackNotice, slackThreadTitle } from "./slack.js";
+import { refreshSlackPage, renderSlackPage } from "./slack-page.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
@@ -30,6 +31,7 @@ const elements = {
   activityButton: document.querySelector("#open-activity"),
   codeButton: document.querySelector("#open-code"),
   issuesButton: document.querySelector("#open-issues"),
+  slackButton: document.querySelector("#open-slack"),
   globalHandoff: document.querySelector("#global-handoff"),
   agentPicker: document.querySelector("#agent-picker"),
   get documentHandoff() { return document.querySelector("[data-dock-draft]"); },
@@ -79,6 +81,7 @@ function showNotice(message, error = false, { description = "", action = null, k
 }
 setPlanNotice(showNotice);
 setSlackNotice(showNotice);
+setSlackFavorites({ toggle: (href) => toggleFavorite(href), has: (href) => isFavorite(href) });
 function startToast(entry) {
   entry.started = Date.now();
   entry.timer = window.setTimeout(() => dismissToast(entry), entry.remaining);
@@ -132,8 +135,9 @@ function resetPageNavigation() {
   elements.weeksButton.setAttribute("aria-current", "false");
   elements.codeButton.setAttribute("aria-current", "false");
   elements.issuesButton.setAttribute("aria-current", "false");
+  elements.slackButton.setAttribute("aria-current", "false");
   elements.activityButton.setAttribute("aria-current", "false");
-  elements.chunks.classList.remove("tasks-page", "weeks-page", "library-page", "code-page", "issues-page", "activity-page");
+  elements.chunks.classList.remove("tasks-page", "weeks-page", "library-page", "code-page", "issues-page", "slack-page", "activity-page");
 }
 
 function documentButton(doc, dailyChild = false) {
@@ -493,6 +497,33 @@ function renderIssues(tab = new URLSearchParams(location.search).get("tab") || "
   elements.chunkNav.replaceChildren();
   elements.chunks.classList.add("code-page", "issues-page");
   renderIssuesPage(elements.chunks, { tab, showNotice });
+}
+
+function showSlack({ historyMode = "push" } = {}) {
+  if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
+  closeComposer();
+  if (historyMode !== "none") {
+    const url = new URL(location.href);
+    url.search = new URLSearchParams({ view: "slack" });
+    url.hash = "";
+    history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
+  }
+  renderSlack();
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+
+function renderSlack() {
+  state.view = "slack";
+  resetPageNavigation();
+  elements.slackButton.setAttribute("aria-current", "page");
+  for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
+  elements.title.textContent = "Slack";
+  elements.meta.textContent = "Threads the planning documents link, read through Codex's Slack connector";
+  elements.count.textContent = "";
+  elements.chunkNav.hidden = true;
+  elements.chunkNav.replaceChildren();
+  elements.chunks.classList.add("code-page", "slack-page");
+  renderSlackPage(elements.chunks, { showNotice, toggleFavorite, isFavorite });
 }
 
 function showActivity({ historyMode = "push" } = {}) {
@@ -1741,7 +1772,7 @@ async function refreshFromMarkdown(changedPaths) {
       return;
     }
 
-    if (state.view === "code" || state.view === "issues") {
+    if (state.view === "code" || state.view === "issues" || state.view === "slack") {
       renderLibrary();
       return;
     }
@@ -1974,6 +2005,7 @@ elements.weeksButton.addEventListener("click", () => showWeeks());
 elements.activityButton.addEventListener("click", () => showActivity());
 elements.codeButton.addEventListener("click", () => showCode());
 elements.issuesButton.addEventListener("click", () => showIssues());
+elements.slackButton.addEventListener("click", () => showSlack());
 connectPlanning({ documents: () => state.documents, open: (path) => selectDocument(path, { historyMode: "push" }) });
 elements.meta.addEventListener("click", async (event) => {
   const plainClick = !(event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
@@ -2447,6 +2479,7 @@ const SEARCH_ICONS = {
   issue: GLYPHS["circle-dot"],
   initiative: GLYPHS["flag"],
   server: GLYPHS["server"],
+  slack: GLYPHS["messages-square"],
 };
 
 function searchIconKey(doc) {
@@ -2540,8 +2573,9 @@ const PAGES = [
   { title: "Local servers", detail: "Dev servers the viewer started: URLs, output, restart, stop", icon: "server", run: () => openServers(showNotice) },
   ...Object.entries(CODE_TABS).map(([tab, title]) => ({ title, detail: `Code · ${title}`, icon: tab === "prs" ? "pr" : tab === "commits" ? "branch" : "code", run: () => showCode({ tab: tab === "prs" ? "" : tab }) })),
   ...Object.entries(ISSUE_TABS).map(([tab, title]) => ({ title: tab === "all" ? "Issues" : `${title} issues`, detail: `Issues · ${title}`, icon: "issue", issues: true, run: () => showIssues({ tab: tab === "all" ? "" : tab }) })),
+  { title: "Slack", detail: "Slack threads the planning documents link", icon: "slack", slack: true, run: () => showSlack() },
 ];
-const searchPages = (query) => { const terms = query.toLowerCase().split(/\s+/).filter(Boolean); return PAGES.filter((page) => (!page.issues || issuesOn()) && terms.every((term) => termMatch(term, `${page.title} ${page.detail}`.toLowerCase()))).map((page) => ({ page })); };
+const searchPages = (query) => { const terms = query.toLowerCase().split(/\s+/).filter(Boolean); return PAGES.filter((page) => (!page.issues || issuesOn()) && (!page.slack || config().slack.codex?.length) && terms.every((term) => termMatch(term, `${page.title} ${page.detail}`.toLowerCase()))).map((page) => ({ page })); };
 const renderPageResult = ({ page }, index) => resultRow({ icon: page.icon, title: escapeHtml(page.title), detail: escapeHtml(page.detail), side: "Page", attrs: searchAttrs(index) });
 
 const LIVE_TASK = new Set(["open", "active"]);
@@ -2878,6 +2912,10 @@ window.addEventListener("popstate", () => {
     showIssues({ historyMode: "none", tab: params.get("tab") || "" });
     return;
   }
+  if (params.get("view") === "slack") {
+    showSlack({ historyMode: "none" });
+    return;
+  }
   if (params.get("view") === "activity") {
     showActivity({ historyMode: "none" });
     return;
@@ -3048,6 +3086,8 @@ function renderFavorites() {
   favoriteStar.setAttribute("aria-pressed", String(on));
   favoriteStar.setAttribute("aria-label", `${on ? "Remove from favorites" : "Favorite"} (${modKey}D)`);
   favoriteStar.querySelector("svg").innerHTML = GLYPHS.star;
+  refreshSlackPage();
+  refreshSlackStars();
 }
 favoritesNav.addEventListener("click", (event) => {
   const link = event.target.closest("[data-visit-href]");
@@ -3060,7 +3100,7 @@ favoritesNav.addEventListener("click", (event) => {
 // ponytail: observes the whole body; scope it to the dialogs if it ever shows in a profile.
 function placeStar() {
   const head = [...document.querySelectorAll("dialog.code-diff[open] .code-diff-head")].at(-1);
-  const close = head?.querySelector("[data-diff-close], [data-issue-close], [data-plan-close]");
+  const close = head?.querySelector("[data-diff-close], [data-issue-close], [data-plan-close], [data-slack-close]");
   if (close && close.previousElementSibling !== favoriteStar) close.before(favoriteStar);
   else if (!close && favoriteStar.parentElement !== elements.count.parentElement) elements.count.before(favoriteStar);
 }
@@ -3079,7 +3119,7 @@ function visitResult(href) {
   const issueKey = params.get("issue");
   if (issueKey) { const issue = cachedIssues()?.issues?.find((candidate) => candidate.key === issueKey); return issue ? issueResult(issue, []) : { icon: "issue", title: escapeHtml(issueKey), detail: "Jira issue", side: "Issue" }; }
   const slack = params.get("slack");
-  if (slack) return { icon: "discuss", title: escapeHtml(slackThreadTitle(slack)), detail: "Slack thread", side: "Slack" };
+  if (slack) return { icon: "slack", title: escapeHtml(slackThreadTitle(slack)), detail: "Slack thread", side: "Slack" };
   const tree = params.get("wt");
   if (tree) return { icon: "branch", title: escapeHtml(tree.split("/").pop()), detail: escapeHtml(tree.replace(/^\/Users\/[^/]+/, "~")), side: "Worktree" };
   const view = params.get("view");
@@ -3088,6 +3128,7 @@ function visitResult(href) {
   if (view === "tasks") return doc(`tasks/${params.get("task")}.md`) ? docResult(doc(`tasks/${params.get("task")}.md`), []) : page("list", "Tasks", "Every task by status");
   if (view === "code") return page("code", "Code", CODE_TABS[params.get("tab") || "prs"] || "Pull requests");
   if (view === "issues") return page("issue", "Issues", ISSUE_TABS[params.get("tab") || "all"] || "All");
+  if (view === "slack") return page("slack", "Slack", "Linked threads");
   if (view === "activity") return page("plan", "Activity", "Everything that changed");
   if (view === "weeks") return page("plan", "Weeks", params.get("date") ? `Week of ${formatDate(params.get("date"))}` : "This week");
   if (view in LIBRARY_VIEWS) return page(view === "topics" ? "topic" : "reference", LIBRARY_VIEWS[view].title, LIBRARY_VIEWS[view].intro);
@@ -3267,6 +3308,7 @@ async function boot() {
     else if (requestedView in LIBRARY_VIEWS) renderLibraryPage(requestedView);
     else if (requestedView === "code") renderCode();
     else if (requestedView === "issues") renderIssues();
+    else if (requestedView === "slack") renderSlack();
     else if (requestedView === "activity") renderActivity();
     else if (requestedView === "weeks") {
       state.weekAnchor = parseDateKey(new URLSearchParams(location.search).get("date")) || parseDateKey(localTodayKey());
@@ -3298,6 +3340,7 @@ try {
   setConfig(await fetch("/api/config").then((response) => response.json()));
   document.title = config().title;
   elements.issuesButton.hidden = !issuesOn();
+  elements.slackButton.hidden = !config().slack.codex?.length;
 } catch {}
 // Before the first render, so every avatar starts with the reconciled picture; answers from the server's cache.
 await fetch("/api/people").then((response) => response.json()).then((body) => setPeople(body.people)).catch(() => {});

@@ -50,6 +50,20 @@ const local = (name) => ({
 const store = local("slack-last-read");
 const titles = local("slack-titles");
 export const slackThreadTitle = (href) => titles.get(href) || "Slack thread";
+export const rememberSlackTitle = (href, title) => { if (titles.get(href) !== title) titles.set(href, title); };
+
+// Favorites live in app.js; a message's star favorites its own permalink, so it reopens at that message.
+let favorites = { toggle: () => {}, has: () => false };
+export const setSlackFavorites = (next) => { favorites = next; };
+const favoriteHref = (href) => `?slack=${encodeURIComponent(href)}`;
+export function refreshSlackStars() {
+  for (const button of dialog?.querySelectorAll("[data-slack-star]") || []) {
+    const on = favorites.has(favoriteHref(button.dataset.slackStar));
+    button.classList.toggle("is-on", on);
+    button.setAttribute("aria-pressed", String(on));
+    button.dataset.tip = `${on ? "Remove this message from" : "Add this message to"} favorites`;
+  }
+}
 
 // `?slack=<permalink>` keeps the overlay open across a refresh, like `?issue=`.
 function syncSlackUrl(href) {
@@ -89,6 +103,12 @@ function ensureDialog() {
     else if (event.target.closest("[data-slack-refresh]")) load(true);
     else if (event.target.closest("[data-slack-new]")) jumpToNew();
     else if (event.target.closest("[data-slack-retry]")) load(true);
+    else if (event.target.closest("[data-slack-star]")) {
+      const button = event.target.closest("[data-slack-star]");
+      const message = current.thread.messages.find((candidate) => permalink(candidate.ts) === button.dataset.slackStar);
+      rememberSlackTitle(button.dataset.slackStar, `${current.thread.channelName || "Slack"} · ${message?.author}: ${(message?.text || "").replace(/<[^>|]*\|([^>]*)>/g, "$1").replace(/<([^>]*)>/g, "$1").replace(/\s+/g, " ").slice(0, 50)}`);
+      favorites.toggle(favoriteHref(button.dataset.slackStar));
+    }
   });
   dialog.addEventListener("pointerover", (event) => { const target = event.target.closest("[data-tip]"); if (target) showTip(target); else hideTip(); });
   dialog.addEventListener("pointerleave", hideTip);
@@ -191,7 +211,7 @@ function renderThread(scrollToLinked = true) {
     const cites = marks ? `<span class="slack-cites">${marks}</span>` : "";
     const head = continued ? `<span class="slack-gutter-time">${clock(seconds)}</span>${cites}` : `${avatar("", message.author, message.email)}<header><b>${escapeHtml(message.author || "Unknown")}</b>${stamp(seconds)}${cites}</header>`;
     const classes = [index === 0 && "is-parent", continued && "is-continued", message.ts === linked && "is-linked", lastRead && index > 0 && message.ts > lastRead && "is-new"].filter(Boolean).join(" ");
-    out.push(`<li class="slack-message ${classes}" data-ts="${message.ts}">${head}<div class="slack-message-body"><div class="markdown issue-markdown">${mentions(renderMarkdown(slackMarkdown(message.text), ""))}</div>${reactions ? `<div class="slack-reactions">${reactions}</div>` : ""}</div>${iconButton("external", "Open this message in Slack", `data-slack-open="${escapeHtml(permalink(message.ts))}"`)}</li>`);
+    out.push(`<li class="slack-message ${classes}" data-ts="${message.ts}">${head}<div class="slack-message-body"><div class="markdown issue-markdown">${mentions(renderMarkdown(slackMarkdown(message.text), ""))}</div>${message.files?.length ? `<div class="slack-files">${message.files.map((file) => `<span data-tip="Attached in Slack; open the message to see it">${icon("doc")}${escapeHtml(file)}</span>`).join("")}</div>` : ""}${reactions ? `<div class="slack-reactions">${reactions}</div>` : ""}</div><span class="slack-message-actions"><button type="button" class="code-icon-button slack-star" data-slack-star="${escapeHtml(permalink(message.ts))}" aria-pressed="false" data-tip="Add this message to favorites"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.star}</svg></button>${iconButton("external", "Open this message in Slack", `data-slack-open="${escapeHtml(permalink(message.ts))}"`)}</span></li>`);
     previous = message;
     return out.join("");
   }).join("");
@@ -200,6 +220,7 @@ function renderThread(scrollToLinked = true) {
   store.set(current.key, thread.messages.at(-1).ts);
   titles.set(current.href, `${thread.channelName || "Slack"} · ${thread.messages[0].text.replace(/<[^>|]*\|([^>]*)>/g, "$1").replace(/<([^>]*)>/g, "$1").replace(/\s+/g, " ").slice(0, 60)}`);
   renderLinks();
+  refreshSlackStars();
   const target = main.querySelector(".slack-message.is-linked:not(.is-parent)") || (lastRead && main.querySelector("[data-slack-new-rule]"));
   if (target && scrollToLinked) target.scrollIntoView({ block: "center", behavior: "instant" });
 }

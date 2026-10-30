@@ -10,7 +10,7 @@ import { parseActions, parseWorkBreakdown, stalledTaskReason } from "./public/ac
 import { extractChatLinks, inlineMarkdown } from "./public/markdown.js";
 import { metadataKey } from "./public/dock.js";
 import { CodexDesktopClient, taskTitle } from "./codex-desktop.ts";
-import { createLinkMetadataStore } from "./link-metadata.ts";
+import { createLinkMetadataStore, slackChannelNames } from "./link-metadata.ts";
 import { createCodeDashboard, githubImage } from "./code-dashboard.ts";
 import { createPeople } from "./people.ts";
 import { createIssueTracker } from "./issues.ts";
@@ -440,6 +440,31 @@ export function repositoryLinkPath(from: string, target: string) {
   }
 }
 
+// The workspace subdomain each linked Slack thread came from, so the Slack page can rebuild its permalink.
+const slackHosts = new Map<string, string>();
+
+// Every Slack thread the planning documents link, with the documents that cite it and what the cache knows about it.
+async function slackIndex() {
+  const threads = new Map<string, { key: string; channel: string; thread: string; host: string; docs: string[] }>();
+  for (const doc of await listDocuments()) for (const link of doc.slackLinks || []) {
+    const [channel, thread] = link.split("/");
+    const key = `${channel}/${thread}`;
+    const entry = threads.get(key) || { key, channel, thread, host: slackHosts.get(key) || "", docs: [] };
+    if (!entry.docs.includes(doc.path)) entry.docs.push(doc.path);
+    threads.set(key, entry);
+  }
+  const cached = await slackThreads.summaries();
+  const host = [...threads.values()].find((entry) => entry.host)?.host || "";
+  // Threads opened from elsewhere (a link in a Slack message) stay listed once read.
+  for (const key of Object.keys(cached)) if (!threads.has(key)) threads.set(key, { key, channel: key.split("/")[0], thread: key.split("/")[1], host, docs: [] });
+  const listed = await slackChannelNames(ROOT);
+  const named = new Map(Object.entries(cached).map(([key, summary]) => [key.split("/")[0], summary.channelName]).filter(([, name]) => name));
+  return {
+    threads: [...threads.values()].map((entry) => ({ ...entry, host: entry.host || host, channelName: cached[entry.key]?.channelName || named.get(entry.channel) || listed.get(entry.channel) || "", summary: cached[entry.key] || null })),
+    syncing: slackThreads.status(),
+  };
+}
+
 export async function listDocuments() {
   const paths = (await Promise.all([walkDocuments("daily"), walkDocuments("tasks"), walkDocuments("plans"), walkDocuments("reference")])).flat().filter(isViewableDocumentPath);
   const files = await Promise.all(paths.map(async (path) => ({ path, contents: await readFile(join(ROOT, path), "utf8"), modified: (await stat(join(ROOT, path))).mtimeMs })));
@@ -466,7 +491,10 @@ export async function listDocuments() {
     const prs = [...new Set([...contents.matchAll(/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g)].map(([, slug, n]) => `${slug.toLowerCase()}#${n}`))];
     if (prs.length) docs[index].pullRequests = prs;
     // Slack permalinks as `channel/thread/message`, so a thread overlay can list (and mark) the documents that cite it.
-    const slack = [...new Set([...contents.matchAll(/\.slack\.com\/archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})(?:\?[^\s)>\]]*?thread_ts=(\d{10}\.\d{6}))?/g)].map(([, channel, seconds, micros, thread]) => `${channel}/${thread || `${seconds}.${micros}`}/${seconds}.${micros}`))];
+    const slack = [...new Set([...contents.matchAll(/https:\/\/([a-z0-9-]+)\.slack\.com\/archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})(?:\?[^\s)>\]]*?thread_ts=(\d{10}\.\d{6}))?/g)].map(([, host, channel, seconds, micros, thread]) => {
+      slackHosts.set(`${channel}/${thread || `${seconds}.${micros}`}`, host);
+      return `${channel}/${thread || `${seconds}.${micros}`}/${seconds}.${micros}`;
+    }))];
     if (slack.length) docs[index].slackLinks = slack;
   }
   // Work breakdown items, so ⌘K can find one without opening its task.
@@ -821,6 +849,12 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const documents = (await listDocuments()).filter((doc) => doc.slackLinks?.some((link) => link.startsWith(`${ref.key}/`))).map((doc) => doc.path);
       await slackThreads.discuss(String(body.app || ""), String(body.url), String(body.request || "").slice(0, MAX_COMMENT_LENGTH), documents);
       return json(response, 200, { opened: true });
+    }
+    if (request.method === "GET" && url.pathname === "/api/slack") return json(response, 200, await slackIndex());
+    if (request.method === "POST" && url.pathname === "/api/slack/sync") {
+      const { threads } = await slackIndex();
+      const all = Boolean((await readJson(request)).all);
+      return json(response, 200, { syncing: slackThreads.sync(threads.filter((entry) => all || !entry.summary)) });
     }
     if (request.method === "GET" && url.pathname === "/api/slack/thread") return json(response, 200, await slackThreads.read(url.searchParams.get("url") || "", url.searchParams.has("refresh")));
     if (request.method === "GET" && url.pathname === "/api/version") return json(response, 200, await viewerVersion());

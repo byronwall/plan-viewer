@@ -30,10 +30,11 @@ Time: 2026-10-08 11:27:18 EDT
 Message TS: 1791473238.675079
 On it.
 Reactions: +1 (2)
+Files: plan.png (ID: F0AB, image/png, 1.3 MB), notes v2.txt (ID: F0CD, text/plain, 2 KB)
 `;
   assert.deepEqual(parseSlackThread(text), [
-    { author: "Ada", email: "ada@acme.test", user: "U01", ts: "1791473016.225909", text: "<@U02|Grace Hopper> can you look?\n\nSecond paragraph.", reactions: "" },
-    { author: "Grace Hopper", email: "grace@acme.test", user: "U02", ts: "1791473238.675079", text: "On it.", reactions: "+1 (2)" },
+    { author: "Ada", email: "ada@acme.test", user: "U01", ts: "1791473016.225909", text: "<@U02|Grace Hopper> can you look?\n\nSecond paragraph.", reactions: "", files: [] },
+    { author: "Grace Hopper", email: "grace@acme.test", user: "U02", ts: "1791473238.675079", text: "On it.", reactions: "+1 (2)", files: ["plan.png", "notes v2.txt"] },
   ]);
 });
 
@@ -77,4 +78,10 @@ test("a discussion draft hands the agent the thread as a file and names the docu
 test("the directory search gives each person's email and small Slack photo", () => {
   const text = "## Users (2 results)\n### Result 1 of 2\nName: Ada\nUser ID: U01\nEmail: ada@acme.test\nProfile Pic: [Photo](https://avatars.slack-edge.com/2026-01-01/1_abc_original.jpg)\n\n---\n### Result 2 of 2\nName: Bot\nUser ID: U02\n";
   assert.deepEqual(parseSlackUsers(text), [{ name: "Ada", user: "U01", email: "ada@acme.test", avatar: "https://avatars.slack-edge.com/2026-01-01/1_abc_72.jpg" }]);
+});
+
+test("a parent with no replies drops the connector's trailing note", () => {
+  const [parent] = parseSlackThread("=== THREAD PARENT MESSAGE ===\nFrom: Ada <ada@acme.test> (U01)\nTime: x\nMessage TS: 1791473016.225909\nShip it?\nReactions: white_check_mark (1)\n\nNo thread messsages");
+  assert.equal(parent.text, "Ship it?");
+  assert.equal(parent.reactions, "white_check_mark (1)");
 });
