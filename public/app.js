@@ -719,10 +719,12 @@ function composerTemplate(target) {
   }
   const context = target.scope === "chunk"
     ? `<div class="composer-context"><div class="composer-context-body" id="composer-context-body"><div class="markdown">${renderMarkdownSource(target.chunk.markdown, state.selectedPath)}</div></div><button class="context-toggle" type="button" aria-expanded="false" aria-controls="composer-context-body" hidden>Show full chunk</button></div>`
-    : "";
-  const meta = target.scope === "document" ? escapeHtml(state.selectedPath) : "";
-  const fieldLabel = target.scope === "chunk" ? `What should ${agentName()} do with this chunk?` : `What should ${agentName()} do?`;
-  return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="${target.scope}" ${target.chunk ? `data-chunk-id="${target.chunk.id}"` : ""}>
+    : target.selection
+      ? `<div class="composer-context"><div class="composer-context-body" id="composer-context-body"><blockquote class="composer-selection">${escapeHtml(target.selection)}</blockquote></div><button class="context-toggle" type="button" aria-expanded="false" aria-controls="composer-context-body" hidden>Show full selection</button></div>`
+      : "";
+  const meta = target.scope === "document" ? escapeHtml(target.section ? `${state.selectedPath} · ${target.section}` : state.selectedPath) : "";
+  const fieldLabel = target.scope === "chunk" ? `What should ${agentName()} do with this chunk?` : target.selection ? `What should ${agentName()} do with this selection?` : `What should ${agentName()} do?`;
+  return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="${target.scope}" ${target.chunk ? `data-chunk-id="${target.chunk.id}"` : ""} ${target.selection ? `data-selection="${escapeHtml(target.selection)}" data-section="${escapeHtml(target.section)}"` : ""}>
     ${heading(meta)}
     <div class="composer-body">
       ${context}
@@ -1945,7 +1947,7 @@ async function dispatch(form) {
     const response = await fetch("/api/dispatch", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ app: agentApp(), path: form.dataset.sourcePath || state.selectedPath, scope: form.dataset.scope, chunkId: form.dataset.chunkId, actionId: form.dataset.actionId, expectedPrompt: form.dataset.expectedPrompt, workItem: form.dataset.workItem, mode: form.dataset.workMode, commentary, images: [...form.querySelectorAll(".composer-images img")].map((img) => img.src) }),
+      body: JSON.stringify({ app: agentApp(), path: form.dataset.sourcePath || state.selectedPath, scope: form.dataset.scope, chunkId: form.dataset.chunkId, actionId: form.dataset.actionId, expectedPrompt: form.dataset.expectedPrompt, workItem: form.dataset.workItem, mode: form.dataset.workMode, selection: form.dataset.selection, section: form.dataset.section, commentary, images: [...form.querySelectorAll(".composer-images img")].map((img) => img.src) }),
     });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || `${agentName()} could not open the draft.`);
@@ -2467,7 +2469,29 @@ document.addEventListener("pointermove", (event) => { cursorPosition = { x: even
 document.documentElement.addEventListener("pointerleave", () => { cursorPosition = null; });
 window.addEventListener("blur", () => { cursorPosition = null; });
 
+// Text selected in the document, with the headings above where it starts ("Findings › c4574f89: …").
+function documentSelection() {
+  const selection = getSelection();
+  const text = selection?.toString().trim();
+  if (!text || state.view !== "document" || !elements.chunks.contains(selection.anchorNode)) return null;
+  const start = selection.getRangeAt(0).startContainer;
+  const card = (start.nodeType === Node.ELEMENT_NODE ? start : start.parentElement).closest(".chunk-card");
+  const chunk = state.document?.chunks.find((candidate) => candidate.id === card?.id);
+  const outline = chunkOutlines.get(card?.id);
+  const heading = [...(card?.querySelectorAll("[data-outline-key]") || [])]
+    .filter((node) => node.compareDocumentPosition(start) & Node.DOCUMENT_POSITION_FOLLOWING).at(-1);
+  const titles = (outline?.paths.get(heading?.dataset.outlineKey) || []).map((key) => outline.flat.find((node) => node.key === key)?.title);
+  const section = [chunk?.title, ...titles].filter((title, index, all) => title && title !== all[index - 1]);
+  return { text, section: section.join(" › ") };
+}
+
+function openSelectionComposer({ text, section }) {
+  openComposer({ key: "selection", scope: "document", title: section.split(" › ").at(-1) || state.document.title, selection: text, section }, elements.documentHandoff);
+}
+
 function openCursorComposer() {
+  const selected = documentSelection();
+  if (selected) return openSelectionComposer(selected);
   const hovered = cursorPosition && document.elementFromPoint(cursorPosition.x, cursorPosition.y);
   const action = hovered?.closest("[data-action-key]")
     || hovered?.closest(".action-row, .work-line")?.querySelector("[data-action-key]");

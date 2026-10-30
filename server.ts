@@ -634,8 +634,10 @@ export function buildCodexPrompt(document: Awaited<ReturnType<typeof loadDocumen
   return `Task: ${taskTitle(chunk.title)}\n\nYou are receiving a work handoff from the local ${config().title}. Work in the ${WORKSPACE} repository and follow its AGENTS.md instructions. The source file remains authoritative.\n\nSource file: ${document.path}\nDocument: ${document.title}\nSelected ${chunk.kind}: ${chunk.title}\n\nSelected chunk:\n\n${chunk.markdown}\n\n${config().user}'s commentary:\n\n${commentary.trim()}\n\nInterpret the selected chunk together with ${config().user}'s commentary. Inspect the source file and relevant repository context before acting. If the commentary asks for a change or implementation, carry it through; if it asks for analysis, report evidence-backed findings. Preserve unrelated work and update the planning Markdown when the requested outcome calls for it.\n\n${CHAT_LINK_INSTRUCTION}`;
 }
 
-export function buildDocumentCodexPrompt(document: Awaited<ReturnType<typeof loadDocument>>, commentary: string) {
-  return `Task from the local ${config().title}\n\nWork in the ${WORKSPACE} repository and follow its AGENTS.md instructions. The attached file path is the authoritative context; inspect the file before acting.\n\nSource file: ${document.path}\n\n${config().user}'s commentary:\n\n${commentary.trim()}\n\nCarry out ${config().user}'s request using the source file and relevant repository context. Preserve unrelated work.\n\n${CHAT_LINK_INSTRUCTION}`;
+// A selection narrows the document to the excerpt the user highlighted, quoted with the section it sits under.
+export function buildDocumentCodexPrompt(document: Awaited<ReturnType<typeof loadDocument>>, commentary: string, selection = "", section = "") {
+  const excerpt = selection.trim() ? `${section ? `Section: ${section}\n` : ""}\n${config().user} selected this excerpt as the focus; find it in the source file and work on it specifically:\n\n${selection.trim().split("\n").map((line) => `> ${line}`).join("\n")}\n\n` : "";
+  return `Task from the local ${config().title}\n\nWork in the ${WORKSPACE} repository and follow its AGENTS.md instructions. The attached file path is the authoritative context; inspect the file before acting.\n\nSource file: ${document.path}\n${excerpt}\n${config().user}'s commentary:\n\n${commentary.trim()}\n\nCarry out ${config().user}'s request using the source file and relevant repository context. Preserve unrelated work.\n\n${CHAT_LINK_INSTRUCTION}`;
 }
 
 export function buildGlobalCodexPrompt(commentary: string) {
@@ -685,7 +687,7 @@ export async function saveHandoffImages(images: unknown[]) {
   return paths;
 }
 
-async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex", images: string[] = [], workItem = "", mode = "") {
+async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex", images: string[] = [], workItem = "", mode = "", selection = "", section = "") {
   const openDraft = (title: string, prompt: string) => getCodexApp().openDraft(ROOT, title, prompt, app, images);
   if (scope === "action") {
     const document = await loadDocument(path);
@@ -720,7 +722,8 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
   }
   const document = await loadDocument(path);
   if (scope === "document") {
-    const prompt = buildDocumentCodexPrompt(document, commentary);
+    if (selection.length > MAX_COMMENT_LENGTH) throw new Error("The selection is too long; select less text.");
+    const prompt = buildDocumentCodexPrompt(document, commentary, selection, section);
     dispatchLog(requestId, "validated", { scope, path: document.path, commentaryLength: commentary.length });
     if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true };
     const result = await openDraft(document.title, prompt);
@@ -929,7 +932,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request, 50_000_000);
       dispatchLog(requestId, "received", { path: String(body.path || ""), scope: String(body.scope || ""), chunkId: String(body.chunkId || "") });
       try {
-        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex"), await saveHandoffImages(Array.isArray(body.images) ? body.images : []), String(body.workItem || ""), String(body.mode || "")));
+        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex"), await saveHandoffImages(Array.isArray(body.images) ? body.images : []), String(body.workItem || ""), String(body.mode || ""), String(body.selection || ""), String(body.section || "")));
       } catch (error) {
         dispatchLog(requestId, "failed", { error: error instanceof Error ? error.message : String(error) });
         throw error;

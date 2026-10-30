@@ -392,6 +392,15 @@ test("file handoff attaches the path without copying the file contents", async (
   assert.doesNotMatch(prompt, /single-command `acme init` bootstrap/);
 });
 
+test("a selection handoff quotes the excerpt under its section", async () => {
+  const document = await loadDocument("daily/2026/07/31/plan.md");
+  const prompt = buildDocumentCodexPrompt(document, "Dig into this one.", "Error: cursor closed\nSeen: Oct 27", "Findings › c4574f89");
+  assert.match(prompt, /Section: Findings › c4574f89/);
+  assert.match(prompt, /> Error: cursor closed\n> Seen: Oct 27/);
+  assert.match(prompt, /Dig into this one\./);
+  assert.doesNotMatch(buildDocumentCodexPrompt(document, "Whole file."), /Section:|excerpt/);
+});
+
 test("pasted handoff images are saved under tmp and listed in the prompt", async () => {
   const [path] = await saveHandoffImages([`data:image/png;base64,${Buffer.from("png").toString("base64")}`]);
   assert.ok(path.startsWith(`${ROOT}/tmp/handoff-images/`) && path.endsWith(".png"));
