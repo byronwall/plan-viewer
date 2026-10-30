@@ -55,7 +55,9 @@ button { cursor: pointer; }
 .view-navigation-link { min-height: 26px; display: flex; align-items: center; border: 0; border-radius: 6px; background: transparent; padding: 4px 8px; color: #344057; font-size: .8rem; font-weight: 600; text-align: left; }
 .view-navigation-link:hover { background: var(--quiet-field); }
 .view-navigation-link[aria-current="page"] { background: var(--selected); color: var(--action-ink); }
-.view-navigation-count { margin-left: auto; color: #8a5a00; font-size: .7rem; font-variant-numeric: tabular-nums; }
+.view-navigation-count { margin-left: auto; padding-left: 8px; color: var(--quiet-text); font-size: .7rem; font-weight: 550; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.view-navigation-count.is-attention { color: #8a5a00; font-weight: 650; }
+.view-navigation-link[aria-current="page"] .view-navigation-count:not(.is-attention) { color: var(--action-muted); }
 .favorites { flex: none; max-height: 40vh; overflow: auto; margin: 0 6px; padding: 6px 0; border-bottom: 1px solid var(--line); scrollbar-width: thin; }
 .document-link.favorite-link { display: flex; align-items: center; gap: 6px; text-decoration: none; }
 .favorite-link .search-icon { flex: none; width: 14px; height: 14px; }
@@ -77,14 +79,6 @@ button { cursor: pointer; }
 .day-row[aria-current="page"] .day-focus { font-weight: 650; }
 .day-row.is-bare .day-focus { color: var(--quiet-text); font-weight: 500; }
 .day-more { color: var(--quiet-text); font-size: .7rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-.day-tip-task { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; padding: 2px 0; }
-.day-tip-task strong { display: block; color: var(--ink); font-weight: 600; }
-.day-tip-task strong + span { display: block; color: var(--muted); font-size: .74rem; }
-.day-tip-status { color: var(--muted); font-size: .7rem; font-weight: 650; line-height: 1.55; }
-.day-tip-status[data-status="active"] { color: var(--action-ink); }
-.day-tip-status[data-status="waiting"] { color: #754b00; }
-.day-tip-status[data-status="completed"] { color: var(--success-ink); }
-.day-tip-files { color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { .day-row { transition: none; } }
 .week-break { height: 1px; margin: 4px 8px; border: 0; background: var(--line); }
 .library-page { max-width: 1050px; }
@@ -266,7 +260,7 @@ button { cursor: pointer; }
 .chunk-actions { display: flex; gap: 2px; }
 .handoff-button.is-copied { animation: path-copy-confirmation 900ms ease-out; }
 .handoff-button:hover, .handoff-button[aria-expanded="true"] { border-color: var(--line); background: var(--hover-field); color: var(--ink); }
-.handoff-button:focus-visible, .send-button:focus-visible, .cancel-button:focus-visible, .popover-close:focus-visible, .document-link:focus-visible, .view-navigation-link:focus-visible { outline: 3px solid rgba(49, 87, 213, .26); outline-offset: 2px; }
+.handoff-button:focus-visible, .send-button:focus-visible, .cancel-button:focus-visible, .popover-close:focus-visible, .document-link:focus-visible, .day-row:focus-visible, .view-navigation-link:focus-visible { outline: 3px solid rgba(49, 87, 213, .26); outline-offset: 2px; }
 .markdown { margin: 8px 0 0 34px; color: #344055; font-size: .88rem; line-height: 1.55; }
 /* Prose keeps a reading measure; tables and figures bleed to the full card width. */
 .chunk-card .markdown > :not(.markdown-table, .markdown-figure) { max-width: 80ch; }
@@ -424,6 +418,18 @@ button { cursor: pointer; }
 .hover-card-diff i { color: var(--danger); font-style: normal; font-weight: 600; }
 .hover-card-diff .is-zero { color: var(--quiet-text); font-weight: 400; }
 .hover-card-hint { margin-top: 2px; color: var(--quiet-text); font-size: .7rem; }
+.hover-card-hint kbd { border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; color: var(--muted); font: 600 .64rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.hover-card-state.is-quiet { color: var(--muted); font-weight: 500; }
+/* A label column (status, age) beside a title and its detail: the rail's day and page cards. */
+.tip-row { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; padding: 2px 0; }
+.tip-row strong { display: -webkit-box; overflow: hidden; color: var(--ink); font-weight: 600; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.tip-row strong + span { display: -webkit-box; overflow: hidden; color: var(--muted); font-size: .74rem; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.tip-label { overflow: hidden; color: var(--muted); font-size: .7rem; font-weight: 650; line-height: 1.55; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tip-label[data-tone="active"] { color: var(--action-ink); }
+.tip-label[data-tone="waiting"], .tip-label[data-tone="attention"] { color: #754b00; }
+.tip-label[data-tone="completed"] { color: var(--success-ink); }
+.tip-label[data-tone="missing"] { color: var(--quiet-text); font-weight: 500; }
+.tip-empty { color: var(--muted); }
 .hover-card-skeleton { width: 70%; height: .8rem; margin: 2px 0; border-radius: 3px; background: var(--quiet-field); }
 .hover-card-skeleton.is-title { width: 85%; height: .9rem; }
 @keyframes hover-card-in { from { opacity: 0; transform: translateY(-2px); } }
@@ -658,6 +664,7 @@ button.task-list-id:hover { text-decoration: underline; }
   .library { position: static; height: auto; max-height: 43vh; border-right: 0; border-bottom: 1px solid var(--line); }
   .brand { padding-top: 16px; }
   .documents { max-height: 250px; }
+  .view-navigation { grid-template-columns: 1fr 1fr; column-gap: 4px; }
   .reading-pane { padding: 34px 18px 72px; }
   .document-header { align-items: start; }
   .document-tools { flex-direction: column; align-items: flex-end; gap: 8px; }

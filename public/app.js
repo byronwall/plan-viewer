@@ -5,10 +5,10 @@ import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
 import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, connectPlanning, setPeople, ago, cachedPrIndex, commitLinkMatch, diffSize, hideTip, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
-import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
+import { TABS as ISSUE_TABS, cachedIssues, isMyIssue, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { renderActivityPage } from "./activity.js";
 import { openSlackThread, refreshSlackStars, setSlackFavorites, setSlackNotice, slackThreadTitle } from "./slack.js";
-import { refreshSlackPage, renderSlackPage } from "./slack-page.js";
+import { channelLabel, fresh as freshThread, lastActive, opener, refreshSlackPage, renderSlackPage } from "./slack-page.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
@@ -17,6 +17,7 @@ import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./da
 const state = { documents: [], defaultPath: "", selectedPath: "", document: null, activeChunkId: "", openComposer: null, view: "document" };
 
 const elements = {
+  library: document.querySelector(".library"),
   documents: document.querySelector("#documents"),
   searchButton: document.querySelector("#open-search"),
   searchDialog: document.querySelector("#search-dialog"),
@@ -160,7 +161,7 @@ function renderLibrary() {
     const plan = docs.find((doc) => doc.kind === "Plan");
     const target = plan || docs[0];
     const focus = dayFocus(plan);
-    const lead = focus[0] || (plan ? "" : dailyDocumentLabel(target));
+    const lead = focus[0] || (plan ? "" : target.title.replace(/^Reference\s+[—-]\s*/i, ""));
     const current = docs.some((doc) => doc.path === state.selectedPath);
     return `<button class="day-row${isToday ? " is-today" : ""}${lead ? "" : " is-bare"}" type="button" data-path="${escapeHtml(target.path)}" data-day="${date}" aria-current="${current ? "page" : "false"}">
       <time datetime="${date}"><span>${day.toLocaleDateString("en-US", { weekday: "short" })}</span>${day.getDate()}</time>
@@ -194,13 +195,13 @@ function dayTipHtml(date) {
   const plan = docs.find((doc) => doc.kind === "Plan");
   const tasks = (plan?.focus?.tasks || []).map(({ id, note }) => {
     const task = state.documents.find((doc) => doc.task?.id === id)?.task;
-    return `<div class="day-tip-task"><span class="day-tip-status" data-status="${escapeHtml(task?.status || "")}">${escapeHtml(TASK_STATUS_LABELS[task?.status] || "Missing")}</span><span><strong>${escapeHtml(task?.title || id)}</strong>${note ? `<span>${escapeHtml(note)}</span>` : ""}</span></div>`;
+    return tipRow(TASK_STATUS_LABELS[task?.status] || "Missing", task?.title || id, note, task?.status || "missing");
   });
-  const headings = tasks.length ? [] : (plan?.focus?.headings || []).map((heading) => `<div class="hover-card-line">${escapeHtml(heading)}</div>`);
-  const files = docs.filter((doc) => doc !== plan).map((doc) => escapeHtml(dailyDocumentLabel(doc)));
-  return `<div class="hover-card-head"><span class="hover-card-name">${escapeHtml(formatDate(date, true))}</span>${tasks.length ? `<span class="hover-card-state">${tasks.length} scheduled</span>` : ""}</div>`
-    + (tasks.join("") + headings.join("") || `<div class="hover-card-line">${plan ? "No scheduled tasks" : "No plan"}</div>`)
-    + (files.length ? `<div class="hover-card-line day-tip-files">Also ${files.join(" · ")}</div>` : "")
+  const headings = tasks.length ? [] : (plan?.focus?.headings || []).map((heading, index) => tipRow(`${index + 1}.`, heading));
+  const files = docs.filter((doc) => doc !== plan).map((doc) => tipRow("File", doc.title, doc.path.split("/").pop()));
+  return tipHead(formatDate(date, true), tasks.length ? plural(tasks.length, "scheduled task") : headings.length ? plural(headings.length, "section") : "")
+    + (tasks.join("") + headings.join("") || (plan ? tipEmpty("No scheduled tasks.") : ""))
+    + files.join("")
     + `<div class="hover-card-hint">Click opens the ${plan ? "plan" : "file"} · <kbd>[</kbd> <kbd>]</kbd> step days</div>`;
 }
 
@@ -229,14 +230,71 @@ function statusPill(task, path) {
   return `<button type="button" class="task-status task-status-${task.status}${reason ? " task-status-due" : ""}" data-status-path="${escapeHtml(path)}" data-status="${task.status}" aria-haspopup="menu" title="${escapeHtml(title)}">${label}</button>`;
 }
 
-// Due check-ins count on the rail's Tasks link, so they surface from any page.
-function updateCheckInCount() {
-  const due = state.documents.filter((doc) => doc.task && checkInReason(doc.task, doc.path)).length;
-  let badge = elements.tasksButton.querySelector(".view-navigation-count");
-  if (!badge) elements.tasksButton.insertAdjacentHTML("beforeend", '<span class="view-navigation-count"></span>');
-  badge = elements.tasksButton.querySelector(".view-navigation-count");
-  badge.textContent = due || "";
-  badge.title = due ? `${due} waiting ${due === 1 ? "task needs" : "tasks need"} a check-in` : "";
+// The rail's page links each carry the one number worth knowing, amber when it needs you (a due check-in, a review
+// request, new Slack replies), and a hover card listing what sits behind it. Each reads data the viewer already loaded.
+let slackThreads = null;
+const tipRow = (label, title, detail = "", tone = "") => `<div class="tip-row"><span class="tip-label"${tone ? ` data-tone="${tone}"` : ""}>${escapeHtml(label)}</span><span><strong>${escapeHtml(title)}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ""}</span></div>`;
+const tipHead = (name, state = "") => `<div class="hover-card-head"><span class="hover-card-name">${escapeHtml(name)}</span>${state ? `<span class="hover-card-state is-quiet">${escapeHtml(state)}</span>` : ""}</div>`;
+const tipEmpty = (text) => `<div class="hover-card-line tip-empty">${escapeHtml(text)}</div>`;
+const recentDocs = (docs, count = 6) => docs.filter((doc) => doc.modified).sort((a, b) => b.modified - a.modified).slice(0, count);
+const docRows = (docs) => recentDocs(docs).map((doc) => tipRow(ago(doc.modified), doc.title, doc.path)).join("") || tipEmpty("Nothing here yet.");
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+function navSummary(view) {
+  const docs = state.documents;
+  if (view === "activity") {
+    const midnight = new Date().setHours(0, 0, 0, 0);
+    const today = docs.filter((doc) => doc.modified >= midnight).length;
+    return { count: today ? `${today} today` : "", card: tipHead("Recently changed", today ? `${plural(today, "document")} today` : "") + docRows(docs) };
+  }
+  if (view === "tasks") {
+    const tasks = docs.filter((doc) => doc.task);
+    const due = tasks.filter((doc) => checkInReason(doc.task, doc.path));
+    const by = (status) => tasks.filter((doc) => doc.task.status === status && !due.includes(doc));
+    const live = [...by("active"), ...by("open")];
+    const rows = [...due.map((doc) => tipRow("Check in", doc.task.title, checkInReason(doc.task, doc.path), "attention")),
+      ...live.sort((a, b) => b.task.updated.localeCompare(a.task.updated)).map((doc) => tipRow(TASK_STATUS_LABELS[doc.task.status], doc.task.title, `${doc.task.id} · ${doc.task.project}`, doc.task.status))];
+    const counts = [["active", by("active").length], ["open", by("open").length], ["waiting", by("waiting").length]].filter(([, count]) => count).map(([status, count]) => `${count} ${status}`).join(" · ");
+    return { count: due.length ? plural(due.length, "check-in") : live.length ? `${live.length} open` : "", attention: due.length > 0, card: tipHead("Tasks", counts) + (rows.slice(0, 8).join("") || tipEmpty("No open tasks.")) + (rows.length > 8 ? tipEmpty(`+${rows.length - 8} more on the Tasks page`) : "") };
+  }
+  if (view in LIBRARY_VIEWS) {
+    const group = docs.filter((doc) => doc.group === LIBRARY_VIEWS[view].group);
+    return { count: group.length ? String(group.length) : "", card: tipHead(LIBRARY_VIEWS[view].title, group.length ? `${plural(group.length, "document")} · newest first` : "") + docRows(group) };
+  }
+  if (view === "code") {
+    const index = cachedPrIndex();
+    if (!index) return { count: "", card: tipHead("Pull requests") + tipEmpty("Loading pull requests…") };
+    const open = index.prs.filter((pr) => pr.state === "OPEN").sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+    const review = open.filter((pr) => pr.requestedOfMe);
+    const mine = open.filter((pr) => pr.author === index.me && !pr.requestedOfMe);
+    const rows = [...review.map((pr) => tipRow("Review", pr.title, `${pr.slug.split("/").pop()}#${pr.number}`, "attention")),
+      ...mine.map((pr) => tipRow(pr.draft ? "Draft" : pr.reviewDecision === "APPROVED" ? "Approved" : pr.reviewDecision === "CHANGES_REQUESTED" ? "Changes" : "Yours", pr.title, `${pr.slug.split("/").pop()}#${pr.number}`, pr.reviewDecision === "APPROVED" ? "completed" : ""))];
+    return { count: review.length ? `${review.length} to review` : mine.length ? `${mine.length} yours` : "", attention: review.length > 0, card: tipHead("Pull requests", [review.length && `${review.length} to review`, mine.length && `${mine.length} yours`].filter(Boolean).join(" · ")) + (rows.slice(0, 8).join("") || tipEmpty(index.prs.length ? "Nothing waiting on you." : "No tracked repositories yet.")) };
+  }
+  if (view === "issues") {
+    const data = cachedIssues();
+    if (!data?.issues) return { count: "", card: tipHead("Issues") + tipEmpty("Loading issues…") };
+    const mine = data.issues.filter((issue) => issue.category !== "done" && isMyIssue(issue)).sort((a, b) => (a.category === "indeterminate" ? 0 : 1) - (b.category === "indeterminate" ? 0 : 1) || String(b.updated).localeCompare(String(a.updated)));
+    const moving = mine.filter((issue) => issue.category === "indeterminate").length;
+    return { count: moving ? `${moving} in progress` : mine.length ? `${mine.length} yours` : "", card: tipHead("Your issues", [moving && `${moving} in progress`, mine.length - moving && `${mine.length - moving} to do`].filter(Boolean).join(" · ")) + (mine.slice(0, 8).map((issue) => tipRow(issue.status, issue.summary, issue.key, issue.category === "indeterminate" ? "active" : "")).join("") || tipEmpty("Nothing assigned to you.")) };
+  }
+  if (view === "slack") {
+    if (!slackThreads) return { count: "", card: tipHead("Slack") + tipEmpty("Loading threads…") };
+    const threads = [...slackThreads].sort((a, b) => (freshThread(b) - freshThread(a)) || lastActive(b) - lastActive(a));
+    const unread = threads.filter(freshThread).length;
+    return { count: unread ? `${unread} new` : "", attention: unread > 0, card: tipHead("Linked threads", unread ? `${unread} with new replies` : plural(threads.length, "thread")) + (threads.slice(0, 7).map((entry) => tipRow(freshThread(entry) ? "New" : ago(lastActive(entry)), opener(entry) || "Thread", channelLabel(entry), freshThread(entry) ? "attention" : "")).join("") || tipEmpty("No linked threads yet.")) };
+  }
+  return { count: "", card: "" };
+}
+
+function updateNavCounts() {
+  for (const button of document.querySelectorAll(".view-navigation-link[data-view]")) {
+    const { count, attention } = navSummary(button.dataset.view);
+    let badge = button.querySelector(".view-navigation-count");
+    if (!badge) badge = button.appendChild(Object.assign(document.createElement("span"), { className: "view-navigation-count" }));
+    badge.textContent = count;
+    badge.classList.toggle("is-attention", Boolean(attention));
+  }
 }
 
 async function loadWaiting() {
@@ -246,7 +304,7 @@ async function loadWaiting() {
     const { waiting } = await response.json();
     const changed = JSON.stringify(waiting) !== JSON.stringify(waitingSignals);
     waitingSignals = waiting;
-    updateCheckInCount();
+    updateNavCounts();
     if (changed && state.view === "tasks") renderTasksPage();
   } catch {}
 }
@@ -1647,7 +1705,7 @@ async function refreshFromMarkdown(changedPaths) {
     const libraryBody = await libraryResponse.json();
     if (!libraryResponse.ok) throw new Error(libraryBody.error || "Could not refresh the document list.");
     state.documents = libraryBody.documents;
-    updateCheckInCount();
+    updateNavCounts();
     loadWaiting();
 
     if (state.view in LIBRARY_VIEWS) {
@@ -2058,23 +2116,29 @@ for (const [on, off] of [["pointerover", "pointerout"], ["focusin", "focusout"]]
     if (link && !link.contains(event.relatedTarget)) hideLinkTip();
   });
 }
-// Day rows in the rail get a card to their right listing the whole plan.
-elements.documents.addEventListener("pointerover", (event) => {
-  const row = event.target.closest?.(".day-row");
-  if (!row) return;
-  clearTimeout(linkTipTimer);
-  linkTipTimer = setTimeout(() => {
-    linkTip.innerHTML = dayTipHtml(row.dataset.day);
-    linkTip.hidden = false;
-    const box = row.getBoundingClientRect();
-    linkTip.style.left = `${box.right + 8}px`;
-    linkTip.style.top = `${Math.max(12, Math.min(box.top - 6, innerHeight - linkTip.offsetHeight - 12))}px`;
-  }, 250);
-});
-elements.documents.addEventListener("pointerout", (event) => {
-  const row = event.target.closest?.(".day-row");
-  if (row && !row.contains(event.relatedTarget)) hideLinkTip();
-});
+// Day rows and page links in the rail get a card to their right: the whole plan, or what sits behind the page. Keyboard
+// focus shows it too. Beside a side-by-side rail only; on narrow screens the rail stacks above the page and the card would cover it.
+const railTipTarget = (event) => innerWidth > 820 && event.target.closest?.(".library .day-row, .library .view-navigation-link[data-view]");
+function showRailTip(row) {
+  linkTip.innerHTML = row.dataset.day ? dayTipHtml(row.dataset.day) : navSummary(row.dataset.view).card;
+  linkTip.hidden = false;
+  const box = row.getBoundingClientRect();
+  linkTip.style.left = `${box.right + 8}px`;
+  linkTip.style.top = `${Math.max(12, Math.min(box.top - 6, innerHeight - linkTip.offsetHeight - 12))}px`;
+}
+elements.library.addEventListener("click", hideLinkTip);
+for (const [on, off, delay] of [["pointerover", "pointerout", 250], ["focusin", "focusout", 0]]) {
+  elements.library.addEventListener(on, (event) => {
+    const row = railTipTarget(event);
+    if (!row || (on === "focusin" && !row.matches(":focus-visible"))) return;
+    clearTimeout(linkTipTimer);
+    linkTipTimer = setTimeout(() => showRailTip(row), delay);
+  });
+  elements.library.addEventListener(off, (event) => {
+    const row = railTipTarget(event);
+    if (row && !row.contains(event.relatedTarget)) hideLinkTip();
+  });
+}
 addEventListener("scroll", hideLinkTip, { capture: true, passive: true });
 addEventListener("keydown", (event) => { if (event.key === "Escape") hideLinkTip(); });
 elements.documents.addEventListener("click", (event) => {
@@ -3265,7 +3329,7 @@ async function boot() {
     if (!response.ok) throw new Error(body.error || "Could not load the document list.");
     state.documents = body.documents;
     state.defaultPath = body.defaultPath;
-    updateCheckInCount();
+    updateNavCounts();
     loadWaiting();
     const requested = new URLSearchParams(location.search).get("path");
     const requestedView = new URLSearchParams(location.search).get("view");
@@ -3287,8 +3351,9 @@ async function boot() {
     connectLiveUpdates();
     loadPrIndex().catch(() => {}); // so ⌘K lists PRs on its first paint instead of inserting them a moment later
     openOverlays(new URLSearchParams(location.search));
-    if (issuesOn()) loadIssues().then(renderFavorites).catch(() => {}); // ⌘K finds issues by key and title
-    loadPrIndex().then(renderFavorites).catch(() => {}); // PR favorites get their titles
+    if (issuesOn()) loadIssues().then(() => { renderFavorites(); updateNavCounts(); }).catch(() => {}); // ⌘K finds issues by key and title
+    loadPrIndex().then(() => { renderFavorites(); updateNavCounts(); }).catch(() => {}); // PR favorites get their titles
+    if (config().slack.codex?.length) fetch("/api/slack").then((response) => response.json()).then((data) => { slackThreads = data.threads || []; updateNavCounts(); }).catch(() => {});
     recordVisit();
   } catch (error) {
     showNotice(error.message, true);

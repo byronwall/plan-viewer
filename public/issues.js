@@ -711,6 +711,7 @@ async function load(refresh = false) {
 }
 export const loadIssues = () => (ui.data ? Promise.resolve(ui.data) : load());
 export const cachedIssues = () => ui.data;
+export const isMyIssue = (issue) => isMine(issue);
 
 function syncUrl() {
   const url = new URL(location.href);
