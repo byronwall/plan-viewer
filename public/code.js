@@ -5,6 +5,7 @@ import { decorate, lineClasses, markWords } from "./word-diff.js";
 import { mapHtml, mapSvg, moveGroups, svgToPng, tileCard } from "./diff-map.js";
 import { anchorNote } from "./note-anchor.js";
 import { initPlans, loadPlans, openPlan, planClick, planDetail, planEmptyHint, planFor, planItems, planKey, planScopeParam, plansBody, plansControls, plansCount } from "./plans.js";
+import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 
 // Code dashboard: tracked repos' worktrees (most recent first), their open PRs, and worktree cleanup.
 export const TABS = { prs: "Pull requests", worktrees: "Worktrees", commits: "Commits", plans: "Plans", cleanup: "Cleanup" };
@@ -899,15 +900,7 @@ function diffRegion(name, html) {
 }
 
 // The open overview lives in the URL (?pr=owner/repo#n or ?wt=<path>) so a refresh reopens it.
-function syncOverviewUrl(kind = "", value = "") {
-  const url = new URL(location.href);
-  url.searchParams.delete("pr");
-  url.searchParams.delete("wt");
-  url.searchParams.delete("file");
-  url.searchParams.delete("scope");
-  if (kind) url.searchParams.set(kind, value);
-  history.replaceState(history.state, "", url);
-}
+const syncOverviewUrl = (kind = "", value = "") => setOverlayParams({ pr: "", wt: "", file: "", scope: "", ...(kind ? { [kind]: value } : {}) });
 
 // The current file and scope ride along with ?pr= / ?wt=, so a refresh reopens the same view.
 function syncViewUrl() {
@@ -920,7 +913,7 @@ function syncViewUrl() {
 
 function ensureDiffDialog() {
   if (diffDialog) return;
-  diffDialog = Object.assign(document.body.appendChild(document.createElement("dialog")), { className: "code-diff", tabIndex: -1 });
+  diffDialog = createOverlay("", { keepOpen: () => composerDirty() });
   diffDialog.innerHTML = `<header class="code-diff-head" data-d="head"></header><div class="code-diff-split"><aside class="code-diff-pr" data-d="pr"></aside><div class="code-diff-pr-resize" data-pr-resize title="Drag to resize · double-click to reset"></div><div class="code-diff-files"><div class="code-diff-filter-row"><label class="code-filter code-diff-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-diff-filter placeholder="Filter files  /" spellcheck="false" autocomplete="off"></label><button type="button" class="code-diff-hide" data-diff-hide></button><span data-d="listmode"></span></div><div data-d="files"></div><div class="code-diff-resize" data-diff-resize title="Drag to resize · double-click to reset"></div></div><div class="code-diff-main"><div data-d="filehead"></div><div class="code-diff-body" data-d="body"></div></div></div><button type="button" class="code-note-add" data-note-new hidden>${icon("comment")}Comment <kbd>C</kbd></button><div class="code-note-composer" hidden><div class="code-note-where"><b data-composer-where></b><span class="code-muted">saved to plans/pr-notes</span></div><blockquote></blockquote><textarea rows="2" placeholder="Note for this PR" spellcheck="true"></textarea><div class="code-note-buttons"><button type="button" class="code-bar-button" data-note-cancel>Cancel</button><button type="button" class="code-bar-button is-primary" data-note-save>Save <kbd>↵</kbd></button></div></div>`;
   const body = diffDialog.querySelector('[data-d="body"]');
   // While selecting, the other side of a split diff can't be selected, so a drag down one column stays in it.
@@ -953,7 +946,7 @@ function ensureDiffDialog() {
     });
   }, { passive: true });
   // The close event is queued, so a quick close-and-reopen (⌘K, a stack row) must not clear the PR that just opened.
-  diffDialog.addEventListener("close", () => { if (diffDialog.open) return; if (subject()) { document.dispatchEvent(new CustomEvent("overview-closed", { detail: location.href })); syncOverviewUrl(); } diff.pr = diff.wt = null; diffDialog.querySelector(".code-note-composer").hidden = diffDialog.querySelector("[data-note-new]").hidden = true; });
+  diffDialog.addEventListener("close", () => { if (diffDialog.open) return; if (subject()) { announceClosed(); syncOverviewUrl(); } diff.pr = diff.wt = null; diffDialog.querySelector(".code-note-composer").hidden = diffDialog.querySelector("[data-note-new]").hidden = true; });
   diffDialog.addEventListener("cancel", (event) => { // Esc keeps a typed note, and first shrinks an expanded map
     if (composerDirty()) event.preventDefault();
     else if (mapFull && fileListMode === "map") { event.preventDefault(); toggleMapFull(); }
@@ -1018,10 +1011,8 @@ function ensureDiffDialog() {
   });
   // A drag that starts inside (resizing the map, selecting text) and ends outside clicks the dialog itself; only a
   // press that also began on the backdrop closes it.
-  let pressedBackdrop = false;
-  diffDialog.addEventListener("pointerdown", (event) => { pressedBackdrop = event.target === diffDialog; });
   diffDialog.addEventListener("click", (event) => {
-    if (event.target === diffDialog) return composerDirty() || !pressedBackdrop ? null : diffDialog.close();
+    if (event.target === diffDialog) return;
     const planningLink = event.target.closest("a[data-planning-path]");
     if (planningLink && !event.metaKey && !event.ctrlKey) {
       event.preventDefault();

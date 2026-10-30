@@ -4,11 +4,12 @@ import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDockSou
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
 import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
-import { TABS as CODE_TABS, connectPlanning, setPeople, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
+import { TABS as CODE_TABS, connectPlanning, setPeople, ago, cachedPrIndex, commitLinkMatch, diffSize, hideTip, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { renderActivityPage } from "./activity.js";
 import { openSlackThread, refreshSlackStars, setSlackFavorites, setSlackNotice, slackThreadTitle } from "./slack.js";
 import { refreshSlackPage, renderSlackPage } from "./slack-page.js";
+import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
@@ -2013,12 +2014,15 @@ connectPlanning({ documents: () => state.documents, open: (path) => selectDocume
 let peekDialog = null;
 async function peekDocument(path) {
   if (!peekDialog) {
-    peekDialog = Object.assign(document.body.appendChild(document.createElement("dialog")), { className: "code-diff issue-overview doc-peek", tabIndex: -1 });
+    peekDialog = createOverlay("issue-overview doc-peek");
     peekDialog.innerHTML = `<header class="code-diff-head" data-o="head"></header><div class="issue-overview-main" data-o="main"></div>`;
-    let pressedBackdrop = false;
-    peekDialog.addEventListener("pointerdown", (event) => { pressedBackdrop = event.target === peekDialog; });
+    peekDialog.addEventListener("close", () => {
+      if (peekDialog.open) return;
+      if (peekDialog.dataset.path) announceClosed(); // not when Open took you to the document
+      setOverlayParams({ peek: "" });
+    });
     peekDialog.addEventListener("click", (event) => {
-      if (event.target === peekDialog) { if (pressedBackdrop) peekDialog.close(); return; }
+      if (event.target === peekDialog) return;
       const plain = !(event.metaKey || event.ctrlKey || event.shiftKey);
       const other = event.target.closest("a[data-document-path], a[data-planning-path]");
       if (other && plain) { event.preventDefault(); return peekDocument(other.dataset.documentPath || other.dataset.planningPath); }
@@ -2031,6 +2035,7 @@ async function peekDocument(path) {
   }
   const summary = state.documents.find((doc) => doc.path === path) || { path, title: path };
   peekDialog.dataset.path = path;
+  setOverlayParams({ peek: path });
   peekDialog.querySelector('[data-o="head"]').innerHTML = `<span class="slack-overview-mark">${summary.task ? SERVICE_ICONS.task : icon("doc")}</span><div class="issue-overview-title"><h3>${summary.task ? `<code>${escapeHtml(summary.task.id)}</code>` : ""}${escapeHtml(summary.task?.title || summary.title)}</h3><p class="code-muted">${[summary.task?.status, summary.date && formatDate(summary.date), path].filter(Boolean).map(escapeHtml).join(" · ")}</p></div><span class="code-spacer"></span><a class="code-bar-button is-primary" href="${escapeHtml(documentHref(path, ""))}" data-peek-open>Open <kbd>Enter</kbd></a><button type="button" class="code-icon-button" data-peek-close aria-label="Close (Esc)">${icon("fail")}</button>`;
   const main = peekDialog.querySelector('[data-o="main"]');
   main.innerHTML = `<p class="code-muted doc-peek-loading">Loading…</p>`;
@@ -2049,6 +2054,7 @@ async function peekDocument(path) {
 }
 function openPeeked() {
   const path = peekDialog.dataset.path;
+  peekDialog.dataset.path = "";
   closeOverview();
   selectDocument(path, { historyMode: "push" });
 }
@@ -2156,7 +2162,7 @@ function showLinkTip(link) {
 for (const [on, off] of [["pointerover", "pointerout"], ["focusin", "focusout"]]) {
   elements.chunks.addEventListener(on, (event) => {
     const link = event.target.closest?.("a[data-tip]");
-    if (!link) return;
+    if (!link || link.closest(".code-page")) return; // the Code, Issues, Slack and Activity pages show their own tips
     clearTimeout(linkTipTimer);
     linkTipTimer = setTimeout(() => showLinkTip(link), 200);
   });
@@ -3073,6 +3079,43 @@ statusMenu.addEventListener("click", async (event) => {
   }
 });
 
+// ---------- overlays ----------
+
+// Every overlay keeps what it shows in a URL parameter (overlay.js). This table is the one place that maps a parameter
+// back to its opener, its Recently viewed row and its Reopen toast; refreshes, Back/Forward, Favorites and the toast
+// all go through it. The document peek comes first because it opens over the others, so it is what the URL is "at".
+const OVERLAYS = [
+  { param: "peek",
+    open: (params) => peekDocument(params.get("peek")),
+    result: (params) => { const doc = state.documents.find((candidate) => candidate.path === params.get("peek")); return doc ? docResult(doc, []) : { icon: "file", title: escapeHtml(params.get("peek")), detail: "Document", side: "Document" }; },
+    closed: (params) => { const doc = state.documents.find((candidate) => candidate.path === params.get("peek")); return ["document", doc ? `${doc.task ? `${doc.task.id} ` : ""}${doc.task?.title || doc.title}` : params.get("peek")]; } },
+  { param: "pr", extra: ["file", "scope"],
+    open: (params) => { const pr = params.get("pr").split("#"); if (pr.length === 2) openPrOverlay(pr[0], Number(pr[1]), params.get("file") || "", params.get("scope") || "all"); },
+    result: (params) => { const [slug, number] = params.get("pr").split("#"); return prResult(findPr(slug, Number(number)) || { slug, number: Number(number) }, []); },
+    closed: (params) => { const [slug, number] = params.get("pr").split("#"); return ["PR overview", `${prNumberLabel(slug, number)} ${findPr(slug, Number(number))?.title || ""}`.trim()]; } },
+  { param: "wt", extra: ["file", "scope"],
+    open: (params) => openWorktreeOverlay(params.get("wt"), params.get("file") || "", params.get("scope") || "all"),
+    result: (params) => ({ icon: "branch", title: escapeHtml(params.get("wt").split("/").pop()), detail: escapeHtml(params.get("wt").replace(/^\/Users\/[^/]+/, "~")), side: "Worktree" }),
+    closed: (params) => ["worktree overview", params.get("wt").split("/").pop()] },
+  { param: "issue",
+    open: (params) => openIssue(params.get("issue")),
+    result: (params) => { const issue = cachedIssues()?.issues?.find((candidate) => candidate.key === params.get("issue")); return issue ? issueResult(issue, []) : { icon: "issue", title: escapeHtml(params.get("issue")), detail: "Jira issue", side: "Issue" }; },
+    closed: (params) => { const key = params.get("issue"); const issue = cachedIssues()?.issues?.find((candidate) => candidate.key === key); return [`${issue?.type === "Project" ? "project" : "issue"} overview`, issue ? `${issue.type === "Project" ? "" : issue.label || issue.key} ${issue.summary}`.trim() : key.replace(/^linear:/, "")]; } },
+  { param: "slack",
+    open: (params) => { if (isSlackLink(params.get("slack")) && config().slack.codex?.length) openSlackThread(params.get("slack")); },
+    result: (params) => ({ icon: "slack", title: escapeHtml(slackThreadTitle(params.get("slack"))), detail: "Slack thread", side: "Slack" }),
+    closed: (params) => ["Slack thread", slackThreadTitle(params.get("slack"))] },
+  { param: "plan", extra: ["doc"],
+    open: (params) => openPlan(params.get("plan"), params.get("doc") || ""),
+    result: (params) => { const plan = params.get("plan"); return { icon: "initiative", title: escapeHtml(planTitle(plan) || plan.split("/").pop()), detail: escapeHtml(`${plan.split(":")[0].split("/").pop()} · ${params.get("doc")?.split("/").pop() || "initiative"}`), side: "Initiative" }; },
+    closed: (params) => ["initiative reader", planTitle(params.get("plan")) || params.get("plan").split("/").pop()] },
+];
+const overlayOf = (params) => OVERLAYS.find((overlay) => params.get(overlay.param));
+// Opens the overlays a URL names, bottom first, skipping any already open with the same subject.
+function openOverlays(params, open = new URLSearchParams()) {
+  for (const overlay of [...OVERLAYS].reverse()) if (params.get(overlay.param) && params.get(overlay.param) !== open.get(overlay.param)) overlay.open(params);
+}
+
 // ---------- recently viewed ----------
 
 // Every page and PR/worktree overview this browser has shown, newest first, so a stray Escape is one click from undone.
@@ -3082,10 +3125,10 @@ let visits = [];
 try { visits = JSON.parse(localStorage.getItem(VISITS_KEY) || "[]"); } catch {}
 const pageKey = (url) => {
   const params = new URLSearchParams(url.search);
-  for (const name of ["pr", "wt", "issue", "slack", "file", "scope", "graph"]) params.delete(name);
+  for (const name of ["graph", ...OVERLAYS.flatMap((overlay) => [overlay.param, ...(overlay.extra || [])])]) params.delete(name);
   return params.toString();
 };
-const visitKey = (url) => (url.searchParams.get("pr") ? `pr:${url.searchParams.get("pr")}` : url.searchParams.get("wt") ? `wt:${url.searchParams.get("wt")}` : url.searchParams.get("issue") ? `issue:${url.searchParams.get("issue")}` : url.searchParams.get("slack") ? `slack:${url.searchParams.get("slack")}` : pageKey(url));
+const visitKey = (url) => { const overlay = overlayOf(url.searchParams); return overlay ? `${overlay.param}:${url.searchParams.get(overlay.param)}` : pageKey(url); };
 function recordVisit() {
   const url = new URL(location.href);
   const key = visitKey(url);
@@ -3145,10 +3188,12 @@ favoritesNav.addEventListener("click", (event) => {
 // ponytail: observes the whole body; scope it to the dialogs if it ever shows in a profile.
 function placeStar() {
   const head = [...document.querySelectorAll("dialog.code-diff[open] .code-diff-head")].at(-1);
-  const close = head?.querySelector("[data-diff-close], [data-issue-close], [data-plan-close], [data-slack-close]");
+  const close = head?.querySelector("[data-diff-close], [data-issue-close], [data-plan-close], [data-slack-close], [data-peek-close]");
   if (close && close.previousElementSibling !== favoriteStar) close.before(favoriteStar);
   else if (!close && favoriteStar.parentElement !== elements.count.parentElement) elements.count.before(favoriteStar);
 }
+// Hovering a link that opens an overlay mustn't leave its tooltip floating over the overlay.
+new MutationObserver((records) => { if (records.some((record) => record.attributeName === "open" && record.target.open)) { hideTip(); hideLinkTip(); } }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["open"] });
 new MutationObserver(placeStar).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["open"] });
 
 const prNumberLabel = (slug, number) => `${slug === referenceConfig().defaultSlug ? "" : slug.split("/")[1]}#${number}`;
@@ -3157,16 +3202,8 @@ const findPr = (slug, number) => cachedPrIndex()?.prs.find((pr) => pr.slug === s
 // A recorded URL as ⌘K would show it: the PR or worktree overview it had open, else the page or document.
 function visitResult(href) {
   const params = new URL(href, location.href).searchParams;
-  const pr = params.get("pr")?.split("#");
-  if (pr?.length === 2) return prResult(findPr(pr[0], Number(pr[1])) || { slug: pr[0], number: Number(pr[1]) }, []);
-  const plan = params.get("plan");
-  if (plan) return { icon: "initiative", title: escapeHtml(planTitle(plan) || plan.split("/").pop()), detail: escapeHtml(`${plan.split(":")[0].split("/").pop()} · ${params.get("doc")?.split("/").pop() || "initiative"}`), side: "Initiative" };
-  const issueKey = params.get("issue");
-  if (issueKey) { const issue = cachedIssues()?.issues?.find((candidate) => candidate.key === issueKey); return issue ? issueResult(issue, []) : { icon: "issue", title: escapeHtml(issueKey), detail: "Jira issue", side: "Issue" }; }
-  const slack = params.get("slack");
-  if (slack) return { icon: "slack", title: escapeHtml(slackThreadTitle(slack)), detail: "Slack thread", side: "Slack" };
-  const tree = params.get("wt");
-  if (tree) return { icon: "branch", title: escapeHtml(tree.split("/").pop()), detail: escapeHtml(tree.replace(/^\/Users\/[^/]+/, "~")), side: "Worktree" };
+  const overlay = overlayOf(params);
+  if (overlay) return overlay.result(params);
   const view = params.get("view");
   const doc = (path) => state.documents.find((candidate) => candidate.path === path);
   const page = (icon, title, detail) => ({ icon, title: escapeHtml(title), detail: escapeHtml(detail), side: "Page" });
@@ -3187,16 +3224,11 @@ function visitResult(href) {
 // Goes back to a recorded URL through the same routes as Back/Forward, then reopens its overview if it had one.
 function resumeVisit(href) {
   const url = new URL(href, location.href);
-  if (pageKey(url) === pageKey(location)) history.replaceState(null, "", url);
+  const samePage = pageKey(url) === pageKey(location);
+  const open = samePage ? new URLSearchParams(location.search) : undefined;
+  if (samePage) history.replaceState(null, "", url);
   else { history.pushState(null, "", url); dispatchEvent(new PopStateEvent("popstate")); }
-  const params = url.searchParams;
-  const pr = params.get("pr")?.split("#");
-  const [file, scope] = [params.get("file") || "", params.get("scope") || "all"];
-  if (pr?.length === 2) openPrOverlay(pr[0], Number(pr[1]), file, scope);
-  else if (params.get("wt")) openWorktreeOverlay(params.get("wt"), file, scope);
-  else if (params.get("issue")) openIssue(params.get("issue"));
-  else if (params.get("slack")) openSlackThread(params.get("slack"));
-  else if (params.get("plan")) openPlan(params.get("plan"), params.get("doc") || "");
+  if (overlayOf(url.searchParams)) openOverlays(url.searchParams, open);
   else closeOverview();
 }
 // Going to a plain page from over the PR/worktree overview closes it (its toast offers Reopen).
@@ -3204,16 +3236,10 @@ const closeOverview = () => { for (const overlay of document.querySelectorAll("d
 
 document.addEventListener("overview-closed", (event) => {
   const params = new URL(event.detail).searchParams;
-  const pr = params.get("pr")?.split("#");
-  const issueKey = params.get("issue");
-  const issue = issueKey && cachedIssues()?.issues?.find((candidate) => candidate.key === issueKey);
-  const description = pr?.length === 2
-    ? `${prNumberLabel(pr[0], pr[1])} ${findPr(pr[0], Number(pr[1]))?.title || ""}`.trim()
-    : issueKey ? (issue ? `${issue.type === "Project" ? "" : issue.label || issue.key} ${issue.summary}`.trim() : issueKey.replace(/^linear:/, ""))
-    : params.get("plan") ? planTitle(params.get("plan")) || params.get("plan").split("/").pop()
-    : params.get("slack") ? slackThreadTitle(params.get("slack"))
-    : params.get("wt")?.split("/").pop() || "";
-  showNotice(`Closed the ${pr ? "PR" : issue?.type === "Project" ? "project" : issueKey ? "issue" : params.get("plan") ? "initiative" : params.get("slack") ? "Slack" : "worktree"} ${params.get("plan") ? "reader" : params.get("slack") ? "thread" : "overview"}`, false, { kind: "info", description, action: { label: "Reopen", run: () => resumeVisit(event.detail) } });
+  const overlay = overlayOf(params);
+  if (!overlay) return;
+  const [noun, description] = overlay.closed(params);
+  showNotice(`Closed the ${noun}`, false, { kind: "info", description, action: { label: "Reopen", run: () => resumeVisit(event.detail) } });
 });
 
 const historyMenu = document.querySelector("#history-menu");
@@ -3363,15 +3389,7 @@ async function boot() {
     else showNotice("No supported files were found under daily, tasks, plans, or reference.", true);
     connectLiveUpdates();
     loadPrIndex().catch(() => {}); // so ⌘K lists PRs on its first paint instead of inserting them a moment later
-    const search = new URLSearchParams(location.search);
-    const pr = search.get("pr")?.split("#");
-    const [file, scope] = [search.get("file") || "", search.get("scope") || "all"];
-    if (pr?.length === 2) openPrOverlay(pr[0], Number(pr[1]), file, scope);
-    const worktree = search.get("wt");
-    if (worktree) openWorktreeOverlay(worktree, file, scope);
-    if (search.get("issue")) openIssue(search.get("issue"));
-    if (search.get("slack") && isSlackLink(search.get("slack")) && config().slack.codex?.length) openSlackThread(search.get("slack"));
-    if (search.get("plan")) openPlan(search.get("plan"), search.get("doc") || "");
+    openOverlays(new URLSearchParams(location.search));
     if (issuesOn()) loadIssues().then(renderFavorites).catch(() => {}); // ⌘K finds issues by key and title
     loadPrIndex().then(renderFavorites).catch(() => {}); // PR favorites get their titles
     recordVisit();

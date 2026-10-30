@@ -2,6 +2,7 @@ import { escapeHtml, markdownOutline, renderMarkdown } from "./markdown.js";
 import { agentApp, agentName as appName } from "./config.js";
 import { termMatch } from "./search.js";
 import { ago, copied, fadeIn, hideTip, iconButton, isSummonKey, openPrOverlay, showTip, sideFacts, when, heat } from "./code.js";
+import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 
 // The Code view's Plans tab: initiatives on each tracked repo's origin/main (and proposed in open PRs), as a list, an
 // inspector, and a reader overview. Read-only; Update and Retire open agent drafts. docs/plans-plan.md has the why.
@@ -560,18 +561,16 @@ function mapHtml(item, map) {
 
 function ensureDialog() {
   if (dialog) return;
-  dialog = Object.assign(document.body.appendChild(document.createElement("dialog")), { className: "code-diff issue-overview plan-overview", tabIndex: -1 });
+  dialog = createOverlay("issue-overview plan-overview");
   dialog.innerHTML = `<header class="code-diff-head" data-o="head"></header><div class="issue-overview-split plan-reader-split"><aside class="code-diff-pr" data-o="side"></aside><div class="plan-reader"><nav class="plan-reader-tabs" data-o="tabs"></nav><div class="plan-reader-body"><article class="plan-reader-text markdown" data-o="main"></article><nav class="plan-outline" data-o="outline" aria-label="Outline"></nav></div></div></div>`;
   dialog.addEventListener("close", () => {
     if (dialog.open) return;
-    document.dispatchEvent(new CustomEvent("overview-closed", { detail: location.href }));
+    announceClosed();
     syncReaderUrl();
     reader.id = "";
   });
-  let pressedBackdrop = false;
-  dialog.addEventListener("pointerdown", (event) => { pressedBackdrop = event.target === dialog; });
   dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) { if (pressedBackdrop) dialog.close(); return; }
+    if (event.target === dialog) return;
     const link = event.target.closest("a[href]");
     if (link?.href.startsWith(READER_LINK)) { event.preventDefault(); return followLink(link.href); }
     const outline = event.target.closest("[data-outline]");
@@ -718,12 +717,7 @@ function spyOutline() {
 
 const flatten = (nodes) => nodes.flatMap((node) => [node, ...flatten(node.children)]);
 
-function syncReaderUrl() {
-  const url = new URL(location.href);
-  if (dialog?.open && reader.id) { url.searchParams.set("plan", reader.id); url.searchParams.set("doc", reader.doc); }
-  else { url.searchParams.delete("plan"); url.searchParams.delete("doc"); }
-  if (url.href !== location.href) history.replaceState(history.state, "", url);
-}
+const syncReaderUrl = () => setOverlayParams(dialog?.open && reader.id ? { plan: reader.id, doc: reader.doc } : { plan: "", doc: "" });
 
 export const planTitle = (id) => byId(id)?.title || "";
 export const cachedPlans = () => ps.data;

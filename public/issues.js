@@ -2,6 +2,7 @@ import { escapeHtml, renderMarkdown } from "./markdown.js";
 import { GLYPHS } from "./icons.js";
 import { agentApp, agentName as appName, config } from "./config.js";
 import { ago, avatar, planning, planningSection, ciBadge, copied, fadeIn, heat, hideTip, icon, iconButton, isSummonKey, openPrOverlay, openWorktreeOverlay, showTip, sideFacts, sideHead, sideStatus, when } from "./code.js";
+import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 
 // Issues page: Jira, Linear and GitHub issues in the configured scope (viewer.config.json `issues`), laid out like the Code page:
 // a dense list newest first, an inspector for the selected row, and a full overview on Enter. Read-only; changes go
@@ -526,18 +527,16 @@ let dialog = null;
 const overview = { key: "", list: [] };
 function ensureDialog() {
   if (dialog) return;
-  dialog = Object.assign(document.body.appendChild(document.createElement("dialog")), { className: "code-diff issue-overview", tabIndex: -1 });
+  dialog = createOverlay("issue-overview");
   dialog.innerHTML = `<header class="code-diff-head" data-o="head"></header><div class="issue-overview-split"><aside class="code-diff-pr" data-o="side"></aside><div class="issue-overview-main" data-o="main"></div></div>`;
   dialog.addEventListener("close", () => {
     if (dialog.open) return;
-    if (overview.key) document.dispatchEvent(new CustomEvent("overview-closed", { detail: location.href })); // not after a failed read
+    if (overview.key) announceClosed(); // not after a failed read
     syncIssueUrl("");
     overview.key = "";
   });
-  let pressedBackdrop = false;
-  dialog.addEventListener("pointerdown", (event) => { pressedBackdrop = event.target === dialog; });
   dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) { if (pressedBackdrop) dialog.close(); return; }
+    if (event.target === dialog) return;
     if (event.target.closest("[data-issue-close]")) return dialog.close();
     handleClick(event);
   });
@@ -583,11 +582,7 @@ function renderOverview() {
   dialog.querySelector('[data-o="side"]').innerHTML = issueFacts(issue, true) + codeSection(issue) + relationsSection(issue, true);
   dialog.querySelector('[data-o="main"]').innerHTML = `<div class="issue-overview-text">${textSections(issue, true)}</div>`;
 }
-function syncIssueUrl(key) {
-  const url = new URL(location.href);
-  if (key) url.searchParams.set("issue", key); else url.searchParams.delete("issue");
-  if (url.href !== location.href) history.replaceState(history.state, "", url);
-}
+const syncIssueUrl = (key) => setOverlayParams({ issue: key });
 
 // Opens the overview from anywhere (the Issues page, ⌘K, an ?issue= URL, Recently viewed).
 export async function openIssue(key, list = null) {

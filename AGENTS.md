@@ -36,6 +36,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 | GitHub, Linear, Jira and Slack titles cached in `tmp/link-metadata.json` | `link-metadata.ts` |
 | Slack thread overlay: threads and channel names read through `codex app-server`'s direct connector tool calls (no model), cached in `tmp/slack-threads.json`; Discuss drafts with the thread as a Markdown file; documents' `slackLinks` for Linked from | `slack-thread.ts` (server), `public/slack.js` (overlay, mrkdwn to Markdown, reactions), `public/emoji.js` (curated Slack shortcodes) |
 | Slack page (`?view=slack`): linked threads by channel or activity, sync of unread threads (`/api/slack`, `/api/slack/sync`), stars into Favorites | `public/slack-page.js` (client), `slackIndex` in `server.ts`, `sync`/`summaries` in `slack-thread.ts` |
+| Overlays (PR, worktree, issue, initiative, Slack thread, document peek): the shared dialog shell, backdrop close, URL parameter and close announcement; `OVERLAYS` in `app.js` maps each parameter to its opener, Recently viewed row and Reopen toast, so a new overlay is one entry there | `public/overlay.js`, `OVERLAYS` and `peekDocument` in `public/app.js` |
 | Codex Desktop deep links | `codex-desktop.ts` |
 | Expanded table: sort, column filters, resize | `public/table-viewer.js` (opened by `showTableViewer` in `app.js`) |
 | Activity page: documents, issues and open PRs in one list with a day strip and an inspector (reuses the Issues sidebar through `issueInspector`) | `public/activity.js` |

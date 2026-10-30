@@ -6,6 +6,7 @@ const normalName = (name = "") => name.toLowerCase().replace(/[._-]+/g, " ").tri
 import { applyLinkMetadata, collectLinks, linkBrowser, metadataKey, selectDockSource } from "./dock.js";
 import { emojiFor, emojify } from "./emoji.js";
 import { glyph, GLYPHS } from "./icons.js";
+import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 
 // Slack mrkdwn as the viewer's Markdown: `<url|label>` links, `<@U…|Name>` mentions, `:emoji:` shortcodes,
 // single-star bold, bullet glyphs, and single line breaks kept (two plain lines in a row become two paragraphs).
@@ -67,20 +68,16 @@ export function refreshSlackStars() {
 }
 
 // `?slack=<permalink>` keeps the overlay open across a refresh, like `?issue=`.
-function syncSlackUrl(href) {
-  const url = new URL(location.href);
-  if (href) url.searchParams.set("slack", href); else url.searchParams.delete("slack");
-  if (url.href !== location.href) history.replaceState(history.state, "", url);
-}
+const syncSlackUrl = (href) => setOverlayParams({ slack: href });
 
 function ensureDialog() {
   if (dialog) return;
-  dialog = Object.assign(document.body.appendChild(document.createElement("dialog")), { className: "code-diff issue-overview slack-overview", tabIndex: -1 });
+  dialog = createOverlay("issue-overview slack-overview", { keepOpen: () => !!dialog.querySelector(".slack-composer textarea")?.value.trim() });
   dialog.innerHTML = `<header class="code-diff-head slack-head" data-o="head"></header><div class="slack-body"><div class="slack-planning" data-o="planning" hidden></div><div class="slack-scroll" data-o="main"></div><form class="slack-composer" data-o="composer"></form></div><div class="doc-dock-panel doc-dock-panel-links slack-links" id="slack-links" popover style="position-anchor: --slack-links" role="dialog" aria-label="Links in this thread"></div>`;
   dialog.addEventListener("close", () => {
     if (dialog.open) return;
     dialog.querySelector("#slack-links").hidePopover?.();
-    if (current) document.dispatchEvent(new CustomEvent("overview-closed", { detail: location.href })); // the Reopen toast
+    if (current) announceClosed();
     syncSlackUrl("");
     current = null;
   });
@@ -91,10 +88,8 @@ function ensureDialog() {
     const box = dialog.querySelector(".slack-composer textarea");
     if (box?.value.trim()) { event.preventDefault(); box.focus(); hint("Draft kept — clear the box to close."); }
   });
-  let pressedBackdrop = false;
-  dialog.addEventListener("pointerdown", (event) => { pressedBackdrop = event.target === dialog; });
   dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) { if (pressedBackdrop && !dialog.querySelector(".slack-composer textarea")?.value.trim()) dialog.close(); return; }
+    if (event.target === dialog) return;
     const doc = event.target.closest("a[data-planning-path]");
     if (doc && !event.metaKey && !event.ctrlKey) { event.preventDefault(); return planning.peek(doc.dataset.planningPath); }
     const source = event.target.closest("[data-dock-source]");
