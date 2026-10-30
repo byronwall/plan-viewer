@@ -418,6 +418,12 @@ test("global handoff carries no file or chunk context", () => {
   assert.doesNotMatch(prompt, /Source file:/);
 });
 
+test("a global handoff from a document page names the file and task", async () => {
+  const prompt = buildGlobalCodexPrompt("Close this issue.", await loadDocument("tasks/TASK-0001.md"));
+  assert.match(prompt, /Source file: tasks\/TASK-0001\.md\nTask: TASK-0001 · /);
+  assert.doesNotMatch(prompt, /No plan, file, or chunk context/);
+});
+
 test("rejects traversal outside the Markdown library", async () => {
   await assert.rejects(() => loadDocument("../AGENTS.md"), /Invalid document path/);
 });

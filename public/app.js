@@ -722,7 +722,7 @@ function composerTemplate(target) {
     : target.selection
       ? `<div class="composer-context"><div class="composer-context-body" id="composer-context-body"><blockquote class="composer-selection">${escapeHtml(target.selection)}</blockquote></div><button class="context-toggle" type="button" aria-expanded="false" aria-controls="composer-context-body" hidden>Show full selection</button></div>`
       : "";
-  const meta = target.scope === "document" ? escapeHtml(target.section ? `${state.selectedPath} · ${target.section}` : state.selectedPath) : "";
+  const meta = target.scope === "document" || (target.scope === "global" && state.view === "document") ? escapeHtml(target.section ? `${state.selectedPath} · ${target.section}` : state.selectedPath) : "";
   const fieldLabel = target.scope === "chunk" ? `What should ${agentName()} do with this chunk?` : target.selection ? `What should ${agentName()} do with this selection?` : `What should ${agentName()} do?`;
   return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="${target.scope}" ${target.chunk ? `data-chunk-id="${target.chunk.id}"` : ""} ${target.selection ? `data-selection="${escapeHtml(target.selection)}" data-section="${escapeHtml(target.section)}"` : ""}>
     ${heading(meta)}
@@ -1634,8 +1634,8 @@ function setActiveChunk(chunkId, outlinePath = null) {
 
 function syncGlobalHandoff() {
   elements.globalHandoff.disabled = false;
-  elements.globalHandoff.title = `Open a new ${agentName()} draft without context (C)`;
-  elements.globalHandoff.setAttribute("aria-label", `Open a new ${agentName()} draft without context, C`);
+  elements.globalHandoff.title = `Open a new ${agentName()} draft, about the open file if any (C)`;
+  elements.globalHandoff.setAttribute("aria-label", `Open a new ${agentName()} draft, about the open file if any, C`);
 }
 
 function openGlobalComposer() {
@@ -1947,7 +1947,7 @@ async function dispatch(form) {
     const response = await fetch("/api/dispatch", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ app: agentApp(), path: form.dataset.sourcePath || state.selectedPath, scope: form.dataset.scope, chunkId: form.dataset.chunkId, actionId: form.dataset.actionId, expectedPrompt: form.dataset.expectedPrompt, workItem: form.dataset.workItem, mode: form.dataset.workMode, selection: form.dataset.selection, section: form.dataset.section, commentary, images: [...form.querySelectorAll(".composer-images img")].map((img) => img.src) }),
+      body: JSON.stringify({ app: agentApp(), path: form.dataset.sourcePath || (form.dataset.scope !== "global" || state.view === "document" ? state.selectedPath : ""), scope: form.dataset.scope, chunkId: form.dataset.chunkId, actionId: form.dataset.actionId, expectedPrompt: form.dataset.expectedPrompt, workItem: form.dataset.workItem, mode: form.dataset.workMode, selection: form.dataset.selection, section: form.dataset.section, commentary, images: [...form.querySelectorAll(".composer-images img")].map((img) => img.src) }),
     });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || `${agentName()} could not open the draft.`);

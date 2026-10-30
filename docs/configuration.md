@@ -86,7 +86,7 @@ Credentials stay with their tools: `gh` for GitHub, `acli` for Jira, `LINEAR_API
 | `PLANNING_ROOT` | Workspace to serve or check. Defaults to the current directory. |
 | `PLAN_VIEWER_PORT` | Port for `plan-viewer serve`, over `port` in the config. |
 | `PLAN_VIEWER_WATCH=0` | Run the server without `node --watch` (it otherwise restarts itself when the viewer's own code changes). |
-| `PLAN_VIEWER_DRY_RUN=1` | Validate agent handoffs and log them without opening Codex or Claude. Useful when testing. |
+| `PLAN_VIEWER_DRY_RUN=1` | Validate agent handoffs and log them without opening Codex or Claude; the dispatch response carries the generated `prompt`. Useful when testing. |
 | `LINEAR_API_KEY` | Linear key for titles, states, and the Issues page. `[linear] API_KEY` in `config.toml` works too. |
 | `SLACK_TOKEN` | Slack token for message and channel titles. `[slack] TOKEN` in `config.toml` works too. |
 | `TZ` | Time zone that decides which day is "today". |
