@@ -48,6 +48,7 @@ const local = (name) => ({
   set(key, value) { try { const all = JSON.parse(localStorage.getItem(name) || "{}"); all[key] = value; localStorage.setItem(name, JSON.stringify(all)); } catch {} },
 });
 const store = local("slack-last-read");
+export const slackLastRead = (key) => store.get(key);
 const titles = local("slack-titles");
 export const slackThreadTitle = (href) => titles.get(href) || "Slack thread";
 export const rememberSlackTitle = (href, title) => { if (titles.get(href) !== title) titles.set(href, title); };
@@ -95,7 +96,7 @@ function ensureDialog() {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) { if (pressedBackdrop && !dialog.querySelector(".slack-composer textarea")?.value.trim()) dialog.close(); return; }
     const doc = event.target.closest("a[data-planning-path]");
-    if (doc && !event.metaKey && !event.ctrlKey) { event.preventDefault(); dialog.close(); return planning.open(doc.dataset.planningPath); }
+    if (doc && !event.metaKey && !event.ctrlKey) { event.preventDefault(); return planning.peek(doc.dataset.planningPath); }
     const source = event.target.closest("[data-dock-source]");
     if (source) return selectDockSource(source);
     if (event.target.closest("[data-slack-close]")) dialog.close();
@@ -136,6 +137,7 @@ function ensureDialog() {
     else if (key === "d") dialog.querySelector(".slack-composer textarea")?.focus();
     else if (key === "l") dialog.querySelector("#slack-links").togglePopover();
     else if (key === "n") jumpToNew();
+    else if ((key === "j" || key === "k") && walk.list.length > 1) step(key === "j" ? 1 : -1);
     else return;
     event.preventDefault();
     event.stopPropagation();
@@ -183,7 +185,7 @@ function renderHead(state, detail = "") {
   const faces = people.length > 1 ? `<span class="slack-people">${people.slice(0, 8).map((person) => `<span data-tip="${escapeHtml(`${person.author} · ${person.count} message${person.count === 1 ? "" : "s"}`)}">${avatar("", person.author, person.email)}</span>`).join("")}${people.length > 8 ? `<span class="code-muted" data-tip="${escapeHtml(people.slice(8).map((person) => person.author).join(", "))}">+${people.length - 8}</span>` : ""}</span>` : "";
   const links = state === "ready" ? `<button type="button" class="doc-dock-button slack-links-button" popovertarget="slack-links" style="anchor-name: --slack-links" data-tip="Links in this thread (L)"><span class="doc-dock-icon">${glyph("link", "dock-glyph")}</span><span class="doc-dock-label">Links</span><span class="doc-dock-badge" data-slack-link-count>0</span></button>` : "";
   const find = state === "ready" ? `<label class="code-filter slack-find"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-slack-find placeholder="Find in thread" spellcheck="false" autocomplete="off"><span class="code-muted" data-slack-find-count></span><kbd>F</kbd></label>` : "";
-  dialog.querySelector('[data-o="head"]').innerHTML = `<span class="slack-overview-mark${state === "loading" ? " issue-reading" : ""}">${state === "loading" ? icon("refresh") : SERVICE_ICONS.slack}</span><div class="issue-overview-title"><h3>${escapeHtml(name)}</h3><p class="code-muted">${facts}</p></div>${faces}<span class="code-spacer"></span>${find}${links}${iconButton("external", "Open in Slack (O)", "data-slack-open")}${iconButton("refresh", "Read again (R)", "data-slack-refresh")}${iconButton("fail", "Close (Esc)", "data-slack-close")}`;
+  dialog.querySelector('[data-o="head"]').innerHTML = `<span class="slack-overview-mark${state === "loading" ? " issue-reading" : ""}">${state === "loading" ? icon("refresh") : SERVICE_ICONS.slack}</span><div class="issue-overview-title"><h3>${escapeHtml(name)}</h3><p class="code-muted">${facts}${walkPosition()}</p></div>${faces}<span class="code-spacer"></span>${find}${links}${iconButton("external", "Open in Slack (O)", "data-slack-open")}${iconButton("refresh", "Read again (R)", "data-slack-refresh")}${iconButton("fail", "Close (Esc)", "data-slack-close")}`;
 }
 
 function renderThread(scrollToLinked = true) {
@@ -354,7 +356,18 @@ async function load(refresh = false) {
   }
 }
 
-export function openSlackThread(href, channelHint = "") {
+const walkPosition = () => walk.list.length > 1 && walk.list.includes(current.href) ? `<span class="slack-walk"> · ${walk.list.indexOf(current.href) + 1} of ${walk.list.length} <kbd>J</kbd><kbd>K</kbd></span>` : "";
+// The Slack page passes the threads on screen, so J/K step through them without closing the overlay.
+let walk = { list: [], onStep: () => {} };
+function step(by) {
+  const next = walk.list[walk.list.indexOf(current?.href) + by];
+  if (!next || dialog.querySelector(".slack-composer textarea")?.value.trim()) return;
+  walk.onStep(next);
+  openSlackThread(next, "", walk);
+}
+
+export function openSlackThread(href, channelHint = "", list = null) {
+  walk = list || { list: [], onStep: () => {} };
   ensureDialog();
   current = { href, channelHint, channel: new URL(href).pathname.split("/")[2] || "" };
   syncSlackUrl(href);

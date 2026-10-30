@@ -523,7 +523,7 @@ function renderSlack() {
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
   elements.chunks.classList.add("code-page", "slack-page");
-  renderSlackPage(elements.chunks, { showNotice, toggleFavorite, isFavorite });
+  renderSlackPage(elements.chunks, { showNotice, toggleFavorite, isFavorite, favorites: () => favorites.map((favorite) => favorite.href) });
 }
 
 function showActivity({ historyMode = "push" } = {}) {
@@ -2006,7 +2006,52 @@ elements.activityButton.addEventListener("click", () => showActivity());
 elements.codeButton.addEventListener("click", () => showCode());
 elements.issuesButton.addEventListener("click", () => showIssues());
 elements.slackButton.addEventListener("click", () => showSlack());
-connectPlanning({ documents: () => state.documents, open: (path) => selectDocument(path, { historyMode: "push" }) });
+connectPlanning({ documents: () => state.documents, open: (path) => selectDocument(path, { historyMode: "push" }), peek: peekDocument });
+
+// A document read in place over whatever opened it (the Slack page and thread overlay), so a click on a task or plan
+// doesn't leave that context. Links to other documents peek those; Enter or Open goes to the document itself.
+let peekDialog = null;
+async function peekDocument(path) {
+  if (!peekDialog) {
+    peekDialog = Object.assign(document.body.appendChild(document.createElement("dialog")), { className: "code-diff issue-overview doc-peek", tabIndex: -1 });
+    peekDialog.innerHTML = `<header class="code-diff-head" data-o="head"></header><div class="issue-overview-main" data-o="main"></div>`;
+    let pressedBackdrop = false;
+    peekDialog.addEventListener("pointerdown", (event) => { pressedBackdrop = event.target === peekDialog; });
+    peekDialog.addEventListener("click", (event) => {
+      if (event.target === peekDialog) { if (pressedBackdrop) peekDialog.close(); return; }
+      const plain = !(event.metaKey || event.ctrlKey || event.shiftKey);
+      const other = event.target.closest("a[data-document-path], a[data-planning-path]");
+      if (other && plain) { event.preventDefault(); return peekDocument(other.dataset.documentPath || other.dataset.planningPath); }
+      if (event.target.closest("[data-peek-close]")) peekDialog.close();
+      else if (event.target.closest("[data-peek-open]")) openPeeked();
+    });
+    peekDialog.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.target.closest("a, button, input, textarea") && !(event.metaKey || event.ctrlKey || event.altKey)) { event.preventDefault(); openPeeked(); }
+    });
+  }
+  const summary = state.documents.find((doc) => doc.path === path) || { path, title: path };
+  peekDialog.dataset.path = path;
+  peekDialog.querySelector('[data-o="head"]').innerHTML = `<span class="slack-overview-mark">${summary.task ? SERVICE_ICONS.task : icon("doc")}</span><div class="issue-overview-title"><h3>${summary.task ? `<code>${escapeHtml(summary.task.id)}</code>` : ""}${escapeHtml(summary.task?.title || summary.title)}</h3><p class="code-muted">${[summary.task?.status, summary.date && formatDate(summary.date), path].filter(Boolean).map(escapeHtml).join(" · ")}</p></div><span class="code-spacer"></span><a class="code-bar-button is-primary" href="${escapeHtml(documentHref(path, ""))}" data-peek-open>Open <kbd>Enter</kbd></a><button type="button" class="code-icon-button" data-peek-close aria-label="Close (Esc)">${icon("fail")}</button>`;
+  const main = peekDialog.querySelector('[data-o="main"]');
+  main.innerHTML = `<p class="code-muted doc-peek-loading">Loading…</p>`;
+  if (!peekDialog.open) { peekDialog.showModal(); peekDialog.focus({ preventScroll: true }); }
+  try {
+    const response = await fetch(`/api/document?path=${encodeURIComponent(path)}`);
+    const doc = await response.json();
+    if (!response.ok) throw new Error(doc.error || "Could not open that document.");
+    if (peekDialog.dataset.path !== path) return;
+    main.innerHTML = `<article class="issue-overview-text doc-peek-text">${doc.chunks.map((chunk, index) => doc.format === "text" ? `<pre class="plain-text">${escapeHtml(chunk.markdown)}</pre>`
+      : `${index || chunk.kind !== "overview" ? `<h${Math.min(chunk.level + 1, 4)} id="peek-${escapeHtml(chunk.anchor)}">${escapeHtml(chunk.title)}</h${Math.min(chunk.level + 1, 4)}>` : ""}<div class="markdown">${renderMarkdownSource(chunk.markdown, path)}</div>`).join("")}</article>`;
+    main.scrollTop = 0;
+  } catch (error) {
+    main.innerHTML = `<p class="work-warning doc-peek-loading">${escapeHtml(error.message)}</p>`;
+  }
+}
+function openPeeked() {
+  const path = peekDialog.dataset.path;
+  closeOverview();
+  selectDocument(path, { historyMode: "push" });
+}
 elements.meta.addEventListener("click", async (event) => {
   const plainClick = !(event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
   const view = event.target.closest("[data-crumb-view]");

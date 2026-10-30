@@ -1285,7 +1285,7 @@ const sideViews = (buttons) => `<nav class="code-diff-scopes code-side-views">${
 
 // The app shell hands over its document library and how to open a document, for the planning sections of the PR and
 // issue overviews.
-export let planning = { documents: () => [], open: () => {} };
+export let planning = { documents: () => [], open: () => {}, peek: () => {} };
 export const connectPlanning = (next) => { planning = next; };
 // Tasks first, then every other planning document.
 const planningSection = (title, docs) => !docs.length ? "" : `<section>${sideHead(title, String(docs.length))}<ul class="issue-code-list">${[...docs].sort((a, b) => !!b.task - !!a.task).map((doc) => `<li><a class="issue-link-row" href="${escapeHtml(documentHref(doc.path, ""))}" data-planning-path="${escapeHtml(doc.path)}" data-tip="${escapeHtml(doc.path)}">${doc.task ? SERVICE_ICONS.task : icon("doc")}<code>${escapeHtml(doc.task?.id || doc.date || doc.kind)}</code><span>${escapeHtml(doc.task?.title || doc.title)}</span>${doc.task ? `<span class="code-tag">${escapeHtml(doc.task.status)}</span>` : ""}</a></li>`).join("")}</ul></section>`;
