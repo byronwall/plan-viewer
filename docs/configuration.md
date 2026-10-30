@@ -54,6 +54,7 @@ That turns `#1234`, commit SHAs, and `ATL-12` in your Markdown into links with l
 | `github.defaultRepo` | Repository a bare `#1234` or bare commit SHA means. Empty leaves them as text. |
 | `github.repos` | Other repositories written as `Orbit#1234` or `Orbit@abc1234` (case-insensitive). |
 | `trackers` | Issue keys: `prefix` (uppercase), `service`, and a `url` with `{id}`. Keys for `linear` and `jira` also get titles and states, through the Linear API key and `acli`. |
+| `traceUrl` | Trace viewer for 32-character hex trace IDs (OpenTelemetry's form), with `{id}` for the ID, such as an Observe or Jaeger trace URL. Those IDs are never taken for commits; empty leaves them as text. |
 | `code.reposFile` | Tracked repositories for the Code page, as `{ "repos": ["/absolute/path/to/checkout"] }`; the gear menu writes it. Each checkout needs a GitHub `origin` and a signed-in `gh` for PRs and CI. |
 | `code.checkoutsDir` | Where a repository named in a document is found when it isn't tracked. |
 | `code.prNotesDir` | Local PR review notes, one Markdown file per PR. |

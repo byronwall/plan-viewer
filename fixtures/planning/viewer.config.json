@@ -13,6 +13,7 @@
       "orbit-templates"
     ]
   },
+  "traceUrl": "https://acme.observe.test/trace/{id}",
   "trackers": [
     {
       "prefix": "ATL",

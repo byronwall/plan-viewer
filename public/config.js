@@ -23,6 +23,8 @@ export const DEFAULT_CONFIG = {
   // Issue keys such as `ABC-123`: { prefix, service: "linear" | "jira" | other, url: "https://…/{id}" }.
   // Linear and Jira keys also get titles and states through the Linear key and `acli`.
   trackers: [],
+  // Trace viewer for 32-character hex trace IDs, `{id}` replaced (an Observe or Jaeger trace URL). Empty leaves them as text.
+  traceUrl: "",
   code: {
     // Tracked repositories for the Code page; the gear menu edits this file.
     reposFile: "reference/code-repos.json",
@@ -115,6 +117,7 @@ export function referenceConfig() {
     ownerPattern: github.owner ? `(?:${escapeRegExp(github.owner)}/)?` : "",
     trackers: trackers.filter((tracker) => /^[A-Z][A-Z0-9]*$/.test(tracker.prefix)),
     defaultSlug: github.owner && github.defaultRepo ? `${github.owner}/${github.defaultRepo}` : "",
+    traceUrl: current.traceUrl,
   };
   return references;
 }

@@ -202,6 +202,15 @@ test("links commit SHAs to GitHub, inferring the repository from earlier referen
   assert.deepEqual(commits("Merged Orbit@abcdef1, then atlas head 0a1b2c3d4e5f."), ["Orbit@abcdef1", "Orbit@0a1b2c3d4e5f"]);
   assert.deepEqual(commits("Plain 7f3e2d1 defaults to Atlas; `orbit-legacy@deadbeef` is explicit."), ["atlas@7f3e2d1", "orbit-legacy@deadbeef"]);
   assert.deepEqual(commits("Not commits: decade, 20261013, #3157d5, 01a1350b-b433, ABCDEF1234, codex://threads/01a1350b."), []);
+  assert.doesNotMatch(renderMarkdown("### c4574f89: Connection dropped", "tasks/TASK-0001.md"), /commit/);
+  assert.match(renderMarkdown("### Shipped Orbit@abcdef1", "tasks/TASK-0001.md"), /Orbit\/commit\/abcdef1/);
+});
+
+test("links 32-character trace IDs to the trace viewer, not GitHub", () => {
+  const html = inlineMarkdown("Traces: latest `e9aab31b90243f36078e89b9a8f81ad9`, bare 57eea4deae38e29b572a4a0cdc255b30.", "tasks/TASK-0001.md");
+  assert.doesNotMatch(html, /\/commit\//);
+  assert.match(html, /href="https:\/\/acme\.observe\.test\/trace\/e9aab31b90243f36078e89b9a8f81ad9"/);
+  assert.match(html, /href="https:\/\/acme\.observe\.test\/trace\/57eea4deae38e29b572a4a0cdc255b30"/);
 });
 
 test("links every item of a slash list with the first reference's prefix", () => {

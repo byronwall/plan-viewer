@@ -248,11 +248,16 @@ function commitLink(repo, sha, label) {
   return repo ? externalLink(`https://github.com/${githubSlug(repo)}/commit/${sha}`, label) : label;
 }
 
-function linkifyCommits(html, textBefore) {
+// Trace IDs: 32 hex characters (OpenTelemetry's form) is a trace, never an abbreviated commit. They link through `traceUrl`.
+const TRACE = /^[0-9a-f]{32}$/i;
+const traceLink = (id, label) => referenceConfig().traceUrl ? externalLink(referenceConfig().traceUrl.replace("{id}", id), label) : label;
+
+function linkifyCommits(html, textBefore, bare) {
   const { commit, refs } = referencePatterns();
   return html.replace(commit, (match, lead, repoName, sha, offset) => {
+    if (!repoName && TRACE.test(sha)) return lead + traceLink(sha, sha);
     if (!isCommitSha(sha, repoName)) return match;
-    const repo = repoName ? refs.repos[repoName.toLowerCase()] : commitRepo(textBefore + html.slice(0, offset));
+    const repo = repoName ? refs.repos[repoName.toLowerCase()] : bare && commitRepo(textBefore + html.slice(0, offset));
     if (!repo) return match;
     const short = sha.slice(0, 8);
     return `${lead}${commitLink(repo, sha, repoName ? `${repo}@${short}` : short)}`;
@@ -265,11 +270,11 @@ const LIST = "((?:/#?\\d+)*)(?![\\w-]|\\.\\w)";
 export const slashListItems = (rest = "") => rest.split("/").slice(1);
 const linkList = (first, rest, link) => first + slashListItems(rest).map((item) => `/${link(item.replace("#", ""), item)}`).join("");
 
-function linkifyReferences(html, textBefore = "") {
+function linkifyReferences(html, textBefore = "", bare = true) {
   const { refs } = referencePatterns();
   const pull = (repo) => (n, label) => externalLink(`https://github.com/${githubSlug(repo)}/pull/${n}`, label);
   const task = (n, label) => documentLink({ path: `tasks/TASK-${n.padStart(4, "0")}.md`, anchor: "" }, label);
-  let output = linkifyCommits(html, textBefore)
+  let output = linkifyCommits(html, textBefore, bare)
     .replace(new RegExp(`(^|[^\\w/-])${refs.ownerPattern}(${refs.repoNames})#(\\d+)${LIST}`, "gi"), (_, lead, name, n, rest) => {
       const repo = refs.repos[name.toLowerCase()];
       return lead + linkList(pull(repo)(n, `${repo}#${n}`), rest, pull(repo));
@@ -282,12 +287,13 @@ function linkifyReferences(html, textBefore = "") {
   return output.replace(new RegExp(`(^|[^\\w/-])(TASK-(\\d{4}))${LIST}`, "gi"), (_, lead, id, n, rest) => lead + linkList(task(n, id), rest, task));
 }
 
-function formatInlineText(value, currentPath, linkify = true, textBefore = "") {
+function formatInlineText(value, currentPath, linkify = true, textBefore = "", bare = true) {
   let output = escapeHtml(value);
-  if (linkify) output = output.split(/(`[^`]+`)/).map((part, i, parts) => i % 2 ? part : linkifyReferences(part, textBefore + parts.slice(0, i).join(""))).join("");
+  if (linkify) output = output.split(/(`[^`]+`)/).map((part, i, parts) => i % 2 ? part : linkifyReferences(part, textBefore + parts.slice(0, i).join(""), bare)).join("");
   output = output.replace(/`([^`]+)`/g, (_, code, offset) => {
+    if (linkify && TRACE.test(code)) return traceLink(code, `<code>${code}</code>`);
     const commit = linkify && code.match(referencePatterns().codeCommit);
-    const repo = commit && isCommitSha(commit[2], commit[1]) && (commit[1] ? referenceConfig().repos[commit[1].toLowerCase()] : commitRepo(textBefore + output.slice(0, offset)));
+    const repo = commit && isCommitSha(commit[2], commit[1]) && (commit[1] ? referenceConfig().repos[commit[1].toLowerCase()] : bare && commitRepo(textBefore + output.slice(0, offset)));
     if (repo) {
       return commitLink(repo, commit[2], `<code>${commit[1] ? `${repo}@` : ""}${commit[2].slice(0, 8)}</code>`);
     }
@@ -309,13 +315,14 @@ function assetHref(path) {
   return `/api/asset?${new URLSearchParams({ path })}`;
 }
 
-export function inlineMarkdown(value, currentPath = "") {
+// `bare: false` leaves unqualified SHAs as text: headings name things (`### c4574f89: Connection dropped`) rather than cite commits.
+export function inlineMarkdown(value, currentPath = "", bare = true) {
   const linkPattern = /(!?)\[([^\]]*)\]\(([^\s)]+)\)/g;
   const output = [];
   let cursor = 0;
 
   for (const match of value.matchAll(linkPattern)) {
-    output.push(formatInlineText(value.slice(cursor, match.index), currentPath, true, value.slice(0, cursor)));
+    output.push(formatInlineText(value.slice(cursor, match.index), currentPath, true, value.slice(0, cursor), bare));
     const isImage = match[1] === "!";
     const labelSource = match[2];
     const target = match[3].replace(/^<(.+)>$/, "$1"); // CommonMark's `(<url>)` destination, which Linear writes
@@ -349,7 +356,7 @@ export function inlineMarkdown(value, currentPath = "") {
     cursor = match.index + match[0].length;
   }
 
-  output.push(formatInlineText(value.slice(cursor), currentPath, true, value.slice(0, cursor)));
+  output.push(formatInlineText(value.slice(cursor), currentPath, true, value.slice(0, cursor), bare));
   // `**[label](href)**`: the bold markers land in the text on either side of the link.
   return output.join("").replace(/\*\*(<a\b[^>]*>[\s\S]*?<\/a>(?:&#8288;)?)\*\*/g, "<strong>$1</strong>");
 }
@@ -647,7 +654,7 @@ export function renderMarkdown(markdown, currentPath = "") {
       flushParagraph();
       const level = Math.min(4, heading[1].length + 1);
       const headingId = markdownHeadingId(heading[2]);
-      html.push(`<h${level}${headingId ? ` id="${escapeHtml(headingId)}"` : ""}>${inlineMarkdown(heading[2], currentPath)}</h${level}>`);
+      html.push(`<h${level}${headingId ? ` id="${escapeHtml(headingId)}"` : ""}>${inlineMarkdown(heading[2], currentPath, false)}</h${level}>`);
     } else if (listItem) {
       flushParagraph();
       const end = markdownListEnd(lines, index);
