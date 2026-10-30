@@ -1025,8 +1025,7 @@ function ensureDiffDialog() {
     const planningLink = event.target.closest("a[data-planning-path]");
     if (planningLink && !event.metaKey && !event.ctrlKey) {
       event.preventDefault();
-      diffDialog.close();
-      return planning.open(planningLink.dataset.planningPath);
+      return planning.peek(planningLink.dataset.planningPath);
     }
     const commitPr = event.target.closest("[data-commit-pr]");
     if (commitPr) { const [slug, number] = commitPr.dataset.commitPr.split("#"); return openPrOverlay(slug, Number(number)); }

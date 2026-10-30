@@ -761,8 +761,7 @@ async function handleClick(event) {
   if (target.matches("a[data-planning-path]") && !event.metaKey && !event.ctrlKey) {
     event.preventDefault();
     event.stopPropagation();
-    dialog?.close();
-    return planning.open(target.dataset.planningPath);
+    return planning.peek(target.dataset.planningPath);
   }
   if (target.matches("a")) return;
   const { dataset } = target;
