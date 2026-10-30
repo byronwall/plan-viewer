@@ -146,8 +146,26 @@ type DocumentSummary = {
   pullRequests?: string[];
   slackLinks?: string[];
   task?: TaskSummary;
+  focus?: PlanFocus;
   modified?: number;
 };
+
+// What a daily plan is about, for its library rail row: the tasks it schedules (in order, with the bullet's note after
+// the dash), or for plans that predate tasks, their `##` work headings.
+type PlanFocus = { tasks: { id: string; note: string }[]; headings: string[] };
+
+// Section headings that frame a day rather than name its work.
+const FRAMING_HEADINGS = /^(start here|scheduled tasks|next steps|notes|chats|outcomes? for today|suggested order.*|below the cut line|completed.*|carry[- ]?over.*|references?)$/i;
+
+export function planFocus(contents: string): PlanFocus {
+  const tasks = new Map<string, string>();
+  for (const line of contents.split("\n")) {
+    const id = /^[-*] /.test(line) && line.match(/TASK-\d{4}/)?.[0];
+    if (id && !tasks.has(id)) tasks.set(id, line.replace(/^[-*] /, "").split(/\s+[—–-]\s+/).slice(1).join(" — ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").trim());
+  }
+  const headings = [...contents.matchAll(/^## (.+)$/gm)].map(([, heading]) => heading.replace(/^(milestone \d+[:.]|\d+\.)\s*/i, "").trim()).filter((heading) => !FRAMING_HEADINGS.test(heading));
+  return { tasks: [...tasks].map(([id, note]) => ({ id, note })), headings };
+}
 
 const TASK_STATUSES = new Set<TaskStatus>(["open", "active", "waiting", "deferred", "completed"]);
 
@@ -394,6 +412,7 @@ export function summarize(path: string, contents: string, currentDate = todayDat
       date: `${year}-${month}-${day}`,
       kind: format === "text" ? "Text file" : name === "plan" ? "Plan" : "Daily note",
       isToday,
+      ...(format === "markdown" && name === "plan" ? { focus: planFocus(contents) } : {}),
     };
   }
   const taskAsset = path.match(/^tasks\/(TASK-\d{4})-assets\//);

@@ -7,7 +7,7 @@ import { createLinkMetadataStore, refreshSlackChannels } from "./link-metadata.t
 import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle, withImages } from "./codex-desktop.ts";
 import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
 import { dateKey, parseDateKey, startOfWeek } from "./public/dates.js";
-import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
+import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
   const previous = process.env.SLACK_TOKEN;
@@ -219,6 +219,12 @@ test("links every item of a slash list with the first reference's prefix", () =>
   assert.deepEqual(hrefs("plus ATL-2733/2734 and OPS-54562/54852"), ["acme/issue/ATL-2733", "acme/issue/ATL-2734", "browse/OPS-54562", "browse/OPS-54852"]);
   assert.deepEqual(hrefs("#1831/#1872, Orbit#2738/2740"), ["acme/atlas/pull/1831", "acme/atlas/pull/1872", "acme/Orbit/pull/2738", "acme/Orbit/pull/2740"]);
   assert.deepEqual(hrefs("see https://linear.app/acme/issue/ATL-2312/fix-totals"), []);
+});
+
+test("a plan's focus lists its scheduled tasks with notes, and work headings for older plans", () => {
+  const focus = planFocus("# Daily plan\n\n## Scheduled tasks\n\n- [TASK-0030](../TASK-0030.md) — Read the catch-up.\n- TASK-0031 — First: containment.\n- TASK-0030 again\n\n## Milestone 2: Automatic recovery\n\n## 3. Frontend triage picks\n\n## Below the cut line\n");
+  assert.deepEqual(focus.tasks, [{ id: "TASK-0030", note: "Read the catch-up." }, { id: "TASK-0031", note: "First: containment." }]);
+  assert.deepEqual(focus.headings, ["Automatic recovery", "Frontend triage picks"]);
 });
 
 test("renders repository-local Markdown images with accessible responsive markup", () => {

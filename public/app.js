@@ -153,17 +153,19 @@ function renderLibrary() {
   const dates = [...new Set(daily.map((doc) => doc.date))];
   const sections = [];
 
-  // One line per day: a Plan slot. A day's other files are reached from its plan's breadcrumb switcher.
-  const daySlot = (doc, label, current) => doc
-    ? `<button class="document-link day-slot" data-path="${escapeHtml(doc.path)}" aria-current="${current ? "page" : "false"}" title="${escapeHtml(doc.title)}"><strong>${label}</strong></button>`
-    : `<span class="day-slot is-empty" aria-hidden="true"></span>`;
+  // One row per day that says what the day was about: its plan's first scheduled task (or work heading), with a count
+  // of the rest. The hover card lists them all with the day's other files; the row opens the plan.
   const dayRow = (date, docs, isToday = false) => {
     const day = new Date(`${date}T12:00:00`);
     const plan = docs.find((doc) => doc.kind === "Plan");
-    const others = docs.filter((doc) => doc !== plan);
-    const first = plan || others[0];
-    const firstCurrent = first && (first.path === state.selectedPath || others.some((doc) => doc.path === state.selectedPath));
-    return `<section class="date-group${isToday ? " is-today" : ""}"><h3><time datetime="${date}" title="${escapeHtml(formatDate(date, true))}"><span>${day.toLocaleDateString("en-US", { weekday: "short" })}</span>${day.getDate()}</time></h3><div class="date-files">${daySlot(first, plan ? "Plan" : "Notes", firstCurrent)}</div></section>`;
+    const target = plan || docs[0];
+    const focus = dayFocus(plan);
+    const lead = focus[0] || (plan ? "" : dailyDocumentLabel(target));
+    const current = docs.some((doc) => doc.path === state.selectedPath);
+    return `<button class="day-row${isToday ? " is-today" : ""}${lead ? "" : " is-bare"}" type="button" data-path="${escapeHtml(target.path)}" data-day="${date}" aria-current="${current ? "page" : "false"}">
+      <time datetime="${date}"><span>${day.toLocaleDateString("en-US", { weekday: "short" })}</span>${day.getDate()}</time>
+      <span class="day-focus">${escapeHtml(lead || "Plan")}</span>${focus.length > 1 ? `<span class="day-more">+${focus.length - 1}</span>` : ""}
+    </button>`;
   };
   if (today.length) sections.push(`<section class="document-group"><h2 class="group-label">Today</h2>${dayRow(today[0].date, today, true)}</section>`);
   const months = [...new Set(dates.map((date) => date.slice(0, 7)))];
@@ -175,8 +177,31 @@ function renderLibrary() {
       `${index && weekOf(date) !== weekOf(monthDates[index - 1]) ? '<hr class="week-break">' : ""}${dayRow(date, daily.filter((doc) => doc.date === date))}`);
     sections.push(`<section class="document-group"><h2 class="group-label">${label}</h2>${rows.join("")}</section>`);
   }
+  hideLinkTip();
   elements.documents.innerHTML = sections.join("") || `<p class="empty-library">No planning documents found.</p>`;
   if (elements.searchDialog.open) renderSearchResults();
+}
+
+// What a plan's rail row leads with: per scheduled task, the plan's note for that day (tasks carry over, notes don't),
+// else the task's title; plans without tasks give their work headings.
+function dayFocus(plan) {
+  const tasks = plan?.focus?.tasks || [];
+  return tasks.length ? tasks.map(({ id, note }) => note.replace(/\.$/, "") || state.documents.find((doc) => doc.task?.id === id)?.task.title || id) : plan?.focus?.headings || [];
+}
+
+function dayTipHtml(date) {
+  const docs = state.documents.filter((doc) => doc.date === date);
+  const plan = docs.find((doc) => doc.kind === "Plan");
+  const tasks = (plan?.focus?.tasks || []).map(({ id, note }) => {
+    const task = state.documents.find((doc) => doc.task?.id === id)?.task;
+    return `<div class="day-tip-task"><span class="day-tip-status" data-status="${escapeHtml(task?.status || "")}">${escapeHtml(TASK_STATUS_LABELS[task?.status] || "Missing")}</span><span><strong>${escapeHtml(task?.title || id)}</strong>${note ? `<span>${escapeHtml(note)}</span>` : ""}</span></div>`;
+  });
+  const headings = tasks.length ? [] : (plan?.focus?.headings || []).map((heading) => `<div class="hover-card-line">${escapeHtml(heading)}</div>`);
+  const files = docs.filter((doc) => doc !== plan).map((doc) => escapeHtml(dailyDocumentLabel(doc)));
+  return `<div class="hover-card-head"><span class="hover-card-name">${escapeHtml(formatDate(date, true))}</span>${tasks.length ? `<span class="hover-card-state">${tasks.length} scheduled</span>` : ""}</div>`
+    + (tasks.join("") + headings.join("") || `<div class="hover-card-line">${plan ? "No scheduled tasks" : "No plan"}</div>`)
+    + (files.length ? `<div class="hover-card-line day-tip-files">Also ${files.join(" · ")}</div>` : "")
+    + `<div class="hover-card-hint">Click opens the ${plan ? "plan" : "file"} · <kbd>[</kbd> <kbd>]</kbd> step days</div>`;
 }
 
 const TASK_STATUS_LABELS = { open: "Open", active: "Active", waiting: "Waiting", deferred: "Deferred", completed: "Completed" };
@@ -2033,6 +2058,23 @@ for (const [on, off] of [["pointerover", "pointerout"], ["focusin", "focusout"]]
     if (link && !link.contains(event.relatedTarget)) hideLinkTip();
   });
 }
+// Day rows in the rail get a card to their right listing the whole plan.
+elements.documents.addEventListener("pointerover", (event) => {
+  const row = event.target.closest?.(".day-row");
+  if (!row) return;
+  clearTimeout(linkTipTimer);
+  linkTipTimer = setTimeout(() => {
+    linkTip.innerHTML = dayTipHtml(row.dataset.day);
+    linkTip.hidden = false;
+    const box = row.getBoundingClientRect();
+    linkTip.style.left = `${box.right + 8}px`;
+    linkTip.style.top = `${Math.max(12, Math.min(box.top - 6, innerHeight - linkTip.offsetHeight - 12))}px`;
+  }, 250);
+});
+elements.documents.addEventListener("pointerout", (event) => {
+  const row = event.target.closest?.(".day-row");
+  if (row && !row.contains(event.relatedTarget)) hideLinkTip();
+});
 addEventListener("scroll", hideLinkTip, { capture: true, passive: true });
 addEventListener("keydown", (event) => { if (event.key === "Escape") hideLinkTip(); });
 elements.documents.addEventListener("click", (event) => {
@@ -2283,6 +2325,8 @@ const shortcuts = [
   { keys: ["C"], description: "Open hovered action or section in the agent draft; otherwise a global draft", run: openCursorComposer },
   { keys: ["D"], description: "Open an agent draft for the current file", run: openDocumentComposer },
   { keys: ["⌘K", "Ctrl+K", "/"], description: "Search pages, plans, tasks, topics, reference files, and PRs", run: openSearch },
+  { keys: ["["], description: "Previous day’s plan", run: () => stepDay(-1) },
+  { keys: ["]"], description: "Next day’s plan", run: () => stepDay(1) },
   { keys: ["A"], description: "Open Tasks", run: () => showTasks() },
   { keys: ["V"], description: "Open Activity: tasks, daily plans, issues and PRs, newest first", run: () => showActivity() },
   { keys: ["G"], description: "Open Code: worktrees, pull requests, cleanup", run: () => showCode() },
@@ -2340,6 +2384,16 @@ function goToToday() {
   const todayPath = `daily/${localTodayKey().replaceAll("-", "/")}/plan.md`;
   if (state.documents.some(doc => doc.path === todayPath)) selectDocument(todayPath);
   else showNotice("There is no plan for today yet.");
+}
+
+// [ and ] step to the previous or next day with files, from the open daily file or else from today, landing on its plan.
+function stepDay(direction) {
+  const days = [...new Set(state.documents.map((doc) => doc.date).filter(Boolean))].sort();
+  const from = (state.view === "document" && state.documents.find((doc) => doc.path === state.selectedPath)?.date) || localTodayKey();
+  const date = direction < 0 ? days.filter((day) => day < from).at(-1) : days.find((day) => day > from);
+  if (!date) return showNotice(direction < 0 ? "No earlier day." : "No later day.");
+  const docs = state.documents.filter((doc) => doc.date === date);
+  selectDocument((docs.find((doc) => doc.kind === "Plan") || docs[0]).path);
 }
 
 function jumpSection(direction) {
