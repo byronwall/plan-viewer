@@ -97,7 +97,7 @@ export function ago(time) {
   return `${Math.round(minutes / 43200)}mo`;
 }
 const bytes = (size) => size < 1024 ? `${size} B` : size < 1048576 ? `${(size / 1024).toFixed(size < 10240 ? 1 : 0)} KB` : size < 1073741824 ? `${(size / 1048576).toFixed(1)} MB` : `${(size / 1073741824).toFixed(1)} GB`;
-const when = (time) => `<time datetime="${new Date(time).toISOString()}" title="${escapeHtml(new Date(time).toLocaleString())}">${ago(time)}</time>`;
+const when = (time) => `<time datetime="${new Date(time).toISOString()}" data-tip="${escapeHtml(new Date(time).toLocaleString())}">${ago(time)}</time>`;
 const heat = (time) => { const age = Date.now() - new Date(time).getTime(); return age < 2 * HOUR ? "hot" : age < DAY ? "warm" : age < 7 * DAY ? "week" : "cold"; };
 const shortPath = (path) => path.replace(/^\/Users\/[^/]+\/repos\//, "").replace(/^\/Users\/[^/]+/, "~");
 const repoName = (path) => path.split("/").pop();
@@ -3005,6 +3005,9 @@ const hideTip = () => {
   tipTarget = null;
   if (tip?.classList.contains("is-visible")) { tip.classList.remove("is-visible"); tipHiddenAt = Date.now(); }
 };
+// Whichever page showed a tip, it closes once the pointer is anywhere but its target, including outside that page
+// and over a target a re-render replaced.
+globalThis.document?.addEventListener("pointerover", (event) => { if (tipTarget && !tipTarget.contains(event.target)) hideTip(); });
 
 // ---------- hover cards (whole app) ----------
 
