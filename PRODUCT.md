@@ -38,7 +38,7 @@ The app runs locally on a Mac against one planning workspace, configured by its 
 
 ## Evidence on Hand
 
-A workspace's existing daily plans, done logs, templates, and topic documents are the real content and structural examples.
+A workspace's existing daily plans, templates, and topic documents are the real content and structural examples.
 
 ## Product Principles
 

@@ -6,7 +6,6 @@ This folder is a planning workspace read by [Plan Viewer](https://github.com/byr
 
 ```text
 daily/YYYY/MM/DD/plan.md   # the day's plan
-daily/YYYY/MM/DD/done.md   # what got done that day
 tasks/TASK-NNNN.md         # one task per file
 tasks/TASK-NNNN-assets/    # files that belong to one task
 plans/<topic>/README.md    # cross-day topics; plans/README.md indexes them
@@ -18,7 +17,7 @@ reference/                 # stable reference documents
 - Start with `# Daily plan — <Month D, YYYY>`.
 - List the day's tasks under `## Scheduled tasks`, one per line, linked relative to the plan: `- [TASK-0101](../../../../tasks/TASK-0101.md) — what to do on it today.`
 - Day-specific work can follow as `## Milestone N — <name>` sections; the viewer shows each one as a card that can be handed to an agent.
-- `done.md` lists finished work, naming each task ID it advanced.
+- Record progress on the task itself: its `status`, and a dated bullet under `## Updates`. There is no separate done log.
 
 ## Tasks
 

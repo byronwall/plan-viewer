@@ -12,9 +12,9 @@ import { refreshSlackPage, renderSlackPage } from "./slack-page.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
-import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
+import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./dates.js";
 
-const state = { documents: [], defaultPath: "", selectedPath: "", document: null, activeChunkId: "", openComposer: null, view: "document", weekAnchor: null };
+const state = { documents: [], defaultPath: "", selectedPath: "", document: null, activeChunkId: "", openComposer: null, view: "document" };
 
 const elements = {
   documents: document.querySelector("#documents"),
@@ -28,7 +28,6 @@ const elements = {
   tasksButton: document.querySelector("#open-tasks"),
   topicsButton: document.querySelector("#open-topics"),
   referenceButton: document.querySelector("#open-reference"),
-  weeksButton: document.querySelector("#open-weeks"),
   activityButton: document.querySelector("#open-activity"),
   codeButton: document.querySelector("#open-code"),
   issuesButton: document.querySelector("#open-issues"),
@@ -118,7 +117,7 @@ function formatDate(date, includeYear = false) {
 }
 
 function dailyDocumentLabel(doc) {
-  if (doc.kind === "Plan" || doc.kind === "Done") return doc.kind;
+  if (doc.kind === "Plan") return doc.kind;
   if (/^Reference\s+[—-]/i.test(doc.title)) return "Reference";
   return doc.title;
 }
@@ -133,12 +132,11 @@ function resetPageNavigation() {
   elements.tasksButton.setAttribute("aria-current", "false");
   elements.topicsButton.setAttribute("aria-current", "false");
   elements.referenceButton.setAttribute("aria-current", "false");
-  elements.weeksButton.setAttribute("aria-current", "false");
   elements.codeButton.setAttribute("aria-current", "false");
   elements.issuesButton.setAttribute("aria-current", "false");
   elements.slackButton.setAttribute("aria-current", "false");
   elements.activityButton.setAttribute("aria-current", "false");
-  elements.chunks.classList.remove("tasks-page", "weeks-page", "library-page", "code-page", "issues-page", "slack-page", "activity-page");
+  elements.chunks.classList.remove("tasks-page", "library-page", "code-page", "issues-page", "slack-page", "activity-page");
 }
 
 function documentButton(doc, dailyChild = false) {
@@ -155,18 +153,17 @@ function renderLibrary() {
   const dates = [...new Set(daily.map((doc) => doc.date))];
   const sections = [];
 
-  // One line per day: fixed Plan and Done slots. A day's other files are reached from its plan's breadcrumb switcher.
+  // One line per day: a Plan slot. A day's other files are reached from its plan's breadcrumb switcher.
   const daySlot = (doc, label, current) => doc
     ? `<button class="document-link day-slot" data-path="${escapeHtml(doc.path)}" aria-current="${current ? "page" : "false"}" title="${escapeHtml(doc.title)}"><strong>${label}</strong></button>`
     : `<span class="day-slot is-empty" aria-hidden="true"></span>`;
   const dayRow = (date, docs, isToday = false) => {
     const day = new Date(`${date}T12:00:00`);
     const plan = docs.find((doc) => doc.kind === "Plan");
-    const done = docs.find((doc) => doc.kind === "Done");
-    const others = docs.filter((doc) => doc !== plan && doc !== done);
+    const others = docs.filter((doc) => doc !== plan);
     const first = plan || others[0];
     const firstCurrent = first && (first.path === state.selectedPath || others.some((doc) => doc.path === state.selectedPath));
-    return `<section class="date-group${isToday ? " is-today" : ""}"><h3><time datetime="${date}" title="${escapeHtml(formatDate(date, true))}"><span>${day.toLocaleDateString("en-US", { weekday: "short" })}</span>${day.getDate()}</time></h3><div class="date-files">${daySlot(first, plan ? "Plan" : "Notes", firstCurrent)}${daySlot(done, "Done", done?.path === state.selectedPath)}</div></section>`;
+    return `<section class="date-group${isToday ? " is-today" : ""}"><h3><time datetime="${date}" title="${escapeHtml(formatDate(date, true))}"><span>${day.toLocaleDateString("en-US", { weekday: "short" })}</span>${day.getDate()}</time></h3><div class="date-files">${daySlot(first, plan ? "Plan" : "Notes", firstCurrent)}</div></section>`;
   };
   if (today.length) sections.push(`<section class="document-group"><h2 class="group-label">Today</h2>${dayRow(today[0].date, today, true)}</section>`);
   const months = [...new Set(dates.map((date) => date.slice(0, 7)))];
@@ -552,134 +549,6 @@ function renderActivity() {
   elements.chunkNav.replaceChildren();
   elements.chunks.classList.add("code-page", "activity-page");
   renderActivityPage(elements.chunks, state.documents, { openDocument: (path, anchor) => selectDocument(path, { historyMode: "push", anchor }) });
-}
-
-function formatCalendarDay(date) {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(date);
-}
-
-function formatCalendarRange(first, last) {
-  const sameYear = first.getUTCFullYear() === last.getUTCFullYear();
-  const start = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }), timeZone: "UTC" }).format(first);
-  const end = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(last);
-  return `${start} – ${end}`;
-}
-
-function updateWeeksUrl(historyMode) {
-  if (historyMode === "none") return;
-  const url = new URL(location.href);
-  url.search = new URLSearchParams({ view: "weeks", date: dateKey(state.weekAnchor) });
-  url.hash = "";
-  history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
-}
-
-const CALENDAR_TASK_LIMIT = 6;
-
-// A day shows what it was about: the plan's scheduled tasks (✓ when that day's done log mentions them), then a
-// footer with the outcome count and any extra notes. A done-only day lists the tasks its log touched.
-function calendarDayBody(docs) {
-  const plan = docs.find((doc) => doc.kind === "Plan");
-  const done = docs.find((doc) => doc.kind === "Done");
-  const notes = docs.filter((doc) => doc !== plan && doc !== done);
-  const planned = (plan || done)?.digest?.tasks || [];
-  const finished = new Set(done?.digest?.mentions || []);
-  // Work the done log touched that the plan never scheduled shows after the plan, marked as unplanned.
-  const unplanned = plan ? [...finished].filter((id) => !planned.some((task) => task.id === id) && state.documents.some((doc) => doc.task?.id === id)).map((id) => ({ id, note: "", unplanned: true })) : [];
-  const tasks = [...planned, ...unplanned];
-  const taskRow = ({ id, note, unplanned: extra }) => {
-    const summary = state.documents.find((doc) => doc.task?.id === id);
-    const touched = finished.has(id);
-    return `<button class="calendar-task${touched ? " is-touched" : ""}${extra ? " is-unplanned" : ""}" type="button" data-task-id="${id}" data-calendar-path="${escapeHtml(summary?.path || `tasks/${id}.md`)}" title="${escapeHtml(`${id} · ${summary?.task.title || ""}${note ? `\n${note}` : ""}${extra ? "\nNot on the plan; touched in the done log" : touched ? "\nIn this day's done log" : ""}`)}">
-      <span class="calendar-task-dot task-dot-${summary?.task.status || "missing"}" aria-hidden="true"></span>
-      <span class="calendar-task-title">${escapeHtml(summary?.task.title || id)}</span>
-      ${extra ? '<span class="calendar-task-check is-extra" aria-label="unplanned, in done log">+</span>' : touched ? '<span class="calendar-task-check" aria-label="in done log">✓</span>' : ""}
-    </button>`;
-  };
-  const headings = tasks.length ? [] : plan?.digest?.headings || [];
-  const headingRow = (heading) => `<button class="calendar-task is-heading" type="button" data-calendar-path="${escapeHtml(plan.path)}" title="${escapeHtml(heading)}"><span class="calendar-task-dot task-dot-heading" aria-hidden="true"></span><span class="calendar-task-title">${escapeHtml(heading)}</span></button>`;
-  const rows = tasks.length ? tasks.map(taskRow) : headings.map(headingRow);
-  const more = rows.length - CALENDAR_TASK_LIMIT;
-  const touchedCount = planned.filter((task) => finished.has(task.id)).length;
-  const footer = [
-    plan && done && planned.length ? `<span class="calendar-progress" title="Scheduled tasks mentioned in the done log"><span style="--done:${touchedCount / planned.length}"></span>${touchedCount}/${planned.length}</span>` : "",
-    done?.digest?.items ? `<button class="calendar-meta" type="button" data-calendar-path="${escapeHtml(done.path)}">${done.digest.items} ${done.digest.items === 1 ? "outcome" : "outcomes"}</button>` : "",
-    notes.length ? `<button class="calendar-meta" type="button" data-calendar-path="${escapeHtml(notes[0].path)}" title="${escapeHtml(notes.map((doc) => doc.title).join("\n"))}">+${notes.length} ${notes.length === 1 ? "note" : "notes"}</button>` : "",
-  ].filter(Boolean).join("");
-  return `${rows.length ? `<div class="calendar-tasks">${rows.slice(0, CALENDAR_TASK_LIMIT).join("")}${more > 0 ? `<button class="calendar-more" type="button" data-calendar-path="${escapeHtml((plan || done).path)}">+${more} more</button>` : ""}</div>` : ""}${footer ? `<div class="calendar-footer">${footer}</div>` : ""}`;
-}
-
-function calendarDayLinks(docs) {
-  return docs.filter((doc) => doc.kind === "Plan" || doc.kind === "Done").sort((a, b) => dailyRank(a.path) - dailyRank(b.path))
-    .map((doc) => `<button class="calendar-doc" type="button" data-calendar-path="${escapeHtml(doc.path)}">${doc.kind}</button>`).join("");
-}
-
-// Weeks without files collapse to one thin strip; consecutive quiet weeks share a single strip.
-function weekRows(weeks, documentsByDate, today) {
-  const rows = [];
-  for (const week of weeks) {
-    const keys = week.map(dateKey);
-    const quiet = !keys.some((key) => documentsByDate.has(key) || key === today);
-    if (quiet && rows.at(-1)?.quiet) { rows.at(-1).to = week.at(-1); continue; }
-    rows.push({ week, quiet, from: week[0], to: week.at(-1) });
-  }
-  return rows.map((row) => row.quiet
-    ? `<div class="week-quiet">${formatCalendarDay(row.from)} – ${formatCalendarDay(row.to)} · no entries</div>`
-    : `<div class="week-row">${row.week.map((date) => {
-      const key = dateKey(date);
-      const docs = documentsByDate.get(key) || [];
-      const isToday = key === today;
-      return `<section class="calendar-day${isToday ? " is-today" : ""}${docs.length ? " has-files" : ""}" aria-label="${formatDate(key, true)}${isToday ? ", today" : ""}">
-        <div class="calendar-date"><time datetime="${key}">${formatCalendarDay(date)}</time>${isToday ? `<span class="calendar-today">Today</span>` : ""}<span class="calendar-docs">${calendarDayLinks(docs)}</span></div>
-        ${docs.length ? calendarDayBody(docs) : ""}
-      </section>`;
-    }).join("")}</div>`).join("");
-}
-
-function renderWeeksPage() {
-  const today = localTodayKey();
-  const weeks = buildWeeks(state.weekAnchor || parseDateKey(today));
-  const first = weeks[0][0];
-  const last = weeks.at(-1).at(-1);
-  const documentsByDate = new Map();
-  for (const doc of state.documents) {
-    if (!doc.date) continue;
-    if (!documentsByDate.has(doc.date)) documentsByDate.set(doc.date, []);
-    documentsByDate.get(doc.date).push(doc);
-  }
-
-  state.view = "weeks";
-  resetPageNavigation();
-  elements.weeksButton.setAttribute("aria-current", "page");
-  for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
-  elements.title.textContent = "Weeks";
-  elements.meta.textContent = "Daily archive  /  read only";
-  elements.count.textContent = formatCalendarRange(first, last);
-  elements.chunkNav.hidden = true;
-  elements.chunkNav.replaceChildren();
-  elements.chunks.classList.add("weeks-page");
-  elements.chunks.innerHTML = `<section class="weeks-surface" aria-label="Planning archive by week">
-    <div class="weeks-toolbar">
-      <p class="weeks-key"><span><span class="calendar-task-check">✓</span> in that day’s done log</span><span><span class="calendar-task-check is-extra">+</span> unplanned</span><span>Hover a task to follow it across days</span></p>
-      <div class="week-controls" aria-label="Calendar navigation">
-        <button type="button" data-week-shift="-28" aria-label="Show earlier weeks">←</button>
-        <button type="button" data-week-today>Today</button>
-        <button type="button" data-week-shift="28" aria-label="Show later weeks">→</button>
-      </div>
-    </div>
-    <div class="calendar-scroll" tabindex="0" aria-label="Five week calendar">
-      <div class="weekday-row" aria-hidden="true">${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => `<span>${day}</span>`).join("")}</div>
-      <div class="week-rows">${weekRows(weeks, documentsByDate, today)}</div>
-    </div>
-  </section>`;
-  window.scrollTo({ top: 0, behavior: "instant" });
-}
-
-function showWeeks({ historyMode = "push", anchor = null } = {}) {
-  if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
-  closeComposer();
-  state.weekAnchor = anchor || state.weekAnchor || parseDateKey(localTodayKey());
-  updateWeeksUrl(historyMode);
-  renderWeeksPage();
 }
 
 function composerTemplate(target) {
@@ -1501,13 +1370,13 @@ function parentDocument(path) {
 
 // Every crumb goes somewhere: a view, a parent document, a sibling, or the clipboard. The current file is the copy target.
 const crumbSeparator = `<span class="crumb-sep" aria-hidden="true">/</span>`;
-const viewCrumb = (view, label, params = {}) => `<a class="crumb" href="?${new URLSearchParams({ view, ...params })}" data-crumb-view="${view}"${params.date ? ` data-crumb-date="${params.date}"` : ""}>${escapeHtml(label)}</a>`;
+const viewCrumb = (view, label) => `<a class="crumb" href="?view=${view}" data-crumb-view="${view}">${escapeHtml(label)}</a>`;
 const docCrumb = (path, label, current = false) => current
   ? `<a class="crumb is-current" href="${escapeHtml(documentHref(path, ""))}" aria-current="page">${escapeHtml(label)}</a>`
   : `<a class="crumb" href="${escapeHtml(documentHref(path, ""))}" data-crumb-path="${escapeHtml(path)}">${escapeHtml(label)}</a>`;
 const copyCrumb = (value, label = value) => `<button class="crumb crumb-copy" type="button" data-copy-value="${escapeHtml(value)}" title="Copy ${escapeHtml(value)}">${escapeHtml(label)}</button>`;
 
-const dailyRank = (path) => /^daily\/\d{4}\/\d{2}\/\d{2}\/plan\.md$/.test(path) ? 0 : /^daily\/\d{4}\/\d{2}\/\d{2}\/done\.md$/.test(path) ? 1 : 2;
+const dailyRank = (path) => /^daily\/\d{4}\/\d{2}\/\d{2}\/plan\.md$/.test(path) ? 0 : 1;
 
 function documentBreadcrumb(doc) {
   if (doc.task) return [viewCrumb("tasks", "Tasks"), copyCrumb(doc.task.id)].join(crumbSeparator) + statusPill(doc.task, doc.path);
@@ -1517,9 +1386,9 @@ function documentBreadcrumb(doc) {
     const siblings = state.documents.filter((candidate) => candidate.path.startsWith(daily[0]))
       .sort((a, b) => dailyRank(a.path) - dailyRank(b.path) || a.path.localeCompare(b.path));
     const label = parseDateKey(key)?.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) || key;
-    // Plan and done are tabs; the day's other files sit behind one "+N" menu so long days never crowd the crumb row.
-    const pinned = siblings.filter((sibling) => dailyRank(sibling.path) < 2);
-    const extra = siblings.filter((sibling) => dailyRank(sibling.path) === 2);
+    // The plan is a tab; the day's other files sit behind one "+N" menu so long days never crowd the crumb row.
+    const pinned = siblings.filter((sibling) => dailyRank(sibling.path) === 0);
+    const extra = siblings.filter((sibling) => dailyRank(sibling.path) === 1);
     const extraCurrent = extra.some((sibling) => sibling.path === doc.path);
     const menu = extra.length
       ? `<button class="crumb${extraCurrent ? " is-current" : ""}" type="button" popovertarget="day-files" style="anchor-name: --day-files">${extraCurrent ? escapeHtml(dailyDocumentLabel(doc)) : `+${extra.length} ${extra.length === 1 ? "file" : "files"}`} <span aria-hidden="true">⌄</span></button>
@@ -1527,8 +1396,7 @@ function documentBreadcrumb(doc) {
       : "";
     const tabs = siblings.length > 1 ? `<span class="crumb-siblings">${pinned.map((sibling) => docCrumb(sibling.path, sibling.kind.toLowerCase(), sibling.path === doc.path)).join("")}${menu}</span>` : "";
     const plan = siblings.find((sibling) => sibling.path.endsWith("/plan.md"));
-    const day = plan ? docCrumb(plan.path, label, plan.path === doc.path) : viewCrumb("weeks", label, { date: key });
-    return [viewCrumb("weeks", "Weeks", { date: key }), day].join(crumbSeparator) + tabs;
+    return (plan ? docCrumb(plan.path, label, plan.path === doc.path) : `<span class="crumb">${escapeHtml(label)}</span>`) + tabs;
   }
   const parent = parentDocument(doc.path);
   if (parent) {
@@ -1769,12 +1637,6 @@ async function refreshFromMarkdown(changedPaths) {
       return;
     }
 
-    if (state.view === "weeks") {
-      renderLibrary();
-      keepScroll(renderWeeksPage);
-      return;
-    }
-
     if (state.view === "code" || state.view === "issues" || state.view === "slack") {
       renderLibrary();
       return;
@@ -2004,7 +1866,6 @@ elements.copyTaskPath.addEventListener("animationend", () => {
 elements.tasksButton.addEventListener("click", () => showTasks());
 elements.topicsButton.addEventListener("click", () => showLibrary("topics"));
 elements.referenceButton.addEventListener("click", () => showLibrary("reference"));
-elements.weeksButton.addEventListener("click", () => showWeeks());
 elements.activityButton.addEventListener("click", () => showActivity());
 elements.codeButton.addEventListener("click", () => showCode());
 elements.issuesButton.addEventListener("click", () => showIssues());
@@ -2067,7 +1928,6 @@ elements.meta.addEventListener("click", async (event) => {
     event.preventDefault();
     if (view.dataset.crumbView === "tasks") showTasks();
     else if (view.dataset.crumbView in LIBRARY_VIEWS) showLibrary(view.dataset.crumbView);
-    else showWeeks({ anchor: parseDateKey(view.dataset.crumbDate) });
     return;
   }
   const doc = event.target.closest("[data-crumb-path]");
@@ -2175,16 +2035,6 @@ for (const [on, off] of [["pointerover", "pointerout"], ["focusin", "focusout"]]
 }
 addEventListener("scroll", hideLinkTip, { capture: true, passive: true });
 addEventListener("keydown", (event) => { if (event.key === "Escape") hideLinkTip(); });
-// Hovering a task in the Weeks calendar lights up the same task on every other day.
-elements.chunks.addEventListener("pointerover", (event) => {
-  const row = event.target.closest?.(".calendar-task[data-task-id]");
-  const id = row?.dataset.taskId || "";
-  const surface = elements.chunks.querySelector(".weeks-surface");
-  if (!surface || surface.dataset.linkedTask === id) return;
-  surface.dataset.linkedTask = id;
-  for (const linked of surface.querySelectorAll(".calendar-task.is-linked")) linked.classList.remove("is-linked");
-  if (id) for (const linked of surface.querySelectorAll(`.calendar-task[data-task-id="${id}"]`)) linked.classList.add("is-linked");
-});
 elements.documents.addEventListener("click", (event) => {
   const button = event.target.closest("[data-path]");
   if (button) selectDocument(button.dataset.path);
@@ -2308,24 +2158,6 @@ elements.chunks.addEventListener("click", (event) => {
   const task = event.target.closest("[data-task-path]");
   if (task) {
     selectDocument(task.dataset.taskPath);
-    return;
-  }
-  const calendarFile = event.target.closest("[data-calendar-path]");
-  if (calendarFile) {
-    selectDocument(calendarFile.dataset.calendarPath);
-    return;
-  }
-  const weekShift = event.target.closest("[data-week-shift]");
-  if (weekShift) {
-    state.weekAnchor = addDays(state.weekAnchor, Number(weekShift.dataset.weekShift));
-    updateWeeksUrl("replace");
-    renderWeeksPage();
-    return;
-  }
-  if (event.target.closest("[data-week-today]")) {
-    state.weekAnchor = parseDateKey(localTodayKey());
-    updateWeeksUrl("replace");
-    renderWeeksPage();
     return;
   }
   const documentLink = event.target.closest(".markdown-document-link");
@@ -2452,7 +2284,6 @@ const shortcuts = [
   { keys: ["D"], description: "Open an agent draft for the current file", run: openDocumentComposer },
   { keys: ["⌘K", "Ctrl+K", "/"], description: "Search pages, plans, tasks, topics, reference files, and PRs", run: openSearch },
   { keys: ["A"], description: "Open Tasks", run: () => showTasks() },
-  { keys: ["W"], description: "Open Weeks", run: () => showWeeks() },
   { keys: ["V"], description: "Open Activity: tasks, daily plans, issues and PRs, newest first", run: () => showActivity() },
   { keys: ["G"], description: "Open Code: worktrees, pull requests, cleanup", run: () => showCode() },
   { keys: ["I"], description: "Open Issues: triage, epics, activity", run: () => issuesOn() && showIssues() },
@@ -2544,7 +2375,6 @@ const SEARCH_ICONS = {
   pr: GLYPHS["git-pull-request"],
   task: GLYPHS["square-check"],
   plan: GLYPHS["calendar"],
-  done: GLYPHS["circle-check"],
   topic: GLYPHS["folder"],
   reference: GLYPHS["book"],
   file: GLYPHS["file-text"],
@@ -2560,7 +2390,6 @@ const SEARCH_ICONS = {
 function searchIconKey(doc) {
   if (doc.kind === "Task") return "task";
   if (doc.kind === "Plan" || doc.kind === "Daily note") return "plan";
-  if (doc.kind === "Done") return "done";
   if (doc.kind === "Topic") return "topic";
   if (doc.kind === "Reference") return "reference";
   return "file";
@@ -2642,7 +2471,6 @@ function searchIssues(query, terms) {
 const PAGES = [
   { title: "Today", detail: "Today’s plan", icon: "plan", run: goToToday },
   { title: "Tasks", detail: "All tasks", icon: "task", run: () => showTasks() },
-  { title: "Weeks", detail: "Calendar of daily plans", icon: "plan", run: () => showWeeks() },
   { title: "Activity", detail: "Everything that changed, newest first", icon: "plan", run: () => showActivity() },
   ...Object.entries(LIBRARY_VIEWS).map(([view, { title, intro }]) => ({ title, detail: intro, icon: title === "Topics" ? "topic" : "reference", run: () => showLibrary(view) })),
   { title: "Local servers", detail: "Dev servers the viewer started: URLs, output, restart, stop", icon: "server", run: () => openServers(showNotice) },
@@ -2995,10 +2823,6 @@ window.addEventListener("popstate", () => {
     showActivity({ historyMode: "none" });
     return;
   }
-  if (params.get("view") === "weeks") {
-    showWeeks({ historyMode: "none", anchor: parseDateKey(params.get("date")) || parseDateKey(localTodayKey()) });
-    return;
-  }
   const requested = params.get("path");
   const path = state.documents.find((doc) => doc.path === requested)?.path
     || state.documents.find((doc) => doc.path === state.defaultPath)?.path
@@ -3236,7 +3060,6 @@ function visitResult(href) {
   if (view === "issues") return page("issue", "Issues", ISSUE_TABS[params.get("tab") || "all"] || "All");
   if (view === "slack") return page("slack", "Slack", "Linked threads");
   if (view === "activity") return page("plan", "Activity", "Everything that changed");
-  if (view === "weeks") return page("plan", "Weeks", params.get("date") ? `Week of ${formatDate(params.get("date"))}` : "This week");
   if (view in LIBRARY_VIEWS) return page(view === "topics" ? "topic" : "reference", LIBRARY_VIEWS[view].title, LIBRARY_VIEWS[view].intro);
   const path = params.get("path") || state.defaultPath;
   // A work item dialog (`?item=`) is its own place, not the task behind it.
@@ -3405,10 +3228,6 @@ async function boot() {
     else if (requestedView === "issues") renderIssues();
     else if (requestedView === "slack") renderSlack();
     else if (requestedView === "activity") renderActivity();
-    else if (requestedView === "weeks") {
-      state.weekAnchor = parseDateKey(new URLSearchParams(location.search).get("date")) || parseDateKey(localTodayKey());
-      renderWeeksPage();
-    }
     else if (initial) await selectDocument(initial, { historyMode: "none", anchor: locationAnchor() });
     else showNotice("No supported files were found under daily, tasks, plans, or reference.", true);
     connectLiveUpdates();

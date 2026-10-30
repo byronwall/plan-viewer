@@ -146,31 +146,8 @@ type DocumentSummary = {
   pullRequests?: string[];
   slackLinks?: string[];
   task?: TaskSummary;
-  digest?: DailyDigest;
   modified?: number;
 };
-
-// What a daily file says about the day's work, for the Weeks calendar: the tasks it lists (in order, with the
-// bullet's note after the dash) and how many top-level outcome bullets it records.
-type DailyDigest = { tasks: { id: string; note: string }[]; mentions: string[]; items: number; headings: string[] };
-
-// Section headings that frame a day rather than name its work.
-const FRAMING_HEADINGS = /^(start here|scheduled tasks|next steps|notes|chats|outcomes? for today|suggested order.*|below the cut line|completed.*|carry[- ]?over.*|references?)$/i;
-
-export function dailyDigest(contents: string): DailyDigest {
-  const tasks = new Map<string, string>();
-  let items = 0;
-  for (const line of contents.split("\n")) {
-    if (!/^[-*] /.test(line)) continue;
-    items += 1;
-    const id = line.match(/TASK-\d{4}/)?.[0];
-    if (id && !tasks.has(id)) tasks.set(id, line.replace(/^[-*] /, "").split(/\s+[—–-]\s+/).slice(1).join(" — ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").trim());
-  }
-  const mentions = [...new Set(contents.match(/TASK-\d{4}/g) || [])];
-  // Plans from before file-backed tasks name their work in `##` headings such as `## Milestone 2: …` or `## 3. …`.
-  const headings = [...contents.matchAll(/^## (.+)$/gm)].map(([, heading]) => heading.replace(/^(milestone \d+[:.]|\d+\.)\s*/i, "").trim()).filter((heading) => !FRAMING_HEADINGS.test(heading));
-  return { tasks: [...tasks].map(([id, note]) => ({ id, note })), mentions, items, headings };
-}
 
 const TASK_STATUSES = new Set<TaskStatus>(["open", "active", "waiting", "deferred", "completed"]);
 
@@ -415,9 +392,8 @@ export function summarize(path: string, contents: string, currentDate = todayDat
       group: isToday ? "Today" : "Daily",
       format,
       date: `${year}-${month}-${day}`,
-      kind: format === "text" ? "Text file" : name === "plan" ? "Plan" : name === "done" ? "Done" : "Daily note",
+      kind: format === "text" ? "Text file" : name === "plan" ? "Plan" : "Daily note",
       isToday,
-      ...(format === "markdown" && (name === "plan" || name === "done") ? { digest: dailyDigest(contents) } : {}),
     };
   }
   const taskAsset = path.match(/^tasks\/(TASK-\d{4})-assets\//);
@@ -514,9 +490,9 @@ export async function listDocuments() {
   return docs.sort((a, b) => {
     if (a.isToday !== b.isToday) return a.isToday ? -1 : 1;
     if ((a.group === "Today" || a.group === "Daily") && (b.group === "Today" || b.group === "Daily")) {
-      const kindOrder = { Plan: 0, Done: 1, "Daily note": 2 };
+      const kindOrder = { Plan: 0, "Daily note": 1 };
       return (b.date || "").localeCompare(a.date || "")
-        || (kindOrder[a.kind as keyof typeof kindOrder] ?? 3) - (kindOrder[b.kind as keyof typeof kindOrder] ?? 3)
+        || (kindOrder[a.kind as keyof typeof kindOrder] ?? 2) - (kindOrder[b.kind as keyof typeof kindOrder] ?? 2)
         || a.title.localeCompare(b.title);
     }
     if (a.group === "Tasks" && b.group === "Tasks") return (b.task?.updated || "").localeCompare(a.task?.updated || "") || a.title.localeCompare(b.title);

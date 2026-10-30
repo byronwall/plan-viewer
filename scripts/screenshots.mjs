@@ -52,7 +52,6 @@ const shots = {
     await settle();
   },
   tasks: async () => { await page.goto(`${base}/?view=tasks`); await settle(); },
-  weeks: async () => { await page.goto(`${base}/?view=weeks&date=2026-10-19`); await settle(); },
   palette: async () => {
     await page.goto(base); await settle();
     await page.keyboard.press("Meta+k"); await page.waitForTimeout(300);

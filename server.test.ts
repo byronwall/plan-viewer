@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import { createLinkMetadataStore, refreshSlackChannels } from "./link-metadata.ts";
 import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle, withImages } from "./codex-desktop.ts";
 import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
-import { buildWeeks, dateKey, parseDateKey, startOfWeek } from "./public/weeks.js";
-import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, dailyDigest, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
+import { dateKey, parseDateKey, startOfWeek } from "./public/dates.js";
+import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
   const previous = process.env.SLACK_TOKEN;
@@ -101,15 +101,15 @@ test("uses stable Markdown anchors for document chunks", () => {
 
 test("resolves relative Markdown links and fragments inside the viewer", () => {
   assert.deepEqual(
-    resolveMarkdownLink("done.md#milestone-4-implementation--preserve-report-totals", "daily/2026/07/31/plan.md"),
+    resolveMarkdownLink("notes.md#milestone-4-implementation--preserve-report-totals", "daily/2026/07/31/plan.md"),
     {
       kind: "document",
-      path: "daily/2026/07/31/done.md",
+      path: "daily/2026/07/31/notes.md",
       anchor: "milestone-4-implementation--preserve-report-totals",
     },
   );
   assert.deepEqual(
-    resolveMarkdownLink("../../../../plans/atlas-orbit-boundary/README.md", "daily/2026/07/31/done.md"),
+    resolveMarkdownLink("../../../../plans/atlas-orbit-boundary/README.md", "daily/2026/07/31/notes.md"),
     { kind: "document", path: "plans/atlas-orbit-boundary/README.md", anchor: "" },
   );
   assert.deepEqual(
@@ -186,9 +186,9 @@ check_in: ${checkIn}
 });
 
 test("renders internal and external links with distinct safe behavior", () => {
-  const html = inlineMarkdown("See [Done](done.md#completed-outcomes) and [PR](https://github.com/example/repo/pull/1).", "daily/2026/07/31/plan.md");
+  const html = inlineMarkdown("See [Notes](notes.md#completed-outcomes) and [PR](https://github.com/example/repo/pull/1).", "daily/2026/07/31/plan.md");
   assert.match(html, /class="markdown-document-link"/);
-  assert.match(html, /data-document-path="daily\/2026\/07\/31\/done\.md"/);
+  assert.match(html, /data-document-path="daily\/2026\/07\/31\/notes\.md"/);
   assert.match(html, /data-document-anchor="completed-outcomes"/);
   assert.match(html, /class="markdown-external-link"/);
   assert.match(html, /target="_blank"/);
@@ -219,14 +219,6 @@ test("links every item of a slash list with the first reference's prefix", () =>
   assert.deepEqual(hrefs("plus ATL-2733/2734 and OPS-54562/54852"), ["acme/issue/ATL-2733", "acme/issue/ATL-2734", "browse/OPS-54562", "browse/OPS-54852"]);
   assert.deepEqual(hrefs("#1831/#1872, Orbit#2738/2740"), ["acme/atlas/pull/1831", "acme/atlas/pull/1872", "acme/Orbit/pull/2738", "acme/Orbit/pull/2740"]);
   assert.deepEqual(hrefs("see https://linear.app/acme/issue/ATL-2312/fix-totals"), []);
-});
-
-test("daily digests list scheduled tasks with notes, done mentions, and work headings", () => {
-  const plan = dailyDigest("# Daily plan\n\n## Scheduled tasks\n\n- [TASK-0030](../TASK-0030.md) — Read the catch-up.\n- TASK-0031 — First: containment.\n- TASK-0030 again\n\n## Milestone 2: Automatic recovery\n\n## 3. Frontend triage picks\n\n## Below the cut line\n");
-  assert.deepEqual(plan.tasks, [{ id: "TASK-0030", note: "Read the catch-up." }, { id: "TASK-0031", note: "First: containment." }]);
-  assert.deepEqual(plan.headings, ["Automatic recovery", "Frontend triage picks"]);
-  assert.equal(plan.items, 3);
-  assert.deepEqual(dailyDigest("- Closed TASK-0013 and refreshed TASK-0001.\n- Other outcome.").mentions, ["TASK-0013", "TASK-0001"]);
 });
 
 test("renders repository-local Markdown images with accessible responsive markup", () => {
@@ -290,7 +282,7 @@ test("keeps unavailable images readable without exposing an unsafe source", () =
 });
 
 test("creates a concise plain-text preview from chunk Markdown", () => {
-  const excerpt = markdownExcerpt("### Desired end state\n\n- Review [the completed work](done.md#complete).\n- Keep `acme init` focused.\n\n**Ship** when green.");
+  const excerpt = markdownExcerpt("### Desired end state\n\n- Review [the completed work](notes.md#complete).\n- Keep `acme init` focused.\n\n**Ship** when green.");
   assert.equal(excerpt, "Desired end state Review the completed work. Keep acme init focused. Ship when green.");
   assert.equal(markdownExcerpt("One two three four five six", 14), "One two three…");
 });
@@ -477,16 +469,10 @@ test("loads repository text assets as one plain-text chunk", async () => {
   assert.match(document.chunks[0].markdown, /Transcription:/);
 });
 
-test("builds consecutive Sunday-to-Saturday weeks across month and year boundaries", () => {
+test("starts weeks on Sunday across year boundaries", () => {
   const december = parseDateKey("2026-12-31");
   assert.ok(december);
   assert.equal(dateKey(startOfWeek(december)), "2026-12-27");
-  const weeks = buildWeeks(december, 3);
-  assert.deepEqual(weeks.map((week) => [dateKey(week[0]), dateKey(week[6])]), [
-    ["2026-12-20", "2026-12-26"],
-    ["2026-12-27", "2027-01-02"],
-    ["2027-01-03", "2027-01-09"],
-  ]);
 });
 
 test("rejects invalid calendar dates", () => {
@@ -495,10 +481,10 @@ test("rejects invalid calendar dates", () => {
 });
 
 test("groups every file from the current day under Today", () => {
-  const paths = ["plan.md", "done.md", "reference.md"].map((file) => `daily/2026/08/03/${file}`);
+  const paths = ["plan.md", "notes.md", "reference.md"].map((file) => `daily/2026/08/03/${file}`);
   const currentDay = paths.map((path) => summarize(path, "# Daily file", "2026-08-03"));
   assert.ok(currentDay.every((document) => document.group === "Today" && document.isToday));
-  assert.deepEqual(currentDay.map((document) => document.kind), ["Plan", "Done", "Daily note"]);
+  assert.deepEqual(currentDay.map((document) => document.kind), ["Plan", "Daily note", "Daily note"]);
 });
 
 test("builds a Codex draft link pinned to the workspace", () => {

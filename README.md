@@ -2,7 +2,7 @@
 
 **A local reading desk for planning in Markdown and handing the work to coding agents.**
 
-You keep daily plans, tasks, and notes as plain Markdown files in a folder or Git repository. Plan Viewer turns that folder into a fast, keyboard-driven app: today's plan as work cards, tasks with dependency graphs, a calendar of what got done, and one-click handoffs that load any piece of work into a [Codex](https://openai.com/codex/) or [Claude](https://claude.com/download) desktop draft. Beside your plans sit the pull requests, worktrees, diffs, and issues that the work touches.
+You keep daily plans, tasks, and notes as plain Markdown files in a folder or Git repository. Plan Viewer turns that folder into a fast, keyboard-driven app: today's plan as work cards, tasks with dependency graphs, and one-click handoffs that load any piece of work into a [Codex](https://openai.com/codex/) or [Claude](https://claude.com/download) desktop draft. Beside your plans sit the pull requests, worktrees, diffs, and issues that the work touches.
 
 The viewer never edits your files. Your Markdown stays the source of truth, readable anywhere, and agents make the changes.
 
@@ -20,9 +20,9 @@ The viewer never edits your files. Your Markdown stays the source of truth, read
 
 ![A task with its work breakdown and dependency graph](docs/images/task.png)
 
-**See the week at a glance.** Weeks lays out each day's scheduled tasks and checks off the ones its done log mentions. Tasks lists everything unfinished, with an inspector for the selected one.
+**Every task in one list.** Tasks lists everything unfinished, with an inspector for the selected one. Progress lives on the task itself: its status and dated updates.
 
-![The Weeks calendar](docs/images/weeks.png)
+![The Tasks page](docs/images/tasks.png)
 
 **The code your plans touch.** The Code view watches the repositories you track: worktrees, open PRs with CI and review state, commits across branches, cleanup of stale worktrees, and a full diff viewer with split and unified views, viewed marks, local review notes, and a treemap of each change.
 
@@ -32,7 +32,7 @@ The viewer never edits your files. Your Markdown stays the source of truth, read
 
 ![The Issues page](docs/images/issues.png)
 
-**Everything from the keyboard.** `⌘K` searches documents, tasks, PRs, and issues. Single letters move between pages (`T` today, `A` tasks, `W` weeks, `G` code, `I` issues), and `?` lists every shortcut.
+**Everything from the keyboard.** `⌘K` searches documents, tasks, PRs, and issues. Single letters move between pages (`T` today, `A` tasks, `G` code, `I` issues), and `?` lists every shortcut.
 
 ![The ⌘K palette](docs/images/palette.png)
 
@@ -47,7 +47,7 @@ npm install
 npm run demo
 ```
 
-Open <http://127.0.0.1:4173>. The demo serves [`examples/workspace/`](examples/workspace), a small fictional team's week: five tasks, daily plans and done logs, a topic, and a stand-in Jira so the Issues page has data. The Code view is empty until you track a repository (gear icon on the Code page).
+Open <http://127.0.0.1:4173>. The demo serves [`examples/workspace/`](examples/workspace), a small fictional team's week: five tasks, daily plans, a topic, and a stand-in Jira so the Issues page has data. The Code view is empty until you track a repository (gear icon on the Code page).
 
 ## Use it with your own plans
 
@@ -85,7 +85,6 @@ Write today's plan at `daily/YYYY/MM/DD/plan.md` and it opens on launch. The cop
 
 ```text
 daily/YYYY/MM/DD/plan.md     # the day's plan; "## Scheduled tasks" links tasks
-daily/YYYY/MM/DD/done.md     # what got done
 daily/YYYY/MM/DD/*.md|.txt   # optional day notes
 tasks/TASK-0001.md           # one task: front matter, outcome, work breakdown, next actions, updates
 tasks/TASK-0001-assets/      # documents and images owned by that task

@@ -19,14 +19,6 @@ export function startOfWeek(date) {
   return addDays(date, -date.getUTCDay());
 }
 
-export function buildWeeks(centerDate, weekCount = 5) {
-  const count = Math.max(1, weekCount);
-  const firstWeek = addDays(startOfWeek(centerDate), -Math.floor(count / 2) * 7);
-  return Array.from({ length: count }, (_, weekIndex) =>
-    Array.from({ length: 7 }, (_, dayIndex) => addDays(firstWeek, weekIndex * 7 + dayIndex)),
-  );
-}
-
 export function localTodayKey(now = new Date()) {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
