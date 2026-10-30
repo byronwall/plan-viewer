@@ -2009,6 +2009,14 @@ a.issue-link-row[data-planning-path] > svg { align-self: center; }
 .issue-overview-text h4 { margin: 0 0 8px; color: var(--label-text); font-size: .66rem; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; }
 .issue-overview-text h4 span { color: var(--quiet-text); font-weight: 500; text-transform: none; letter-spacing: 0; }
 .issue-overview-text .issue-markdown { font-size: .92rem; }
+.slack-overview { max-width: 980px; }
+.slack-overview-mark { display: inline-grid; place-items: center; width: 26px; height: 26px; color: var(--muted); }
+.slack-overview-mark .service-icon { width: 18px; height: 18px; margin: 0; }
+.slack-thread { padding-top: 12px; gap: 4px; }
+.slack-thread > li { padding: 6px 10px; border-radius: 6px; }
+.slack-thread > li.is-linked { background: var(--selected); }
+.slack-thread .issue-markdown p { margin: 0 0 6px; }
+.slack-reactions { margin-left: auto; font-size: .72rem; }
 .code-detail-head > .issue-type { margin-top: 3px; }
 .code-detail-head h3 code { font-size: .8rem; color: var(--muted); }
 .search-icon.is-issue { color: #3157d5; } .search-icon.is-issue.is-done { color: var(--pass, #1f9d6b); } .search-icon.is-issue.is-indeterminate { color: #e8590c; }

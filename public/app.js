@@ -7,6 +7,7 @@ import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, markdownOutli
 import { TABS as CODE_TABS, connectPlanning, setPeople, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { renderActivityPage } from "./activity.js";
+import { openSlackThread } from "./slack.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
@@ -2133,10 +2134,12 @@ elements.chunkNav.addEventListener("click", (event) => {
     }
   }
 });
-// Plain clicks on Slack permalinks hand off to the desktop app; modified clicks keep normal browser behaviour.
+// Plain clicks on Slack permalinks hand off to the desktop app (unless `slack.codex` gives them a thread preview);
+// modified clicks keep normal browser behaviour.
 document.addEventListener("click", (event) => {
   const link = event.target.closest("a.slack-link");
   if (!link || event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  if (inAppTarget(link)) return; // the thread preview, opened by the handler below
   event.preventDefault();
   fetch("/api/open-slack", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: link.href }) })
     .then(response => { if (!response.ok) throw new Error(); })
@@ -2151,6 +2154,7 @@ function inAppTarget(link) {
     const [slug, number] = ref.split("#");
     return { open: () => openPrOverlay(slug, Number(number)), site: "GitHub" };
   }
+  if (/^https:\/\/[\w-]+\.slack\.com\/archives\//.test(link.href) && config().slack.codex?.length) return { open: () => openSlackThread(link.href, link.dataset.meta ? JSON.parse(link.dataset.meta).state || "" : ""), site: "Slack" };
   if (kind !== "linear" && kind !== "jira") return null;
   const key = kind === "linear" ? `linear:${ref}` : ref;
   if (cachedIssues()?.issues?.some(issue => issue.key === key)) return { open: () => openIssue(key), site: kind === "linear" ? "Linear" : "Jira" };

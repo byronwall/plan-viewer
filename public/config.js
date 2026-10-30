@@ -67,6 +67,11 @@ export const DEFAULT_CONFIG = {
     // true reads the GitHub issues of every repository the Code page tracks, through `gh`.
     github: false,
   },
+  slack: {
+    // Command for Codex's app server, e.g. ["codex", "app-server"]: Slack links then open a local thread preview, read
+    // through the Slack connector signed in to Codex (a direct tool call; no model runs). Empty sends them to Slack.
+    codex: [],
+  },
 };
 
 const merge = (overrides = {}) => ({

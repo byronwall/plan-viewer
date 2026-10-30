@@ -15,6 +15,7 @@ import { createCodeDashboard, githubImage } from "./code-dashboard.ts";
 import { createPeople } from "./people.ts";
 import { createIssueTracker } from "./issues.ts";
 import { createPlans } from "./plans.ts";
+import { createSlackThreads } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig } from "./public/config.js";
 
@@ -42,6 +43,7 @@ const people = createPeople(ROOT, { repos: codeDashboard.readRepos, slug: codeDa
 const plans = createPlans(ROOT, { repos: codeDashboard.readRepos, slug: codeDashboard.githubSlug });
 const issueTracker = createIssueTracker(ROOT, async () => ({ prs: (await codeDashboard.prIndex()).prs, worktrees: await codeDashboard.worktreeIndex() }),
   async () => (await Promise.all((await codeDashboard.readRepos()).map(async (path) => ({ path, slug: await codeDashboard.githubSlug(path) })))).filter(({ slug }) => slug));
+const slackThreads = createSlackThreads(ROOT, () => config().slack?.codex || []);
 const PORT = Number(process.env.PLAN_VIEWER_PORT || process.env.PORT || config().port);
 const MAX_COMMENT_LENGTH = 12_000;
 const ASSET_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".dot"]);
@@ -809,6 +811,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       await promisify(execFile)("open", await slackDeepLink(target).then((link) => [link], () => ["-a", "Slack", target]));
       return json(response, 200, { opened: true });
     }
+    if (request.method === "GET" && url.pathname === "/api/slack/thread") return json(response, 200, await slackThreads.read(url.searchParams.get("url") || "", url.searchParams.has("refresh")));
     if (request.method === "GET" && url.pathname === "/api/version") return json(response, 200, await viewerVersion());
     if (request.method === "POST" && url.pathname === "/api/version/update") return json(response, 200, await updateViewer());
     if (request.method === "GET" && url.pathname === "/api/config") return json(response, 200, config());
