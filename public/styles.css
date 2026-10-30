@@ -420,16 +420,26 @@ button { cursor: pointer; }
 .hover-card-hint { margin-top: 2px; color: var(--quiet-text); font-size: .7rem; }
 .hover-card-hint kbd { border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; color: var(--muted); font: 600 .64rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .hover-card-state.is-quiet { color: var(--muted); font-weight: 500; }
-/* A label column (status, age) beside a title and its detail: the rail's day and page cards. */
-.tip-row { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; padding: 2px 0; }
+/* The rail's day and page cards. The pointer can move onto them, and each row opens its item. Rows share one label
+   column (status, age) sized to the card's longest label, so a status like "In Development" is never clipped. */
+.rail-card { width: max-content; max-width: min(560px, calc(100vw - 280px)); grid-template-columns: max-content minmax(0, 1fr); column-gap: 10px; padding: 7px 6px 6px; pointer-events: auto; }
+.rail-card > * { grid-column: 1 / -1; padding-inline: 4px; }
+.tip-row { display: grid; grid-template-columns: subgrid; padding: 3px 4px; }
+button.tip-row { width: 100%; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease; }
+button.tip-row:hover { background: var(--quiet-field); }
+button.tip-row:hover strong { color: var(--action-ink); }
+button.tip-row:focus-visible { outline: 2px solid rgba(49, 87, 213, .35); outline-offset: -1px; }
 .tip-row strong { display: -webkit-box; overflow: hidden; color: var(--ink); font-weight: 600; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .tip-row strong + span { display: -webkit-box; overflow: hidden; color: var(--muted); font-size: .74rem; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
-.tip-label { overflow: hidden; color: var(--muted); font-size: .7rem; font-weight: 650; line-height: 1.55; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tip-label { color: var(--muted); font-size: .7rem; font-weight: 650; line-height: 1.55; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tip-label[data-tone="active"] { color: var(--action-ink); }
 .tip-label[data-tone="waiting"], .tip-label[data-tone="attention"] { color: #754b00; }
 .tip-label[data-tone="completed"] { color: var(--success-ink); }
 .tip-label[data-tone="missing"] { color: var(--quiet-text); font-weight: 500; }
 .tip-empty { color: var(--muted); }
+.rail-card .hover-card-hint button { border: 0; background: none; padding: 0; color: var(--action-ink); font: inherit; cursor: pointer; }
+.rail-card .hover-card-hint button:hover { color: var(--action-deep); }
+@media (prefers-reduced-motion: reduce) { button.tip-row { transition: none; } }
 .hover-card-skeleton { width: 70%; height: .8rem; margin: 2px 0; border-radius: 3px; background: var(--quiet-field); }
 .hover-card-skeleton.is-title { width: 85%; height: .9rem; }
 @keyframes hover-card-in { from { opacity: 0; transform: translateY(-2px); } }

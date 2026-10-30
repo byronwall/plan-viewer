@@ -8,7 +8,7 @@ import { TABS as CODE_TABS, connectPlanning, setPeople, ago, cachedPrIndex, comm
 import { TABS as ISSUE_TABS, cachedIssues, isMyIssue, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { renderActivityPage } from "./activity.js";
 import { openSlackThread, refreshSlackStars, setSlackFavorites, setSlackNotice, slackThreadTitle } from "./slack.js";
-import { channelLabel, fresh as freshThread, lastActive, opener, refreshSlackPage, renderSlackPage } from "./slack-page.js";
+import { channelLabel, fresh as freshThread, lastActive, opener, permalink, refreshSlackPage, renderSlackPage } from "./slack-page.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
@@ -194,15 +194,15 @@ function dayTipHtml(date) {
   const docs = state.documents.filter((doc) => doc.date === date);
   const plan = docs.find((doc) => doc.kind === "Plan");
   const tasks = (plan?.focus?.tasks || []).map(({ id, note }) => {
-    const task = state.documents.find((doc) => doc.task?.id === id)?.task;
-    return tipRow(TASK_STATUS_LABELS[task?.status] || "Missing", task?.title || id, note, task?.status || "missing");
+    const doc = state.documents.find((candidate) => candidate.task?.id === id);
+    return tipRow(TASK_STATUS_LABELS[doc?.task.status] || "Missing", doc?.task.title || id, note, doc?.task.status || "missing", doc ? `doc:${doc.path}` : "");
   });
-  const headings = tasks.length ? [] : (plan?.focus?.headings || []).map((heading, index) => tipRow(`${index + 1}.`, heading));
-  const files = docs.filter((doc) => doc !== plan).map((doc) => tipRow("File", doc.title, doc.path.split("/").pop()));
+  const headings = tasks.length ? [] : (plan?.focus?.headings || []).map((heading, index) => tipRow(`${index + 1}.`, heading, "", "", `doc:${plan.path}`));
+  const files = docs.filter((doc) => doc !== plan).map((doc) => tipRow("File", doc.title, doc.path.split("/").pop(), "", `doc:${doc.path}`));
   return tipHead(formatDate(date, true), tasks.length ? plural(tasks.length, "scheduled task") : headings.length ? plural(headings.length, "section") : "")
     + (tasks.join("") + headings.join("") || (plan ? tipEmpty("No scheduled tasks.") : ""))
     + files.join("")
-    + `<div class="hover-card-hint">Click opens the ${plan ? "plan" : "file"} · <kbd>[</kbd> <kbd>]</kbd> step days</div>`;
+    + `<div class="hover-card-hint">${plan ? `<button type="button" data-open="doc:${escapeHtml(plan.path)}">Peek at the plan</button> · ` : ""}<kbd>[</kbd> <kbd>]</kbd> step days</div>`;
 }
 
 const TASK_STATUS_LABELS = { open: "Open", active: "Active", waiting: "Waiting", deferred: "Deferred", completed: "Completed" };
@@ -233,11 +233,15 @@ function statusPill(task, path) {
 // The rail's page links each carry the one number worth knowing, amber when it needs you (a due check-in, a review
 // request, new Slack replies), and a hover card listing what sits behind it. Each reads data the viewer already loaded.
 let slackThreads = null;
-const tipRow = (label, title, detail = "", tone = "") => `<div class="tip-row"><span class="tip-label"${tone ? ` data-tone="${tone}"` : ""}>${escapeHtml(label)}</span><span><strong>${escapeHtml(title)}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ""}</span></div>`;
+// A card row; with `open` ("doc:path", "pr:slug#n", "issue:KEY", "slack:url") it is a button that opens that item's overlay.
+const tipRow = (label, title, detail = "", tone = "", open = "") => {
+  const body = `<span class="tip-label"${tone ? ` data-tone="${tone}"` : ""}>${escapeHtml(label)}</span><span><strong>${escapeHtml(title)}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ""}</span>`;
+  return open ? `<button type="button" class="tip-row" data-open="${escapeHtml(open)}">${body}</button>` : `<div class="tip-row">${body}</div>`;
+};
 const tipHead = (name, state = "") => `<div class="hover-card-head"><span class="hover-card-name">${escapeHtml(name)}</span>${state ? `<span class="hover-card-state is-quiet">${escapeHtml(state)}</span>` : ""}</div>`;
 const tipEmpty = (text) => `<div class="hover-card-line tip-empty">${escapeHtml(text)}</div>`;
 const recentDocs = (docs, count = 6) => docs.filter((doc) => doc.modified).sort((a, b) => b.modified - a.modified).slice(0, count);
-const docRows = (docs) => recentDocs(docs).map((doc) => tipRow(ago(doc.modified), doc.title, doc.path)).join("") || tipEmpty("Nothing here yet.");
+const docRows = (docs) => recentDocs(docs).map((doc) => tipRow(ago(doc.modified), doc.title, doc.path, "", `doc:${doc.path}`)).join("") || tipEmpty("Nothing here yet.");
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 function navSummary(view) {
@@ -252,8 +256,8 @@ function navSummary(view) {
     const due = tasks.filter((doc) => checkInReason(doc.task, doc.path));
     const by = (status) => tasks.filter((doc) => doc.task.status === status && !due.includes(doc));
     const live = [...by("active"), ...by("open")];
-    const rows = [...due.map((doc) => tipRow("Check in", doc.task.title, checkInReason(doc.task, doc.path), "attention")),
-      ...live.sort((a, b) => b.task.updated.localeCompare(a.task.updated)).map((doc) => tipRow(TASK_STATUS_LABELS[doc.task.status], doc.task.title, `${doc.task.id} · ${doc.task.project}`, doc.task.status))];
+    const rows = [...due.map((doc) => tipRow("Check in", doc.task.title, checkInReason(doc.task, doc.path), "attention", `doc:${doc.path}`)),
+      ...live.sort((a, b) => b.task.updated.localeCompare(a.task.updated)).map((doc) => tipRow(TASK_STATUS_LABELS[doc.task.status], doc.task.title, `${doc.task.id} · ${doc.task.project}`, doc.task.status, `doc:${doc.path}`))];
     const counts = [["active", by("active").length], ["open", by("open").length], ["waiting", by("waiting").length]].filter(([, count]) => count).map(([status, count]) => `${count} ${status}`).join(" · ");
     return { count: due.length ? plural(due.length, "check-in") : live.length ? `${live.length} open` : "", attention: due.length > 0, card: tipHead("Tasks", counts) + (rows.slice(0, 8).join("") || tipEmpty("No open tasks.")) + (rows.length > 8 ? tipEmpty(`+${rows.length - 8} more on the Tasks page`) : "") };
   }
@@ -267,8 +271,8 @@ function navSummary(view) {
     const open = index.prs.filter((pr) => pr.state === "OPEN").sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
     const review = open.filter((pr) => pr.requestedOfMe);
     const mine = open.filter((pr) => pr.author === index.me && !pr.requestedOfMe);
-    const rows = [...review.map((pr) => tipRow("Review", pr.title, `${pr.slug.split("/").pop()}#${pr.number}`, "attention")),
-      ...mine.map((pr) => tipRow(pr.draft ? "Draft" : pr.reviewDecision === "APPROVED" ? "Approved" : pr.reviewDecision === "CHANGES_REQUESTED" ? "Changes" : "Yours", pr.title, `${pr.slug.split("/").pop()}#${pr.number}`, pr.reviewDecision === "APPROVED" ? "completed" : ""))];
+    const rows = [...review.map((pr) => tipRow("Review", pr.title, `${pr.slug.split("/").pop()}#${pr.number}`, "attention", `pr:${pr.slug}#${pr.number}`)),
+      ...mine.map((pr) => tipRow(pr.draft ? "Draft" : pr.reviewDecision === "APPROVED" ? "Approved" : pr.reviewDecision === "CHANGES_REQUESTED" ? "Changes" : "Yours", pr.title, `${pr.slug.split("/").pop()}#${pr.number}`, pr.reviewDecision === "APPROVED" ? "completed" : "", `pr:${pr.slug}#${pr.number}`))];
     return { count: review.length ? `${review.length} to review` : mine.length ? `${mine.length} yours` : "", attention: review.length > 0, card: tipHead("Pull requests", [review.length && `${review.length} to review`, mine.length && `${mine.length} yours`].filter(Boolean).join(" · ")) + (rows.slice(0, 8).join("") || tipEmpty(index.prs.length ? "Nothing waiting on you." : "No tracked repositories yet.")) };
   }
   if (view === "issues") {
@@ -276,13 +280,13 @@ function navSummary(view) {
     if (!data?.issues) return { count: "", card: tipHead("Issues") + tipEmpty("Loading issues…") };
     const mine = data.issues.filter((issue) => issue.category !== "done" && isMyIssue(issue)).sort((a, b) => (a.category === "indeterminate" ? 0 : 1) - (b.category === "indeterminate" ? 0 : 1) || String(b.updated).localeCompare(String(a.updated)));
     const moving = mine.filter((issue) => issue.category === "indeterminate").length;
-    return { count: moving ? `${moving} in progress` : mine.length ? `${mine.length} yours` : "", card: tipHead("Your issues", [moving && `${moving} in progress`, mine.length - moving && `${mine.length - moving} to do`].filter(Boolean).join(" · ")) + (mine.slice(0, 8).map((issue) => tipRow(issue.status, issue.summary, issue.key, issue.category === "indeterminate" ? "active" : "")).join("") || tipEmpty("Nothing assigned to you.")) };
+    return { count: moving ? `${moving} in progress` : mine.length ? `${mine.length} yours` : "", card: tipHead("Your issues", [moving && `${moving} in progress`, mine.length - moving && `${mine.length - moving} to do`].filter(Boolean).join(" · ")) + (mine.slice(0, 8).map((issue) => tipRow(issue.status, issue.summary, issue.key, issue.category === "indeterminate" ? "active" : "", `issue:${issue.key}`)).join("") || tipEmpty("Nothing assigned to you.")) };
   }
   if (view === "slack") {
     if (!slackThreads) return { count: "", card: tipHead("Slack") + tipEmpty("Loading threads…") };
     const threads = [...slackThreads].sort((a, b) => (freshThread(b) - freshThread(a)) || lastActive(b) - lastActive(a));
     const unread = threads.filter(freshThread).length;
-    return { count: unread ? `${unread} new` : "", attention: unread > 0, card: tipHead("Linked threads", unread ? `${unread} with new replies` : plural(threads.length, "thread")) + (threads.slice(0, 7).map((entry) => tipRow(freshThread(entry) ? "New" : ago(lastActive(entry)), opener(entry) || "Thread", channelLabel(entry), freshThread(entry) ? "attention" : "")).join("") || tipEmpty("No linked threads yet.")) };
+    return { count: unread ? `${unread} new` : "", attention: unread > 0, card: tipHead("Linked threads", unread ? `${unread} with new replies` : plural(threads.length, "thread")) + (threads.slice(0, 7).map((entry) => tipRow(freshThread(entry) ? "New" : ago(lastActive(entry)), opener(entry) || "Thread", channelLabel(entry), freshThread(entry) ? "attention" : "", `slack:${permalink(entry)}`)).join("") || tipEmpty("No linked threads yet.")) };
   }
   return { count: "", card: "" };
 }
@@ -2116,29 +2120,82 @@ for (const [on, off] of [["pointerover", "pointerout"], ["focusin", "focusout"]]
     if (link && !link.contains(event.relatedTarget)) hideLinkTip();
   });
 }
-// Day rows and page links in the rail get a card to their right: the whole plan, or what sits behind the page. Keyboard
-// focus shows it too. Beside a side-by-side rail only; on narrow screens the rail stacks above the page and the card would cover it.
-const railTipTarget = (event) => innerWidth > 820 && event.target.closest?.(".library .day-row, .library .view-navigation-link[data-view]");
-function showRailTip(row) {
-  linkTip.innerHTML = row.dataset.day ? dayTipHtml(row.dataset.day) : navSummary(row.dataset.view).card;
-  linkTip.hidden = false;
+// Day rows and page links in the rail get a card to their right: the whole plan, or what sits behind the page. The
+// pointer can move onto it (it waits a moment before closing), and each row opens its item in an overlay over the
+// current page: documents in the peek, PRs, issues and Slack threads in their own overviews. Keyboard focus shows it
+// too, and → moves into it. Beside a side-by-side rail only; stacked above the page on narrow screens it would cover it.
+const railCard = Object.assign(document.createElement("div"), { className: "hover-card rail-card", hidden: true });
+railCard.setAttribute("role", "dialog");
+document.body.append(railCard);
+let railTimer = 0;
+let railAnchor = null;
+const railTarget = (node) => innerWidth > 820 && node?.closest?.(".library .day-row, .library .view-navigation-link[data-view]");
+function openRailCard(row) {
+  clearTimeout(railTimer);
+  railAnchor = row;
+  railCard.innerHTML = row.dataset.day ? dayTipHtml(row.dataset.day) : navSummary(row.dataset.view).card;
+  railCard.setAttribute("aria-label", row.dataset.day ? formatDate(row.dataset.day, true) : row.textContent.trim());
+  railCard.hidden = false;
   const box = row.getBoundingClientRect();
-  linkTip.style.left = `${box.right + 8}px`;
-  linkTip.style.top = `${Math.max(12, Math.min(box.top - 6, innerHeight - linkTip.offsetHeight - 12))}px`;
+  railCard.style.left = `${box.right + 6}px`;
+  railCard.style.top = `${Math.max(12, Math.min(box.top - 6, innerHeight - railCard.offsetHeight - 12))}px`;
 }
-elements.library.addEventListener("click", hideLinkTip);
-for (const [on, off, delay] of [["pointerover", "pointerout", 250], ["focusin", "focusout", 0]]) {
-  elements.library.addEventListener(on, (event) => {
-    const row = railTipTarget(event);
-    if (!row || (on === "focusin" && !row.matches(":focus-visible"))) return;
-    clearTimeout(linkTipTimer);
-    linkTipTimer = setTimeout(() => showRailTip(row), delay);
-  });
-  elements.library.addEventListener(off, (event) => {
-    const row = railTipTarget(event);
-    if (row && !row.contains(event.relatedTarget)) hideLinkTip();
-  });
+function closeRailCard() {
+  clearTimeout(railTimer);
+  railCard.hidden = true;
+  railAnchor = null;
 }
+const closeRailCardSoon = () => { clearTimeout(railTimer); railTimer = setTimeout(closeRailCard, 220); };
+function openRailItem(target) {
+  const [kind, ...rest] = target.split(":");
+  const value = rest.join(":");
+  closeRailCard();
+  if (kind === "doc") peekDocument(value);
+  else if (kind === "pr") { const [slug, number] = value.split("#"); openPrOverlay(slug, Number(number)); }
+  else if (kind === "issue") openIssue(value);
+  else if (kind === "slack") openSlackThread(value);
+}
+elements.library.addEventListener("pointerover", (event) => {
+  const row = railTarget(event.target);
+  if (!row) return;
+  clearTimeout(railTimer);
+  if (row === railAnchor && !railCard.hidden) return;
+  // Once a card is showing, moving down the rail swaps it at once.
+  railTimer = setTimeout(() => openRailCard(row), railCard.hidden ? 250 : 40);
+});
+elements.library.addEventListener("pointerout", (event) => {
+  const row = railTarget(event.target);
+  if (row && !row.contains(event.relatedTarget) && !railCard.contains(event.relatedTarget)) {
+    if (railCard.hidden) clearTimeout(railTimer); else closeRailCardSoon();
+  }
+});
+elements.library.addEventListener("focusin", (event) => {
+  const row = railTarget(event.target);
+  if (row?.matches(":focus-visible")) openRailCard(row);
+});
+elements.library.addEventListener("focusout", (event) => {
+  if (railAnchor && !railCard.contains(event.relatedTarget) && !railAnchor.contains(event.relatedTarget)) closeRailCard();
+});
+elements.library.addEventListener("click", closeRailCard);
+elements.library.addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowRight" || railCard.hidden || !railAnchor?.contains(event.target)) return;
+  event.preventDefault();
+  railCard.querySelector("[data-open]")?.focus();
+});
+railCard.addEventListener("pointerenter", () => clearTimeout(railTimer));
+railCard.addEventListener("pointerleave", (event) => { if (!railAnchor?.contains(event.relatedTarget)) closeRailCardSoon(); });
+railCard.addEventListener("focusout", (event) => { if (!railCard.contains(event.relatedTarget) && !railAnchor?.contains(event.relatedTarget)) closeRailCard(); });
+railCard.addEventListener("click", (event) => {
+  const item = event.target.closest("[data-open]");
+  if (item) openRailItem(item.dataset.open);
+});
+railCard.addEventListener("keydown", (event) => {
+  const items = [...railCard.querySelectorAll("[data-open]")];
+  const at = items.indexOf(document.activeElement);
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); items[Math.max(0, Math.min(items.length - 1, at + (event.key === "ArrowDown" ? 1 : -1)))]?.focus(); }
+  else if (event.key === "Escape" || event.key === "ArrowLeft") { event.preventDefault(); event.stopPropagation(); const anchor = railAnchor; closeRailCard(); anchor?.focus(); }
+});
+addEventListener("scroll", (event) => { if (!railCard.contains(event.target)) closeRailCard(); }, { capture: true, passive: true });
 addEventListener("scroll", hideLinkTip, { capture: true, passive: true });
 addEventListener("keydown", (event) => { if (event.key === "Escape") hideLinkTip(); });
 elements.documents.addEventListener("click", (event) => {
@@ -3159,7 +3216,7 @@ function placeStar() {
   else if (!close && favoriteStar.parentElement !== elements.count.parentElement) elements.count.before(favoriteStar);
 }
 // Hovering a link that opens an overlay mustn't leave its tooltip floating over the overlay.
-new MutationObserver((records) => { if (records.some((record) => record.attributeName === "open" && record.target.open)) { hideTip(); hideLinkTip(); } }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["open"] });
+new MutationObserver((records) => { if (records.some((record) => record.attributeName === "open" && record.target.open)) { hideTip(); hideLinkTip(); closeRailCard(); } }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["open"] });
 new MutationObserver(placeStar).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["open"] });
 
 const prNumberLabel = (slug, number) => `${slug === referenceConfig().defaultSlug ? "" : slug.split("/")[1]}#${number}`;
