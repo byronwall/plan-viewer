@@ -1,6 +1,8 @@
 import { escapeHtml, renderMarkdown, SERVICE_ICONS } from "./markdown.js";
 import { avatar, hideTip, icon, iconButton, planning, showTip, when } from "./code.js";
-import { agentApp, agentName } from "./config.js";
+import { agentApp, agentName, config } from "./config.js";
+
+const normalName = (name = "") => name.toLowerCase().replace(/[._-]+/g, " ").trim();
 import { applyLinkMetadata, collectLinks, linkBrowser, metadataKey, selectDockSource } from "./dock.js";
 import { emojiFor, emojify } from "./emoji.js";
 import { glyph, GLYPHS } from "./icons.js";
@@ -38,18 +40,39 @@ let current = null;
 let notify = () => {};
 export const setSlackNotice = (show) => { notify = show; };
 
-const KEYS = "<kbd>F</kbd> find · <kbd>D</kbd> discuss · <kbd>O</kbd> Slack · <kbd>R</kbd> refresh";
+const keys = () => `<span class="slack-keys"> · <kbd>F</kbd> find · <kbd>L</kbd> links${dialog?.querySelector("[data-slack-new-rule]") ? " · <kbd>N</kbd> new" : ""} · <kbd>O</kbd> Slack · <kbd>R</kbd> refresh</span>`;
 const GROUP_GAP = 5 * 60; // seconds between messages that still share one header
-const store = { get(key) { try { return JSON.parse(localStorage.getItem("slack-last-read") || "{}")[key]; } catch { return undefined; } },
-  set(key, ts) { try { const all = JSON.parse(localStorage.getItem("slack-last-read") || "{}"); all[key] = ts; localStorage.setItem("slack-last-read", JSON.stringify(all)); } catch {} } };
+// Per-browser memory: the last message read in each thread, and each thread's title for Recently viewed.
+const local = (name) => ({
+  get(key) { try { return JSON.parse(localStorage.getItem(name) || "{}")[key]; } catch { return undefined; } },
+  set(key, value) { try { const all = JSON.parse(localStorage.getItem(name) || "{}"); all[key] = value; localStorage.setItem(name, JSON.stringify(all)); } catch {} },
+});
+const store = local("slack-last-read");
+const titles = local("slack-titles");
+export const slackThreadTitle = (href) => titles.get(href) || "Slack thread";
+
+// `?slack=<permalink>` keeps the overlay open across a refresh, like `?issue=`.
+function syncSlackUrl(href) {
+  const url = new URL(location.href);
+  if (href) url.searchParams.set("slack", href); else url.searchParams.delete("slack");
+  if (url.href !== location.href) history.replaceState(history.state, "", url);
+}
 
 function ensureDialog() {
   if (dialog) return;
   dialog = Object.assign(document.body.appendChild(document.createElement("dialog")), { className: "code-diff issue-overview slack-overview", tabIndex: -1 });
   dialog.innerHTML = `<header class="code-diff-head slack-head" data-o="head"></header><div class="slack-body"><div class="slack-planning" data-o="planning" hidden></div><div class="slack-scroll" data-o="main"></div><form class="slack-composer" data-o="composer"></form></div><div class="doc-dock-panel doc-dock-panel-links slack-links" id="slack-links" popover style="position-anchor: --slack-links" role="dialog" aria-label="Links in this thread"></div>`;
-  dialog.addEventListener("close", () => { current = null; dialog.querySelector("#slack-links").hidePopover?.(); });
+  dialog.addEventListener("close", () => {
+    if (dialog.open) return;
+    dialog.querySelector("#slack-links").hidePopover?.();
+    if (current) document.dispatchEvent(new CustomEvent("overview-closed", { detail: location.href })); // the Reopen toast
+    syncSlackUrl("");
+    current = null;
+  });
   // Typed text survives Esc and backdrop clicks; clear it to close.
   dialog.addEventListener("cancel", (event) => {
+    const links = dialog.querySelector("#slack-links");
+    if (links.matches(":popover-open")) { event.preventDefault(); links.hidePopover(); return; }
     const box = dialog.querySelector(".slack-composer textarea");
     if (box?.value.trim()) { event.preventDefault(); box.focus(); hint("Draft kept — clear the box to close."); }
   });
@@ -65,6 +88,7 @@ function ensureDialog() {
     else if (event.target.closest("[data-slack-open]")) openInSlack(event.target.closest("[data-slack-open]").dataset.slackOpen);
     else if (event.target.closest("[data-slack-refresh]")) load(true);
     else if (event.target.closest("[data-slack-new]")) jumpToNew();
+    else if (event.target.closest("[data-slack-retry]")) load(true);
   });
   dialog.addEventListener("pointerover", (event) => { const target = event.target.closest("[data-tip]"); if (target) showTip(target); else hideTip(); });
   dialog.addEventListener("pointerleave", hideTip);
@@ -123,24 +147,26 @@ function citations() {
   return { docs, messages };
 }
 const docLabel = (doc) => doc.task?.id || doc.date || doc.kind;
-const docLink = (doc, title = true) => `<a href="?${new URLSearchParams({ path: doc.path })}" data-planning-path="${escapeHtml(doc.path)}" data-tip="${escapeHtml(doc.path)}">${doc.task ? SERVICE_ICONS.task : icon("doc")}<code>${escapeHtml(docLabel(doc))}</code>${title ? `<span>${escapeHtml(doc.task?.title || doc.title)}</span>` : ""}</a>`;
+const docLink = (doc, title = true) => `<a href="?${new URLSearchParams({ path: doc.path })}" data-planning-path="${escapeHtml(doc.path)}" data-tip="${escapeHtml(`${doc.task?.title || doc.title} · ${doc.path}`)}">${doc.task ? SERVICE_ICONS.task : icon("doc")}<code>${escapeHtml(docLabel(doc))}</code>${title ? `<span>${escapeHtml(doc.task?.title || doc.title)}</span>` : ""}</a>`;
 
 function renderHead(state, detail = "") {
   const thread = current.thread;
-  const name = thread?.channelName || current.channelHint || (current.channel.startsWith("D") ? "Direct message" : "Slack thread");
+  const me = normalName(config().user);
+  const others = thread ? [...new Set(thread.messages.map((message) => message.author))].filter((author) => normalName(author) !== me && !normalName(author).startsWith(`${me} `)) : [];
+  const name = thread?.channelName || current.channelHint || (current.channel.startsWith("D") ? (others.length ? `DM with ${others.join(", ")}` : "Direct message") : "Slack thread");
   const parent = thread?.messages[0];
   const replies = thread ? thread.messages.length - 1 : 0;
   const people = thread ? [...thread.messages.reduce((all, message) => all.set(message.author, { ...message, count: (all.get(message.author)?.count || 0) + 1 }), new Map()).values()].sort((a, b) => b.count - a.count) : [];
   const fresh = thread && Date.now() - new Date(thread.fetchedAt) < 60_000;
   const facts = state === "loading" ? "Reading the thread…" : state === "error" ? escapeHtml(detail)
-    : [`Started by <b>${escapeHtml(parent.author)}</b> ${day(Number(parent.ts))}`, `${replies} ${replies === 1 ? "reply" : "replies"}`, replies ? `last ${when(Number(thread.messages.at(-1).ts) * 1000)} ago` : "", `read ${fresh ? "just now" : `${when(thread.fetchedAt)} ago`}`].filter(Boolean).join(" · ");
-  const faces = people.length > 1 ? `<span class="slack-people">${people.slice(0, 8).map((person) => `<span data-tip="${escapeHtml(`${person.author} · ${person.count} message${person.count === 1 ? "" : "s"}`)}">${avatar("", person.author, person.email)}</span>`).join("")}${people.length > 8 ? `<span class="code-muted">+${people.length - 8}</span>` : ""}</span>` : "";
+    : [`Started by <b>${escapeHtml(parent.author)}</b> on ${day(Number(parent.ts))}`, replies ? `${replies} ${replies === 1 ? "reply" : "replies"}` : "no replies", replies ? `last ${when(Number(thread.messages.at(-1).ts) * 1000)} ago` : "", `synced ${fresh ? "just now" : `${when(thread.fetchedAt)} ago`}`].filter(Boolean).join(" · ");
+  const faces = people.length > 1 ? `<span class="slack-people">${people.slice(0, 8).map((person) => `<span data-tip="${escapeHtml(`${person.author} · ${person.count} message${person.count === 1 ? "" : "s"}`)}">${avatar("", person.author, person.email)}</span>`).join("")}${people.length > 8 ? `<span class="code-muted" data-tip="${escapeHtml(people.slice(8).map((person) => person.author).join(", "))}">+${people.length - 8}</span>` : ""}</span>` : "";
   const links = state === "ready" ? `<button type="button" class="doc-dock-button slack-links-button" popovertarget="slack-links" style="anchor-name: --slack-links" data-tip="Links in this thread (L)"><span class="doc-dock-icon">${glyph("link", "dock-glyph")}</span><span class="doc-dock-label">Links</span><span class="doc-dock-badge" data-slack-link-count>0</span></button>` : "";
   const find = state === "ready" ? `<label class="code-filter slack-find"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-slack-find placeholder="Find in thread" spellcheck="false" autocomplete="off"><span class="code-muted" data-slack-find-count></span><kbd>F</kbd></label>` : "";
   dialog.querySelector('[data-o="head"]').innerHTML = `<span class="slack-overview-mark${state === "loading" ? " issue-reading" : ""}">${state === "loading" ? icon("refresh") : SERVICE_ICONS.slack}</span><div class="issue-overview-title"><h3>${escapeHtml(name)}</h3><p class="code-muted">${facts}</p></div>${faces}<span class="code-spacer"></span>${find}${links}${iconButton("external", "Open in Slack (O)", "data-slack-open")}${iconButton("refresh", "Read again (R)", "data-slack-refresh")}${iconButton("fail", "Close (Esc)", "data-slack-close")}`;
 }
 
-function renderThread() {
+function renderThread(scrollToLinked = true) {
   const { thread, href } = current;
   const linked = new URL(href).pathname.match(/p(\d{10})(\d{6})$/)?.slice(1).join(".");
   const lastRead = store.get(current.key);
@@ -160,7 +186,7 @@ function renderThread() {
     if (index === 1) out.push(`<li class="slack-replies-rule" role="separator"><span>${thread.messages.length - 1} ${thread.messages.length === 2 ? "reply" : "replies"}</span></li>`);
     if (lastRead && !newShown && index > 0 && message.ts > lastRead) { newShown = true; out.push(`<li class="slack-new" role="separator" data-slack-new-rule><span>New since you last read</span></li>`); }
     const continued = previous && index > 1 && previous.author === message.author && seconds - Number(previous.ts) < GROUP_GAP && !out.length;
-    const marks = (cited.get(message.ts) || []).map((doc) => docLink(doc, false)).join("");
+    const marks = index ? (cited.get(message.ts) || []).map((doc) => docLink(doc, false)).join("") : ""; // the parent's citers are the strip
     const reactions = slackReactions(message.reactions).map((reaction) => `<span data-tip="${escapeHtml(`:${reaction.name}: · ${reaction.count}`)}">${escapeHtml(reaction.emoji)}<small>${reaction.count}</small></span>`).join("");
     const cites = marks ? `<span class="slack-cites">${marks}</span>` : "";
     const head = continued ? `<span class="slack-gutter-time">${clock(seconds)}</span>${cites}` : `${avatar("", message.author, message.email)}<header><b>${escapeHtml(message.author || "Unknown")}</b>${stamp(seconds)}${cites}</header>`;
@@ -172,9 +198,10 @@ function renderThread() {
   const main = dialog.querySelector('[data-o="main"]');
   main.innerHTML = `<ol class="slack-thread">${rows}</ol>`;
   store.set(current.key, thread.messages.at(-1).ts);
+  titles.set(current.href, `${thread.channelName || "Slack"} · ${thread.messages[0].text.replace(/<[^>|]*\|([^>]*)>/g, "$1").replace(/<([^>]*)>/g, "$1").replace(/\s+/g, " ").slice(0, 60)}`);
   renderLinks();
   const target = main.querySelector(".slack-message.is-linked:not(.is-parent)") || (lastRead && main.querySelector("[data-slack-new-rule]"));
-  if (target) target.scrollIntoView({ block: "center", behavior: "instant" });
+  if (target && scrollToLinked) target.scrollIntoView({ block: "center", behavior: "instant" });
 }
 
 // The dock's link browser over every link in the thread, with titles and states from the link metadata.
@@ -197,11 +224,13 @@ async function renderLinks() {
 
 function renderComposer() {
   const form = dialog.querySelector('[data-o="composer"]');
-  form.innerHTML = `<textarea rows="1" placeholder="Ask ${escapeHtml(agentName())} about this thread…" aria-label="Ask ${escapeHtml(agentName())} about this thread"></textarea><button type="submit" class="code-bar-button is-primary">${icon("discuss")}Discuss in ${escapeHtml(agentName())}</button><p class="slack-composer-hint code-muted" data-slack-hint><kbd>Enter</kbd> opens a draft with the thread attached · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · ${KEYS}</p>`;
+  form.innerHTML = `<textarea rows="1" placeholder="Ask ${escapeHtml(agentName())} about this thread…" aria-label="Ask ${escapeHtml(agentName())} about this thread"></textarea><button type="submit" class="code-bar-button is-primary">${icon("discuss")}Discuss in ${escapeHtml(agentName())}</button><p class="slack-composer-hint code-muted" data-slack-hint><kbd>Enter</kbd> opens a draft with the thread attached · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line${keys()}</p>`;
 }
-const hint = (message = "") => {
+const hint = (message = "", error = false) => {
   const line = dialog.querySelector("[data-slack-hint]");
-  if (line) line.innerHTML = message ? escapeHtml(message) : `<kbd>Enter</kbd> opens a draft with the thread attached · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · ${KEYS}`;
+  if (!line) return;
+  line.classList.toggle("is-error", error);
+  line.innerHTML = message ? escapeHtml(message) : `<kbd>Enter</kbd> opens a draft with the thread attached · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line${keys()}`;
 };
 function fitComposer(box) {
   box.style.height = "0px";
@@ -223,7 +252,7 @@ async function discuss() {
     hint();
     notify(`Drafted a discussion of this thread in ${agentName()}. Review it and press Enter to send.`);
   } catch (error) {
-    hint(error.message);
+    hint(error.message, true);
   } finally {
     button.disabled = false;
   }
@@ -283,25 +312,31 @@ async function load(refresh = false) {
   if (!current) return;
   const opened = current;
   if (!opened.thread || refresh) renderHead("loading");
-  if (!opened.thread) dialog.querySelector('[data-o="main"]').innerHTML = `<p class="code-muted slack-empty">Loading…</p>`;
+  const skeleton = (width) => `<li class="slack-message slack-skeleton" aria-hidden="true"><span class="code-avatar"></span><header><i style="width: 110px"></i></header><div class="slack-message-body"><i style="width: ${width}%"></i></div></li>`;
+  if (!opened.thread) dialog.querySelector('[data-o="main"]').innerHTML = `<ol class="slack-thread" aria-busy="true">${[78, 52, 66, 40].map(skeleton).join("")}</ol>`;
   try {
     const response = await fetch(`/api/slack/thread?${new URLSearchParams({ url: opened.href, ...(refresh ? { refresh: "1" } : {}) })}`);
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || "Could not read the thread.");
     if (current !== opened) return;
+    const main = dialog.querySelector('[data-o="main"]');
+    const keep = refresh && opened.thread ? main.scrollTop : null;
     Object.assign(opened, { thread: body, channel: body.channel, key: body.key });
     renderHead("ready");
-    renderThread();
+    renderThread(keep === null);
+    if (keep !== null) main.scrollTop = keep;
+    hint();
   } catch (error) {
     if (current !== opened) return;
     renderHead("error", error.message);
-    if (!opened.thread) dialog.querySelector('[data-o="main"]').innerHTML = `<p class="code-muted slack-empty">Couldn't read this thread. <kbd>O</kbd> opens it in Slack.</p>`;
+    if (!opened.thread) dialog.querySelector('[data-o="main"]').innerHTML = `<div class="slack-empty"><p>Couldn't read this thread.</p><button type="button" class="code-bar-button" data-slack-retry>${icon("refresh")}Try again</button><button type="button" class="code-bar-button" data-slack-open>${icon("external")}Open in Slack <kbd>O</kbd></button></div>`;
   }
 }
 
 export function openSlackThread(href, channelHint = "") {
   ensureDialog();
   current = { href, channelHint, channel: new URL(href).pathname.split("/")[2] || "" };
+  syncSlackUrl(href);
   renderComposer();
   dialog.querySelector('[data-o="planning"]').hidden = true;
   if (!dialog.open) { dialog.showModal(); dialog.focus({ preventScroll: true }); }

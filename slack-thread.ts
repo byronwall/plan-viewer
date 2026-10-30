@@ -100,6 +100,31 @@ export function createSlackThreads(root: string, command: () => string[]) {
   return { read, discuss };
 }
 
+// The connector's user search, detailed: `### Result n of m` blocks with `Name:`, `User ID:`, `Email:` and
+// `Profile Pic: [Photo](url)` lines. The photo is the original upload; `_72` is Slack's small rendition.
+export function parseSlackUsers(text: string) {
+  return text.split(/^### Result \d+ of \d+$/m).slice(1).map((block) => {
+    const field = (name: string) => block.match(new RegExp(`^${name}: (.*)$`, "m"))?.[1].trim() || "";
+    return { name: field("Name"), user: field("User ID"), email: field("Email"), avatar: (block.match(/^Profile Pic: \[[^\]]*\]\((https:[^)]+)\)/m)?.[1] || "").replace(/_original\.(\w+)$/, "_72.$1") };
+  }).filter((person) => person.email);
+}
+
+// Everyone the user search finds for `query` (an email domain finds the whole company), 20 a page, one session.
+export async function searchSlackPeople(command: string[], query: string) {
+  return withConnector(command, async (call) => {
+    const people: ReturnType<typeof parseSlackUsers> = [];
+    let cursor = "";
+    // ponytail: 100 pages (2,000 people) at most; raise it for a bigger workspace.
+    for (let page = 0; page < 100; page++) {
+      const body = JSON.parse((await call("slack.slack_search_users", { keywords: [query], limit: 20, response_format: "detailed", ...(cursor ? { cursor } : {}) })).content?.find((item: { type: string }) => item.type === "text")?.text || "{}");
+      people.push(...parseSlackUsers(body.results || ""));
+      cursor = String(body.pagination_info || "").match(/cursor `([^`]+)`/)?.[1] || "";
+      if (!cursor) break;
+    }
+    return people;
+  }, 600_000);
+}
+
 // A connector tool's text answer is JSON with a `messages` string (or an error).
 function toolJson(result: { content?: { type: string; text?: string }[]; isError?: boolean } | null) {
   const text = result?.content?.find((item) => item.type === "text")?.text || "";
@@ -110,7 +135,7 @@ function toolJson(result: { content?: { type: string; text?: string }[]; isError
 // One JSON-RPC session with `codex app-server`: initialize, an ephemeral thread (tool calls need one; no turn runs),
 // then tool calls on the `codex_apps` connector server.
 type ToolCall = (tool: string, args: Record<string, unknown>) => Promise<any>;
-async function withConnector<T>([program, ...args]: string[], use: (call: ToolCall) => Promise<T>) {
+async function withConnector<T>([program, ...args]: string[], use: (call: ToolCall) => Promise<T>, timeout = 60_000) {
   if (!program) throw new Error("No Slack reader configured (slack.codex in viewer.config.json).");
   const child = spawn(program, args, { cwd: tmpdir(), stdio: ["pipe", "pipe", "ignore"] });
   const pending = new Map<number, (message: { result?: any; error?: { message: string } }) => void>();
@@ -126,7 +151,7 @@ async function withConnector<T>([program, ...args]: string[], use: (call: ToolCa
     pending.set(++id, (message) => message.error ? reject(new Error(`${method}: ${message.error.message}`)) : resolve(message.result));
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
   })]);
-  const timer = setTimeout(() => failed(new Error("The Slack read timed out.")), 60_000);
+  const timer = setTimeout(() => failed(new Error("The Slack read timed out.")), timeout);
   try {
     await call("initialize", { clientInfo: { name: "plan-viewer", version: "1" } });
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "initialized" })}\n`);

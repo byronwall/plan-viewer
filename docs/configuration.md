@@ -74,6 +74,7 @@ That turns `#1234`, commit SHAs, and `ATL-12` in your Markdown into links with l
 | `issues.linear.teams` | Linear team keys (`["ATL"]`) whose issues and projects sit beside the Jira ones, read with the Linear API key. With both trackers the page gains a source switch and a Migration tab. |
 | `issues.github` | `true` reads the open and closed GitHub issues of every repository in `code.reposFile`, through `gh`. Default `false`. |
 | `slack.codex` | Command for Codex's app server, such as `["codex", "app-server"]`. With it, a plain click on a Slack link opens the thread in the viewer, read through the Slack connector signed in to Codex: the server calls the connector's `read_thread` tool directly over the app server's JSON-RPC (`mcpServer/tool/call`), so no model runs and no tokens are spent. Threads are cached in `tmp/slack-threads.json`. Empty (the default) sends Slack links to the desktop app. |
+| `slack.people` | Without a Slack token, a directory search through that same connector for avatars, such as the company's email domain (`"acme.test"`), which pages through everyone's Slack profile photo (about 20 people a call, no model). It joins the daily people index in `tmp/people-cache.json`. Empty skips it. |
 
 Credentials stay with their tools: `gh` for GitHub, `acli` for Jira, `LINEAR_API_KEY` or `[linear] API_KEY` in `config.toml`, and `SLACK_TOKEN` or `[slack] TOKEN`. Link titles are cached in the workspace's ignored `tmp/` folder.
 

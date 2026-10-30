@@ -3,11 +3,11 @@ import { isSettled, renderActions, renderWorkBreakdown, showDoneToggle, workStat
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDockSource } from "./dock.js";
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
-import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
+import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, connectPlanning, setPeople, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { renderActivityPage } from "./activity.js";
-import { openSlackThread, setSlackNotice } from "./slack.js";
+import { openSlackThread, setSlackNotice, slackThreadTitle } from "./slack.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
@@ -2999,10 +2999,10 @@ let visits = [];
 try { visits = JSON.parse(localStorage.getItem(VISITS_KEY) || "[]"); } catch {}
 const pageKey = (url) => {
   const params = new URLSearchParams(url.search);
-  for (const name of ["pr", "wt", "issue", "file", "scope", "graph"]) params.delete(name);
+  for (const name of ["pr", "wt", "issue", "slack", "file", "scope", "graph"]) params.delete(name);
   return params.toString();
 };
-const visitKey = (url) => (url.searchParams.get("pr") ? `pr:${url.searchParams.get("pr")}` : url.searchParams.get("wt") ? `wt:${url.searchParams.get("wt")}` : url.searchParams.get("issue") ? `issue:${url.searchParams.get("issue")}` : pageKey(url));
+const visitKey = (url) => (url.searchParams.get("pr") ? `pr:${url.searchParams.get("pr")}` : url.searchParams.get("wt") ? `wt:${url.searchParams.get("wt")}` : url.searchParams.get("issue") ? `issue:${url.searchParams.get("issue")}` : url.searchParams.get("slack") ? `slack:${url.searchParams.get("slack")}` : pageKey(url));
 function recordVisit() {
   const url = new URL(location.href);
   const key = visitKey(url);
@@ -3078,6 +3078,8 @@ function visitResult(href) {
   if (plan) return { icon: "initiative", title: escapeHtml(planTitle(plan) || plan.split("/").pop()), detail: escapeHtml(`${plan.split(":")[0].split("/").pop()} · ${params.get("doc")?.split("/").pop() || "initiative"}`), side: "Initiative" };
   const issueKey = params.get("issue");
   if (issueKey) { const issue = cachedIssues()?.issues?.find((candidate) => candidate.key === issueKey); return issue ? issueResult(issue, []) : { icon: "issue", title: escapeHtml(issueKey), detail: "Jira issue", side: "Issue" }; }
+  const slack = params.get("slack");
+  if (slack) return { icon: "discuss", title: escapeHtml(slackThreadTitle(slack)), detail: "Slack thread", side: "Slack" };
   const tree = params.get("wt");
   if (tree) return { icon: "branch", title: escapeHtml(tree.split("/").pop()), detail: escapeHtml(tree.replace(/^\/Users\/[^/]+/, "~")), side: "Worktree" };
   const view = params.get("view");
@@ -3107,6 +3109,7 @@ function resumeVisit(href) {
   if (pr?.length === 2) openPrOverlay(pr[0], Number(pr[1]), file, scope);
   else if (params.get("wt")) openWorktreeOverlay(params.get("wt"), file, scope);
   else if (params.get("issue")) openIssue(params.get("issue"));
+  else if (params.get("slack")) openSlackThread(params.get("slack"));
   else if (params.get("plan")) openPlan(params.get("plan"), params.get("doc") || "");
   else closeOverview();
 }
@@ -3122,8 +3125,9 @@ document.addEventListener("overview-closed", (event) => {
     ? `${prNumberLabel(pr[0], pr[1])} ${findPr(pr[0], Number(pr[1]))?.title || ""}`.trim()
     : issueKey ? (issue ? `${issue.type === "Project" ? "" : issue.label || issue.key} ${issue.summary}`.trim() : issueKey.replace(/^linear:/, ""))
     : params.get("plan") ? planTitle(params.get("plan")) || params.get("plan").split("/").pop()
+    : params.get("slack") ? slackThreadTitle(params.get("slack"))
     : params.get("wt")?.split("/").pop() || "";
-  showNotice(`Closed the ${pr ? "PR" : issue?.type === "Project" ? "project" : issueKey ? "issue" : params.get("plan") ? "initiative" : "worktree"} ${params.get("plan") ? "reader" : "overview"}`, false, { kind: "info", description, action: { label: "Reopen", run: () => resumeVisit(event.detail) } });
+  showNotice(`Closed the ${pr ? "PR" : issue?.type === "Project" ? "project" : issueKey ? "issue" : params.get("plan") ? "initiative" : params.get("slack") ? "Slack" : "worktree"} ${params.get("plan") ? "reader" : params.get("slack") ? "thread" : "overview"}`, false, { kind: "info", description, action: { label: "Reopen", run: () => resumeVisit(event.detail) } });
 });
 
 const historyMenu = document.querySelector("#history-menu");
@@ -3279,6 +3283,7 @@ async function boot() {
     const worktree = search.get("wt");
     if (worktree) openWorktreeOverlay(worktree, file, scope);
     if (search.get("issue")) openIssue(search.get("issue"));
+    if (search.get("slack") && isSlackLink(search.get("slack")) && config().slack.codex?.length) openSlackThread(search.get("slack"));
     if (search.get("plan")) openPlan(search.get("plan"), search.get("doc") || "");
     if (issuesOn()) loadIssues().then(renderFavorites).catch(() => {}); // ⌘K finds issues by key and title
     loadPrIndex().then(renderFavorites).catch(() => {}); // PR favorites get their titles

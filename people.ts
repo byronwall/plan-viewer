@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { config } from "./public/config.js";
 import { linearClient } from "./linear.ts";
+import { searchSlackPeople } from "./slack-thread.ts";
 
 const exec = promisify(execFile);
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -70,7 +71,7 @@ async function linearSources(root: string) {
 
 async function slackSources(root: string) {
   const token = process.env.SLACK_TOKEN || await readFile(process.env.LINEAR_CONFIG_PATH || join(root, "config.toml"), "utf8").then((text) => (text.split(/^\s*\[/m).find((part) => part.startsWith("slack]")) || "").match(/^\s*TOKEN\s*=\s*"([^"]+)"/m)?.[1] || "", () => "");
-  if (!token) return [];
+  if (!token) return slackDirectorySources();
   const out: Source[] = [];
   let cursor = "";
   do {
@@ -81,6 +82,15 @@ async function slackSources(root: string) {
     cursor = body.response_metadata?.next_cursor || "";
   } while (cursor);
   return out;
+}
+
+// Without a token, Codex's Slack connector (`slack.codex`) searches the directory for `slack.people`, such as the
+// company's email domain, which brings everyone's photo.
+async function slackDirectorySources(): Promise<Source[]> {
+  const { codex = [], people = "" } = config().slack || {};
+  if (!codex.length || !people) return [];
+  const found = await searchSlackPeople(codex, people).catch(() => []);
+  return found.map((person) => ({ ids: ids({ emails: [person.email], names: [person.name] }), slack: person.avatar, name: person.name }));
 }
 
 // `people` in viewer.config.json: [{ names, emails, github, avatar }] for anyone the sources can't join on their own.

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createSlackThreads, parseSlackThread, slackThreadRef } from "./slack-thread.ts";
+import { createSlackThreads, parseSlackThread, parseSlackUsers, slackThreadRef } from "./slack-thread.ts";
 import { slackMarkdown, slackReactions } from "./public/slack.js";
 
 test("a reply's permalink reads its whole thread", () => {
@@ -72,4 +72,9 @@ test("a discussion draft hands the agent the thread as a file and names the docu
   const transcript = await readFile(file, "utf8");
   assert.match(transcript, /## Grace · .*\n\n\[permalink\]\(https:\/\/acme\.slack\.com\/archives\/C0123\/p1791473238675079\?thread_ts=1791473016\.225909\) · reactions: \+1 \(1\)\n\nYes\./);
   await assert.rejects(threads.discuss("vim", "https://acme.slack.com/archives/C0123/p1791473016225909", "", []), /Unknown agent app/);
+});
+
+test("the directory search gives each person's email and small Slack photo", () => {
+  const text = "## Users (2 results)\n### Result 1 of 2\nName: Ada\nUser ID: U01\nEmail: ada@acme.test\nProfile Pic: [Photo](https://avatars.slack-edge.com/2026-01-01/1_abc_original.jpg)\n\n---\n### Result 2 of 2\nName: Bot\nUser ID: U02\n";
+  assert.deepEqual(parseSlackUsers(text), [{ name: "Ada", user: "U01", email: "ada@acme.test", avatar: "https://avatars.slack-edge.com/2026-01-01/1_abc_72.jpg" }]);
 });
