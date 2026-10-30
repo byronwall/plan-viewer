@@ -1,11 +1,13 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
+import { promisify } from "node:util";
+import { claudeNewSessionUrl, codexNewTaskUrl } from "./codex-desktop.ts";
 
 export type SlackMessage = { author: string; email: string; user: string; ts: string; text: string; reactions: string };
-export type SlackThread = { messages: SlackMessage[]; fetchedAt: string };
+export type SlackThread = { channelName: string; messages: SlackMessage[]; fetchedAt: string };
 
 // A permalink's channel and the thread it belongs to: `thread_ts` for a reply, else the message itself.
 export function slackThreadRef(permalink: string) {
@@ -31,9 +33,21 @@ export function parseSlackThread(text: string): SlackMessage[] {
   }).filter((message) => message.ts);
 }
 
+// The thread as Markdown for an agent to read: one heading per message, with its time and permalink.
+export function slackTranscript(thread: SlackThread, permalink: string) {
+  const base = permalink.replace(/\/p\d{16}.*$/, "");
+  const parent = thread.messages[0]?.ts || "";
+  const lines = [`# Slack thread in ${thread.channelName || "Slack"}`, "", `Read ${thread.fetchedAt} from ${permalink}`, ""];
+  for (const message of thread.messages) {
+    const link = `${base}/p${message.ts.replace(".", "")}${message.ts === parent ? "" : `?thread_ts=${parent}`}`;
+    lines.push(`## ${message.author} · ${new Date(Number(message.ts) * 1000).toISOString().replace("T", " ").slice(0, 16)} UTC`, "", `[permalink](${link})${message.reactions ? ` · reactions: ${message.reactions}` : ""}`, "", message.text, "");
+  }
+  return lines.join("\n");
+}
+
 // No Slack token here: Codex's app server (`slack.codex`, e.g. ["codex", "app-server"]) calls its Slack connector's
-// read_thread tool directly. No model turn runs, so a read costs no tokens and takes a couple of seconds. Threads are
-// cached in tmp/ until refreshed.
+// tools directly. No model turn runs, so a read costs no tokens and takes a couple of seconds. Threads are cached in
+// tmp/ until refreshed.
 export function createSlackThreads(root: string, command: () => string[]) {
   const cachePath = join(root, "tmp", "slack-threads.json");
   const inFlight = new Map<string, Promise<SlackThread>>();
@@ -48,15 +62,17 @@ export function createSlackThreads(root: string, command: () => string[]) {
   }
 
   async function fetchThread(ref: ReturnType<typeof slackThreadRef>) {
-    // ponytail: one page of up to 1000 messages; follow the connector's cursor if longer threads turn up.
-    const result = await callTool(command(), "slack.slack_read_thread", { channel_id: ref.channel, message_ts: ref.thread, limit: 1000, response_format: "detailed" });
-    const text = result.content?.find((item: { type: string }) => item.type === "text")?.text || "";
-    if (result.isError) throw new Error(`Slack: ${text || "read failed"}`);
-    let body: { messages?: string; error?: string };
-    try { body = JSON.parse(text); } catch { throw new Error(`Slack: ${text.slice(0, 200)}`); }
+    const [threadResult, channelResult] = await withConnector(command(), (call) => Promise.all([
+      // ponytail: one page of up to 1000 messages; follow the connector's cursor if longer threads turn up.
+      call("slack.slack_read_thread", { channel_id: ref.channel, message_ts: ref.thread, limit: 1000, response_format: "detailed" }),
+      // The newest message is just the header carrier: `Channel: #name (C…)`, or `Channel: DM (D…)`.
+      call("slack.slack_read_channel", { channel_id: ref.channel, limit: 1, response_format: "concise" }).catch(() => null),
+    ]));
+    const body = toolJson(threadResult);
     const messages = parseSlackThread(body.messages || "");
     if (!messages.length) throw new Error(`Slack: ${body.error || "no messages in that thread"}`);
-    const thread: SlackThread = { messages, fetchedAt: new Date().toISOString() };
+    const channelName = (() => { try { return toolJson(channelResult).messages?.match(/^Channel: (#[\w.-]+)/)?.[1] || ""; } catch { return ""; } })();
+    const thread: SlackThread = { channelName, messages, fetchedAt: new Date().toISOString() };
     const cache = await readCache();
     cache[ref.key] = thread;
     await mkdir(dirname(cachePath), { recursive: true });
@@ -64,12 +80,37 @@ export function createSlackThreads(root: string, command: () => string[]) {
     return thread;
   }
 
-  return { read };
+  // A prefilled Codex or Claude draft about the thread, opened in the planning workspace. The agent gets the thread
+  // as a file (no Slack access needed) and the planning documents that cite it.
+  async function discuss(app: string, permalink: string, request: string, documents: string[]) {
+    if (app !== "codex" && app !== "claude") throw new Error("Unknown agent app.");
+    const ref = slackThreadRef(permalink);
+    const thread = (await readCache())[ref.key];
+    if (!thread) throw new Error("Open the thread first so there is something to discuss.");
+    const file = join(root, "tmp", "slack-threads", `${ref.channel}-${ref.thread}.md`);
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, slackTranscript(thread, permalink));
+    const where = thread.channelName ? ` in ${thread.channelName}` : "";
+    const cited = documents.length ? `\n\nPlanning documents that link it: ${documents.map((path) => `\`${path}\``).join(", ")}.` : "";
+    const draft = `Let's talk through this Slack thread${where}: ${permalink}\n\nThe whole thread (${thread.messages.length} messages, read ${thread.fetchedAt}) is in \`${file}\`; read it first. Use the Slack connector only if you need something newer or outside the thread.${cited}\n\n${request.trim()}`;
+    if (process.env.PLAN_VIEWER_DRY_RUN === "1") return console.log(`[dry run] ${app} draft in ${root}:\n${draft}`);
+    await promisify(execFile)("/usr/bin/open", [app === "claude" ? claudeNewSessionUrl(root, draft) : codexNewTaskUrl(draft, root)]);
+  }
+
+  return { read, discuss };
+}
+
+// A connector tool's text answer is JSON with a `messages` string (or an error).
+function toolJson(result: { content?: { type: string; text?: string }[]; isError?: boolean } | null) {
+  const text = result?.content?.find((item) => item.type === "text")?.text || "";
+  if (!result || result.isError) throw new Error(`Slack: ${text || "read failed"}`);
+  try { return JSON.parse(text) as { messages?: string; error?: string }; } catch { throw new Error(`Slack: ${text.slice(0, 200)}`); }
 }
 
 // One JSON-RPC session with `codex app-server`: initialize, an ephemeral thread (tool calls need one; no turn runs),
-// then the tool call on the `codex_apps` connector server.
-async function callTool([program, ...args]: string[], tool: string, toolArgs: Record<string, unknown>) {
+// then tool calls on the `codex_apps` connector server.
+type ToolCall = (tool: string, args: Record<string, unknown>) => Promise<any>;
+async function withConnector<T>([program, ...args]: string[], use: (call: ToolCall) => Promise<T>) {
   if (!program) throw new Error("No Slack reader configured (slack.codex in viewer.config.json).");
   const child = spawn(program, args, { cwd: tmpdir(), stdio: ["pipe", "pipe", "ignore"] });
   const pending = new Map<number, (message: { result?: any; error?: { message: string } }) => void>();
@@ -90,7 +131,7 @@ async function callTool([program, ...args]: string[], tool: string, toolArgs: Re
     await call("initialize", { clientInfo: { name: "plan-viewer", version: "1" } });
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "initialized" })}\n`);
     const { thread } = await call("thread/start", { ephemeral: true, cwd: tmpdir(), sandbox: "read-only", approvalPolicy: "never" });
-    return await call("mcpServer/tool/call", { threadId: thread.id, server: "codex_apps", tool, arguments: toolArgs });
+    return await use((tool, toolArgs) => call("mcpServer/tool/call", { threadId: thread.id, server: "codex_apps", tool, arguments: toolArgs }));
   } finally {
     clearTimeout(timer);
     failure.catch(() => {});

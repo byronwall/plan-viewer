@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseSlackThread, slackThreadRef } from "./slack-thread.ts";
-import { slackMarkdown } from "./public/slack.js";
+import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createSlackThreads, parseSlackThread, slackThreadRef } from "./slack-thread.ts";
+import { slackMarkdown, slackReactions } from "./public/slack.js";
 
 test("a reply's permalink reads its whole thread", () => {
   assert.deepEqual(slackThreadRef("https://acme.slack.com/archives/C0123/p1791473238675079?thread_ts=1791473016.225909&cid=C0123"),
@@ -36,7 +39,37 @@ Reactions: +1 (2)
 
 test("Slack mrkdwn reads as the viewer's Markdown", () => {
   assert.equal(slackMarkdown("<@U02|Grace> *bold* _it_ &lt;tag&gt;"), "@Grace **bold** *it* <tag>");
+  assert.equal(slackMarkdown("thanks :pray::skin-tone-2: :awesome: `:eyes:`"), "thanks 🙏🏻 :awesome: `:eyes:`");
   assert.equal(slackMarkdown("<https://acme.test/x|the doc>, <https://acme.test/y> and <mailto:a@acme.test|a@acme.test>"), "[the doc](https://acme.test/x), [acme.test/y](https://acme.test/y) and a@acme.test");
   assert.equal(slackMarkdown("• one\n    ◦ two"), "- one\n  - two");
   assert.equal(slackMarkdown("line one\nline two"), "line one\n\nline two");
+});
+
+test("reactions read as emoji and counts, custom ones by name", () => {
+  assert.deepEqual(slackReactions("+1::skin-tone-2 (1), eyes (2), thankyou (3)"), [
+    { name: "+1", emoji: "👍🏻", count: 1 }, { name: "eyes", emoji: "👀", count: 2 }, { name: "thankyou", emoji: ":thankyou:", count: 3 },
+  ]);
+});
+
+test("a discussion draft hands the agent the thread as a file and names the documents citing it", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "slack-"));
+  await mkdir(join(root, "tmp"));
+  await writeFile(join(root, "tmp", "slack-threads.json"), JSON.stringify({ "C0123/1791473016.225909": { channelName: "#acme-dev", fetchedAt: "2026-10-30T12:00:00.000Z", messages: [
+    { author: "Ada", email: "", user: "U01", ts: "1791473016.225909", text: "Ship it?", reactions: "" },
+    { author: "Grace", email: "", user: "U02", ts: "1791473238.675079", text: "Yes.", reactions: "+1 (1)" },
+  ] } }));
+  const logged: string[] = [];
+  t.mock.method(console, "log", (line: string) => logged.push(line));
+  process.env.PLAN_VIEWER_DRY_RUN = "1";
+  t.after(() => { delete process.env.PLAN_VIEWER_DRY_RUN; });
+  const threads = createSlackThreads(root, () => []);
+  await threads.discuss("codex", "https://acme.slack.com/archives/C0123/p1791473238675079?thread_ts=1791473016.225909", "Who owns the follow-up?", ["tasks/TASK-0001.md"]);
+  const file = join(root, "tmp", "slack-threads", "C0123-1791473016.225909.md");
+  assert.match(logged[0], /Slack thread in #acme-dev/);
+  assert.match(logged[0], new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(logged[0], /`tasks\/TASK-0001\.md`/);
+  assert.match(logged[0], /Who owns the follow-up\?$/);
+  const transcript = await readFile(file, "utf8");
+  assert.match(transcript, /## Grace · .*\n\n\[permalink\]\(https:\/\/acme\.slack\.com\/archives\/C0123\/p1791473238675079\?thread_ts=1791473016\.225909\) · reactions: \+1 \(1\)\n\nYes\./);
+  await assert.rejects(threads.discuss("vim", "https://acme.slack.com/archives/C0123/p1791473016225909", "", []), /Unknown agent app/);
 });

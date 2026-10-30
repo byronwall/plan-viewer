@@ -1,13 +1,13 @@
 import { contextScore, fuzzyChunks, searchDocuments, searchPrs, termMatch, textScore } from "./search.js";
 import { isSettled, renderActions, renderWorkBreakdown, showDoneToggle, workStatusIcon, workStatusLabel } from "./actions.js";
-import { applyLinkMetadata, collectLinks, metadataKey, renderDock } from "./dock.js";
+import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDockSource } from "./dock.js";
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
 import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, connectPlanning, setPeople, ago, cachedPrIndex, commitLinkMatch, diffSize, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { renderActivityPage } from "./activity.js";
-import { openSlackThread } from "./slack.js";
+import { openSlackThread, setSlackNotice } from "./slack.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, buildWeeks, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./weeks.js";
@@ -78,6 +78,7 @@ function showNotice(message, error = false, { description = "", action = null, k
   return entry;
 }
 setPlanNotice(showNotice);
+setSlackNotice(showNotice);
 function startToast(entry) {
   entry.started = Date.now();
   entry.timer = window.setTimeout(() => dismissToast(entry), entry.remaining);
@@ -2189,16 +2190,7 @@ elements.chunks.addEventListener("click", (event) => {
     return;
   }
   const source = event.target.closest("[data-dock-source]");
-  if (source) {
-    const browser = source.closest(".dock-link-browser");
-    for (const tab of browser.querySelectorAll("[data-dock-source]")) tab.setAttribute("aria-selected", String(tab === source));
-    // Hold the panel at its current height so shorter tabs don't shrink it, and start each tab at its top.
-    const panel = browser.closest(".doc-dock-panel");
-    panel.style.minHeight = `${panel.offsetHeight}px`;
-    for (const list of browser.querySelectorAll("[data-dock-source-list]")) list.hidden = list.dataset.dockSourceList !== source.dataset.dockSource;
-    browser.querySelector(".dock-source-lists").scrollTop = 0;
-    return;
-  }
+  if (source) return selectDockSource(source);
   const dockPanel = event.target.closest(".doc-dock-panel");
   if (dockPanel && event.target.closest("a[href], [data-action-key], .handoff-button")) queueMicrotask(() => dockPanel.matches(":popover-open") && dockPanel.hidePopover());
   const imageTrigger = event.target.closest(".markdown-image-trigger");

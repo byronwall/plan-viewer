@@ -87,10 +87,10 @@ const docItem = (doc, path, where = path) => doc?.task ? { path, label: doc.task
   : { path, label: "", detail: doc?.title || path, where };
 
 // Outgoing links, read from the rendered document so every detector (markdown links, bare IDs, task paths) counts.
-export function collectLinks(root, documents, selfPath = "") {
+export function collectLinks(root, documents, selfPath = "", selector = ".chunk-card a[href]") {
   const byPath = new Map(documents.map((doc) => [doc.path, doc]));
   const groups = new Map(SOURCES.map(([key]) => [key, new Map()]));
-  for (const a of root.querySelectorAll(".chunk-card a[href]")) {
+  for (const a of root.querySelectorAll(selector)) {
     const path = a.dataset.documentPath;
     if (path === selfPath) continue; // a document mentioning its own ID isn't a link out
     if (path) {
@@ -155,7 +155,7 @@ function slackChannels(group) {
 
 // A tab per source across the top, with "All" first: every link grouped by source, to scroll through in one go.
 // The tab bar is the panel's only header. 1–9 pick a tab and ← → cycle them while the panel is open (app.js).
-function linkBrowser(groups) {
+export function linkBrowser(groups) {
   const total = groups.reduce((sum, group) => sum + group.items.length, 0);
   const tab = (key, name, icon, count, index) => `<button type="button" class="dock-source" role="tab" data-dock-source="${key}" aria-selected="${index === 0}" title="${escapeHtml(name)} (${index + 1})">${icon ? `<span class="dock-link-icon">${icon}</span>` : ""}<span>${escapeHtml(name)}</span><small>${count}</small></button>`;
   const tabs = [tab("all", "All", "", total, 0), ...groups.map((group, index) => tab(group.key, group.name, group.icon, group.items.length, index + 1))].join("");
@@ -165,6 +165,16 @@ function linkBrowser(groups) {
   const panes = linkList(all, true, 'role="tabpanel" data-dock-source-list="all"')
     + groups.map((group) => linkList(rows(group), labeled(group), `role="tabpanel" data-dock-source-list="${group.key}" hidden`)).join("");
   return `<div class="dock-link-browser"><div class="dock-sources" role="tablist">${tabs}<span class="dock-sources-keys" aria-hidden="true" title="Switch tabs with ← → or 1–${groups.length + 1}"><kbd>←</kbd><kbd>→</kbd></span></div><div class="dock-source-lists">${panes}</div></div>`;
+}
+
+// A source tab click: show its list, holding the panel at its current height so shorter tabs don't shrink it.
+export function selectDockSource(tab) {
+  const browser = tab.closest(".dock-link-browser");
+  for (const other of browser.querySelectorAll("[data-dock-source]")) other.setAttribute("aria-selected", String(other === tab));
+  const panel = browser.closest(".doc-dock-panel");
+  panel.style.minHeight = `${panel.offsetHeight}px`;
+  for (const list of browser.querySelectorAll("[data-dock-source-list]")) list.hidden = list.dataset.dockSourceList !== tab.dataset.dockSource;
+  browser.querySelector(".dock-source-lists").scrollTop = 0;
 }
 
 function countUpdates(markdown) {

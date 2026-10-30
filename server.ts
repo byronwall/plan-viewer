@@ -15,7 +15,7 @@ import { createCodeDashboard, githubImage } from "./code-dashboard.ts";
 import { createPeople } from "./people.ts";
 import { createIssueTracker } from "./issues.ts";
 import { createPlans } from "./plans.ts";
-import { createSlackThreads } from "./slack-thread.ts";
+import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig } from "./public/config.js";
 
@@ -144,6 +144,7 @@ type DocumentSummary = {
   backlinks?: string[];
   issueKeys?: string[];
   pullRequests?: string[];
+  slackLinks?: string[];
   task?: TaskSummary;
   digest?: DailyDigest;
   modified?: number;
@@ -464,6 +465,9 @@ export async function listDocuments() {
     // GitHub PR links as `owner/repo#N`, so a PR overview can list the planning docs that link it.
     const prs = [...new Set([...contents.matchAll(/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g)].map(([, slug, n]) => `${slug.toLowerCase()}#${n}`))];
     if (prs.length) docs[index].pullRequests = prs;
+    // Slack permalinks as `channel/thread/message`, so a thread overlay can list (and mark) the documents that cite it.
+    const slack = [...new Set([...contents.matchAll(/\.slack\.com\/archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})(?:\?[^\s)>\]]*?thread_ts=(\d{10}\.\d{6}))?/g)].map(([, channel, seconds, micros, thread]) => `${channel}/${thread || `${seconds}.${micros}`}/${seconds}.${micros}`))];
+    if (slack.length) docs[index].slackLinks = slack;
   }
   // Work breakdown items, so ⌘K can find one without opening its task.
   for (const [index, { path, contents }] of files.entries()) {
@@ -809,6 +813,13 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const target = String((await readJson(request)).url || "");
       if (!/^https:\/\/[a-z0-9-]+\.slack\.com\/archives\/[\w/?=&.%-]+$/i.test(target)) return json(response, 400, { error: "Not a Slack permalink." });
       await promisify(execFile)("open", await slackDeepLink(target).then((link) => [link], () => ["-a", "Slack", target]));
+      return json(response, 200, { opened: true });
+    }
+    if (request.method === "POST" && url.pathname === "/api/slack/agent") {
+      const body = await readJson(request);
+      const ref = slackThreadRef(String(body.url || ""));
+      const documents = (await listDocuments()).filter((doc) => doc.slackLinks?.some((link) => link.startsWith(`${ref.key}/`))).map((doc) => doc.path);
+      await slackThreads.discuss(String(body.app || ""), String(body.url), String(body.request || "").slice(0, MAX_COMMENT_LENGTH), documents);
       return json(response, 200, { opened: true });
     }
     if (request.method === "GET" && url.pathname === "/api/slack/thread") return json(response, 200, await slackThreads.read(url.searchParams.get("url") || "", url.searchParams.has("refresh")));
