@@ -16,10 +16,10 @@ const ui = { data: null, filter: "", group: "recent", sel: "", poll: 0 };
 let host = null;
 let helpers = { showNotice: () => {}, toggleFavorite: () => {}, isFavorite: () => false, favorites: () => [] };
 
-const permalink = (entry) => `https://${entry.host}.slack.com/archives/${entry.channel}/p${entry.thread.replace(".", "")}`;
-const lastActive = (entry) => Number(entry.summary?.last || entry.thread) * 1000;
+export const permalink = (entry) => `https://${entry.host}.slack.com/archives/${entry.channel}/p${entry.thread.replace(".", "")}`;
+export const lastActive = (entry) => Number(entry.summary?.last || entry.thread) * 1000;
 // The opening message as one plain line: link labels, mentions and emoji kept, Markdown marks dropped.
-const opener = (entry) => entry.summary ? emojify(entry.summary.text).replace(/<[@#!]\w+\|([^>]*)>/g, (_, name) => `@${name}`).replace(/<[^>|]*\|([^>]*)>/g, "$1").replace(/<([^>]*)>/g, "$1").replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&").replace(/```|`/g, "").replace(/(?<!\w)[*_~]+(?=\w)|(?<=\w)[*_~]+(?!\w)/g, "").replace(/\s+/g, " ").trim() : "";
+export const opener = (entry) => entry.summary ? emojify(entry.summary.text).replace(/<[@#!]\w+\|([^>]*)>/g, (_, name) => `@${name}`).replace(/<[^>|]*\|([^>]*)>/g, "$1").replace(/<([^>]*)>/g, "$1").replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&").replace(/```|`/g, "").replace(/(?<!\w)[*_~]+(?=\w)|(?<=\w)[*_~]+(?!\w)/g, "").replace(/\s+/g, " ").trim() : "";
 const starred = (entry) => helpers.isFavorite(`?slack=${encodeURIComponent(permalink(entry))}`);
 // Favorited threads, and threads with a favorited message (whose permalink carries `thread_ts`).
 function favoriteKeys() {
@@ -34,9 +34,9 @@ function favoriteKeys() {
   return keys;
 }
 // Replies since this browser last opened the thread; threads never opened aren't marked.
-const fresh = (entry) => { const read = slackLastRead(entry.key); return !!(read && entry.summary && entry.summary.last > read); };
-const channelLabel = (entry) => entry.channelName || (entry.channel.startsWith("D") ? "Direct message" : entry.channel);
-const docsFor = (entry) => entry.docs.map((path) => planning.documents().find((doc) => doc.path === path)).filter(Boolean)
+export const fresh = (entry) => { const read = slackLastRead(entry.key); return !!(read && entry.summary && entry.summary.last > read); };
+export const channelLabel = (entry) => entry.channelName || (entry.channel.startsWith("D") ? "Direct message" : entry.channel);
+export const docsFor = (entry) => entry.docs.map((path) => planning.documents().find((doc) => doc.path === path)).filter(Boolean)
   .sort((a, b) => !!b.task - !!a.task || (b.date || b.task?.updated || "").localeCompare(a.date || a.task?.updated || ""));
 const docChip = (doc) => `<a class="slack-doc-chip" href="?${new URLSearchParams({ path: doc.path })}" data-planning-path="${escapeHtml(doc.path)}" data-tip="${escapeHtml(`${doc.task?.title || doc.title} · ${doc.path}`)}">${doc.task ? SERVICE_ICONS.task : icon("doc")}<code>${escapeHtml(doc.task?.id || doc.date || doc.kind)}</code></a>`;
 
@@ -82,8 +82,9 @@ function listBody() {
   return `<table class="code-table slack-table">${COLS}${top}${buckets.filter(([, rows]) => rows.length).map(([label, rows]) => section(label, rows, false)).join("")}</table>`;
 }
 
-function detail() {
-  const entry = ui.data.threads.find((candidate) => candidate.key === ui.sel);
+const detail = () => threadDetail(ui.data.threads.find((candidate) => candidate.key === ui.sel));
+// The inspector for one thread, shared with the Activity page: its opening message, replies, and citing documents.
+export function threadDetail(entry) {
   if (!entry) return `<p class="code-detail-empty">Select a thread to see how it starts and where it is cited.<br><br><kbd>J</kbd><kbd>K</kbd> move · <kbd>Enter</kbd> open · <kbd>S</kbd> star · <kbd>F</kbd> filter · <kbd>G</kbd> group · <kbd>R</kbd> sync</p>`;
   const summary = entry.summary;
   const docs = docsFor(entry);

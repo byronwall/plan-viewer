@@ -39,7 +39,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 | Overlays (PR, worktree, issue, initiative, Slack thread, document peek): the shared dialog shell, backdrop close, URL parameter and close announcement; `OVERLAYS` in `app.js` maps each parameter to its opener, Recently viewed row and Reopen toast, so a new overlay is one entry there | `public/overlay.js`, `OVERLAYS` and `peekDocument` in `public/app.js` |
 | Codex Desktop deep links | `codex-desktop.ts` |
 | Expanded table: sort, column filters, resize | `public/table-viewer.js` (opened by `showTableViewer` in `app.js`) |
-| Activity page: documents, issues and open PRs in one list with a day strip and an inspector (reuses the Issues sidebar through `issueInspector`) | `public/activity.js` |
+| Activity page: documents, issues, open PRs and Slack threads (row helpers and `threadDetail` from `slack-page.js`) in one list with a day strip and an inspector (reuses the Issues sidebar through `issueInspector`) | `public/activity.js` |
 | One avatar per person: GitHub/Linear/Slack/config identities joined into `/api/people`, read by `avatar()` in `code.js` | `people.ts` |
 | Search and the Weeks calendar | `public/search.js`, `public/weeks.js` |
 | Icons: Lucide glyphs and Simple Icons brand marks, vendored as path strings | `public/icons.js` |

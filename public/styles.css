@@ -2501,8 +2501,8 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 
 /* Activity page: a white working surface; a sticky toolbar, the list, and an inspector beside it on wide screens. */
 body:has(.activity-page), body:has(.activity-page) .reading-pane { background: var(--paper); }
-.activity-page { max-width: none; --src-tasks: #3157d5; --src-daily: #0f8a8a; --src-topics: #8a94a6; --src-jira: #e07a00; --src-linear: #6e56cf; --src-github: #1a7f37; --src-prs: #24292f; }
-.src-tasks { --src: var(--src-tasks); } .src-daily { --src: var(--src-daily); } .src-topics { --src: var(--src-topics); } .src-jira { --src: var(--src-jira); } .src-linear { --src: var(--src-linear); } .src-github { --src: var(--src-github); } .src-prs { --src: var(--src-prs); }
+.activity-page { max-width: none; --src-tasks: #3157d5; --src-daily: #0f8a8a; --src-topics: #8a94a6; --src-jira: #e07a00; --src-linear: #6e56cf; --src-github: #1a7f37; --src-prs: #24292f; --src-slack: #611f69; }
+.src-tasks { --src: var(--src-tasks); } .src-daily { --src: var(--src-daily); } .src-topics { --src: var(--src-topics); } .src-jira { --src: var(--src-jira); } .src-linear { --src: var(--src-linear); } .src-github { --src: var(--src-github); } .src-prs { --src: var(--src-prs); } .src-slack { --src: var(--src-slack); }
 .activity-surface { min-width: 0; max-width: 1740px; } /* on very wide monitors the rest stays empty rather than stretching rows */
 .activity-toolbar { position: sticky; top: 0; z-index: 8; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: -8px 0 0; padding: 8px 0; background: var(--paper); border-bottom: 1px solid var(--line); }
 .activity-toolbar .code-filter { flex: 0 1 220px; }
