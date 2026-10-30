@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { execFile } from "node:child_process";
-import { readFileSync, watch, type FSWatcher } from "node:fs";
+import { readFileSync, unwatchFile, watch, watchFile, type FSWatcher } from "node:fs";
 import { mkdir, readFile, readdir, stat, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
@@ -954,8 +954,20 @@ export function startServer(port = PORT) {
   const closeWatchers = watchMarkdownSources(broadcastMarkdownChange);
   codeDashboard.startBackgroundRefresh();
   issueTracker.startBackgroundRefresh();
+  // Edits to viewer.config.json apply without a restart; pages pick them up on their next load. A broken edit keeps the
+  // previous settings. `port`, `code.reposFile` and `code.prNotesDir` are read once, at startup.
+  const configPath = join(ROOT, "viewer.config.json");
+  watchFile(configPath, { interval: 1000 }, () => {
+    try {
+      setConfig(loadConfig(ROOT));
+      console.log("Reloaded viewer.config.json");
+    } catch (error) {
+      console.error(`${(error as Error).message}; keeping the previous settings`);
+    }
+  });
   server.once("close", () => {
     closeWatchers();
+    unwatchFile(configPath);
   });
   server.listen(port, "127.0.0.1", () => {
     console.log(`${config().title} is ready for ${ROOT} at http://127.0.0.1:${server.address().port}`);

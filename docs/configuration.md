@@ -14,7 +14,7 @@ That turns `#1234`, commit SHAs, and `ATL-12` in your Markdown into links with l
 
 ## `viewer.config.json`
 
-`viewer.config.json` at the workspace root holds everything that differs between people and teams. Every key is optional; missing keys fall back to the defaults in [`public/config.js`](../public/config.js). Restart the viewer after editing it. [`examples/workspace/viewer.config.json`](../examples/workspace/viewer.config.json) is a working example.
+`viewer.config.json` at the workspace root holds everything that differs between people and teams. Every key is optional; missing keys fall back to the defaults in [`public/config.js`](../public/config.js). The viewer rereads it when it changes, and open pages pick up the change when reloaded; `port`, `code.reposFile` and `code.prNotesDir` still need a restart, and an edit that isn't valid JSON is logged and ignored. [`examples/workspace/viewer.config.json`](../examples/workspace/viewer.config.json) is a working example.
 
 ```json
 {
