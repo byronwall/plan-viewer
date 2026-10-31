@@ -252,16 +252,19 @@ export function createCodeDashboard(root: string) {
 
   async function listPrs(repo: string, slug: string) {
     const fields = "number,title,author,headRefName,baseRefName,isDraft,reviewDecision,updatedAt,createdAt,url,additions,deletions,reviewRequests";
-    const [all, requested, closed] = await Promise.all([
+    const [all, requested, closed, repoInfo] = await Promise.all([
       exec("gh", ["pr", "list", "-R", slug, "--state", "open", "--limit", "500", "--json", fields], { maxBuffer: 32 << 20 }),
       exec("gh", ["pr", "list", "-R", slug, "--state", "open", "--limit", "500", "--search", "review-requested:@me", "--json", "number"]),
       // The Done view: the most recently merged or closed PRs, newest first.
       exec("gh", ["pr", "list", "-R", slug, "--state", "closed", "--limit", "60", "--search", "sort:updated-desc", "--json", `${fields},state,closedAt`], { maxBuffer: 32 << 20 }).catch(() => ({ stdout: "[]" })),
+      // A PR from the default branch (a release PR, main → deploy/staging) is a promotion, never a stack base.
+      exec("gh", ["repo", "view", slug, "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"]).catch(() => ({ stdout: "" })),
     ]);
+    const defaultBranch = repoInfo.stdout.trim();
     const requestedOfMe = new Set(JSON.parse(requested.stdout).map((pr: { number: number }) => pr.number));
     const shape = (pr: any) => ({
       repo, slug, number: pr.number, title: pr.title, url: pr.url, author: pr.author?.login || "", branch: pr.headRefName, base: pr.baseRefName,
-      draft: pr.isDraft, reviewDecision: pr.reviewDecision || "", updatedAt: pr.updatedAt, createdAt: pr.createdAt,
+      fromDefault: !!defaultBranch && pr.headRefName === defaultBranch, draft: pr.isDraft, reviewDecision: pr.reviewDecision || "", updatedAt: pr.updatedAt, createdAt: pr.createdAt,
       additions: pr.additions, deletions: pr.deletions, requestedOfMe: requestedOfMe.has(pr.number),
       reviewers: (pr.reviewRequests || []).map((request: any) => request.login || request.name || request.slug).filter(Boolean),
     });

@@ -336,9 +336,10 @@ function visiblePrs() {
     .sort(sorts[ui.prSort] || sorts.updated);
 }
 
-// Stacked PRs: a PR whose base is another open PR's head branch sits on top of it.
+// Stacked PRs: a PR whose base is another open PR's head branch sits on top of it, unless that head is the default
+// branch (a release PR from main would otherwise parent every PR against main).
 const stackKey = (repo, branch) => `${repo}\0${branch}`;
-const stackParent = (pr, prs = ui.data.prs) => { const up = prs.find((item) => item.repo === pr.repo && item.branch === pr.base); return up === pr ? null : up; };
+const stackParent = (pr, prs = ui.data.prs) => { const up = prs.find((item) => item.repo === pr.repo && item.branch === pr.base && !item.fromDefault); return up === pr ? null : up; };
 
 // The whole stack containing `pr`, base first, depth-first so each fork's subtree stays together.
 function stackOf(pr, prs = ui.data.prs) {
