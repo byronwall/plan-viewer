@@ -1871,7 +1871,10 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 .issue-col-key { width: 1%; }
 .issue-col-priority, .issue-col-confidence { width: 22px; text-align: center; }
 .issue-col-status { white-space: nowrap; }
-.issue-col-person { white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; color: var(--body-ink) !important; }
+.issue-col-person { white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis; color: var(--body-ink) !important; }
+.issue-people { display: inline-flex; align-items: center; gap: 4px; }
+.issue-reporter { display: inline-flex; flex: none; width: 18px; }
+.issue-people-arrow { flex: none; color: var(--muted); font-size: .72rem; }
 .issue-col-code { white-space: nowrap; min-width: 64px; }
 .issue-col-code > * + * { margin-left: 4px; }
 .issue-col-check { width: 22px; }

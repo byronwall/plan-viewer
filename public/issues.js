@@ -52,7 +52,10 @@ const priorityIcon = (issue) => {
 const isTriage = (issue) => issue.category === "new" && (issue.triage || ui.data.triage.statuses.includes(issue.status) || issue.labels.some((label) => ui.data.triage.labels.some((prefix) => label.startsWith(prefix))));
 const statusTag = (issue) => `<span class="code-tag issue-status issue-status-${isTriage(issue) && ui.data.triage.statuses.includes(issue.status) ? "triage" : issue.category}">${escapeHtml(issue.status)}</span>`;
 const firstName = (person) => (person?.name || "").split(" ")[0];
-const personMark = (person, full = false) => person ? `<span class="code-side-person" data-tip="${escapeHtml(person.name)}">${avatar(person.login || "", person.name, person.email)}${escapeHtml(full ? person.name : firstName(person))}</span>` : '<span class="code-muted">Unassigned</span>';
+const personMark = (person, full = false, tip = person?.name) => person ? `<span class="code-side-person" data-tip="${escapeHtml(tip)}">${avatar(person.login || "", person.name, person.email)}${escapeHtml(full ? person.name : firstName(person))}</span>` : '<span class="code-muted">Unassigned</span>';
+// List rows show who raised an issue beside who has it: the reporter's picture, an arrow, then the assignee. The
+// reporter slot keeps its width when empty so assignees line up down the column.
+const peopleMark = (issue) => `<span class="issue-people">${issue.reporter ? `<span class="issue-reporter" data-tip="Reported by ${escapeHtml(issue.reporter.name)}" role="img" aria-label="Reported by ${escapeHtml(issue.reporter.name)}">${avatar(issue.reporter.login || "", issue.reporter.name, issue.reporter.email)}</span>` : '<span class="issue-reporter"></span>'}<span class="issue-people-arrow" aria-hidden="true">→</span>${personMark(issue.assignee, false, issue.assignee && `Assigned to ${issue.assignee.name}`)}</span>`;
 const isMine = (issue) => issue.source === "github" ? Boolean(ui.data.githubMe) && [issue.assignee?.login, issue.reporter?.login].includes(ui.data.githubMe) : Boolean(ui.data.me) && [issue.assignee?.email, issue.reporter?.email].includes(ui.data.me);
 // Linear keys are namespaced (`linear:MOD-12`) since a Jira project can share the prefix; the label is what shows.
 const label = (issue) => issue.label || issue.key;
@@ -90,7 +93,7 @@ function codeChips(issue) {
 
 // ---------- lists ----------
 
-const matches = (issue) => !ui.filter || ui.filter.toLowerCase().split(/\s+/).every((word) => `${issue.key} ${issue.summary} ${issue.status} ${issue.assignee?.name || "unassigned"} ${issue.labels.join(" ")} ${aliasesFor(issue.key).join(" ")} ${byKey().get(issue.parent)?.summary || ""}`.toLowerCase().includes(word));
+const matches = (issue) => !ui.filter || ui.filter.toLowerCase().split(/\s+/).every((word) => `${issue.key} ${issue.summary} ${issue.status} ${issue.assignee?.name || "unassigned"} ${issue.reporter?.name || ""} ${issue.labels.join(" ")} ${aliasesFor(issue.key).join(" ")} ${byKey().get(issue.parent)?.summary || ""}`.toLowerCase().includes(word));
 const personKey = (issue) => issue.assignee?.name || "";
 const peopleFilter = (issue) => !ui.people.size || ui.people.has(personKey(issue));
 // Linear copies of Jira issues (the two-way sync's mirrors) only show on the Migration tab, beside their originals.
@@ -134,7 +137,7 @@ function issueRow(issue, { columns = COLUMNS, inGroup = false } = {}) {
     "issue-col-key": () => `<span class="issue-key-cell">${typeIcon(issue)}${inGroup ? shortKey(issue) : keyCell(issue)}</span>`,
     "code-col-main": () => `<div class="code-pr-title">${escapeHtml(issue.summary)}</div>${parentLine(issue)}`,
     "issue-col-status": () => statusTag(issue),
-    "issue-col-person": () => personMark(issue.assignee),
+    "issue-col-person": () => peopleMark(issue),
     "issue-col-code": () => codeChips(issue),
     "code-col-when": () => `${when(issue.updated)}${ui.tab === "triage" ? `<span class="issue-seen-mark" data-tip="${isSeen(issue) ? "Seen at this version (X)" : "Not seen yet (X)"}">${isSeen(issue) ? icon("pass") : ""}</span>` : ""}`,
   };
@@ -159,14 +162,14 @@ function grouped(issues, row, columns) {
   return `<table class="code-table issue-table">${tableHead(columns)}${sections}</table>`;
 }
 const PRIORITY_HEAD = `<span class="issue-priority-head" aria-label="Priority"><svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${PRIORITY.Urgent[1]}"/></svg></span>`;
-const COLUMNS = [["issue-col-priority", PRIORITY_HEAD], ["issue-col-key", "Issue"], ["code-col-main", "Title"], ["issue-col-status", "Status"], ["issue-col-person", "Assignee"], ["issue-col-code", "Code"], ["code-col-when", "Updated"]];
+const COLUMNS = [["issue-col-priority", PRIORITY_HEAD], ["issue-col-key", "Issue"], ["code-col-main", "Title"], ["issue-col-status", "Status"], ["issue-col-person", "Reporter → Assignee"], ["issue-col-code", "Code"], ["code-col-when", "Updated"]];
 // A column that would be blank, or the same, on every row stays out: GitHub issues carry no priority, a solo
 // repository has no assignees, and an all-open list needs no status.
 function columnsFor(issues) {
   const keep = {
     "issue-col-priority": issues.some((issue) => issue.priority),
     "issue-col-status": new Set(issues.map((issue) => issue.status)).size > 1 || issues.some((issue) => issue.source !== "github"),
-    "issue-col-person": issues.some((issue) => issue.assignee),
+    "issue-col-person": issues.some((issue) => issue.assignee || issue.reporter),
     "issue-col-code": issues.some((issue) => codeOf(issue).prs.length || codeOf(issue).worktrees.length || issue.prCount),
   };
   return COLUMNS.filter(([name]) => keep[name] ?? true);
@@ -248,7 +251,7 @@ function epicRow(epic) {
     <td class="issue-col-confidence">${confidenceMark(epic)}</td>
     <td class="issue-col-status">${statusTag(epic)}</td>
     <td class="issue-col-dates">${dateRange(epic)}</td>
-    <td class="issue-col-person">${personMark(epic.assignee)}</td>
+    <td class="issue-col-person">${peopleMark(epic)}</td>
     <td class="code-col-when code-heat-${heat(epic.updated)}">${when(epic.updated)}</td></tr>`;
   const kids = expanded ? shown.map((child) => childRow(child)).join("") : "";
   return row + kids;
@@ -261,7 +264,7 @@ function childRow(issue) {
     <td class="issue-col-confidence">${priorityIcon(issue)}</td>
     <td class="issue-col-status">${statusTag(issue)}</td>
     <td class="issue-col-dates">${issue.due ? `<span class="issue-dates">due ${escapeHtml(shortDate(issue.due))}</span>` : ""}</td>
-    <td class="issue-col-person">${personMark(issue.assignee)}</td>
+    <td class="issue-col-person">${peopleMark(issue)}</td>
     <td class="code-col-when code-heat-${heat(issue.updated)}">${when(issue.updated)}</td></tr>`;
 }
 
@@ -329,7 +332,7 @@ function activityBody() {
   const issues = byKey();
   const sections = [...days].map(([label, items]) => `<tbody><tr class="code-group-row"><th colspan="4">${escapeHtml(label)} <span>${items.length}</span></th></tr>${items.map((row) => {
     const issue = issues.get(row.key);
-    return `<tr class="code-row issue-row" data-issue-row="${escapeHtml(row.key)}" aria-selected="${ui.sel === row.key}"><td class="code-col-when">${new Date(row.at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</td><td class="issue-col-key"><span class="issue-key-cell">${typeIcon(issue)}${keyCell(issue)}</span></td><td class="code-col-main"><div class="issue-child-title">${escapeHtml(issue.summary)}</div><div class="code-sub issue-activity-change">${changeText(row)}</div></td><td class="issue-col-person">${personMark(issue.assignee)}</td></tr>`;
+    return `<tr class="code-row issue-row" data-issue-row="${escapeHtml(row.key)}" aria-selected="${ui.sel === row.key}"><td class="code-col-when">${new Date(row.at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</td><td class="issue-col-key"><span class="issue-key-cell">${typeIcon(issue)}${keyCell(issue)}</span></td><td class="code-col-main"><div class="issue-child-title">${escapeHtml(issue.summary)}</div><div class="code-sub issue-activity-change">${changeText(row)}</div></td><td class="issue-col-person">${peopleMark(issue)}</td></tr>`;
   }).join("")}</tbody>`).join("");
   return `<table class="code-table issue-table issue-activity">${sections}</table>${rows.length > shown.length ? `<p class="code-muted issue-more">Showing the newest ${shown.length} of ${rows.length}. Narrow with the filter or a day.</p>` : ""}`;
 }
@@ -452,13 +455,13 @@ function migrationRow(group) {
     <td class="issue-col-side">${side(true) || '<span class="code-muted">—</span>'}</td>
     <td class="issue-col-relation">${kinds.length ? escapeHtml(kinds.join(", ")) : ""}</td>
     <td class="issue-col-side">${side(false) || '<span class="code-muted">not in Jira</span>'}</td>
-    <td class="issue-col-person">${personMark(primary.assignee)}</td>
+    <td class="issue-col-person">${peopleMark(primary)}</td>
     <td class="code-col-when code-heat-${heat(group.updated)}">${when(group.updated)}</td></tr>`;
 }
 function migrationBody() {
   const groups = migrationGroups().filter((group) => group.kind === ui.migration);
   if (!groups.length) return emptyState(MIGRATION[ui.migration].toLowerCase());
-  const columns = [["issue-col-check", ""], ["code-col-main", "Title"], ["issue-col-side", "Linear"], ["issue-col-relation", ""], ["issue-col-side", "Jira"], ["issue-col-person", "Assignee"], ["code-col-when", "Updated"]];
+  const columns = [["issue-col-check", ""], ["code-col-main", "Title"], ["issue-col-side", "Linear"], ["issue-col-relation", ""], ["issue-col-side", "Jira"], ["issue-col-person", "Reporter → Assignee"], ["code-col-when", "Updated"]];
   const note = { linear: "Open Linear issues and projects with no Jira copy: what's left to migrate.", drift: "Linked across trackers, but at different stages: in progress on one side and in the backlog or finished on the other.", copies: "Jira issues the two-way sync copied into Linear, where the copy is still open: duplicates to close in Linear.", title: "No sync or import marker, but the same title: likely duplicates to confirm.", linked: "Linked by the sync or the import and in step." }[ui.migration];
   return `<p class="code-muted issue-migration-note">${note}</p>${grouped(groups.map((group) => ({ ...group.primary, updated: group.updated, group })), (item) => migrationRow(item.group), columns)}`;
 }
@@ -475,7 +478,7 @@ function childrenTable(issue) {
     <td class="issue-col-key"><span class="issue-key-cell">${typeIcon(child)}${keyCell(child)}</span></td>
     <td class="code-col-main"><div class="issue-child-title">${escapeHtml(child.summary)}</div></td>
     <td class="issue-col-status">${statusTag(child)}</td>
-    <td class="issue-col-person">${personMark(child.assignee)}</td>
+    <td class="issue-col-person">${peopleMark(child)}</td>
     <td class="code-col-when code-heat-${heat(child.updated)}">${when(child.updated)}</td></tr>`).join("")}</tbody>`).join("");
   return `<section>${sideHead(issue.type === "Project" ? "Issues" : "Children", String(children.length))}${progress(children)}<table class="code-table issue-table issue-children">${body}</table></section>`;
 }
