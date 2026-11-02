@@ -1005,6 +1005,28 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .dock-channel-heading small { color: var(--quiet-text); font: 700 .64rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .doc-dock-panel-backlinks .doc-dock-panel-body, .doc-dock-panel-documents .doc-dock-panel-body { padding: 6px; }
 .doc-dock-panel-backlinks .dock-source-list, .doc-dock-panel-documents .dock-source-list { padding: 0; }
+/* Task documents: icon, title over its sections, then when and how big, so rows compare at a glance. */
+.doc-dock-panel-documents { width: min(620px, calc(100vw - 24px)); }
+.doc-dock-panel-documents .doc-dock-panel-header { flex-wrap: wrap; row-gap: 8px; }
+.doc-dock-panel-documents .doc-dock-panel-header > div { min-width: 12rem; }
+.dock-doc-list { grid-template-columns: 18px minmax(0, 1fr) auto 12px; column-gap: 10px; }
+.doc-dock-panel-documents [data-doc-parent] { margin-bottom: 2px; }
+.dock-doc { padding-block: 6px; }
+.dock-doc .dock-link-icon { margin-right: 0; color: var(--muted); }
+.dock-doc[aria-current="page"] .dock-link-icon { color: var(--action-ink); }
+.dock-doc .dock-link-detail { color: var(--ink); font-weight: 550; }
+.dock-doc .dock-link-detail code { border-radius: 4px; background: var(--quiet-field); padding: 0 3px; font: 600 .74rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.dock-doc-sections { display: block; margin-top: 1px; color: var(--muted); font-size: .72rem; font-weight: 400; }
+.dock-doc-facts { display: grid; justify-items: end; color: var(--quiet-text); font-size: .7rem; line-height: 1.45; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dock-doc-facts time { color: var(--body-ink); font-weight: 600; }
+.dock-doc-list .dock-channel-heading { position: static; padding: 8px 10px 2px; }
+.dock-doc-list .dock-channel:first-child .dock-channel-heading { padding-top: 4px; }
+.dock-doc-list .dock-channel-name { color: var(--muted); font-size: .72rem; }
+.dock-sort { flex: none; display: inline-flex; gap: 2px; border-radius: 7px; background: var(--hover-field); padding: 2px; }
+.dock-sort button { border: 0; border-radius: 5px; background: transparent; padding: 3px 8px; color: var(--muted); font-size: .72rem; font-weight: 600; transition: background-color 140ms ease, color 140ms ease; }
+.dock-sort button:hover { color: var(--ink); }
+.dock-sort button[aria-pressed="true"] { background: var(--paper); color: var(--action-ink); box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(24, 33, 47, .06); }
+.dock-sort button:focus-visible { outline: 2px solid var(--action); outline-offset: -2px; }
 .dock-link { --status-ink: var(--action-ink); grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: baseline; border-radius: 6px; padding: 4px 10px; color: var(--body-ink); font-size: .8rem; line-height: 1.4; text-decoration: none; }
 .dock-link::after { content: none !important; }
 .dock-link:hover { background: var(--hover-field); color: var(--ink); }

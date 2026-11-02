@@ -1,6 +1,6 @@
 import { contextScore, fuzzyChunks, searchDocuments, searchPrs, termMatch, textScore } from "./search.js";
 import { isSettled, renderActions, renderWorkBreakdown, showDoneToggle, workStatusIcon, workStatusLabel } from "./actions.js";
-import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDockSource } from "./dock.js";
+import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDocumentSort, selectDockSource } from "./dock.js";
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
 import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
@@ -2289,6 +2289,8 @@ elements.chunks.addEventListener("click", (event) => {
   }
   const source = event.target.closest("[data-dock-source]");
   if (source) return selectDockSource(source);
+  const documentSort = event.target.closest("[data-doc-sort]");
+  if (documentSort) return selectDocumentSort(documentSort);
   const dockPanel = event.target.closest(".doc-dock-panel");
   if (dockPanel && event.target.closest("a[href], [data-action-key], .handoff-button")) queueMicrotask(() => dockPanel.matches(":popover-open") && dockPanel.hidePopover());
   const imageTrigger = event.target.closest(".markdown-image-trigger");

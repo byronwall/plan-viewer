@@ -148,7 +148,21 @@ type DocumentSummary = {
   task?: TaskSummary;
   focus?: PlanFocus;
   modified?: number;
+  created?: number;
+  outline?: DocumentOutline;
 };
+
+// What a task's supporting document holds, for the Documents popover: its size and `##` sections at a glance.
+type DocumentOutline = { words: number; images: number; headings: string[] };
+
+export function outline(contents: string): DocumentOutline {
+  const body = contents.replace(/^```[\s\S]*?^```/gm, "");
+  return {
+    words: body.split(/\s+/).filter((word) => /\w/.test(word)).length,
+    images: (contents.match(/!\[[^\]]*\]\(/g) || []).length,
+    headings: [...body.matchAll(/^##\s+(.+?)\s*#*$/gm)].map(([, heading]) => heading.replace(/[`*_~]/g, "")),
+  };
+}
 
 // What a daily plan is about, for its library rail row: the tasks it schedules (in order, with the bullet's note after
 // the dash), or for plans that predate tasks, their `##` work headings.
@@ -416,7 +430,7 @@ export function summarize(path: string, contents: string, currentDate = todayDat
     };
   }
   const taskAsset = path.match(/^tasks\/(TASK-\d{4})-assets\//);
-  if (taskAsset) return { path, title, group: "Task documents", format, kind: `${taskAsset[1]} document`, isToday: false };
+  if (taskAsset) return { path, title, group: "Task documents", format, kind: `${taskAsset[1]} document`, isToday: false, outline: outline(contents) };
   if (path.startsWith("tasks/")) {
     const { task } = parseTaskDocument(path, contents);
     return { path, title: task.title, group: "Tasks", format: "markdown", kind: "Task", isToday: false, task };
@@ -462,9 +476,12 @@ async function slackIndex() {
 
 export async function listDocuments() {
   const paths = (await Promise.all([walkDocuments("daily"), walkDocuments("tasks"), walkDocuments("plans"), walkDocuments("reference")])).flat().filter(isViewableDocumentPath);
-  const files = await Promise.all(paths.map(async (path) => ({ path, contents: await readFile(join(ROOT, path), "utf8"), modified: (await stat(join(ROOT, path))).mtimeMs })));
-  // `modified` orders the Activity page.
-  const docs = files.map(({ path, contents, modified }) => ({ ...summarize(path, contents), modified }));
+  const files = await Promise.all(paths.map(async (path) => {
+    const { mtimeMs, birthtimeMs } = await stat(join(ROOT, path));
+    return { path, contents: await readFile(join(ROOT, path), "utf8"), modified: mtimeMs, created: birthtimeMs };
+  }));
+  // `modified` orders the Activity page; both order a task's Documents popover.
+  const docs = files.map(({ path, contents, modified, created }) => ({ ...summarize(path, contents), modified, created }));
   // Backlinks: every other document that mentions a task ID, links to a document, or names one by repository path.
   const known = new Set(docs.map((doc) => doc.path));
   const backlinks = new Map<string, Set<string>>();

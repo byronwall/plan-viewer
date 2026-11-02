@@ -7,7 +7,7 @@ import { createLinkMetadataStore, refreshSlackChannels } from "./link-metadata.t
 import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle, withImages } from "./codex-desktop.ts";
 import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
 import { dateKey, parseDateKey, startOfWeek } from "./public/dates.js";
-import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
+import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
   const previous = process.env.SLACK_TOKEN;
@@ -49,6 +49,13 @@ test("Slack refresh rejects failed and mismatched lookups instead of returning p
   await assert.rejects(refreshSlackChannels(ROOT, source, []), /C0ACME0002: channel_not_found/);
   t.mock.method(globalThis, "fetch", async () => Response.json({ ok: true, channel: { id: "C00000000", name: "wrong" } }));
   await assert.rejects(refreshSlackChannels(ROOT, source, []), /invalid channel response/);
+});
+
+test("task documents carry their size and sections for the Documents popover", () => {
+  const markdown = "# RCA\n\nTwo words.\n\n## Verdict\n\n![graph](graph.png)\n\n```sh\n## not a heading\n```\n\n## `Cursor` closed ##\n";
+  assert.deepEqual(outline(markdown), { words: 7, images: 1, headings: ["Verdict", "Cursor closed"] });
+  assert.deepEqual(summarize("tasks/TASK-0001-assets/rca.md", markdown).outline?.headings, ["Verdict", "Cursor closed"]);
+  assert.equal(summarize("plans/notes.md", markdown).outline, undefined);
 });
 
 test("parses structured milestones as complete work chunks", () => {

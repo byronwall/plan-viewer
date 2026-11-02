@@ -177,6 +177,78 @@ export function selectDockSource(tab) {
   browser.querySelector(".dock-source-lists").scrollTop = 0;
 }
 
+// A task's supporting documents, newest first under day headings, so the latest write-up is the first row and the order
+// they were written in reads down the list. Each row carries its `##` sections and size, so the right one is findable
+// without opening each. One list per sort; the header's switch shows one and remembers the choice (app.js).
+const DOC_SORTS = [["edited", "Edited"], ["created", "Created"], ["name", "Name"]];
+const SORT_KEY = "plan-viewer:document-sort";
+export const documentSort = () => { try { return DOC_SORTS.some(([key]) => key === localStorage.getItem(SORT_KEY)) ? localStorage.getItem(SORT_KEY) : "edited"; } catch { return "edited"; } };
+export const saveDocumentSort = (key) => { try { localStorage.setItem(SORT_KEY, key); } catch {} };
+
+const startOfDay = (time) => new Date(time).setHours(0, 0, 0, 0);
+function dayLabel(time, now = Date.now()) {
+  const days = Math.round((startOfDay(now) - startOfDay(time)) / 86_400_000);
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  const date = new Date(time);
+  if (days > 1 && days < 7) return date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: date.getFullYear() === new Date(now).getFullYear() ? undefined : "numeric" });
+}
+// Today's rows say how long ago; older rows sit under their day's heading, so they give the time of day.
+function timeLabel(time, now = Date.now()) {
+  if (startOfDay(time) !== startOfDay(now)) return new Date(time).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const minutes = Math.round((now - time) / 60_000);
+  return minutes < 1 ? "just now" : minutes < 60 ? `${minutes}m ago` : `${Math.round(minutes / 60)}h ago`;
+}
+const stamp = (time) => new Date(time).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const words = (count) => count < 1000 ? `${count} words` : `${(count / 1000).toFixed(count < 10_000 ? 1 : 0).replace(/\.0$/, "")}k words`;
+
+function documentRow(sub, currentPath, sort) {
+  const { words: count = 0, images = 0, headings = [] } = sub.outline || {};
+  const time = sort === "created" ? sub.created : sub.modified;
+  const sections = headings.length > 4 ? [...headings.slice(0, 4), `+${headings.length - 4} more`] : headings;
+  const when = sub.created && Math.abs(sub.modified - sub.created) > 60_000 ? `Edited ${stamp(sub.modified)} · created ${stamp(sub.created)}` : `Created ${stamp(sub.created || sub.modified)}`;
+  return `<a class="markdown-document-link dock-link dock-doc"${sub.path === currentPath ? ' aria-current="page"' : ""} href="?${new URLSearchParams({ path: sub.path })}" data-document-path="${escapeHtml(sub.path)}" data-document-anchor="" title="${escapeHtml(`${sub.path.split("/").at(-1)}\n${when}`)}">`
+    + `<span class="dock-link-icon">${ICONS.doc}</span>`
+    + `<span class="dock-link-detail">${escapeHtml(sub.title).replace(/`([^`]+)`/g, "<code>$1</code>")}${sections.length ? `<span class="dock-doc-sections">${sections.map(escapeHtml).join('<span aria-hidden="true"> · </span>')}</span>` : ""}</span>`
+    + `<span class="dock-doc-facts">${time ? `<time datetime="${new Date(time).toISOString()}">${timeLabel(time)}</time>` : ""}<span>${words(count)}${images ? ` · ${images} ${images === 1 ? "image" : "images"}` : ""}</span></span>`
+    + `<span class="dock-link-out" aria-hidden="true">→</span></a>`;
+}
+
+function documentLists(subDocuments, currentPath, parentTask) {
+  const active = documentSort();
+  const order = {
+    edited: (a, b) => (b.modified || 0) - (a.modified || 0),
+    created: (a, b) => (b.created || b.modified || 0) - (a.created || a.modified || 0),
+    name: (a, b) => a.title.localeCompare(b.title),
+  };
+  const lists = DOC_SORTS.map(([sort]) => {
+    const sorted = [...subDocuments].sort((a, b) => order[sort](a, b) || a.path.localeCompare(b.path));
+    let body = sorted.map((sub) => documentRow(sub, currentPath, sort)).join("");
+    if (sort !== "name") {
+      const days = new Map();
+      for (const sub of sorted) {
+        const label = dayLabel((sort === "created" ? sub.created : 0) || sub.modified || 0);
+        days.set(label, [...(days.get(label) || []), sub]);
+      }
+      body = [...days].map(([label, subs]) => `<section class="dock-channel"><h4 class="dock-channel-heading"><span class="dock-channel-name">${escapeHtml(label)}</span><small>${subs.length}</small></h4>${subs.map((sub) => documentRow(sub, currentPath, sort)).join("")}</section>`).join("");
+    }
+    return `<div class="dock-source-list dock-doc-list" data-doc-sort-list="${sort}"${sort === active ? "" : " hidden"}>${body}</div>`;
+  }).join("");
+  // An asset page leads with its task, so the way back is the first row whatever the sort.
+  return `${parentTask ? linkList(linkRow(docItem(parentTask, parentTask.path), SERVICE_ICONS.task), true, 'data-doc-parent=""') : ""}${lists}`;
+}
+
+const sortSwitch = () => `<div class="dock-sort" role="group" aria-label="Sort documents">${DOC_SORTS.map(([key, label]) => `<button type="button" data-doc-sort="${key}" aria-pressed="${key === documentSort()}">${label}</button>`).join("")}</div>`;
+
+// A sort switch click: show that order's list and remember it for every task.
+export function selectDocumentSort(button) {
+  const panel = button.closest(".doc-dock-panel");
+  for (const other of panel.querySelectorAll("[data-doc-sort]")) other.setAttribute("aria-pressed", String(other === button));
+  for (const list of panel.querySelectorAll("[data-doc-sort-list]")) list.hidden = list.dataset.docSortList !== button.dataset.docSort;
+  saveDocumentSort(button.dataset.docSort);
+}
+
 function countUpdates(markdown) {
   const headings = markdown.match(/^###\s/gm)?.length || 0;
   return headings || markdown.match(/^[-*]\s/gm)?.length || 0;
@@ -219,7 +291,11 @@ export function renderDock({ doc, documents, links, body }) {
   const entries = updates && parseUpdates(updates.markdown);
   const latest = entries?.map((entry) => entry.date).sort().at(-1);
   if (updates) add("updates", "Updates", ICONS.updates, `${entries?.length || countUpdates(updates.markdown) || ""}`, updates.title, latest ? `Latest ${relativeDate(latest)} · ${entries.length} ${entries.length === 1 ? "entry" : "entries"}` : "Recorded in the task", body(updates), updates.id);
-  if (subDocuments.length) add("documents", "Documents", ICONS.doc, `${subDocuments.length}`, "Task documents", `${subDocuments.length} in ${taskId}-assets`, linkList(`${parentTask ? linkRow(docItem(parentTask, parentTask.path), SERVICE_ICONS.task) : ""}${subDocuments.map((sub) => linkRow({ ...docItem(sub, sub.path, ""), current: sub.path === doc.path }, ICONS.doc)).join("")}`, true));
+  if (subDocuments.length) {
+    const latest = Math.max(...subDocuments.map((sub) => sub.modified || 0));
+    add("documents", "Documents", ICONS.doc, `${subDocuments.length}`, "Task documents", `${subDocuments.length} in ${taskId}-assets${latest ? ` · last edited ${dayLabel(latest).toLowerCase()}` : ""}`, documentLists(subDocuments, doc.path, parentTask));
+    items.at(-1).tools = sortSwitch();
+  }
   add("links", "Links", ICONS.links, `${linkCount}`, "Links out", linkCount ? `${linkCount} across ${links.length} ${links.length === 1 ? "source" : "sources"}` : "No links in this document", linkCount ? linkBrowser(links) : '<p class="dock-empty">This document doesn\'t link anywhere yet.</p>', "", Boolean(linkCount));
   add("backlinks", "Backlinks", ICONS.backlinks, `${backlinks.length}`, "Linked from", backlinks.length ? `${backlinks.length} ${backlinks.length === 1 ? "document links" : "documents link"} here` : "Nothing links here yet", backlinks.length
     ? linkList(backlinks.map((source) => linkRow(docItem(source, source.path), source.task ? SERVICE_ICONS.task : ICONS.doc)).join(""), true)
@@ -229,7 +305,7 @@ export function renderDock({ doc, documents, links, body }) {
     <span class="doc-dock-title" aria-hidden="true">${escapeHtml(doc.task ? `${doc.task.id} · ${doc.title}` : doc.title)}</span>
     <div class="doc-dock-buttons" role="toolbar" aria-label="Document overview"><button type="button" class="doc-dock-button doc-dock-draft" data-dock-draft aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false" title="Open an agent draft for ${escapeHtml(doc.path)}"><span class="doc-dock-icon">${ICONS.draft}</span><span class="doc-dock-label">Draft</span></button><span class="doc-dock-divider" aria-hidden="true"></span>${items.map((item) => `<button type="button" class="doc-dock-button" ${item.workItem ? `data-work-item="${escapeHtml(item.workItem)}" aria-haspopup="dialog" aria-controls="work-item-dialog"` : `popovertarget="dock-${item.key}" aria-expanded="false" style="anchor-name: --dock-${item.key}"`} title="${escapeHtml(item.meta)}"><span class="doc-dock-icon">${item.icon}</span><span class="doc-dock-label">${escapeHtml(item.label)}</span>${item.badge && item.badge !== "0" ? `<span class="doc-dock-badge">${escapeHtml(item.badge)}</span>` : ""}</button>`).join("")}</div>
   </div>${items.filter((item) => !item.workItem).map((item) => `<div class="doc-dock-panel doc-dock-panel-${item.key}" id="dock-${item.key}" popover style="position-anchor: --dock-${item.key}" role="dialog" aria-label="${escapeHtml(item.title)}">
-    ${item.bare ? "" : `<header class="doc-dock-panel-header"><span class="doc-dock-icon">${item.icon}</span><div><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.meta)}</p></div>${item.jump ? `<button type="button" class="doc-dock-jump" data-dock-jump="${escapeHtml(item.jump)}">Go to section <span aria-hidden="true">↓</span></button>` : ""}</header>`}
+    ${item.bare ? "" : `<header class="doc-dock-panel-header"><span class="doc-dock-icon">${item.icon}</span><div><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.meta)}</p></div>${item.tools || ""}${item.jump ? `<button type="button" class="doc-dock-jump" data-dock-jump="${escapeHtml(item.jump)}">Go to section <span aria-hidden="true">↓</span></button>` : ""}</header>`}
     <div class="doc-dock-panel-body">${item.content}</div>
   </div>`).join("")}</div>`;
 }
