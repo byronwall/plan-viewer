@@ -2392,6 +2392,12 @@ elements.imageViewer.addEventListener("wheel", (event) => {
   const rect = stage.getBoundingClientRect();
   zoomImageViewer(Math.exp(-event.deltaY * .0015), { x: event.clientX - rect.left, y: event.clientY - rect.top });
 }, { passive: false });
+elements.chunks.addEventListener("dblclick", (event) => {
+  const row = event.target.closest("tr[data-select-task]");
+  if (!row || event.target.closest("[data-task-path], a, [data-action-key], [data-status-path], input, label")) return;
+  window.getSelection()?.removeAllRanges();
+  selectDocument(row.dataset.selectTask);
+});
 elements.imageViewer.addEventListener("dblclick", (event) => {
   if (event.target.closest(".image-viewer-stage") && !event.target.closest("button")) resetImageViewerTransform();
 });
