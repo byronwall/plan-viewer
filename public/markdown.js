@@ -573,13 +573,20 @@ const htmlImages = (markdown) => markdown.replace(/<img\b[^>]*>/gi, (tag) => {
   const attr = (name) => tag.match(new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, "i"))?.[1] || "";
   return attr("src") ? `![${attr("alt").replace(/[[\]]/g, "")}](${attr("src")})` : "";
 });
+// Linear writes mentions as tags (`<pull-request href="…">acme/atlas#12</pull-request>`, `<issue …>`, `<user …>`); each becomes a
+// Markdown link, a pull request to GitHub when its label names one, and a tag without an href keeps only its label.
+const htmlMentions = (markdown) => markdown.replace(/<(pull-request|issue|project|document|initiative|user)\b([^>]*)>([^<]*)<\/\1>/g, (_, tag, attrs, label) => {
+  const pr = tag === "pull-request" && label.match(/^([\w.-]+\/[\w.-]+)#(\d+)$/);
+  const href = pr ? `https://github.com/${pr[1]}/pull/${pr[2]}` : attrs.match(/\bhref="(https?:\/\/[^"\s)]+)"/)?.[1];
+  return href ? `[${label.replace(/[[\]]/g, "")}](${href})` : label;
+});
 
 // Fenced blocks carry their source and language; app.js turns the tab's buttons into a copy and a download.
 const CODE_TOOLS = `<div class="table-tools" role="toolbar" aria-label="Code actions"><button type="button" data-code-copy>Copy</button><button type="button" data-code-download>Download</button></div>`;
 const fencedBlock = (lines, language) => `<div class="markdown-code" data-code-source="${escapeHtml(lines.join("\n"))}" data-code-language="${escapeHtml(language)}">${CODE_TOOLS}${codeBlock(lines, language)}</div>`;
 
 export function renderMarkdown(markdown, currentPath = "") {
-  const lines = htmlImages(markdown).split(/\r?\n/);
+  const lines = htmlMentions(htmlImages(markdown)).split(/\r?\n/);
   const html = [];
   let paragraph = [];
   let inCode = false;

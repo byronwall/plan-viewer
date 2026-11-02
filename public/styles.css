@@ -1961,6 +1961,20 @@ a.issue-link-row[data-planning-path] > svg { align-self: center; }
 .code-side-facts dd > .issue-link-row { flex: 1; }
 .issue-markdown { margin: 0; font-size: .82rem; line-height: 1.55; }
 .issue-markdown > :first-child { margin-top: 0; } .issue-markdown > :last-child { margin-bottom: 0; }
+.issue-text-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 1px 14px; margin: 2px 0 10px; }
+.issue-text-facts dt { color: var(--label-text); white-space: nowrap; }
+.issue-text-facts dd { margin: 0; min-width: 0; overflow-wrap: break-word; }
+.issue-markdown li > a.is-whole { white-space: normal; } /* a list item that is one link wraps rather than clips */
+.issue-markdown li.issue-text-pr::marker { content: ""; }
+.issue-markdown li.issue-text-pr { margin-left: -18px; }
+.issue-text-pr > .code-pr-chip { min-width: 4.4em; margin-right: 4px; padding: 0; }
+/* Code list rows: CI, a fixed number column, the title, then the author pinned right */
+.issue-pr-row code { min-width: 3.3em; font-variant-numeric: tabular-nums; }
+.issue-pr-row code.issue-pr-open { color: var(--action-ink); }
+.issue-pr-row code.issue-pr-draft { color: var(--muted); }
+.issue-link-row.issue-pr-row > span:is(.code-ci, .code-avatar) { flex: none; margin-right: 0; }
+.issue-more-toggle { border: 0; background: none; padding: 2px 0; color: var(--muted); font: inherit; font-size: .74rem; cursor: pointer; transition: color 140ms; }
+.issue-more-toggle:hover { color: var(--ink); }
 .issue-comments { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
 .issue-comments header { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; font-size: .78rem; }
 .issue-comments header time { color: var(--quiet-text); }

@@ -259,6 +259,14 @@ test("GitHub bodies: raw img and details tags render, attachment images go throu
   assert.doesNotMatch(renderMarkdown('<img src="javascript:alert(1)">', ""), /<img/);
 });
 
+test("Linear mention tags render as links, pull requests to GitHub", () => {
+  const html = renderMarkdown('Runner: <pull-request id="a9" href="https://linear.app/acme/review/x">acme/atlas#12</pull-request> after <issue id="b1" href="https://linear.app/acme/issue/ATL-3/y">ATL-3</issue>, ask <user id="c2">Avery</user>.', "");
+  assert.match(html, /href="https:\/\/github\.com\/acme\/atlas\/pull\/12"/);
+  assert.match(html, /href="https:\/\/linear\.app\/acme\/issue\/ATL-3\/y"/);
+  assert.match(html, /ask Avery\./);
+  assert.doesNotMatch(html, /&lt;|id=/);
+});
+
 test("angle-bracket link destinations, as Linear writes them, stay live", () => {
   assert.match(inlineMarkdown("[report](<https://acme.example/r/1>)", ""), /href="https:\/\/acme\.example\/r\/1"/);
 });

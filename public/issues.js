@@ -1,6 +1,6 @@
 import { escapeHtml, renderMarkdown } from "./markdown.js";
 import { GLYPHS } from "./icons.js";
-import { agentApp, agentName as appName, config } from "./config.js";
+import { agentApp, agentName as appName, config, escapeRegExp } from "./config.js";
 import { ago, avatar, planning, planningSection, ciBadge, copied, fadeIn, heat, hideTip, icon, iconButton, isSummonKey, openPrOverlay, openWorktreeOverlay, showTip, sideFacts, sideHead, sideStatus, when } from "./code.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 
@@ -15,7 +15,7 @@ const storage = { get: (key, fallback) => { try { return localStorage.getItem(ke
 const ui = {
   tab: "all", data: null, filter: "", scope: "all", people: new Set(), showBots: false, showDone: false, hideSeen: storage.get("issues-hide-seen", "on") === "on",
   sel: "", detail: new Map(), selected: new Set(), expanded: new Set(), since: "", activityScope: "all", poll: 0, peopleQuery: "",
-  source: storage.get("issues-source", "all"), migration: "linear",
+  source: storage.get("issues-source", "all"), migration: "linear", showClosedPrs: false,
   group: storage.get("issues-group", "repo"), collapsed: new Set(storage.get("issues-collapsed", "").split("\n").filter(Boolean)),
 };
 let seen = {};
@@ -369,10 +369,28 @@ function issueFacts(issue, overlay = false) {
   ]);
 }
 
+// One row per PR: CI, number in its state's color, the title without the issue key it opens with, and the author.
+const PR_ORDER = { OPEN: 0, MERGED: 1, CLOSED: 2 };
+function prRow(pr, keys) {
+  const state = pr.state === "MERGED" ? "merged" : pr.state === "CLOSED" ? "closed" : pr.draft ? "draft" : "open";
+  const title = (pr.title || pr.url).replace(new RegExp(`^\\[?(${keys.map(escapeRegExp).join("|")})\\]?[:\\s-]+`, "i"), "");
+  const inner = `${ciBadge(pr)}<code class="issue-pr-${state}">#${pr.number || "PR"}</code><span>${escapeHtml(title)}</span>${pr.author ? avatar(pr.author) : ""}`;
+  return `<li>${pr.slug && pr.number
+    ? `<button type="button" class="issue-link-row issue-pr-row" data-issue-pr="${escapeHtml(`${pr.slug}#${pr.number}`)}" data-tip="${escapeHtml(`${pr.slug}#${pr.number} · ${state} · ${pr.title || "pull request"}`)}">${inner}</button>`
+    : `<a class="issue-link-row issue-pr-row" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">${inner}</a>`}</li>`;
+}
 function codeSection(issue) {
   const { prs, worktrees } = codeOf(issue);
   if (!prs.length && !worktrees.length) return issue.prCount ? `<section>${sideHead("Code")}<p class="code-muted">Jira's development panel sees ${issue.prCount} ${issue.prCount === 1 ? "PR" : "PRs"} (${escapeHtml(issue.prState.toLowerCase())}); none mention this key.</p></section>` : "";
-  return `<section>${sideHead("Code", String(prs.length + worktrees.length))}<ul class="issue-code-list">${prs.map((pr) => `<li>${prMark(pr)}<span>${escapeHtml(pr.title || pr.url)}</span>${pr.author ? avatar(pr.author) : ""}</li>`).join("")}${worktrees.map((tree) => `<li><button type="button" class="issue-link-row" data-issue-wt="${escapeHtml(tree.path)}" data-tip="Worktree overview">${icon("branch")}<span>${escapeHtml(tree.branch)}</span></button></li>`).join("")}</ul></section>`;
+  const keys = [label(issue), ...aliasesFor(issue.key)].map((key) => key.replace(/^(linear|github):/, ""));
+  const sorted = [...prs].sort((a, b) => (PR_ORDER[a.state] ?? 0) - (PR_ORDER[b.state] ?? 0) || (b.number || 0) - (a.number || 0));
+  // Closed-unmerged PRs are dead ends: folded behind a count unless they're all there is.
+  const closed = sorted.filter((pr) => pr.state === "CLOSED");
+  const fold = closed.length && closed.length < sorted.length && !ui.showClosedPrs;
+  const shown = fold ? sorted.filter((pr) => pr.state !== "CLOSED") : sorted;
+  const counts = ["OPEN", "MERGED", "CLOSED"].map((state) => [sorted.filter((pr) => pr.state === state).length, state.toLowerCase()]).filter(([count]) => count).map(([count, word]) => `${count} ${word}`).join(" · ");
+  const toggle = closed.length && closed.length < sorted.length ? `<li><button type="button" class="issue-more-toggle" data-issue-closed-prs>${fold ? `Show ${closed.length} closed` : "Hide closed"}</button></li>` : "";
+  return `<section>${sideHead("Code", counts || String(worktrees.length))}<ul class="issue-code-list">${worktrees.map((tree) => `<li><button type="button" class="issue-link-row" data-issue-wt="${escapeHtml(tree.path)}" data-tip="Worktree overview">${icon("branch")}<span>${escapeHtml(tree.branch)}</span></button></li>`).join("")}${shown.map((pr) => prRow(pr, keys)).join("")}${toggle}</ul></section>`;
 }
 
 const linkRow = (key, summary, status, category, label = "") => `<li><button type="button" class="issue-link-row" data-issue-open="${escapeHtml(key)}">${label ? `<span class="code-muted">${escapeHtml(label)}</span>` : ""}${byKey().has(key) ? typeIcon(byKey().get(key)) : ""}<code>${escapeHtml(keyLabel(key))}</code><span>${escapeHtml(summary)}</span><span class="code-tag issue-status issue-status-${escapeHtml(category)}">${escapeHtml(status)}</span></button></li>`;
@@ -471,14 +489,58 @@ function softBreaks(text) {
     return !fenced && PLAIN.test(line) && PLAIN.test(lines[index + 1] || "") && !line.includes("|") ? `${line}\n` : line;
   }).join("\n");
 }
-const markdownBlock = (text) => `<div class="markdown code-description issue-markdown">${renderMarkdown(softBreaks(text), "")}</div>`;
+const FACT = /^([A-Z][\w’' /-]{0,30}):\s+(?=\S)/;
+const PR_HREF = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/;
+// Issue text read as a page: runs of "Label: value" lines (an import's provenance) become one facts grid, and a list
+// item that is only a link shows its full label, led by the PR's state and CI when the link is one of this issue's PRs.
+function tidyText(html, issue) {
+  const box = document.createElement("template");
+  box.innerHTML = html;
+  let run = [];
+  const flush = () => {
+    if (run.length > 1) {
+      const grid = document.createElement("dl");
+      grid.className = "issue-text-facts";
+      run[0].before(grid);
+      for (const p of run) {
+        const [whole, name] = p.firstChild.textContent.match(FACT);
+        p.firstChild.textContent = p.firstChild.textContent.slice(whole.length);
+        const term = document.createElement("dt"), value = document.createElement("dd");
+        term.textContent = name;
+        value.append(...p.childNodes);
+        grid.append(term, value);
+        p.remove();
+      }
+    }
+    run = [];
+  };
+  for (const node of [...box.content.children]) {
+    if (node.matches("p") && node.firstChild?.nodeType === Node.TEXT_NODE && FACT.test(node.firstChild.textContent)) run.push(node);
+    else flush();
+  }
+  flush();
+  const prs = issue ? codeOf(issue).prs : [];
+  for (const item of box.content.querySelectorAll("li")) {
+    const parts = [...item.childNodes].filter((node) => node.nodeType === Node.ELEMENT_NODE || node.textContent.replace(/[\s⁠]/g, ""));
+    const link = parts.length === 1 && parts[0].matches?.("a.markdown-external-link") ? parts[0] : null;
+    if (!link) continue;
+    link.querySelector(".link-label-clip")?.replaceWith(...link.querySelector(".link-label-clip").childNodes);
+    link.removeAttribute("data-tip");
+    link.classList.add("is-whole");
+    const [, slug, number] = link.getAttribute("href").match(PR_HREF) || [];
+    const pr = slug && prs.find((candidate) => candidate.slug?.toLowerCase() === slug.toLowerCase() && String(candidate.number) === number);
+    if (pr) { item.classList.add("issue-text-pr"); item.insertAdjacentHTML("afterbegin", prMark(pr)); }
+  }
+  return box.innerHTML;
+}
+const markdownBlock = (text, issue) => `<div class="markdown code-description issue-markdown">${tidyText(renderMarkdown(softBreaks(text), ""), issue)}</div>`;
 function textSections(issue, full) {
   const detail = ui.detail.get(issue.key);
   if (!detail) return `<section><p class="code-muted">${ui.detail.has(issue.key) ? "Loading…" : ""}</p></section>`;
   const comments = full ? detail.comments : detail.comments.slice(-2);
-  const update = detail.statusUpdate ? `<section>${sideHead("Status update")}${markdownBlock(detail.statusUpdate)}</section>` : "";
-  const description = `<section>${sideHead("Description")}${detail.description ? markdownBlock(full || detail.description.length < 900 ? detail.description : `${detail.description.slice(0, 900)}…`) : '<p class="code-muted">No description.</p>'}</section>`;
-  const thread = detail.comments.length ? `<section>${sideHead("Comments", full || detail.comments.length <= 2 ? String(detail.comments.length) : `last 2 of ${detail.comments.length}`)}<ol class="issue-comments">${comments.map((comment) => `<li><header>${avatar("", comment.author?.name || "?", comment.author?.email)}<b>${escapeHtml(comment.author?.name || "Unknown")}</b>${when(comment.created)}</header>${markdownBlock(comment.body)}</li>`).join("")}</ol></section>` : "";
+  const update = detail.statusUpdate ? `<section>${sideHead("Status update")}${markdownBlock(detail.statusUpdate, issue)}</section>` : "";
+  const description = `<section>${sideHead("Description")}${detail.description ? markdownBlock(full || detail.description.length < 900 ? detail.description : `${detail.description.slice(0, 900)}…`, issue) : '<p class="code-muted">No description.</p>'}</section>`;
+  const thread = detail.comments.length ? `<section>${sideHead("Comments", full || detail.comments.length <= 2 ? String(detail.comments.length) : `last 2 of ${detail.comments.length}`)}<ol class="issue-comments">${comments.map((comment) => `<li><header>${avatar("", comment.author?.name || "?", comment.author?.email)}<b>${escapeHtml(comment.author?.name || "Unknown")}</b>${when(comment.created)}</header>${markdownBlock(comment.body, issue)}</li>`).join("")}</ol></section>` : "";
   const milestones = detail.milestones?.length ? `<section>${sideHead("Milestones", `${detail.milestones.filter((item) => item.status === "done").length}/${detail.milestones.length} done`)}<ol class="issue-milestones">${detail.milestones.map((item) => `<li class="issue-milestone-${escapeHtml(item.status)}">
     <header><b>${escapeHtml(item.name)}</b>${item.target ? `<span class="code-muted">${escapeHtml(item.target)}</span>` : ""}<span class="code-muted">${Math.round(item.progress * 100)}%</span></header>${item.description && full ? markdownBlock(item.description) : ""}</li>`).join("")}</ol></section>` : "";
   const resources = detail.resources?.length ? `<section>${sideHead("Resources", String(detail.resources.length))}<ul class="issue-code-list">${detail.resources.map((item) => `<li><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${icon("external")}<span>${escapeHtml(item.name)}</span></a></li>`).join("")}</ul></section>` : "";
@@ -802,6 +864,7 @@ async function handleClick(event) {
     if (dataset.issueSkill) return draft(dataset.issueSkill, dataset.keys.split(","));
     if (dataset.issuePr) { const [slug, number] = dataset.issuePr.split("#"); return openPrOverlay(slug, Number(number)); }
     if (dataset.issueWt) return openWorktreeOverlay(dataset.issueWt);
+    if ("issueClosedPrs" in dataset) { ui.showClosedPrs = !ui.showClosedPrs; renderDetail(); return dialog?.open && renderOverview(); }
   } catch (error) {
     notify(error.message, true);
   }
