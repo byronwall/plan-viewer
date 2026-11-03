@@ -179,8 +179,9 @@ function treeActions(tree) {
     + (url ? `<a class="code-icon-button" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" aria-label="Branch on GitHub">${icon("external")}</a>` : `<span class="code-icon-button is-blank"></span>`);
 }
 
-function skillButtons(pr, workspace, tree) {
-  return (meta().skills || []).map((skill, index) => iconButton(skill.icon || skill.id, `${skill.label} in ${appName()} · ${tree ? "worktree" : "main checkout"} (${index + 1}) · ${altKey}-click copies the prompt`, `data-code-skill="${skill.id}" data-url="${escapeHtml(pr.url)}" data-path="${escapeHtml(workspace)}"`)).join("");
+// `copy` is the Copy row: the same skills, copying the prompt instead of opening a draft.
+function skillButtons(pr, workspace, tree, copy = false) {
+  return (meta().skills || []).map((skill, index) => iconButton(skill.icon || skill.id, copy ? `Copy the ${skill.label} prompt, to paste into an open chat` : `${skill.label} in ${appName()} · ${tree ? "worktree" : "main checkout"} (${index + 1}) · ${altKey}-click copies the prompt`, `${copy ? "data-copy-prompt " : ""}data-code-skill="${skill.id}" data-url="${escapeHtml(pr.url)}" data-path="${escapeHtml(workspace)}"`)).join("");
 }
 
 // At most three digits (987, 1.23K, 87.4K) so the column stays tight; the tip has the exact counts.
@@ -1093,7 +1094,7 @@ function ensureDiffDialog() {
     else if (key === "d" && diff.pr) selectScope("description");
     else if (key === "d" && subject()) cycleMainView();
     else if (key === "c" && diff.pr && !isDocScope() && diff.files?.[diff.index]) selectedLines() ? openComposer(selectedLines()) : noteOnFile(diff.index); // no selection: a note on the whole current file
-    else if (/^[1-9]$/.test(key) && diffDialog.querySelectorAll(".code-side-skills [data-code-skill]")[key - 1]) diffDialog.querySelectorAll(".code-side-skills [data-code-skill]")[key - 1].click();
+    else if (/^[1-9]$/.test(key) && diffDialog.querySelectorAll(".code-side-skills [data-code-skill]:not([data-copy-prompt])")[key - 1]) diffDialog.querySelectorAll(".code-side-skills [data-code-skill]:not([data-copy-prompt])")[key - 1].click();
     else if (key === "w" && diffDialog.querySelector(diff.pr ? ".code-side-facts [data-diff-wt]" : ".code-side-facts [data-diff-pr]")) diffDialog.querySelector(diff.pr ? ".code-side-facts [data-diff-wt]" : ".code-side-facts [data-diff-pr]").click();
     else if (key === "v") { diffView = diffView === "all" ? "single" : "all"; storage.set("code-diff-view", diffView); renderDiff(); scrollToFile(); }
     else if (key === "m" && diffView === "single") { diff.mode = diff.mode === "rendered" ? "diff" : "rendered"; renderDiff(); }
@@ -1318,7 +1319,7 @@ function prReviewers(pr) {
 }
 
 // Skills as icons in one row; 1–9 press them from anywhere in the overlay.
-const sideSkills = (pr, workspace, tree) => `<span class="code-side-skills">${skillButtons(pr, workspace, tree)}</span>`;
+const sideSkills = (pr, workspace, tree, copy = false) => `<span class="code-side-skills">${skillButtons(pr, workspace, tree, copy)}</span>`;
 
 // ---------- worktree overview ----------
 
@@ -1365,6 +1366,7 @@ function wtColumn() {
     ["Status", tree.main ? "Main checkout" : `<span data-tip="Commits ahead of and behind origin/main">↑${tree.ahead ?? "?"} ↓${tree.behind ?? "?"} vs main</span>${tree.activity ? `<span class="code-muted">changed ${when(tree.activity)} ago</span>` : ""}`],
     ["PR", prValue],
     [appName(), pr?.state === "OPEN" && pr.url ? sideSkills(pr, tree.path, tree) : ""],
+    ["Copy", pr?.state === "OPEN" && pr.url ? sideSkills(pr, tree.path, tree, true) : ""],
     ["Open", `<span class="code-side-tools">${treeActions(tree)}</span>`],
   ])
     + `<section>${sideHead(tree.main ? "Recent commits" : "Commits", detail ? `${commits.length}${tree.main ? "" : ` not on ${escapeHtml(detail.base || "main")}`}` : "")}${!detail ? `<p class="code-muted">Loading…</p>` : !commits.length ? `<p class="code-muted">None. Everything committed here is on main.</p>` : scopeCommits(commits)}</section>`;
@@ -1487,6 +1489,7 @@ function prFacts(pr, tree, wtPath, overlay = false) {
     ["Size", pr.additions !== undefined ? `<span class="code-side-size"><span class="code-add">+${pr.additions}</span><span class="code-del">−${pr.deletions}</span></span>${labelDots(pr)}` : ""],
     ["Reviews", prReviewers(pr)],
     [appName(), open ? sideSkills(pr, tree?.path || pr.repo, tree) : ""],
+    ["Copy", open ? sideSkills(pr, tree?.path || pr.repo, tree, true) : ""],
     ["Local", wtPath ? `<span class="code-side-tools">${iconButton("branch", `Worktree overview${overlay ? " (W)" : ""}`, `data-diff-wt="${escapeHtml(wtPath)}"`)}${tree ? treeActions(tree) : ""}</span>` : open && ui.data ? `<span class="code-side-tools">${runButton(pr.repo, null, pr.branch)}</span><span class="code-muted">Not checked out</span>` : ""],
   ]);
 }
@@ -2329,6 +2332,7 @@ function treeDetail(tree) {
       ["PR", pr ? `<button type="button" class="code-side-pr" data-code-goto-pr="${escapeHtml(`pr:${pr.slug}#${pr.number}`)}" data-tip="Inspect the pull request">${ciBadge(pr)}<b>#${pr.number}</b><span>${escapeHtml(pr.title || "")}</span></button>${review ? `<span class="code-muted">${review[1]}</span>` : ""}` : historyChip(tree)],
       ["Cleanup", tree.cleanup ? `<span class="code-side-cleanup code-side-${{ safe: "pass", review: "pending", keep: "quiet", pending: "quiet" }[tree.cleanup.level] || "quiet"}">${escapeHtml(tree.cleanup.reason)}</span>` : ""],
       [appName(), pr ? sideSkills(pr, tree.path, tree) : ""],
+      ["Copy", pr ? sideSkills(pr, tree.path, tree, true) : ""],
       ["Open", `<span class="code-side-tools">${treeActions(tree)}</span>`],
     ])}
     ${runSection(tree.path)}
@@ -2905,7 +2909,7 @@ async function handleClick(event) {
     if (dataset.codePreview) { notify(`Opening the PR #${dataset.codePreview} deployment…`); await post("preview", { repo: dataset.repo, number: dataset.codePreview }); return; }
     if (dataset.codeOpen) { await post("open", { kind: dataset.codeOpen, path: dataset.path }); return; }
     if ("codeSession" in dataset) { await post("session", { app: agentApp(), path: dataset.path }); notify(`Opened a ${appName()} session in ${shortPath(dataset.path)}.`); return; }
-    if (dataset.codeSkill && event.altKey) return copyPrompt(post("agent", { app: agentApp(), skill: dataset.codeSkill, url: dataset.url, path: dataset.path, comment: dataset.comment || "", copy: true }), target);
+    if (dataset.codeSkill && (event.altKey || "copyPrompt" in dataset)) return copyPrompt(post("agent", { app: agentApp(), skill: dataset.codeSkill, url: dataset.url, path: dataset.path, comment: dataset.comment || "", copy: true }), target);
     if (dataset.codeSkill) {
       await post("agent", { app: agentApp(), skill: dataset.codeSkill, url: dataset.url, path: dataset.path, comment: dataset.comment || "" });
       notify(`Drafted ${dataset.codeSkill} in ${appName()}. Review it and press Enter to send.`);

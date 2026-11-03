@@ -340,9 +340,10 @@ function activityBody() {
 // ---------- inspector and overview ----------
 
 // `scope` names what the keys are ("explorEDA" for a repository's header); one issue's buttons answer to 1–N.
-function skillButtons(keys, scope = "") {
+// `copy` is the Copy row: the same skills, copying the prompt instead of opening a draft.
+function skillButtons(keys, scope = "", copy = false) {
   const what = scope ? ` all ${keys.length} ${scope} issues` : keys.length > 1 ? ` ${keys.length} issues` : "";
-  return (ui.data.skills || []).map((skill, index) => iconButton(skill.icon || "review", `${skill.label}${what} in ${appName()}${scope ? "" : ` (${index + 1})`} · ${altKey}-click copies the prompt`, `data-issue-skill="${escapeHtml(skill.id)}" data-keys="${escapeHtml(keys.join(","))}"`)).join("");
+  return (ui.data.skills || []).map((skill, index) => iconButton(skill.icon || "review", copy ? `Copy the ${skill.label}${what} prompt, to paste into an open chat` : `${skill.label}${what} in ${appName()}${scope ? "" : ` (${index + 1})`} · ${altKey}-click copies the prompt`, `${copy ? "data-copy-prompt " : ""}data-issue-skill="${escapeHtml(skill.id)}" data-keys="${escapeHtml(keys.join(","))}"`)).join("");
 }
 // The selection's own bar: labeled drafts for every picked issue, then Clear.
 function bulkBar() {
@@ -368,6 +369,7 @@ function issueFacts(issue, overlay = false) {
     ["Labels", issue.labels.filter((label) => !aliases.includes(label.toUpperCase())).map((label) => `<span class="code-tag">${escapeHtml(label)}</span>`).join("")],
     ["Was", aliases.map((alias) => `<code>${escapeHtml(alias)}</code>`).join(" ")],
     [appName(), `<span class="code-side-skills">${skillButtons(keys)}</span>`],
+    ["Copy", `<span class="code-side-skills">${skillButtons(keys, "", true)}</span>`],
     [trackerName(issue), `<span class="code-side-tools"><a class="code-icon-button" href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in ${trackerName(issue)} (O)" aria-label="Open in ${trackerName(issue)}">${icon("external")}</a>${iconButton("copy", "Copy link (Y)", `data-issue-copy="${escapeHtml(issueUrl(issue.key))}"`)}${overlay ? "" : iconButton("expand", "Open overview (Enter)", `data-issue-open="${escapeHtml(issue.key)}"`)}</span>`],
   ]);
 }
@@ -620,7 +622,7 @@ function ensureDialog() {
     else if (key === "p" && issue?.parent && byKey().has(issue.parent)) openIssue(issue.parent, overview.list);
     else if (key === "o" && issue) window.open(issueUrl(issue.key), "_blank", "noreferrer");
     else if (key === "y" && issue) navigator.clipboard.writeText(issueUrl(issue.key)).then(() => notify(`Copied ${issueUrl(issue.key)}`));
-    else if (/^[1-9]$/.test(key) && dialog.querySelectorAll(".code-side-skills [data-issue-skill]")[key - 1]) dialog.querySelectorAll(".code-side-skills [data-issue-skill]")[key - 1].click();
+    else if (/^[1-9]$/.test(key) && dialog.querySelectorAll(".code-side-skills [data-issue-skill]:not([data-copy-prompt])")[key - 1]) dialog.querySelectorAll(".code-side-skills [data-issue-skill]:not([data-copy-prompt])")[key - 1].click();
     else if (key === "w" && dialog.querySelector("[data-issue-wt]")) dialog.querySelector("[data-issue-wt]").click();
     else return;
     event.preventDefault();
@@ -868,7 +870,7 @@ async function handleClick(event) {
     if (dataset.issueExpand) { ui.expanded.has(dataset.issueExpand) ? ui.expanded.delete(dataset.issueExpand) : ui.expanded.add(dataset.issueExpand); return render(); }
     if (dataset.issueOpen) return openIssue(dataset.issueOpen, rowKeys().includes(dataset.issueOpen) ? rowKeys() : null);
     if (dataset.issueCopy) { await navigator.clipboard.writeText(dataset.issueCopy); return copied(target); }
-    if (dataset.issueSkill && event.altKey) return copyPrompt(requestDraft(dataset.issueSkill, dataset.keys.split(","), true), target);
+    if (dataset.issueSkill && (event.altKey || "copyPrompt" in dataset)) return copyPrompt(requestDraft(dataset.issueSkill, dataset.keys.split(","), true), target);
     if (dataset.issueSkill) return draft(dataset.issueSkill, dataset.keys.split(","));
     if (dataset.issuePr) { const [slug, number] = dataset.issuePr.split("#"); return openPrOverlay(slug, Number(number)); }
     if (dataset.issueWt) return openWorktreeOverlay(dataset.issueWt);
