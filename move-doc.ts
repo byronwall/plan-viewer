@@ -2,19 +2,29 @@
 // TASK-NNNN moves the file into tasks/TASK-NNNN-assets/. Rewrites relative Markdown links and
 // backticked repository paths that point at the file, and the moved file's own relative links.
 import { execFile } from "node:child_process";
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { basename, dirname, join, relative } from "node:path";
+import { access, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { listDocuments, repositoryLinkPath, ROOT } from "./server.ts";
 
-const [from, target] = process.argv.slice(2);
-if (!from || !target) {
+const [fromArg, target, extra] = process.argv.slice(2);
+if (!fromArg || !target || extra) {
   console.error("Usage: npm run move -- <from> <to | TASK-NNNN>");
   process.exit(1);
 }
-const to = /^TASK-\d{4}$/.test(target) ? `tasks/${target}-assets/${basename(from)}` : target.replace(/\/$/, "") + (target.endsWith("/") ? `/${basename(from)}` : "");
+// Paths are relative to the workspace; an absolute path works when it points inside it.
+const inside = (path: string) => {
+  const rel = relative(ROOT, resolve(ROOT, path));
+  if (rel.startsWith("..") || isAbsolute(rel)) throw new Error(`${path} is outside the workspace`);
+  return rel.split(sep).join("/");
+};
+const from = inside(fromArg);
+const task = /^TASK-\d{4}$/.test(target);
+const to = task ? `tasks/${target}-assets/${basename(from)}` : inside(target) + (target.endsWith("/") ? `/${basename(from)}` : "");
 const exists = (path: string) => access(join(ROOT, path)).then(() => true, () => false);
 if (!await exists(from)) throw new Error(`${from} does not exist`);
+if ((await stat(join(ROOT, from))).isDirectory()) throw new Error(`${from} is a folder; move one file at a time so its links are repaired`);
+if (task && !await exists(`tasks/${target}.md`)) throw new Error(`tasks/${target}.md does not exist`);
 if (await exists(to)) throw new Error(`${to} already exists`);
 
 const relativeLink = (fromDoc: string, path: string) => relative(dirname(fromDoc), path).split("\\").join("/");

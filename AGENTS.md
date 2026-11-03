@@ -4,7 +4,7 @@ For agents changing the viewer. Content lives in separate planning workspaces; n
 
 ## Setup
 
-Node.js 22.6+ and nothing else. `npm install` (no packages; it enables the pre-commit hook), then `npm test` and `npm run demo`. If you are setting up a planning workspace for someone rather than changing the viewer, follow the README's "Use it with your own plans" and copy `examples/workspace/AGENTS.md` and `CLAUDE.md` into the workspace.
+Node.js 22.6+ and nothing else. `npm install` (no packages; it enables the pre-commit hook), then `npm test` and `npm run demo`. If you are setting up a planning workspace for someone rather than changing the viewer, follow the README's "Use it with your own plans": `plan-viewer init` creates the folders, agent guide and scripts.
 
 ## Docs
 
@@ -24,7 +24,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 | Feature | Files |
 | --- | --- |
 | Per-workspace preferences (`viewer.config.json`) and their defaults, shared by server and browser | `public/config.js` |
-| `plan-viewer` subcommands | `cli.ts` |
+| `plan-viewer` subcommands | `cli.ts`; `init` is `init-workspace.ts` |
 | HTTP routes, document loading, task front matter, Codex handoff prompts | `server.ts` |
 | Next actions, work breakdown parser and graph, stalled-task reason (shared by server, lint and browser) | `public/actions.js` |
 | Markdown rendering, link and chat detection, heading IDs | `public/markdown.js` |
@@ -45,7 +45,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 ## Commands
 
 - `npm test` runs every `*.test.*` file against `fixtures/planning/` (set by `PLANNING_ROOT`), never live planning files. It should always be green; a failure is yours.
-- `npm run demo` serves `examples/workspace/` on 4173 (`PLAN_VIEWER_PORT` to change). `fixtures/` is for tests only; keep demo content in `examples/`. Against a real workspace, run `node /path/to/plan-viewer/cli.ts <serve|lint|links|move|task>` from that workspace.
+- `npm run demo` serves `examples/workspace/` on 4173 (`PLAN_VIEWER_PORT` to change). `fixtures/` is for tests only; keep demo content in `examples/`. Against a real workspace, run `node /path/to/plan-viewer/cli.ts <serve|init|lint|links|move|task>` from that workspace.
 - `PLAN_VIEWER_DRY_RUN=1` makes agent handoffs validate and log without opening Codex or Claude, for testing the draft flow.
 - `npm install --no-save playwright-core && node scripts/screenshots.mjs [name,…]` regenerates `docs/images/` with installed Chrome; then `oxipng -o 4 --strip safe docs/images/*.png`.
 - `.githooks/pre-commit` (enabled by `npm install`) runs `npm test`. `hooks/pre-commit` is the hook planning workspaces install; it is not this repository's.

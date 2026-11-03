@@ -1,7 +1,7 @@
 // Compact task context for agents: `npm run task -- TASK-0044`.
 // Prints the outcome, open work with readiness, next action prompts, chats, assets, latest update and
 // the documents that reference the task, so a resuming agent need not read the whole history.
-import { readdir } from "node:fs/promises";
+import { access, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { listDocuments, loadDocument, ROOT } from "./server.ts";
 
@@ -10,6 +10,7 @@ if (!id || !/^TASK-\d{4}$/.test(id)) {
   console.error("Usage: npm run task -- TASK-NNNN");
   process.exit(1);
 }
+if (!await access(join(ROOT, "tasks", `${id}.md`)).then(() => true, () => false)) throw new Error(`tasks/${id}.md does not exist`);
 const doc = await loadDocument(`tasks/${id}.md`);
 const section = (title: RegExp) => doc.chunks.find((chunk) => title.test(chunk.title))?.markdown.replace(/^#+ .*\n/, "").trim() || "";
 const out: string[] = [];
