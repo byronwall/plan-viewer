@@ -647,8 +647,11 @@ function sourceLines(document: Awaited<ReturnType<typeof loadDocument>>, path = 
 
 const CHAT_LINK_INSTRUCTION = "When your current conversation URL or thread ID is available from trusted session context or app tools, record a labeled Markdown link under ## Chats in the authoritative task or daily plan you work on. Use the verified conversation URL (a ChatGPT or Claude link) or codex://threads/<thread-id>. Keep existing links and avoid duplicates. Do not guess IDs, use a shared snapshot as a follow-up link, or associate unrelated chats. If this is a global request, record the link only after identifying its task or daily plan. If the URL or ID is unavailable, continue the work without inventing a link.";
 
+// With no commentary (Copy prompt), the commentary heading moves to the end, so text typed after pasting lands under it.
 export function buildCodexPrompt(document: Awaited<ReturnType<typeof loadDocument>>, chunk: Chunk, commentary: string) {
-  return `Task: ${taskTitle(chunk.title)}\n\nYou are receiving a work handoff from the local ${config().title}. Work in the ${WORKSPACE} repository and follow its AGENTS.md instructions. The source file remains authoritative.\n\n${sourceLines(document)}\nDocument: ${document.title}\nSelected ${chunk.kind}: ${chunk.title}\n\nSelected chunk:\n\n${chunk.markdown}\n\n${config().user}'s commentary:\n\n${commentary.trim()}\n\nInterpret the selected chunk together with ${config().user}'s commentary. Inspect the source file and relevant repository context before acting. If the commentary asks for a change or implementation, carry it through; if it asks for analysis, report evidence-backed findings. Preserve unrelated work and update the planning Markdown when the requested outcome calls for it.\n\n${CHAT_LINK_INSTRUCTION}`;
+  const heading = `${config().user}'s commentary:\n\n`;
+  const prompt = `Task: ${taskTitle(chunk.title)}\n\nYou are receiving a work handoff from the local ${config().title}. Work in the ${WORKSPACE} repository and follow its AGENTS.md instructions. The source file remains authoritative.\n\n${sourceLines(document)}\nDocument: ${document.title}\nSelected ${chunk.kind}: ${chunk.title}\n\nSelected chunk:\n\n${chunk.markdown}\n\n${commentary.trim() ? `${heading}${commentary.trim()}\n\n` : ""}Interpret the selected chunk together with ${config().user}'s commentary. Inspect the source file and relevant repository context before acting. If the commentary asks for a change or implementation, carry it through; if it asks for analysis, report evidence-backed findings. Preserve unrelated work and update the planning Markdown when the requested outcome calls for it.\n\n${CHAT_LINK_INSTRUCTION}`;
+  return commentary.trim() ? prompt : `${prompt}\n\n${heading}`;
 }
 
 // A selection narrows the document to the excerpt the user highlighted, quoted with the section it sits under.
@@ -838,6 +841,12 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     const url = new URL(request.url || "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/api/documents") return json(response, 200, { documents: await listDocuments(), defaultPath: todayPath() });
     if (request.method === "GET" && url.pathname === "/api/document") return json(response, 200, await loadDocument(url.searchParams.get("path") || ""));
+    if (request.method === "GET" && url.pathname === "/api/chunk-prompt") {
+      const document = await loadDocument(url.searchParams.get("path") || "");
+      const chunk = document.chunks.find((candidate) => candidate.id === url.searchParams.get("chunkId"));
+      if (!chunk) return json(response, 404, { error: "That section is no longer present. Reload the document and try again." });
+      return json(response, 200, { prompt: buildCodexPrompt(document, chunk, "") });
+    }
     if (request.method === "GET" && (url.pathname === "/api/linear-image" || url.pathname === "/api/github-image")) {
       const image = url.pathname === "/api/linear-image" ? await linearImage(ROOT, url.searchParams.get("url") || "")
         : await githubImage(ROOT, url.searchParams.get("slug") || "", Number(url.searchParams.get("number")), url.searchParams.get("id") || "");

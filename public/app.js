@@ -1518,7 +1518,7 @@ function renderDocument() {
     <div class="chunk-heading">
       <span class="chunk-index">${String(index + 1).padStart(2, "0")}</span>
       <h2>${escapeHtml(chunk.title)}</h2>
-      <span class="chunk-actions"><button class="handoff-button" type="button" data-chunk-copy="${chunk.id}" aria-label="Copy section as Markdown">Copy</button><button class="handoff-button" type="button" data-chunk-id="${chunk.id}" aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="${state.openComposer === `chunk:${chunk.id}`}">Open in ${agentName()}</button></span>
+      <span class="chunk-actions"><button class="handoff-button" type="button" data-chunk-copy="${chunk.id}" aria-label="Copy section as Markdown">Copy</button><button class="handoff-button" type="button" data-chunk-copy="${chunk.id}" data-copy-as="prompt" aria-label="Copy the ${escapeHtml(agentName())} prompt for this section">Copy prompt</button><button class="handoff-button" type="button" data-chunk-id="${chunk.id}" aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="${state.openComposer === `chunk:${chunk.id}`}">Open in ${agentName()}</button></span>
     </div>
     ${chunkBody(doc, chunk)}
   </article>`).join("");
@@ -2874,17 +2874,23 @@ function downloadCode(button) {
   link.click();
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
-// A section copies as its own Markdown, under its heading unless it is the untitled overview.
+// A section copies as its own Markdown, under its heading unless it is the untitled overview, or as the prompt
+// Open in would draft, for pasting into a chat that is already open.
 async function copyChunk(button) {
   const chunk = state.document?.chunks.find((item) => item.id === button.dataset.chunkCopy);
   if (!chunk) return;
   try {
-    await navigator.clipboard.writeText(chunk.kind === "overview" ? chunk.markdown : `${"#".repeat(chunk.level)} ${chunk.title}\n\n${chunk.markdown}`);
+    if (button.dataset.copyAs === "prompt") {
+      // A promised blob keeps the click's clipboard permission while the server builds the prompt.
+      const prompt = fetch(`/api/chunk-prompt?${new URLSearchParams({ path: state.selectedPath, chunkId: chunk.id })}`)
+        .then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error); return new Blob([body.prompt], { type: "text/plain" }); });
+      await navigator.clipboard.write([new ClipboardItem({ "text/plain": prompt })]);
+    } else await navigator.clipboard.writeText(chunk.kind === "overview" ? chunk.markdown : `${"#".repeat(chunk.level)} ${chunk.title}\n\n${chunk.markdown}`);
     button.classList.remove("is-copied");
     void button.offsetWidth;
     button.classList.add("is-copied");
   } catch {
-    showNotice("Could not copy the section.", true);
+    showNotice(button.dataset.copyAs === "prompt" ? "Could not copy the prompt." : "Could not copy the section.", true);
   }
 }
 document.addEventListener("click", (event) => {
