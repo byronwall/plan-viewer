@@ -2503,8 +2503,10 @@ function openCursorComposer() {
     action.click();
     return;
   }
-  const trigger = hovered?.closest(".handoff-button, [data-dock-draft], .global-handoff")
-    || hovered?.closest(".chunk-card")?.querySelector(".handoff-button");
+  // The section's Copy button shares the class for its look; C always drafts, never copies.
+  const draft = ".handoff-button:not([data-chunk-copy])";
+  const trigger = hovered?.closest(`${draft}, [data-dock-draft], .global-handoff`)
+    || hovered?.closest(".chunk-card")?.querySelector(draft);
   if (trigger && !trigger.disabled) trigger.click();
   else openGlobalComposer();
 }
