@@ -1,5 +1,5 @@
 // Link hygiene for planning documents: `npm run links -- [--fix] [--warm] [--refresh-slack]`.
-//   default  report broken repository links, unknown TASK IDs (minus reference/retired-tasks.md) and Slack channels or DMs without a name
+//   default  report broken repository links, unknown TASK IDs (minus reference/retired-tasks.md), retired daily done.md logs and Slack channels or DMs without a name
 //   --fix    add newly linked Slack channel and DM IDs to reference/slack-channels.md as blank entries to fill in
 //   --warm   prefetch GitHub/Linear/Jira/Slack titles into the viewer cache and list references that resolve to nothing
 //   --refresh-slack  refresh listed and linked Slack channel names using SLACK_TOKEN or config.toml
@@ -56,6 +56,11 @@ for (const folder of (await readdir(join(ROOT, "tasks")).catch(() => [])).filter
     const linked = names.some((name) => parent.text.includes(`${folder}/${name}`) || siblings.some((file) => file.path !== `tasks/${folder}/${entry}` && file.text.includes(name)));
     if (!linked) errors.push(`tasks/${folder}/${entry}: not linked from tasks/${id}.md or a document beside it`);
   }
+}
+
+// Done logs are retired: progress lives on the task's status and `## Updates`, not in daily/**/done.md.
+for (const entry of await readdir(join(ROOT, "daily"), { recursive: true }).catch(() => [])) {
+  if (/(^|\/)done\.md$/i.test(entry)) errors.push(`daily/${entry}: done logs are retired; record progress on the task (status and ## Updates) and delete this file`);
 }
 
 // Every linked Slack channel and DM needs a name in reference/slack-channels.md: `- C…: #channel` or `- D…: @Person`.
