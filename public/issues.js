@@ -1,7 +1,7 @@
 import { escapeHtml, renderMarkdown } from "./markdown.js";
 import { GLYPHS } from "./icons.js";
 import { agentApp, agentName as appName, config, escapeRegExp } from "./config.js";
-import { ago, avatar, planning, planningSection, ciBadge, copied, fadeIn, heat, hideTip, icon, iconButton, isSummonKey, openPrOverlay, openWorktreeOverlay, showTip, sideFacts, sideHead, sideStatus, when } from "./code.js";
+import { ago, altKey, avatar, planning, planningSection, ciBadge, copied, copyPrompt, fadeIn, heat, hideTip, icon, iconButton, isSummonKey, openPrOverlay, openWorktreeOverlay, showTip, sideFacts, sideHead, sideStatus, when } from "./code.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 
 // Issues page: Jira, Linear and GitHub issues in the configured scope (viewer.config.json `issues`), laid out like the Code page:
@@ -342,7 +342,7 @@ function activityBody() {
 // `scope` names what the keys are ("explorEDA" for a repository's header); one issue's buttons answer to 1–N.
 function skillButtons(keys, scope = "") {
   const what = scope ? ` all ${keys.length} ${scope} issues` : keys.length > 1 ? ` ${keys.length} issues` : "";
-  return (ui.data.skills || []).map((skill, index) => iconButton(skill.icon || "review", `${skill.label}${what} in ${appName()}${scope ? "" : ` (${index + 1})`}`, `data-issue-skill="${escapeHtml(skill.id)}" data-keys="${escapeHtml(keys.join(","))}"`)).join("");
+  return (ui.data.skills || []).map((skill, index) => iconButton(skill.icon || "review", `${skill.label}${what} in ${appName()}${scope ? "" : ` (${index + 1})`} · ${altKey}-click copies the prompt`, `data-issue-skill="${escapeHtml(skill.id)}" data-keys="${escapeHtml(keys.join(","))}"`)).join("");
 }
 // The selection's own bar: labeled drafts for every picked issue, then Clear.
 function bulkBar() {
@@ -350,7 +350,7 @@ function bulkBar() {
   const keys = [...ui.selected];
   const repos = new Set(keys.map((key) => byKey().get(key)?.project));
   const where = repos.size === 1 ? ` in ${escapeHtml([...repos][0])}` : repos.size > 1 ? ` across ${repos.size} ${groupNoun(keys.map((key) => byKey().get(key)).filter(Boolean))}s` : "";
-  return `<span class="issue-bulk"><b>${keys.length} selected</b><span class="code-muted">${where}</span>${(ui.data.skills || []).map((skill) => `<button type="button" class="code-bar-button is-primary" data-issue-skill="${escapeHtml(skill.id)}" data-keys="${escapeHtml(keys.join(","))}">${icon(skill.icon || "review")}${escapeHtml(skill.label)} in ${appName()}</button>`).join("")}<button type="button" class="code-bar-button" data-issue-select-none>Clear <kbd>Esc</kbd></button></span>`;
+  return `<span class="issue-bulk"><b>${keys.length} selected</b><span class="code-muted">${where}</span>${(ui.data.skills || []).map((skill) => `<button type="button" class="code-bar-button is-primary" data-issue-skill="${escapeHtml(skill.id)}" data-keys="${escapeHtml(keys.join(","))}" data-tip="${altKey}-click copies the prompt">${icon(skill.icon || "review")}${escapeHtml(skill.label)} in ${appName()}</button>`).join("")}<button type="button" class="code-bar-button" data-issue-select-none>Clear <kbd>Esc</kbd></button></span>`;
 }
 
 function issueFacts(issue, overlay = false) {
@@ -805,10 +805,14 @@ function move(step) {
   select(keys[Math.max(0, Math.min(keys.length - 1, index < 0 ? 0 : index + step))], true);
 }
 
-async function draft(skill, keys) {
-  const response = await fetch("/api/issues/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app: agentApp(), skill, keys }) });
+const requestDraft = async (skill, keys, copy = false) => {
+  const response = await fetch("/api/issues/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app: agentApp(), skill, keys, copy }) });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || "Could not open the draft.");
+  return body;
+};
+async function draft(skill, keys) {
+  await requestDraft(skill, keys);
   const label = ui.data.skills.find((candidate) => candidate.id === skill)?.label || skill;
   notify(`Drafted ${label} for ${keys.length === 1 ? keyLabel(keys[0]) : `${keys.length} issues`} in ${appName()}. Review it and press Enter to send.`);
 }
@@ -864,6 +868,7 @@ async function handleClick(event) {
     if (dataset.issueExpand) { ui.expanded.has(dataset.issueExpand) ? ui.expanded.delete(dataset.issueExpand) : ui.expanded.add(dataset.issueExpand); return render(); }
     if (dataset.issueOpen) return openIssue(dataset.issueOpen, rowKeys().includes(dataset.issueOpen) ? rowKeys() : null);
     if (dataset.issueCopy) { await navigator.clipboard.writeText(dataset.issueCopy); return copied(target); }
+    if (dataset.issueSkill && event.altKey) return copyPrompt(requestDraft(dataset.issueSkill, dataset.keys.split(","), true), target);
     if (dataset.issueSkill) return draft(dataset.issueSkill, dataset.keys.split(","));
     if (dataset.issuePr) { const [slug, number] = dataset.issuePr.split("#"); return openPrOverlay(slug, Number(number)); }
     if (dataset.issueWt) return openWorktreeOverlay(dataset.issueWt);

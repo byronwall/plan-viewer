@@ -439,7 +439,7 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
   }
 
   // One editable draft for one or more issues: the configured skill's instruction, then each issue as bullets.
-  async function launchAgent(app: string, skill: string, keys: string[]) {
+  async function launchAgent(app: string, skill: string, keys: string[], copy = false) {
     const chosen = issueSkills().find((candidate) => candidate.id === skill);
     if (!chosen) throw new Error("Unknown skill.");
     const issues = keys.map(detail);
@@ -454,6 +454,7 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     const slugs = new Set(issues.map((issue) => issue.source === "github" ? issue.key.slice("github:".length).split("#")[0] : ""));
     const checkout = slugs.size === 1 ? checkouts.get([...slugs][0]) : "";
     const folder = (checkout || settings().workspace || root).replace(/^~(?=\/)/, process.env.HOME || "~");
+    if (copy) return { prompt: draft };
     if (process.env.PLAN_VIEWER_DRY_RUN === "1") return console.log(`[dry run] ${app} draft in ${folder}:\n${draft}`);
     const url = app === "claude" ? claudeNewSessionUrl(folder, draft) : codexNewTaskUrl(draft, folder);
     await exec("/usr/bin/open", [url]);

@@ -4,7 +4,7 @@ import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDocumen
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
 import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
-import { TABS as CODE_TABS, connectPlanning, setPeople, ago, cachedPrIndex, commitLinkMatch, diffSize, hideTip, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
+import { TABS as CODE_TABS, connectPlanning, setPeople, ago, copyPrompt, cachedPrIndex, commitLinkMatch, diffSize, hideTip, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, isMyIssue, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { renderActivityPage } from "./activity.js";
 import { openSlackThread, refreshSlackStars, setSlackFavorites, setSlackNotice, slackThreadTitle } from "./slack.js";
@@ -654,7 +654,7 @@ function composerTemplate(target) {
     return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="work" data-work-item="${escapeHtml(node.id)}" data-work-mode="${mode}">
       ${heading(meta)}
       <div class="composer-body">${preview}<div class="composer-field">${field}<div class="composer-images" hidden></div></div></div>
-      <footer class="composer-actions">${hint}<button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open in ${agentName()}</button></footer>
+      <footer class="composer-actions">${hint}<button class="copy-prompt-button" type="button">Copy prompt</button><button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open in ${agentName()}</button></footer>
     </form>`;
   }
   if (target.scope === "action") {
@@ -670,7 +670,7 @@ function composerTemplate(target) {
           <div class="composer-images" hidden></div>
         </div>
       </div>
-      <footer class="composer-actions">${hint}<button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open in ${agentName()}</button></footer>
+      <footer class="composer-actions">${hint}<button class="copy-prompt-button" type="button">Copy prompt</button><button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open in ${agentName()}</button></footer>
     </form>`;
   }
   const context = target.scope === "chunk"
@@ -690,7 +690,7 @@ function composerTemplate(target) {
         <div class="composer-images" hidden></div>
       </div>
     </div>
-    <footer class="composer-actions">${hint}<button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open draft in ${agentName()}</button></footer>
+    <footer class="composer-actions">${hint}<button class="copy-prompt-button" type="button">Copy prompt</button><button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open draft in ${agentName()}</button></footer>
   </form>`;
 }
 
@@ -1886,20 +1886,35 @@ function connectLiveUpdates() {
   });
 }
 
+// `copy` asks for the prompt instead of an opened draft (Copy prompt).
+async function requestDispatch(body, copy = false) {
+  const response = await fetch("/api/dispatch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app: agentApp(), ...body, copy }) });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || `${agentName()} could not open the draft.`);
+  return result;
+}
+function composerRequest(form) {
+  const commentary = new FormData(form).get("commentary");
+  return { path: form.dataset.sourcePath || (form.dataset.scope !== "global" || state.view === "document" ? state.selectedPath : ""), scope: form.dataset.scope, chunkId: form.dataset.chunkId, actionId: form.dataset.actionId, expectedPrompt: form.dataset.expectedPrompt, workItem: form.dataset.workItem, mode: form.dataset.workMode, selection: form.dataset.selection, section: form.dataset.section, commentary, images: [...form.querySelectorAll(".composer-images img")].map((img) => img.src) };
+}
+// The composer closes once copied, as it does once a draft opens; the prompt carries anything typed into it.
+async function copyComposerPrompt(form) {
+  try {
+    await copyPrompt(requestDispatch(composerRequest(form), true));
+    closeComposer();
+    showNotice(`Copied the ${agentName()} prompt. Paste it into an open chat.`);
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
 async function dispatch(form) {
   const button = form.querySelector(".send-button");
-  const commentary = new FormData(form).get("commentary");
   if (button.disabled) return;
   button.disabled = true;
   button.textContent = "Opening draft…";
   try {
-    const response = await fetch("/api/dispatch", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ app: agentApp(), path: form.dataset.sourcePath || (form.dataset.scope !== "global" || state.view === "document" ? state.selectedPath : ""), scope: form.dataset.scope, chunkId: form.dataset.chunkId, actionId: form.dataset.actionId, expectedPrompt: form.dataset.expectedPrompt, workItem: form.dataset.workItem, mode: form.dataset.workMode, selection: form.dataset.selection, section: form.dataset.section, commentary, images: [...form.querySelectorAll(".composer-images img")].map((img) => img.src) }),
-    });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error || `${agentName()} could not open the draft.`);
+    await requestDispatch(composerRequest(form));
     const chunkId = form.dataset.chunkId;
     const scope = form.dataset.scope;
     closeComposer();
@@ -2365,6 +2380,7 @@ elements.handoffPopover.addEventListener("click", (event) => {
     toggle.textContent = expanded ? "Show less" : "Show full chunk";
     toggle.closest(".composer-context").classList.toggle("is-expanded", expanded);
   } else if (event.target.closest(".cancel-button")) closeComposer(true);
+  else if (event.target.closest(".copy-prompt-button")) copyComposerPrompt(event.target.closest("form"));
   else if (event.target.closest(".popover-close")) requestComposerClose(true);
 });
 elements.imageViewer.addEventListener("click", (event) => {
@@ -2881,10 +2897,7 @@ async function copyChunk(button) {
   if (!chunk) return;
   try {
     if (button.dataset.copyAs === "prompt") {
-      // A promised blob keeps the click's clipboard permission while the server builds the prompt.
-      const prompt = fetch(`/api/chunk-prompt?${new URLSearchParams({ path: state.selectedPath, chunkId: chunk.id })}`)
-        .then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error); return new Blob([body.prompt], { type: "text/plain" }); });
-      await navigator.clipboard.write([new ClipboardItem({ "text/plain": prompt })]);
+      await copyPrompt(requestDispatch({ path: state.selectedPath, scope: "chunk", chunkId: chunk.id }, true));
     } else await navigator.clipboard.writeText(chunk.kind === "overview" ? chunk.markdown : `${"#".repeat(chunk.level)} ${chunk.title}\n\n${chunk.markdown}`);
     button.classList.remove("is-copied");
     void button.offsetWidth;

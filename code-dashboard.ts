@@ -591,7 +591,8 @@ export function createCodeDashboard(root: string) {
   }
 
   // Both desktop apps take a prefilled draft and wait for Enter, so the user can edit before sending.
-  async function launchAgent(app: string, skill: string, prUrl: string, workspace: string, commentId = "") {
+  // `copy` returns the prompt instead of opening the app (⌥-click), for pasting into a chat already open.
+  async function launchAgent(app: string, skill: string, prUrl: string, workspace: string, commentId = "", copy = false) {
     await knownWorktree(workspace);
     if (!prSkills().some((candidate) => candidate.id === skill) && !Object.hasOwn(NOTE_PROMPTS, skill) && skill !== "discuss-comment") throw new Error("Unknown skill.");
     const pull = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)$/.exec(prUrl);
@@ -601,30 +602,28 @@ export function createCodeDashboard(root: string) {
     const root = tree?.repo || workspace;
     const where = tree ? ` Work in its worktree at ${tree.path} (branch ${tree.branch}).` : "";
     const file = skillFile(root, skill);
-    let url: string;
+    let draft: string;
     if (Object.hasOwn(NOTE_PROMPTS, skill)) {
       const notes = await prNotes.drafts(pull[1], Number(pull[2]));
       if (!notes.text) throw new Error("No draft notes on this PR.");
-      const draft = `${NOTE_PROMPTS[skill as keyof typeof NOTE_PROMPTS](prUrl, pull[1], Number(pull[2]), where, notes.path)}\n\n${notes.text}\n`;
-      url = app === "claude" ? claudeUrl(root, draft) : codexNewTaskUrl(draft, root);
+      draft = `${NOTE_PROMPTS[skill as keyof typeof NOTE_PROMPTS](prUrl, pull[1], Number(pull[2]), where, notes.path)}\n\n${notes.text}\n`;
     } else if (skill === "discuss-comment") {
       const comment = (await prDetail(pull[1], Number(pull[2]))).discussion.find((item) => item.id === commentId);
       if (!comment) throw new Error("That comment is no longer on the PR.");
       const place = comment.kind === "line" ? ` on ${comment.path}${comment.line ? `:${comment.line}` : ""}` : "";
       const quote = comment.body.trim().split("\n").map((line) => `> ${line}`).join("\n");
-      const draft = `Let's talk through this comment from @${comment.author}${place} on ${prUrl} (${comment.url}).${where} Read the PR and the code it points at first.\n\n${quote}\n\n`;
-      url = app === "claude" ? claudeUrl(root, draft) : codexNewTaskUrl(draft, root);
+      draft = `Let's talk through this comment from @${comment.author}${place} on ${prUrl} (${comment.url}).${where} Read the PR and the code it points at first.\n\n${quote}\n\n`;
     } else if (skill === "discuss") {
-      const draft = `Let's talk through this pull request: ${prUrl}.${where} Read it first, then `;
-      url = app === "claude" ? claudeUrl(root, draft) : codexNewTaskUrl(draft, root);
+      draft = `Let's talk through this pull request: ${prUrl}.${where} Read it first, then `;
     } else if (app === "claude") {
       // Claude turns a leading "/" from a link into a full-width "／" so links can't run commands, so the command goes mid-sentence.
-      url = claudeUrl(root, `Run /${skill} on ${prUrl}.${where}`);
+      draft = `Run /${skill} on ${prUrl}.${where}`;
     } else if (app === "codex") {
       if (!file) throw new Error(`No ${skill} skill under ${root}/.claude/skills or ~/.agents/skills.`);
-      url = codexNewTaskUrl(`Read and follow the ${skill} skill at ${file} for this pull request: ${prUrl}.${where}`, root);
+      draft = `Read and follow the ${skill} skill at ${file} for this pull request: ${prUrl}.${where}`;
     } else throw new Error("Unknown agent app.");
-    await exec("/usr/bin/open", [url]);
+    if (copy) return { prompt: draft };
+    await exec("/usr/bin/open", [app === "claude" ? claudeUrl(root, draft) : codexNewTaskUrl(draft, root)]);
   }
 
   // Sequential on purpose: git locks the shared worktree metadata. `git worktree remove` without --force refuses
@@ -655,8 +654,9 @@ export function createCodeDashboard(root: string) {
     return { repo, prompt: `Help me clean up old git worktrees in ${repo}. I have far too many and want to remove the ones that hold nothing I need.\n\nCandidates:\n${lines.join("\n")}\n\nFor each candidate, check for uncommitted or untracked changes, commits not on any remote branch (\`git log <branch> --not --remotes\`), stashes, and ignored local files that look hand-made rather than generated (notes, .env overrides, scratch scripts). Follow this repository's own worktree instructions if it has any. Remove a worktree with \`git worktree remove <path>\` (never --force) only when it holds nothing unique; keep its branch. Do not delete branches or push anything. Finish with \`git worktree prune\` and a short table: removed, kept (with the reason), and anything you need me to decide.` };
   }
 
-  async function launchCleanup(app: string, paths: string[]) {
+  async function launchCleanup(app: string, paths: string[], copy = false) {
     const { repo, prompt } = cleanupPrompt(paths);
+    if (copy) return { prompt };
     const url = app === "claude" ? claudeUrl(repo, prompt) : codexNewTaskUrl(prompt, repo);
     await exec("/usr/bin/open", [url]);
   }

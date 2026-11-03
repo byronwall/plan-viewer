@@ -124,7 +124,7 @@ export function createSlackThreads(root: string, command: () => string[]) {
 
   // A prefilled Codex or Claude draft about the thread, opened in the planning workspace. The agent gets the thread
   // as a file (no Slack access needed) and the planning documents that cite it.
-  async function discuss(app: string, permalink: string, request: string, documents: string[]) {
+  async function discuss(app: string, permalink: string, request: string, documents: string[], copy = false) {
     if (app !== "codex" && app !== "claude") throw new Error("Unknown agent app.");
     const ref = slackThreadRef(permalink);
     const thread = (await readCache())[ref.key];
@@ -135,6 +135,7 @@ export function createSlackThreads(root: string, command: () => string[]) {
     const where = thread.channelName ? ` in ${thread.channelName}` : "";
     const cited = documents.length ? `\n\nPlanning documents that link it: ${documents.map((path) => `\`${path}\``).join(", ")}.` : "";
     const draft = `Let's talk through this Slack thread${where}: ${permalink}\n\nThe whole thread (${thread.messages.length} messages, read ${thread.fetchedAt}) is in \`${file}\`; read it first. Use the Slack connector only if you need something newer or outside the thread.${cited}\n\n${request.trim()}`;
+    if (copy) return { prompt: draft };
     if (process.env.PLAN_VIEWER_DRY_RUN === "1") return console.log(`[dry run] ${app} draft in ${root}:\n${draft}`);
     await promisify(execFile)("/usr/bin/open", [app === "claude" ? claudeNewSessionUrl(root, draft) : codexNewTaskUrl(draft, root)]);
   }

@@ -180,7 +180,7 @@ function treeActions(tree) {
 }
 
 function skillButtons(pr, workspace, tree) {
-  return (meta().skills || []).map((skill, index) => iconButton(skill.icon || skill.id, `${skill.label} in ${appName()} · ${tree ? "worktree" : "main checkout"} (${index + 1})`, `data-code-skill="${skill.id}" data-url="${escapeHtml(pr.url)}" data-path="${escapeHtml(workspace)}"`)).join("");
+  return (meta().skills || []).map((skill, index) => iconButton(skill.icon || skill.id, `${skill.label} in ${appName()} · ${tree ? "worktree" : "main checkout"} (${index + 1}) · ${altKey}-click copies the prompt`, `data-code-skill="${skill.id}" data-url="${escapeHtml(pr.url)}" data-path="${escapeHtml(workspace)}"`)).join("");
 }
 
 // At most three digits (987, 1.23K, 87.4K) so the column stays tight; the tip has the exact counts.
@@ -1844,7 +1844,7 @@ function notesSection(pr, workspace) {
   const bar = stale ? `<div class="code-notes-bar">${diffSegment("data-note-filter", filter, { all: `All ${all.length}`, stale: `Stale ${stale}` })}<button type="button" class="code-notes-clear" data-note-clear data-tip="Delete every edited, outdated and file-changed note">Clear ${stale} stale</button></div>` : "";
   const file = diff.notes?.path && notes.length ? `<a class="code-icon-button" href="/?path=${encodeURIComponent(diff.notes.path)}" target="_blank" rel="noreferrer" data-tip="Open the notes file" aria-label="Open the notes file">${icon("external")}</a>` : "";
   const target = `data-url="${escapeHtml(pr.url || "")}" data-path="${escapeHtml(workspace)}"`;
-  const actions = drafts && pr.url ? iconButton("comment", `Post ${drafts} draft${drafts === 1 ? "" : "s"} as a pending GitHub review in ${appName()}`, `data-code-skill="notes-post" ${target}`) + iconButton("discuss", `Work through the drafts in ${appName()}`, `data-code-skill="notes-work" ${target}`) : "";
+  const actions = drafts && pr.url ? iconButton("comment", `Post ${drafts} draft${drafts === 1 ? "" : "s"} as a pending GitHub review in ${appName()} · ${altKey}-click copies the prompt`, `data-code-skill="notes-post" ${target}`) + iconButton("discuss", `Work through the drafts in ${appName()} · ${altKey}-click copies the prompt`, `data-code-skill="notes-work" ${target}`) : "";
   const meta = all.length ? `${drafts} draft${drafts === 1 ? "" : "s"}${all.length > drafts ? `, ${all.length - drafts} posted` : ""}` : "select code, press <kbd>C</kbd>";
   return `<section>${sideHead("Notes", meta, `<span class="code-side-tools">${actions}${file}</span>`)}${bar}${list ? `<ol class="code-diff-scopes code-notes-list">${list}</ol>` : ""}</section>`;
 }
@@ -2167,7 +2167,7 @@ function discussionHtml(pr, info) {
   const rows = shown.map((item) => `<article class="code-comment${item.bot ? " is-bot" : ""}"><header>${avatar(item.author)}<b>${escapeHtml(item.author)}</b>`
     + `${item.kind === "line" ? `<span class="code-muted" data-tip="${escapeHtml(item.path)}">${escapeHtml(item.path.split("/").pop())}${item.line ? `:${item.line}` : ""}</span>` : item.kind === "review" ? `<span class="code-muted">${escapeHtml({ APPROVED: "approved", CHANGES_REQUESTED: "requested changes", COMMENTED: "reviewed" }[item.state] || "reviewed")}</span>` : ""}`
     + `<a class="code-muted" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer" data-tip="${escapeHtml(new Date(item.at).toLocaleString())}">${ago(new Date(item.at).getTime())} ago</a>`
-    + `${info.url && workspace ? iconButton("discuss", `Discuss with ${appName()}`, `data-code-skill="discuss-comment" data-comment="${escapeHtml(item.id)}" data-url="${escapeHtml(info.url)}" data-path="${escapeHtml(workspace)}"`) : ""}</header>`
+    + `${info.url && workspace ? iconButton("discuss", `Discuss with ${appName()} · ${altKey}-click copies the prompt`, `data-code-skill="discuss-comment" data-comment="${escapeHtml(item.id)}" data-url="${escapeHtml(info.url)}" data-path="${escapeHtml(workspace)}"`) : ""}</header>`
     + `<div class="markdown">${prBodyHtml(pr.slug, pr.number, item.body)}</div></article>`).join("");
   return `<section class="code-discussion"><h4>Comments <span class="code-muted">${shown.length}</span>${toggle}</h4>${rows || `<p class="code-muted">No comments from people yet.</p>`}</section>`;
 }
@@ -2253,7 +2253,7 @@ function cleanupControls() {
     <span class="code-spacer"></span>${progress}
     <button type="button" class="code-bar-button" data-code-select-level="safe">Select all safe</button>
     <button type="button" class="code-bar-button" data-code-select-none ${ui.selected.size ? "" : "disabled"}>Clear</button>
-    <button type="button" class="code-bar-button code-agent-review" data-code-cleanup-agent data-tip="Draft a prompt that checks each one for unpushed commits and hand-made files first" ${ui.selected.size && !ui.removing ? "" : "disabled"}>${icon("session")}Agent review ${ui.selected.size || ""}</button>
+    <button type="button" class="code-bar-button code-agent-review" data-code-cleanup-agent data-tip="Draft a prompt that checks each one for unpushed commits and hand-made files first · ${altKey}-click copies the prompt" ${ui.selected.size && !ui.removing ? "" : "disabled"}>${icon("session")}Agent review ${ui.selected.size || ""}</button>
     <button type="button" class="code-bar-button code-danger" data-code-remove data-tip="git worktree remove: branches and commits stay, dirty worktrees are refused, ignored files such as node_modules are deleted" ${ui.selected.size && !ui.removing ? "" : "disabled"}>${icon("trash")}Remove ${ui.selected.size || ""}</button>`;
 }
 
@@ -2766,6 +2766,20 @@ async function copy(button, value) {
   }
 }
 
+// Copy prompt: the server builds the prompt it would have opened the agent with, for pasting into a chat already open.
+// A promised blob keeps the click's clipboard permission while that request runs.
+async function copyPrompt(request, button) {
+  let failure;
+  const prompt = request.then((body) => new Blob([body.prompt], { type: "text/plain" }), (error) => { failure = error; throw error; });
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ "text/plain": prompt })]);
+  } catch (error) {
+    throw failure || error;
+  }
+  if (button) copied(button);
+}
+export const altKey = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌥" : "Alt";
+
 // Confirms a copy in place: the button's icon becomes a check for a moment.
 function copied(button) {
   button.classList.remove("is-copied");
@@ -2891,6 +2905,7 @@ async function handleClick(event) {
     if (dataset.codePreview) { notify(`Opening the PR #${dataset.codePreview} deployment…`); await post("preview", { repo: dataset.repo, number: dataset.codePreview }); return; }
     if (dataset.codeOpen) { await post("open", { kind: dataset.codeOpen, path: dataset.path }); return; }
     if ("codeSession" in dataset) { await post("session", { app: agentApp(), path: dataset.path }); notify(`Opened a ${appName()} session in ${shortPath(dataset.path)}.`); return; }
+    if (dataset.codeSkill && event.altKey) return copyPrompt(post("agent", { app: agentApp(), skill: dataset.codeSkill, url: dataset.url, path: dataset.path, comment: dataset.comment || "", copy: true }), target);
     if (dataset.codeSkill) {
       await post("agent", { app: agentApp(), skill: dataset.codeSkill, url: dataset.url, path: dataset.path, comment: dataset.comment || "" });
       notify(`Drafted ${dataset.codeSkill} in ${appName()}. Review it and press Enter to send.`);
@@ -2901,6 +2916,7 @@ async function handleClick(event) {
       await post("remove-repo", { path: dataset.codeRemoveRepo });
       return load();
     }
+    if ("codeCleanupAgent" in dataset && event.altKey) return copyPrompt(post("cleanup-agent", { app: agentApp(), paths: [...ui.selected], copy: true }), target);
     if ("codeCleanupAgent" in dataset) {
       await post("cleanup-agent", { app: agentApp(), paths: [...ui.selected] });
       notify(`Drafted a cleanup review of ${ui.selected.size} worktrees in ${appName()}.`);
@@ -3231,4 +3247,4 @@ export function renderCodePage(container, { tab, showNotice }) {
 }
 
 // Pieces the Issues page shares, so an issue reads like a PR: icons, tooltips, the facts grid, avatars, PR chips.
-export { planningSection, icon, iconButton, avatar, sideFacts, sideHead, sideStatus, showTip, hideTip, fadeIn, when, heat, ciBadge, prChip, copied, reviewTag, prBodyHtml };
+export { planningSection, icon, iconButton, avatar, sideFacts, sideHead, sideStatus, showTip, hideTip, fadeIn, when, heat, ciBadge, prChip, copied, copyPrompt, reviewTag, prBodyHtml };

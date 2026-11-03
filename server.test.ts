@@ -396,6 +396,8 @@ test("dispatch prompt identifies the source and preserves commentary", async () 
   assert.match(prompt, /single-command `acme init` bootstrap/);
   assert.match(prompt, /Please turn this into the next concrete action/);
   assert.match(buildCodexPrompt(document, chunk, ""), /AGENTS\.md[\s\S]*commentary:\n\n$/, "a copied prompt ends at the commentary heading");
+  assert.match(buildDocumentCodexPrompt(document, ""), /AGENTS\.md[\s\S]*commentary:\n\n$/);
+  assert.match(buildGlobalCodexPrompt(""), /AGENTS\.md[\s\S]*request:\n\n$/);
 });
 
 test("file handoff attaches the path without copying the file contents", async () => {

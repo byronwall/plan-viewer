@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import { parseActions, parseWorkBreakdown, stalledTaskReason } from "./public/actions.js";
 import { extractChatLinks, inlineMarkdown } from "./public/markdown.js";
 import { metadataKey } from "./public/dock.js";
-import { CodexDesktopClient, taskTitle } from "./codex-desktop.ts";
+import { CodexDesktopClient, taskTitle, withImages } from "./codex-desktop.ts";
 import { createLinkMetadataStore, slackChannelNames } from "./link-metadata.ts";
 import { createCodeDashboard, githubImage } from "./code-dashboard.ts";
 import { createPeople } from "./people.ts";
@@ -647,23 +647,25 @@ function sourceLines(document: Awaited<ReturnType<typeof loadDocument>>, path = 
 
 const CHAT_LINK_INSTRUCTION = "When your current conversation URL or thread ID is available from trusted session context or app tools, record a labeled Markdown link under ## Chats in the authoritative task or daily plan you work on. Use the verified conversation URL (a ChatGPT or Claude link) or codex://threads/<thread-id>. Keep existing links and avoid duplicates. Do not guess IDs, use a shared snapshot as a follow-up link, or associate unrelated chats. If this is a global request, record the link only after identifying its task or daily plan. If the URL or ID is unavailable, continue the work without inventing a link.";
 
-// With no commentary (Copy prompt), the commentary heading moves to the end, so text typed after pasting lands under it.
+// A copied prompt can carry no commentary; its heading then ends the prompt, so text typed after pasting lands under it.
+function withAsk(heading: string, commentary: string, render: (ask: string) => string) {
+  return commentary.trim() ? render(`${heading}\n\n${commentary.trim()}\n\n`) : `${render("")}\n\n${heading}\n\n`;
+}
+
 export function buildCodexPrompt(document: Awaited<ReturnType<typeof loadDocument>>, chunk: Chunk, commentary: string) {
-  const heading = `${config().user}'s commentary:\n\n`;
-  const prompt = `Task: ${taskTitle(chunk.title)}\n\nYou are receiving a work handoff from the local ${config().title}. Work in the ${WORKSPACE} repository and follow its AGENTS.md instructions. The source file remains authoritative.\n\n${sourceLines(document)}\nDocument: ${document.title}\nSelected ${chunk.kind}: ${chunk.title}\n\nSelected chunk:\n\n${chunk.markdown}\n\n${commentary.trim() ? `${heading}${commentary.trim()}\n\n` : ""}Interpret the selected chunk together with ${config().user}'s commentary. Inspect the source file and relevant repository context before acting. If the commentary asks for a change or implementation, carry it through; if it asks for analysis, report evidence-backed findings. Preserve unrelated work and update the planning Markdown when the requested outcome calls for it.\n\n${CHAT_LINK_INSTRUCTION}`;
-  return commentary.trim() ? prompt : `${prompt}\n\n${heading}`;
+  return withAsk(`${config().user}'s commentary:`, commentary, (ask) => `Task: ${taskTitle(chunk.title)}\n\nYou are receiving a work handoff from the local ${config().title}. Work in the ${WORKSPACE} repository and follow its AGENTS.md instructions. The source file remains authoritative.\n\n${sourceLines(document)}\nDocument: ${document.title}\nSelected ${chunk.kind}: ${chunk.title}\n\nSelected chunk:\n\n${chunk.markdown}\n\n${ask}Interpret the selected chunk together with ${config().user}'s commentary. Inspect the source file and relevant repository context before acting. If the commentary asks for a change or implementation, carry it through; if it asks for analysis, report evidence-backed findings. Preserve unrelated work and update the planning Markdown when the requested outcome calls for it.\n\n${CHAT_LINK_INSTRUCTION}`);
 }
 
 // A selection narrows the document to the excerpt the user highlighted, quoted with the section it sits under.
 export function buildDocumentCodexPrompt(document: Awaited<ReturnType<typeof loadDocument>>, commentary: string, selection = "", section = "") {
   const excerpt = selection.trim() ? `${section ? `Section: ${section}\n` : ""}\n${config().user} selected this excerpt as the focus; find it in the source file and work on it specifically:\n\n${selection.trim().split("\n").map((line) => `> ${line}`).join("\n")}\n\n` : "";
-  return `Task from the local ${config().title}\n\nWork in the ${WORKSPACE} repository and follow its AGENTS.md instructions. The attached file path is the authoritative context; inspect the file before acting.\n\n${sourceLines(document)}\n${excerpt}\n${config().user}'s commentary:\n\n${commentary.trim()}\n\nCarry out ${config().user}'s request using the source file and relevant repository context. Preserve unrelated work.\n\n${CHAT_LINK_INSTRUCTION}`;
+  return withAsk(`${config().user}'s commentary:`, commentary, (ask) => `Task from the local ${config().title}\n\nWork in the ${WORKSPACE} repository and follow its AGENTS.md instructions. The attached file path is the authoritative context; inspect the file before acting.\n\n${sourceLines(document)}\n${excerpt}\n${ask}Carry out ${config().user}'s request using the source file and relevant repository context. Preserve unrelated work.\n\n${CHAT_LINK_INSTRUCTION}`);
 }
 
 // The C composer is "global", but from a document page that document is still what was on screen, so it goes along.
 export function buildGlobalCodexPrompt(commentary: string, document?: Awaited<ReturnType<typeof loadDocument>>) {
   if (document) return buildDocumentCodexPrompt(document, commentary);
-  return `Task from the local ${config().title}\n\nWork in the ${WORKSPACE} repository and follow its AGENTS.md instructions. No plan, file, or chunk context is attached to this task.\n\n${config().user}'s request:\n\n${commentary.trim()}\n\nCarry out ${config().user}'s request using relevant repository context. Preserve unrelated work.\n\n${CHAT_LINK_INSTRUCTION}`;
+  return withAsk(`${config().user}'s request:`, commentary, (ask) => `Task from the local ${config().title}\n\nWork in the ${WORKSPACE} repository and follow its AGENTS.md instructions. No plan, file, or chunk context is attached to this task.\n\n${ask}Carry out ${config().user}'s request using relevant repository context. Preserve unrelated work.\n\n${CHAT_LINK_INSTRUCTION}`);
 }
 
 export function buildActionPrompt(document: Awaited<ReturnType<typeof loadDocument>>, action: { title: string; prompt: string }, commentary: string) {
@@ -709,8 +711,15 @@ export async function saveHandoffImages(images: unknown[]) {
   return paths;
 }
 
-async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex", images: string[] = [], workItem = "", mode = "", selection = "", section = "") {
-  const openDraft = (title: string, prompt: string) => getCodexApp().openDraft(ROOT, title, prompt, app, images);
+// `copy` hands the prompt back instead of opening the app (Copy prompt), so it can be pasted into a chat already open.
+async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex", images: string[] = [], workItem = "", mode = "", selection = "", section = "", copy = false) {
+  const openDraft = async (title: string, prompt: string) => {
+    if (copy) return { accepted: true, prompt: withImages(prompt, images) };
+    if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true, prompt };
+    const result = await getCodexApp().openDraft(ROOT, title, prompt, app, images);
+    dispatchLog(requestId, "draft-opened", { draftOpened: result.draftOpened });
+    return { accepted: true, ...result };
+  };
   if (scope === "action") {
     const document = await loadDocument(path);
     const action = document.nextActions.find(action => action.id === actionId);
@@ -718,8 +727,7 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
     if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Additional context is too long.");
     const prompt = buildActionPrompt(document, action, commentary);
     dispatchLog(requestId, "validated", { scope, path, actionId });
-    if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true, prompt };
-    return { accepted: true, ...await openDraft(action.title, prompt) };
+    return openDraft(action.title, prompt);
   }
   if (scope === "work") {
     const document = await loadDocument(path);
@@ -729,39 +737,28 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
     if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Additional context is too long.");
     const prompt = buildWorkItemPrompt(document, node, mode, commentary);
     dispatchLog(requestId, "validated", { scope, path, workItem, mode });
-    if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true, prompt };
-    return { accepted: true, ...await openDraft(`${mode === "update" ? "Update" : "Advance"} ${node.id}: ${node.title}`, prompt) };
+    return openDraft(`${mode === "update" ? "Update" : "Advance"} ${node.id}: ${node.title}`, prompt);
   }
-  if (!commentary.trim()) throw new Error("Add a request before opening a draft.");
+  if (!commentary.trim() && !copy) throw new Error("Add a request before opening a draft.");
   if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Commentary is too long for this first version.");
   if (scope === "global") {
     const prompt = buildGlobalCodexPrompt(commentary, path ? await loadDocument(path) : undefined);
     dispatchLog(requestId, "validated", { scope, path, commentaryLength: commentary.length });
-    if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true, prompt };
-    const result = await openDraft("Plan viewer command", prompt);
-    dispatchLog(requestId, "draft-opened", { draftOpened: result.draftOpened });
-    return { accepted: true, ...result };
+    return openDraft("Plan viewer command", prompt);
   }
   const document = await loadDocument(path);
   if (scope === "document") {
     if (selection.length > MAX_COMMENT_LENGTH) throw new Error("The selection is too long; select less text.");
     const prompt = buildDocumentCodexPrompt(document, commentary, selection, section);
     dispatchLog(requestId, "validated", { scope, path: document.path, commentaryLength: commentary.length });
-    if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true, prompt };
-    const result = await openDraft(document.title, prompt);
-    dispatchLog(requestId, "draft-opened", { draftOpened: result.draftOpened });
-    return { accepted: true, ...result };
+    return openDraft(document.title, prompt);
   }
   if (scope !== "chunk") throw new Error("Choose a valid draft context.");
   const chunk = document.chunks.find((candidate) => candidate.id === chunkId);
   if (!chunk) throw new Error("That chunk is no longer present. Reload the document and try again.");
   const prompt = buildCodexPrompt(document, chunk, commentary);
   dispatchLog(requestId, "validated", { path: document.path, chunkId, chunkTitle: chunk.title, commentaryLength: commentary.length });
-
-  if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true, prompt };
-  const result = await openDraft(chunk.title, prompt);
-  dispatchLog(requestId, "draft-opened", { draftOpened: result.draftOpened });
-  return { accepted: true, ...result };
+  return openDraft(chunk.title, prompt);
 }
 
 // Slack's desktop app ignores https permalinks handed to it, so translate them into slack:// deep links. The team ID
@@ -841,12 +838,6 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     const url = new URL(request.url || "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/api/documents") return json(response, 200, { documents: await listDocuments(), defaultPath: todayPath() });
     if (request.method === "GET" && url.pathname === "/api/document") return json(response, 200, await loadDocument(url.searchParams.get("path") || ""));
-    if (request.method === "GET" && url.pathname === "/api/chunk-prompt") {
-      const document = await loadDocument(url.searchParams.get("path") || "");
-      const chunk = document.chunks.find((candidate) => candidate.id === url.searchParams.get("chunkId"));
-      if (!chunk) return json(response, 404, { error: "That section is no longer present. Reload the document and try again." });
-      return json(response, 200, { prompt: buildCodexPrompt(document, chunk, "") });
-    }
     if (request.method === "GET" && (url.pathname === "/api/linear-image" || url.pathname === "/api/github-image")) {
       const image = url.pathname === "/api/linear-image" ? await linearImage(ROOT, url.searchParams.get("url") || "")
         : await githubImage(ROOT, url.searchParams.get("slug") || "", Number(url.searchParams.get("number")), url.searchParams.get("id") || "");
@@ -878,8 +869,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request);
       const ref = slackThreadRef(String(body.url || ""));
       const documents = (await listDocuments()).filter((doc) => doc.slackLinks?.some((link) => link.startsWith(`${ref.key}/`))).map((doc) => doc.path);
-      await slackThreads.discuss(String(body.app || ""), String(body.url), String(body.request || "").slice(0, MAX_COMMENT_LENGTH), documents);
-      return json(response, 200, { opened: true });
+      const copied = await slackThreads.discuss(String(body.app || ""), String(body.url), String(body.request || "").slice(0, MAX_COMMENT_LENGTH), documents, body.copy === true);
+      return json(response, 200, copied || { opened: true });
     }
     if (request.method === "GET" && url.pathname === "/api/slack") return json(response, 200, await slackIndex());
     if (request.method === "POST" && url.pathname === "/api/slack/sync") {
@@ -925,17 +916,17 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       if (action === "line-counts") return json(response, 200, await codeDashboard.lineCounts(new URLSearchParams(body.params || {}), paths));
       if (action === "remove-worktrees") return json(response, 200, { results: await codeDashboard.removeWorktrees(paths) });
       if (action === "cleanup-prompt") return json(response, 200, codeDashboard.cleanupPrompt(paths));
-      if (action === "cleanup-agent") return json(response, 200, await codeDashboard.launchCleanup(String(body.app || ""), paths).then(() => ({ opened: true })));
+      if (action === "cleanup-agent") return json(response, 200, await codeDashboard.launchCleanup(String(body.app || ""), paths, body.copy === true).then((copied) => copied || { opened: true }));
       if (action === "session") return json(response, 200, await codeDashboard.launchSession(String(body.app || ""), String(body.path || "")).then(() => ({ opened: true })));
-      if (action === "agent") return json(response, 200, await codeDashboard.launchAgent(String(body.app || ""), String(body.skill || ""), String(body.url || ""), String(body.path || ""), String(body.comment || "")).then(() => ({ opened: true })));
+      if (action === "agent") return json(response, 200, await codeDashboard.launchAgent(String(body.app || ""), String(body.skill || ""), String(body.url || ""), String(body.path || ""), String(body.comment || ""), body.copy === true).then((copied) => copied || { opened: true }));
     }
     if (request.method === "GET" && url.pathname === "/api/issues") return json(response, 200, await issueTracker.load(url.searchParams.has("refresh")));
     if (request.method === "GET" && url.pathname === "/api/issues/issue") return json(response, 200, issueTracker.detail(url.searchParams.get("key") || ""));
     if (request.method === "POST" && url.pathname === "/api/issues/fetch") return json(response, 200, await issueTracker.fetchIssue(String((await readJson(request)).key || "")));
     if (request.method === "POST" && url.pathname === "/api/issues/agent") {
       const body = await readJson(request);
-      await issueTracker.launchAgent(String(body.app || ""), String(body.skill || ""), Array.isArray(body.keys) ? body.keys.map(String).slice(0, 50) : []);
-      return json(response, 200, { opened: true });
+      const copied = await issueTracker.launchAgent(String(body.app || ""), String(body.skill || ""), Array.isArray(body.keys) ? body.keys.map(String).slice(0, 50) : [], body.copy === true);
+      return json(response, 200, copied || { opened: true });
     }
     if (request.method === "POST" && url.pathname === "/api/link-metadata") {
       const body = await readJson(request);
@@ -960,7 +951,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request, 50_000_000);
       dispatchLog(requestId, "received", { path: String(body.path || ""), scope: String(body.scope || ""), chunkId: String(body.chunkId || "") });
       try {
-        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex"), await saveHandoffImages(Array.isArray(body.images) ? body.images : []), String(body.workItem || ""), String(body.mode || ""), String(body.selection || ""), String(body.section || "")));
+        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex"), await saveHandoffImages(Array.isArray(body.images) ? body.images : []), String(body.workItem || ""), String(body.mode || ""), String(body.selection || ""), String(body.section || ""), body.copy === true));
       } catch (error) {
         dispatchLog(requestId, "failed", { error: error instanceof Error ? error.message : String(error) });
         throw error;

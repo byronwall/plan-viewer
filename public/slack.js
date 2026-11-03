@@ -1,5 +1,5 @@
 import { escapeHtml, renderMarkdown, SERVICE_ICONS } from "./markdown.js";
-import { avatar, hideTip, icon, iconButton, planning, showTip, when } from "./code.js";
+import { avatar, copyPrompt, hideTip, icon, iconButton, planning, showTip, when } from "./code.js";
 import { agentApp, agentName, config } from "./config.js";
 
 const normalName = (name = "") => name.toLowerCase().replace(/[._-]+/g, " ").trim();
@@ -97,6 +97,7 @@ function ensureDialog() {
     if (event.target.closest("[data-slack-close]")) dialog.close();
     else if (event.target.closest("[data-slack-open]")) openInSlack(event.target.closest("[data-slack-open]").dataset.slackOpen);
     else if (event.target.closest("[data-slack-refresh]")) load(true);
+    else if (event.target.closest("[data-slack-copy-prompt]")) copyDiscussPrompt(event.target.closest("[data-slack-copy-prompt]"));
     else if (event.target.closest("[data-slack-new]")) jumpToNew();
     else if (event.target.closest("[data-slack-retry]")) load(true);
     else if (event.target.closest("[data-slack-star]")) {
@@ -242,7 +243,7 @@ async function renderLinks() {
 
 function renderComposer() {
   const form = dialog.querySelector('[data-o="composer"]');
-  form.innerHTML = `<textarea rows="1" placeholder="Ask ${escapeHtml(agentName())} about this thread…" aria-label="Ask ${escapeHtml(agentName())} about this thread"></textarea><button type="submit" class="code-bar-button is-primary">${icon("discuss")}Discuss in ${escapeHtml(agentName())}</button><p class="slack-composer-hint code-muted" data-slack-hint><kbd>Enter</kbd> opens a draft with the thread attached · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line${keys()}</p>`;
+  form.innerHTML = `<textarea rows="1" placeholder="Ask ${escapeHtml(agentName())} about this thread…" aria-label="Ask ${escapeHtml(agentName())} about this thread"></textarea><button type="button" class="code-bar-button" data-slack-copy-prompt>${icon("copy")}Copy prompt</button><button type="submit" class="code-bar-button is-primary">${icon("discuss")}Discuss in ${escapeHtml(agentName())}</button><p class="slack-composer-hint code-muted" data-slack-hint><kbd>Enter</kbd> opens a draft with the thread attached · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line${keys()}</p>`;
 }
 const hint = (message = "", error = false) => {
   const line = dialog.querySelector("[data-slack-hint]");
@@ -255,6 +256,17 @@ function fitComposer(box) {
   box.style.height = `${Math.min(box.scrollHeight + 2, 200)}px`;
 }
 
+async function requestDiscuss(request, copy = false) {
+  const response = await fetch("/api/slack/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app: agentApp(), url: current.href, request, copy }) });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || "Could not open the draft.");
+  return body;
+}
+function copyDiscussPrompt(button) {
+  if (!current?.thread) return;
+  copyPrompt(requestDiscuss(dialog.querySelector(".slack-composer textarea").value, true), button).then(() => hint(), (error) => hint(error.message, true));
+}
+
 async function discuss() {
   if (!current?.thread) return;
   const box = dialog.querySelector(".slack-composer textarea");
@@ -262,9 +274,7 @@ async function discuss() {
   button.disabled = true;
   hint(`Opening a draft in ${agentName()}…`);
   try {
-    const response = await fetch("/api/slack/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app: agentApp(), url: current.href, request: box.value }) });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error || "Could not open the draft.");
+    await requestDiscuss(box.value);
     box.value = "";
     fitComposer(box);
     hint();
