@@ -26,4 +26,7 @@ test("plan-viewer init sets up a workspace once and then changes nothing", async
   const { stdout } = await init();
   assert.deepEqual(await read(), first);
   assert.ok(!stdout.includes("✓"));
+
+  // Run from the viewer checkout by mistake, init must refuse instead of rewriting the viewer's package.json.
+  await assert.rejects(promisify(execFile)(process.execPath, ["--experimental-strip-types", "--no-warnings", "cli.ts", "init"], { env: { ...env, PLANNING_ROOT: "." } }), error => error.stderr.includes("plan-viewer checkout"));
 });

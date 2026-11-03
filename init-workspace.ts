@@ -3,7 +3,7 @@
 // creates the content folders, copies the example agent guide, and adds the viewer scripts to package.json.
 // Never replaces a file or script; prints what it did and what it skipped.
 import { execFileSync } from "node:child_process";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,18 +16,34 @@ const SCRIPTS: Record<string, string> = {
   prepare: "git config core.hooksPath node_modules/plan-viewer/hooks",
 };
 
-export async function initWorkspace(root: string) {
+const fail = (message: string): never => { throw new Error(message); };
+
+export async function initWorkspace(dir: string) {
   const viewer = fileURLToPath(new URL(".", import.meta.url));
+  const root = await realpath(dir).catch(() => fail(`${dir} does not exist`));
   const exists = (path: string) => access(join(root, path)).then(() => true, () => false);
   const done: string[] = [];
   const skipped: string[] = [];
 
-  try { execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, stdio: "ignore" }); skipped.push("already a git repository"); }
-  catch { execFileSync("git", ["init", "--quiet"], { cwd: root }); done.push("started a git repository"); }
+  // Check package.json before writing anything, so a bad one leaves the folder as it was.
+  const pkgText = await readFile(join(root, "package.json"), "utf8").catch(() => "");
+  let pkg;
+  try { pkg = pkgText ? JSON.parse(pkgText) : { private: true, type: "module" }; }
+  catch { fail("package.json is not valid JSON; fix it and run init again"); }
+  if (pkg.name === "plan-viewer") fail("this is the plan-viewer checkout; run init from your planning workspace");
+
+  const git = (args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  let top = "";
+  try { top = git(["rev-parse", "--show-toplevel"]); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") fail("git is not installed"); }
+  if (!top) { git(["init", "--quiet"]); done.push("started a git repository"); }
+  else if (top === root) skipped.push("already a git repository");
+  else skipped.push(`inside the git repository at ${top}; npm install will set its hooks path`);
 
   // tmp/ holds the viewer's caches; config.toml holds Linear and Slack tokens.
   const ignore = (await readFile(join(root, ".gitignore"), "utf8").catch(() => "")).split("\n");
-  const missing = ["node_modules/", "tmp/", "config.toml"].filter(line => !ignore.includes(line));
+  const bare = (line: string) => line.trim().replace(/^\/|\/$/g, "");
+  const missing = ["node_modules/", "tmp/", "config.toml"].filter(line => !ignore.some(other => bare(other) === bare(line)));
   if (missing.length) {
     await writeFile(join(root, ".gitignore"), [...ignore.filter((line, i) => line || i < ignore.length - 1), ...missing, ""].join("\n"));
     done.push(`added to .gitignore: ${missing.join(", ")}`);
@@ -45,8 +61,6 @@ export async function initWorkspace(root: string) {
     done.push(`copied ${file}`);
   }
 
-  const hasPackage = await exists("package.json");
-  const pkg = hasPackage ? JSON.parse(await readFile(join(root, "package.json"), "utf8")) : { private: true, type: "module" };
   const added: string[] = [];
   if (!pkg.devDependencies?.["plan-viewer"] && !pkg.dependencies?.["plan-viewer"]) {
     pkg.devDependencies = { ...pkg.devDependencies, "plan-viewer": `file:${relative(root, viewer) || "."}` };
@@ -58,15 +72,22 @@ export async function initWorkspace(root: string) {
     else { pkg.scripts[name] = command; added.push(`"${name}"`); }
   }
   if (added.length) {
-    await writeFile(join(root, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
-    done.push(`${hasPackage ? "added to" : "created"} package.json: ${added.join(", ")}`);
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg, null, pkgText.match(/^[ \t]+(?=")/m)?.[0] ?? 2) + "\n");
+    done.push(`${pkgText ? "added to" : "created"} package.json: ${added.join(", ")}`);
   }
   return { done, skipped };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  if (process.argv.length > 2) {
+    console.error("Usage: plan-viewer init  (run from the workspace folder, or with PLANNING_ROOT set)");
+    process.exit(1);
+  }
   const root = resolve(process.env.PLANNING_ROOT || process.cwd());
-  const { done, skipped } = await initWorkspace(root);
+  const { done, skipped } = await initWorkspace(root).catch(error => {
+    console.error(`plan-viewer init: ${error.message}`);
+    process.exit(1);
+  });
   for (const line of done) console.log(`✓ ${line}`);
   for (const line of skipped) console.log(`- skipped: ${line}`);
   if (!await access(join(root, "node_modules/plan-viewer")).then(() => true, () => false)) console.log("Next: npm install (not pnpm), then npm run viewer.");
