@@ -991,6 +991,11 @@ export function startServer(port = PORT) {
     closeWatchers();
     unwatchFile(configPath);
   });
+  server.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EADDRINUSE") throw error;
+    console.error(`Port ${port} is in use, maybe by another viewer. Set PLAN_VIEWER_PORT or "port" in viewer.config.json to use another.`);
+    process.exit(1);
+  });
   server.listen(port, "127.0.0.1", () => {
     console.log(`${config().title} is ready for ${ROOT} at http://127.0.0.1:${server.address().port}`);
   });

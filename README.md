@@ -54,28 +54,19 @@ Open <http://127.0.0.1:4173>. The demo serves [`examples/workspace/`](examples/w
 A workspace is any folder laid out like the example. To start one beside your `plan-viewer` checkout:
 
 ```bash
-mkdir planning && cd planning && git init
-mkdir -p daily tasks plans reference
-cp ../plan-viewer/examples/workspace/{AGENTS,CLAUDE}.md .
+mkdir planning && cd planning
+node ../plan-viewer/cli.ts init
 ```
 
-Add a `package.json` that points at the viewer:
+`init` sets up what the viewer and your agents need:
 
-```json
-{
-  "private": true,
-  "type": "module",
-  "devDependencies": { "plan-viewer": "file:../plan-viewer" },
-  "scripts": {
-    "viewer": "plan-viewer serve",
-    "lint": "plan-viewer lint",
-    "links": "plan-viewer links",
-    "move": "plan-viewer move",
-    "task": "plan-viewer task",
-    "prepare": "git config core.hooksPath node_modules/plan-viewer/hooks"
-  }
-}
-```
+- a git repository, which the pre-commit hook and `lint` need;
+- a `.gitignore` for `node_modules/`, `tmp/` (the viewer's caches) and `config.toml` (Linear and Slack tokens);
+- the `daily/`, `tasks/`, `plans/` and `reference/` folders;
+- `AGENTS.md` and `CLAUDE.md` from the example workspace;
+- a `package.json` with a `plan-viewer` dependency (`file:../plan-viewer`) and the `viewer`, `lint`, `links`, `move`, `task` and `prepare` scripts.
+
+It never replaces an existing file or script, so you can run it again in a partly set up workspace. It prints what it did and what it skipped.
 
 Then run `npm install` and `npm run viewer`. Install with `npm`, not `pnpm`: pnpm copies `file:` packages into `node_modules`, where Node refuses to run TypeScript directly. The `prepare` script installs a pre-commit hook that lints staged plans and checks links.
 
@@ -128,14 +119,15 @@ Send the invite email from POST /invites through the mailer and add a test.
 
 ### Commands
 
-Run each from the workspace (or set `PLANNING_ROOT`):
+Run each from the workspace (or set `PLANNING_ROOT`). `plan-viewer help` lists them. A mistake, such as a missing file or a busy port, prints one line and exits 1.
 
 | Command | Does |
 | --- | --- |
 | `plan-viewer serve` | Starts the viewer at `http://127.0.0.1:4173`, restarting itself when the viewer's code changes. |
+| `plan-viewer init` | Sets up the folder as a workspace: git, `.gitignore`, folders, agent guide, and `package.json` scripts. Never replaces a file. |
 | `plan-viewer lint [paths…\|--staged]` | Checks task front matter, work breakdowns, and action references. |
 | `plan-viewer links [--fix\|--warm\|--refresh-slack]` | Reports broken links, unknown tasks, unlinked task assets, and unnamed Slack channels. |
-| `plan-viewer move <from> <to\|TASK-NNNN>` | Moves a file and repairs every link to it. |
+| `plan-viewer move <from> <to\|TASK-NNNN>` | Moves one file and repairs every link to it. `TASK-NNNN` moves it into that task's assets folder; the task must exist. |
 | `plan-viewer task TASK-NNNN` | Prints a task's context in compact form for an agent. |
 
 ### Optional integrations
