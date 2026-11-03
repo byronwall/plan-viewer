@@ -55,27 +55,10 @@ A workspace is any folder laid out like the example. To start one beside your `p
 
 ```bash
 mkdir planning && cd planning && git init
-mkdir -p daily tasks plans reference
-cp ../plan-viewer/examples/workspace/{AGENTS,CLAUDE}.md .
+node ../plan-viewer/cli.ts init
 ```
 
-Add a `package.json` that points at the viewer:
-
-```json
-{
-  "private": true,
-  "type": "module",
-  "devDependencies": { "plan-viewer": "file:../plan-viewer" },
-  "scripts": {
-    "viewer": "plan-viewer serve",
-    "lint": "plan-viewer lint",
-    "links": "plan-viewer links",
-    "move": "plan-viewer move",
-    "task": "plan-viewer task",
-    "prepare": "git config core.hooksPath node_modules/plan-viewer/hooks"
-  }
-}
-```
+`init` creates `daily/`, `tasks/`, `plans/` and `reference/`, copies the example `AGENTS.md` and `CLAUDE.md`, and adds a `plan-viewer` dependency (`file:../plan-viewer`) and the `viewer`, `lint`, `links`, `move`, `task` and `prepare` scripts to `package.json`, creating it if needed. It never replaces an existing file or script, so it is safe to run again in a workspace that is partly set up; it prints what it created and what it skipped.
 
 Then run `npm install` and `npm run viewer`. Install with `npm`, not `pnpm`: pnpm copies `file:` packages into `node_modules`, where Node refuses to run TypeScript directly. The `prepare` script installs a pre-commit hook that lints staged plans and checks links.
 

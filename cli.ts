@@ -1,8 +1,8 @@
 #!/usr/bin/env -S node --experimental-strip-types --no-warnings=ExperimentalWarning
-// `plan-viewer [serve|lint|links|move|task] …`, run from a planning workspace (or with PLANNING_ROOT set).
+// `plan-viewer [serve|init|lint|links|move|task] …`, run from a planning workspace (or with PLANNING_ROOT set).
 import { fileURLToPath } from "node:url";
 
-const COMMANDS: Record<string, string> = { serve: "server.ts", lint: "check-planning.ts", links: "check-links.ts", move: "move-doc.ts", task: "task-context.ts" };
+const COMMANDS: Record<string, string> = { serve: "server.ts", lint: "check-planning.ts", links: "check-links.ts", move: "move-doc.ts", task: "task-context.ts", init: "init-workspace.ts" };
 const [command = "serve", ...args] = process.argv.slice(2);
 if (!COMMANDS[command]) {
   console.error(`Usage: plan-viewer <${Object.keys(COMMANDS).join("|")}> [args]`);
