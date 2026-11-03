@@ -909,7 +909,7 @@ function syncViewUrl() {
   if (!subject() || (!diff.files && !isDocScope())) return;
   const url = new URL(location.href);
   const file = isDocScope() ? "" : diff.files?.[diff.index]?.path || "";
-  for (const [name, value] of [["file", file], ["scope", diff.scope === "all" ? "" : diff.scope]]) value ? url.searchParams.set(name, value) : url.searchParams.delete(name);
+  for (const [name, value] of [["file", file], ["scope", diff.scope === (diff.pr ? "description" : "all") ? "" : diff.scope]]) value ? url.searchParams.set(name, value) : url.searchParams.delete(name);
   if (url.href !== location.href) history.replaceState(history.state, "", url);
 }
 
@@ -1205,9 +1205,11 @@ const prInfo = (slug, number) => ({
   ...ui.detail.get(`pr:${prKey(slug, number)}`),
 });
 
-// Opens the PR overview from anywhere (⌘K, the Code page, a ?pr= URL), on the whole PR diff.
-export async function openPrOverlay(slug, number, file = "", scope = "all") {
+// Opens the PR overview from anywhere (⌘K, the Code page, a ?pr= URL). A fresh open starts on the Description; moving
+// to another PR while it's open (the stack, a linked PR) keeps the view, with a commit becoming Changes.
+export async function openPrOverlay(slug, number, file = "", scope = "") {
   if (!/^[\w.-]+\/[\w.-]+$/.test(slug) || !Number.isInteger(number)) return;
+  scope ||= diffDialog?.open && diff.pr ? (["description", "stack"].includes(diff.scope) ? diff.scope : "all") : "description";
   if (scope === "stack" && !openPrList().length) await loadPrIndex().catch(noop); // the stack comes from the open PR list
   ensureDiffDialog();
   loadHighlighter();
