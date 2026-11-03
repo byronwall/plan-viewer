@@ -34,7 +34,9 @@ export async function checkPlanning(args: string[], root = ROOT) {
   if (args.some(arg => arg.startsWith("--") && arg !== "--staged") || (staged && args.length !== 1)) {
     throw new Error("Usage: npm run lint -- [planning Markdown paths | --staged]");
   }
-  const git = async (argv: string[]) => (await promisify(execFile)("git", argv, { cwd: root, maxBuffer: 16 * 1024 * 1024 })).stdout;
+  const git = async (argv: string[]) => (await promisify(execFile)("git", argv, { cwd: root, maxBuffer: 16 * 1024 * 1024 }).catch(error => {
+    throw /not a git repository/.test(error.stderr) ? new Error("not a git repository; run plan-viewer init") : error;
+  })).stdout;
   const listed = args.length && !staged
     ? args.map(path => relative(root, resolve(root, path)).replaceAll("\\", "/"))
     : (await git(staged ? ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"] : ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])).split("\0").filter(Boolean);
@@ -48,7 +50,7 @@ export async function checkPlanning(args: string[], root = ROOT) {
     } catch (error) {
       // A tracked file moved or deleted without staging is no longer authored content.
       if (!args.length && (error as NodeJS.ErrnoException).code === "ENOENT") continue;
-      errors.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+      errors.push(`${path}: ${(error as NodeJS.ErrnoException).code === "ENOENT" ? "file not found" : error instanceof Error ? error.message : String(error)}`);
     }
   }
   return { files: paths.length, errors };

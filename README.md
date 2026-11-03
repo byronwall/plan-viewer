@@ -120,14 +120,15 @@ Send the invite email from POST /invites through the mailer and add a test.
 
 ### Commands
 
-Run each from the workspace (or set `PLANNING_ROOT`):
+Run each from the workspace (or set `PLANNING_ROOT`). `plan-viewer help` lists them. A mistake, such as a missing file or a busy port, prints one line and exits 1.
 
 | Command | Does |
 | --- | --- |
 | `plan-viewer serve` | Starts the viewer at `http://127.0.0.1:4173`, restarting itself when the viewer's code changes. |
+| `plan-viewer init` | Sets up the folder as a workspace: git, `.gitignore`, folders, agent guide, and `package.json` scripts. Never replaces a file. |
 | `plan-viewer lint [paths…\|--staged]` | Checks task front matter, work breakdowns, and action references. |
 | `plan-viewer links [--fix\|--warm\|--refresh-slack]` | Reports broken links, unknown tasks, unlinked task assets, and unnamed Slack channels. |
-| `plan-viewer move <from> <to\|TASK-NNNN>` | Moves a file and repairs every link to it. |
+| `plan-viewer move <from> <to\|TASK-NNNN>` | Moves one file and repairs every link to it. `TASK-NNNN` moves it into that task's assets folder; the task must exist. |
 | `plan-viewer task TASK-NNNN` | Prints a task's context in compact form for an agent. |
 
 ### Optional integrations

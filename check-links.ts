@@ -13,6 +13,8 @@ import { slashListItems } from "./public/markdown.js";
 import { githubSlug, referenceConfig } from "./public/config.js";
 
 const args = new Set(process.argv.slice(2));
+const unknown = [...args].filter((arg) => !["--fix", "--warm", "--refresh-slack"].includes(arg));
+if (unknown.length) throw new Error(`unknown ${unknown.join(" ")}. Usage: npm run links -- [--fix] [--warm] [--refresh-slack]`);
 const CHANNELS = join(ROOT, "reference", "slack-channels.md");
 const exists = (path: string) => access(join(ROOT, path)).then(() => true, () => false);
 const stripCode = (text: string) => text.replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, "");
@@ -43,7 +45,7 @@ for (const { path, text } of files) {
 
 // Task assets need an existing parent task, and each top-level entry must be linked from that task
 // or from a document in the same assets folder (so the parent stays the entry point).
-for (const folder of (await readdir(join(ROOT, "tasks"))).filter((name) => /^TASK-\d{4}-assets$/.test(name))) {
+for (const folder of (await readdir(join(ROOT, "tasks")).catch(() => [])).filter((name) => /^TASK-\d{4}-assets$/.test(name))) {
   const id = folder.slice(0, 9);
   const parent = files.find((file) => file.path === `tasks/${id}.md`);
   if (!parent) { errors.push(`tasks/${folder}: no parent tasks/${id}.md; move the assets or restore the task`); continue; }
