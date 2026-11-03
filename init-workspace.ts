@@ -1,6 +1,8 @@
 // Set up a planning workspace: `plan-viewer init`, run from the workspace folder (or with PLANNING_ROOT set).
-// Creates the content folders, copies the example agent guide, and adds the viewer scripts to package.json.
-// Never overwrites a file; prints what it did and what it skipped.
+// Starts a git repository (the hook and lint need one), ignores what the viewer writes and the tokens in config.toml,
+// creates the content folders, copies the example agent guide, and adds the viewer scripts to package.json.
+// Never replaces a file or script; prints what it did and what it skipped.
+import { execFileSync } from "node:child_process";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +21,17 @@ export async function initWorkspace(root: string) {
   const exists = (path: string) => access(join(root, path)).then(() => true, () => false);
   const done: string[] = [];
   const skipped: string[] = [];
+
+  try { execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, stdio: "ignore" }); skipped.push("already a git repository"); }
+  catch { execFileSync("git", ["init", "--quiet"], { cwd: root }); done.push("started a git repository"); }
+
+  // tmp/ holds the viewer's caches; config.toml holds Linear and Slack tokens.
+  const ignore = (await readFile(join(root, ".gitignore"), "utf8").catch(() => "")).split("\n");
+  const missing = ["node_modules/", "tmp/", "config.toml"].filter(line => !ignore.includes(line));
+  if (missing.length) {
+    await writeFile(join(root, ".gitignore"), [...ignore.filter((line, i) => line || i < ignore.length - 1), ...missing, ""].join("\n"));
+    done.push(`added to .gitignore: ${missing.join(", ")}`);
+  } else skipped.push(".gitignore covers node_modules/, tmp/, config.toml");
 
   for (const dir of ["daily", "tasks", "plans", "reference"]) {
     if (await exists(dir)) skipped.push(`${dir}/ exists`);
@@ -56,5 +69,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { done, skipped } = await initWorkspace(root);
   for (const line of done) console.log(`✓ ${line}`);
   for (const line of skipped) console.log(`- skipped: ${line}`);
-  if (done.some(line => line.includes("package.json"))) console.log("Next: npm install (not pnpm), then npm run viewer.");
+  if (!await access(join(root, "node_modules/plan-viewer")).then(() => true, () => false)) console.log("Next: npm install (not pnpm), then npm run viewer.");
 }

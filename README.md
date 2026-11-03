@@ -54,11 +54,19 @@ Open <http://127.0.0.1:4173>. The demo serves [`examples/workspace/`](examples/w
 A workspace is any folder laid out like the example. To start one beside your `plan-viewer` checkout:
 
 ```bash
-mkdir planning && cd planning && git init
+mkdir planning && cd planning
 node ../plan-viewer/cli.ts init
 ```
 
-`init` creates `daily/`, `tasks/`, `plans/` and `reference/`, copies the example `AGENTS.md` and `CLAUDE.md`, and adds a `plan-viewer` dependency (`file:../plan-viewer`) and the `viewer`, `lint`, `links`, `move`, `task` and `prepare` scripts to `package.json`, creating it if needed. It never replaces an existing file or script, so it is safe to run again in a workspace that is partly set up; it prints what it created and what it skipped.
+`init` sets up what the viewer and your agents need:
+
+- a git repository, which the pre-commit hook and `lint` need;
+- a `.gitignore` for `node_modules/`, `tmp/` (the viewer's caches) and `config.toml` (Linear and Slack tokens);
+- the `daily/`, `tasks/`, `plans/` and `reference/` folders;
+- `AGENTS.md` and `CLAUDE.md` from the example workspace;
+- a `package.json` with a `plan-viewer` dependency (`file:../plan-viewer`) and the `viewer`, `lint`, `links`, `move`, `task` and `prepare` scripts.
+
+It never replaces an existing file or script, so you can run it again in a partly set up workspace. It prints what it did and what it skipped.
 
 Then run `npm install` and `npm run viewer`. Install with `npm`, not `pnpm`: pnpm copies `file:` packages into `node_modules`, where Node refuses to run TypeScript directly. The `prepare` script installs a pre-commit hook that lints staged plans and checks links.
 
