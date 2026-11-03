@@ -1,5 +1,5 @@
 // Link hygiene for planning documents: `npm run links -- [--fix] [--warm] [--refresh-slack]`.
-//   default  report broken repository links, unknown TASK IDs (minus reference/retired-tasks.md), retired daily done.md logs and Slack channels or DMs without a name
+//   default  report broken repository links, unknown TASK IDs (minus reference/retired-tasks.md), files in daily/ other than plan.md, and Slack channels or DMs without a name
 //   --fix    add newly linked Slack channel and DM IDs to reference/slack-channels.md as blank entries to fill in
 //   --warm   prefetch GitHub/Linear/Jira/Slack titles into the viewer cache and list references that resolve to nothing
 //   --refresh-slack  refresh listed and linked Slack channel names using SLACK_TOKEN or config.toml
@@ -58,9 +58,13 @@ for (const folder of (await readdir(join(ROOT, "tasks")).catch(() => [])).filter
   }
 }
 
-// Done logs are retired: progress lives on the task's status and `## Updates`, not in daily/**/done.md.
-for (const entry of await readdir(join(ROOT, "daily"), { recursive: true }).catch(() => [])) {
-  if (/(^|\/)done\.md$/i.test(entry)) errors.push(`daily/${entry}: done logs are retired; record progress on the task (status and ## Updates) and delete this file`);
+// A daily folder holds only plan.md: progress lives on the task (status and `## Updates`), documents in its assets.
+for (const entry of await readdir(join(ROOT, "daily"), { recursive: true, withFileTypes: true }).catch(() => [])) {
+  if (!entry.isFile() || entry.name === "plan.md" || entry.name.startsWith(".")) continue;
+  const path = join(entry.parentPath, entry.name).slice(ROOT.length + 1);
+  errors.push(entry.name.toLowerCase() === "done.md"
+    ? `${path}: done logs are retired; record progress on the task (status and ## Updates) and delete this file`
+    : `${path}: a daily folder holds only plan.md; move this to its task with npm run move -- ${path} TASK-NNNN`);
 }
 
 // Every linked Slack channel and DM needs a name in reference/slack-channels.md: `- C…: #channel` or `- D…: @Person`.
