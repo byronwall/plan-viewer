@@ -76,11 +76,11 @@ const iconButton = (name, tip, attrs) => `<button type="button" class="code-icon
 const copyButton = (value, tip) => iconButton("copy", tip, `data-code-copy="${escapeHtml(value)}"`);
 // One-line, width-capped branch name; click copies the full name.
 // Runs the configured `code.prPreview` command for the PR; blank slot keeps columns aligned elsewhere.
-const previewButton = (pr) => meta().previews?.includes(pr.repo) ? iconButton("preview", "Open signed-in PR deployment (D)", `data-code-preview="${pr.number}" data-repo="${escapeHtml(pr.repo)}"`) : `<span class="code-icon-button is-blank"></span>`;
+const previewButton = (pr, key = "D") => meta().previews?.includes(pr.repo) ? iconButton("preview", `Open signed-in PR deployment${key ? ` (${key})` : ""}`, `data-code-preview="${pr.number}" data-repo="${escapeHtml(pr.repo)}"`) : `<span class="code-icon-button is-blank"></span>`;
 // Starts `code.run` for a worktree, or for a PR (checked out first when it has no worktree); stops it while it runs.
-const runFor = (path) => (path && ui.data?.runs?.[path]) || null;
+const runFor = (path) => (path && meta().runs?.[path]) || null; // meta(): the Code page data, or the PR index an overview loads elsewhere
 function runButton(repo, tree, branch) {
-  if (!ui.data?.runnable?.includes(repo) || (!tree && !config().code.run?.worktree)) return `<span class="code-icon-button is-blank"></span>`;
+  if (!meta().runnable?.includes(repo) || (!tree && !config().code.run?.worktree)) return `<span class="code-icon-button is-blank"></span>`;
   const run = runFor(tree?.path);
   if (run && run.state !== "exited") return iconButton("stop", run.url ? `Stop local server at ${run.url} (L)` : "Stop local server · starting (L)", `data-code-stop-run="${escapeHtml(tree.path)}" data-run-state="${run.state}"`);
   return iconButton("play", tree ? "Run local server (L)" : "Check out a worktree and run local server (L)", `data-code-run data-path="${escapeHtml(tree?.path || "")}" data-repo="${escapeHtml(repo)}" data-branch="${escapeHtml(branch)}"`);
@@ -169,13 +169,13 @@ function aheadBehind(tree) {
   return `<span class="code-ab" data-tip="${tree.ahead} commits ahead of main, ${tree.behind} behind"><span class="${tree.ahead ? "is-ahead" : ""}">↑${tree.ahead}</span><span class="${tree.behind > 200 ? "is-far" : ""}">↓${tree.behind}</span></span>`;
 }
 
-function treeActions(tree) {
+function treeActions(tree, keys = true) { // keys: the Code page shortcuts, which mean other things inside an overview
   const url = githubUrl(tree);
   return runButton(tree.repo, tree, tree.branch)
-    + iconButton("vscode", "Open in VS Code (E)", `data-code-open="vscode" data-path="${escapeHtml(tree.path)}"`)
-    + iconButton("terminal", `Open in ${config().code.terminal.label} (X)`, `data-code-open="terminal" data-path="${escapeHtml(tree.path)}"`)
+    + iconButton("vscode", `Open in VS Code${keys ? " (E)" : ""}`, `data-code-open="vscode" data-path="${escapeHtml(tree.path)}"`)
+    + iconButton("terminal", `Open in ${config().code.terminal.label}${keys ? " (X)" : ""}`, `data-code-open="terminal" data-path="${escapeHtml(tree.path)}"`)
     + iconButton("folder", "Reveal in Finder", `data-code-open="finder" data-path="${escapeHtml(tree.path)}"`)
-    + iconButton("session", `New ${appName()} session here (S)`, `data-code-session data-path="${escapeHtml(tree.path)}"`)
+    + iconButton("session", `New ${appName()} session here${keys ? " (S)" : ""}`, `data-code-session data-path="${escapeHtml(tree.path)}"`)
     + (url ? `<a class="code-icon-button" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" aria-label="Branch on GitHub">${icon("external")}</a>` : `<span class="code-icon-button is-blank"></span>`);
 }
 
@@ -1096,6 +1096,8 @@ function ensureDiffDialog() {
     else if (key === "c" && diff.pr && !isDocScope() && diff.files?.[diff.index]) selectedLines() ? openComposer(selectedLines()) : noteOnFile(diff.index); // no selection: a note on the whole current file
     else if (/^[1-9]$/.test(key) && diffDialog.querySelectorAll(".code-side-skills [data-code-skill]:not([data-copy-prompt])")[key - 1]) diffDialog.querySelectorAll(".code-side-skills [data-code-skill]:not([data-copy-prompt])")[key - 1].click();
     else if (key === "w" && diffDialog.querySelector(diff.pr ? ".code-side-facts [data-diff-wt]" : ".code-side-facts [data-diff-pr]")) diffDialog.querySelector(diff.pr ? ".code-side-facts [data-diff-wt]" : ".code-side-facts [data-diff-pr]").click();
+    else if (key === "l" && diffDialog.querySelector(".code-side-facts :is([data-code-run], [data-code-stop-run])")) diffDialog.querySelector(".code-side-facts :is([data-code-run], [data-code-stop-run])").click();
+    else if (key === "y" && diff.pr && diffDialog.querySelector("[data-copy-pr-link]")) diffDialog.querySelector("[data-copy-pr-link]").click();
     else if (key === "v") { diffView = diffView === "all" ? "single" : "all"; storage.set("code-diff-view", diffView); renderDiff(); scrollToFile(); }
     else if (key === "m" && diffView === "single") { diff.mode = diff.mode === "rendered" ? "diff" : "rendered"; renderDiff(); }
     else if (key === "g") toggleDiffWide();
@@ -1369,7 +1371,7 @@ function wtColumn() {
     ["PR", prValue],
     [appName(), pr?.state === "OPEN" && pr.url ? sideSkills(pr, tree.path, tree) : ""],
     ["Copy", pr?.state === "OPEN" && pr.url ? sideSkills(pr, tree.path, tree, true) : ""],
-    ["Open", `<span class="code-side-tools">${treeActions(tree)}</span>`],
+    ["Open", `<span class="code-side-tools">${treeActions(tree, false)}</span>`],
   ])
     + `<section>${sideHead(tree.main ? "Recent commits" : "Commits", detail ? `${commits.length}${tree.main ? "" : ` not on ${escapeHtml(detail.base || "main")}`}` : "")}${!detail ? `<p class="code-muted">Loading…</p>` : !commits.length ? `<p class="code-muted">None. Everything committed here is on main.</p>` : scopeCommits(commits)}</section>`;
 }
@@ -1492,7 +1494,8 @@ function prFacts(pr, tree, wtPath, overlay = false) {
     ["Reviews", prReviewers(pr)],
     [appName(), open ? sideSkills(pr, tree?.path || pr.repo, tree) : ""],
     ["Copy", open ? sideSkills(pr, tree?.path || pr.repo, tree, true) : ""],
-    ["Local", wtPath ? `<span class="code-side-tools">${iconButton("branch", `Worktree overview${overlay ? " (W)" : ""}`, `data-diff-wt="${escapeHtml(wtPath)}"`)}${tree ? treeActions(tree) : ""}</span>` : open && ui.data ? `<span class="code-side-tools">${runButton(pr.repo, null, pr.branch)}</span><span class="code-muted">Not checked out</span>` : ""],
+    ["Open", overlay && pr.url ? `<span class="code-side-tools">${meta().previews?.includes(pr.repo) ? previewButton(pr, "") : ""}${iconButton("copy", "Copy PR link (Y)", `data-code-copy="${escapeHtml(pr.url)}" data-copy-pr-link`)}<a class="code-icon-button" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer" data-tip="Open PR on GitHub" aria-label="Open PR on GitHub">${icon("external")}</a></span>` : ""],
+    ["Local", wtPath ? `<span class="code-side-tools">${iconButton("branch", `Worktree overview${overlay ? " (W)" : ""}`, `data-diff-wt="${escapeHtml(wtPath)}"`)}${tree ? treeActions(tree, !overlay) : ""}</span>` : open ? `<span class="code-side-tools">${runButton(pr.repo, null, pr.branch)}</span><span class="code-muted">Not checked out</span>` : ""],
   ]);
 }
 
@@ -1500,10 +1503,10 @@ function prColumn() {
   const { slug, number, key } = diff.pr;
   const pr = prInfo(slug, number);
   const detail = ui.detail.get(`pr:${key}`);
-  const tree = ui.data && pr.branch ? worktreeFor(pr) : null;
+  const wtPath = (ui.data && pr.branch && worktreeFor(pr)?.path) || detail?.worktree;
+  const tree = wtPath ? (ui.data && worktreeFor(pr)) || { repo: pr.repo, path: wtPath, branch: pr.branch } : null; // off the Code page, the PR detail names its worktree
   const { stack, current } = prStack();
   const commits = detail?.commits;
-  const wtPath = tree?.path || detail?.worktree;
   return prFacts(pr, tree, wtPath, true)
     + prPlanning(slug, number, pr)
     + notesSection(pr, tree?.path || pr.repo || "")
@@ -2590,35 +2593,37 @@ async function load(refresh = false) {
 let runTimer = 0;
 async function pollRuns() {
   window.clearTimeout(runTimer);
-  const paths = Object.keys(ui.data?.runs || {});
-  if (!paths.length || !host?.isConnected) return;
+  const runs = meta().runs ||= {};
+  const paths = Object.keys(runs);
+  if (!paths.length || !(host?.isConnected || diffDialog?.open)) return;
   const results = await Promise.all(paths.map((path) => fetch(`/api/code/run?path=${encodeURIComponent(path)}`).then((response) => response.json()).catch(() => null)));
   paths.forEach((path, index) => {
     const next = results[index];
     if (!next) return;
-    if (next.state === "stopped") { delete ui.data.runs[path]; ui.runLogs.delete(path); return; }
-    if (next.url && !ui.data.runs[path]?.url) notify(`Local server for ${shortPath(path)} is up at ${next.url}`);
+    if (next.state === "stopped") { delete runs[path]; ui.runLogs.delete(path); return; }
+    if (next.url && !runs[path]?.url) notify(`Local server for ${shortPath(path)} is up at ${next.url}`);
     const { log, command, ...run } = next;
-    ui.data.runs[path] = run;
+    runs[path] = run;
     ui.runLogs.set(path, log);
   });
   render();
   if (diffDialog?.open) renderDiff();
-  const live = Object.values(ui.data.runs).filter((run) => run.state !== "exited");
+  const live = Object.values(runs).filter((run) => run.state !== "exited");
   if (live.length) runTimer = window.setTimeout(pollRuns, live.some((run) => run.state === "starting") ? 1000 : 4000);
 }
 
 async function startRun({ path, repo, branch }) {
   notify(path ? `Starting the local server in ${shortPath(path)}…` : `Checking out ${branch} into a new worktree, then starting its local server. Setup can take a few minutes.`);
   const run = await post("run", path ? { path } : { repo, branch });
-  ui.data.runs = { ...ui.data.runs, [run.path]: run };
+  const data = meta();
+  data.runs = { ...data.runs, [run.path]: run };
   if (!path) await load(); // the new worktree joins the list
   else pollRuns();
 }
 
 async function stopRun(path) {
   await post("stop-run", { path });
-  delete ui.data.runs[path];
+  delete meta().runs?.[path];
   ui.runLogs.delete(path);
   render();
   if (diffDialog?.open) renderDiff();
