@@ -586,7 +586,7 @@ function renderDetail({ animate = false } = {}) {
 // `handleIssueClick`. `loadIssueDetail` resolves once the description and comments are in.
 export const issueInspector = (key) => {
   const issue = ui.data && byKey().get(key);
-  return issue ? `<div class="code-detail-head">${typeIcon(issue)}<h3>${keyMark(issue)} ${escapeHtml(issue.summary)}</h3></div>${issueFacts(issue)}${codeSection(issue)}${relationsSection(issue)}${textSections(issue, false)}` : "";
+  return issue ? `<div class="code-detail-head">${typeIcon(issue)}<h3><a class="code-pr-link" href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in ${trackerName(issue)} (O)">${keyMark(issue) || escapeHtml(issue.key)}</a> ${escapeHtml(issue.summary)}</h3></div>${issueFacts(issue)}${codeSection(issue)}${relationsSection(issue)}${textSections(issue, false)}` : "";
 };
 export const loadIssueDetail = (key) => loadDetail(key);
 export const issueLink = (key) => issueUrl(key);
@@ -648,7 +648,7 @@ function renderOverview() {
   const position = overview.list.indexOf(issue.key);
   const walk = position >= 0 && overview.list.length > 1 ? `<span class="code-muted">${position + 1} of ${overview.list.length} · <kbd>J</kbd><kbd>K</kbd> walk · <kbd>X</kbd> seen and next</span>` : "";
   const where = issue.source === "linear" ? `Linear · ${issue.project} team${issue.mirrorOf ? ` · synced copy of ${issue.mirrorOf}` : ""}` : issue.source === "github" ? `GitHub · ${issue.project}${issue.components.length ? ` · ${issue.components.join(", ")}` : ""}` : `${issue.project} · ${issue.components.join(", ") || "no component"}`;
-  dialog.querySelector('[data-o="head"]').innerHTML = `${typeIcon(issue)}<div class="issue-overview-title"><h3>${keyMark(issue)} ${escapeHtml(issue.summary)}</h3><p class="code-muted">${escapeHtml(where)}${issue.inScope ? "" : " · outside the configured scope"}${isSeen(issue) ? " · seen" : ""}</p></div><span class="code-spacer"></span>${walk}${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
+  dialog.querySelector('[data-o="head"]').innerHTML = `${typeIcon(issue)}<div class="issue-overview-title"><h3><a class="code-pr-link" href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in ${trackerName(issue)} (O)">${keyMark(issue) || escapeHtml(issue.key)}</a> ${escapeHtml(issue.summary)}</h3><p class="code-muted">${escapeHtml(where)}${issue.inScope ? "" : " · outside the configured scope"}${isSeen(issue) ? " · seen" : ""}</p></div><span class="code-spacer"></span>${walk}${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
   dialog.querySelector('[data-o="side"]').innerHTML = issueFacts(issue, true) + codeSection(issue) + relationsSection(issue, true);
   dialog.querySelector('[data-o="main"]').innerHTML = `<div class="issue-overview-text">${textSections(issue, true)}</div>`;
 }
@@ -803,7 +803,7 @@ function select(key, scroll = false) {
   if (scroll) host.querySelector(`[data-issue-row="${CSS.escape(key)}"]`)?.scrollIntoView({ block: "nearest" });
   renderDetail({ animate: !scroll });
 }
-const rowKeys = () => [...new Set([...host.querySelectorAll(".code-list [data-issue-row]")].map((row) => row.dataset.issueRow))];
+const rowKeys = () => [...new Set([...(host?.querySelectorAll(".code-list [data-issue-row]") || [])].map((row) => row.dataset.issueRow))];
 function move(step) {
   const keys = rowKeys();
   if (!keys.length) return;
