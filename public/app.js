@@ -1494,14 +1494,14 @@ function documentBreadcrumb(doc) {
   return [root, copyCrumb(doc.path, doc.path.replace(/^(plans|reference)\//, ""))].filter(Boolean).join(crumbSeparator);
 }
 
-// A task and its documents read in order: ‹ 3 of 14 › beside the crumbs, and P / N.
+// A task and its documents read in order: ‹ 3 of 14 › beside the crumbs, and P / N, wrapping from the last to the first.
 function documentStepper(doc) {
   const sequence = taskDocumentSequence(doc.path, state.documents);
   const index = sequence.findIndex((candidate) => candidate.path === doc.path);
   if (sequence.length < 2 || index < 0) return "";
   const step = (direction, glyph, label, key) => {
-    const target = sequence[index + direction];
-    return `<button class="crumb doc-step" type="button" data-doc-step="${direction}" aria-label="${label} (${key})${target ? `: ${escapeHtml(target.title)}` : ""}"${target ? "" : " disabled"}>${glyph}</button>`;
+    const target = sequence.at((index + direction) % sequence.length);
+    return `<button class="crumb doc-step" type="button" data-doc-step="${direction}" aria-label="${label} (${key}): ${escapeHtml(target.title)}">${glyph}</button>`;
   };
   return `<span class="doc-stepper">${step(-1, "‹", "Previous document", "P")}<span>${index + 1} of ${sequence.length}</span>${step(1, "›", "Next document", "N")}</span>`;
 }
@@ -1510,9 +1510,7 @@ function stepTaskDocument(direction) {
   const sequence = path ? taskDocumentSequence(path, state.documents) : [];
   const index = sequence.findIndex((candidate) => candidate.path === path);
   if (index < 0) return showNotice("N and P step through a task's documents; open a task or one of its documents first.");
-  const target = sequence[index + direction];
-  if (!target) return showNotice(direction > 0 ? "That was the last document." : "This is the first one.");
-  selectDocument(target.path);
+  selectDocument(sequence.at((index + direction) % sequence.length).path);
 }
 
 function renderDocument() {

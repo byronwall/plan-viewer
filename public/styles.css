@@ -118,7 +118,6 @@ button { cursor: pointer; }
 .doc-stepper > span { min-width: 6ch; text-align: center; }
 .doc-stepper .doc-step { margin: 0; padding: 1px 6px; color: var(--muted); font-size: .9rem; line-height: 1; }
 .doc-stepper .doc-step:hover { color: var(--action-ink); }
-.doc-stepper .doc-step:disabled { color: var(--line-strong); background: none; cursor: default; }
 .crumb-siblings { display: inline-flex; gap: 2px; margin-left: 6px; border-radius: 7px; background: var(--quiet-field); padding: 2px; }
 .crumb-siblings .crumb { max-width: 24ch; margin: 0; padding: 2px 8px; color: var(--muted); }
 .crumb-siblings .crumb:hover { background: rgba(255, 255, 255, .6); color: var(--ink); }
