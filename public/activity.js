@@ -1,7 +1,7 @@
 // Activity page: every planning document, tracked issue and open PR in one list, newest touch first, with an inspector
 // beside it so a click reads the item in place. Documents carry their file mtime, issues their latest sync activity
 // (or Jira/Linear `updated`), PRs GitHub's `updatedAt`, Slack threads their last message.
-import { SERVICE_ICONS, documentHref, escapeHtml, renderMarkdown } from "./markdown.js";
+import { SERVICE_ICONS, diagramHref, documentHref, escapeHtml, renderMarkdown } from "./markdown.js";
 import { GLYPHS, glyph } from "./icons.js";
 import { config, issuesOn } from "./config.js";
 import { handleIssueClick, issueInspector, issueLink, loadIssueDetail, loadIssues, openIssue } from "./issues.js";
@@ -11,16 +11,16 @@ import { avatar, ciBadge, copied, diffSize, fadeIn, hideTip, icon, iconButton, l
 
 const DAY = 86_400_000;
 const STRIP_DAYS = 14;
-export const SOURCES = { all: "All", tasks: "Tasks", daily: "Daily", topics: "Docs", jira: "Jira", linear: "Linear", github: "Issues", prs: "PRs", slack: "Slack" };
+export const SOURCES = { all: "All", tasks: "Tasks", daily: "Daily", topics: "Docs", diagrams: "Diagrams", jira: "Jira", linear: "Linear", github: "Issues", prs: "PRs", slack: "Slack" };
 const RANGES = { day: ["24h", DAY], week: ["7d", 7 * DAY], month: ["30d", 30 * DAY], all: ["All", Infinity] };
-const SOURCE_ICONS = { tasks: SERVICE_ICONS.task, daily: glyph("calendar", "service-icon is-stroke"), topics: glyph("file-text", "service-icon is-stroke"), jira: SERVICE_ICONS.jira, linear: SERVICE_ICONS.linear, github: SERVICE_ICONS.github, prs: SERVICE_ICONS.github, slack: SERVICE_ICONS.slack };
+const SOURCE_ICONS = { tasks: SERVICE_ICONS.task, daily: glyph("calendar", "service-icon is-stroke"), topics: glyph("file-text", "service-icon is-stroke"), diagrams: glyph("layout-panel-left", "service-icon is-stroke"), jira: SERVICE_ICONS.jira, linear: SERVICE_ICONS.linear, github: SERVICE_ICONS.github, prs: SERVICE_ICONS.github, slack: SERVICE_ICONS.slack };
 const DOC_SOURCE = { Tasks: "tasks", "Task documents": "tasks", Today: "daily", Daily: "daily", Topics: "topics", Reference: "topics" };
 // State tones: what the colored state cell means at a glance.
 const TASK_TONES = { active: "progress", open: "quiet", waiting: "wait", blocked: "fail", completed: "pass", done: "pass", cancelled: "quiet", deferred: "quiet" };
 const ISSUE_TONES = { new: "quiet", indeterminate: "progress", done: "pass" };
 const PR_STATES = { APPROVED: ["Approved", "pass"], CHANGES_REQUESTED: ["Changes requested", "fail"], REVIEW_REQUIRED: ["Needs review", "wait"] };
 
-const ui = { host: null, documents: [], changes: [], issues: null, prs: null, slack: null, source: "all", range: "week", day: "", query: "", mine: false, sel: "", visible: [], docCache: new Map(), prCache: new Map(), openDocument: () => {}, timer: 0 };
+const ui = { host: null, documents: [], changes: [], diagrams: null, openDiagram: () => {}, issues: null, prs: null, slack: null, source: "all", range: "week", day: "", query: "", mine: false, sel: "", visible: [], docCache: new Map(), prCache: new Map(), openDocument: () => {}, timer: 0 };
 
 const localDay = (time) => { const date = new Date(time); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; };
 const dayStart = (key) => new Date(`${key}T00:00:00`).getTime();
@@ -57,6 +57,19 @@ function rows() {
       context: escapeHtml(where), state: task ? stateHtml(task.status, TASK_TONES[task.status] || "quiet") : "",
       who: change?.source === "agent" ? `<span class="activity-agent" data-tip="Edited by an agent">${icon("session")}</span>` : "",
       mine: true, text: `${task?.id || ""} ${task?.title || doc.title} ${doc.path} ${task?.project || ""} ${task?.status || ""}`,
+    });
+  }
+  // Diagrams by their source file's save time, under the task whose assets hold them.
+  for (const diagram of ui.diagrams || []) {
+    const owner = diagram.task && ui.documents.find((doc) => doc.path === `tasks/${diagram.task}.md`);
+    const task = owner?.task;
+    out.push({
+      id: `diagram:${diagram.path}`, kind: "diagram", source: "diagrams", at: diagram.modified, diagram, owner,
+      href: `?${new URLSearchParams({ ...(owner ? { path: owner.path } : {}), diagram: diagram.path })}`,
+      label: diagram.task, title: diagram.title,
+      event: `saved <span class="activity-path">${escapeHtml(diagram.path.split("/").pop())}</span>${diagram.subtitle ? ` <span class="activity-quote">${escapeHtml(diagram.subtitle)}</span>` : ""}`,
+      context: escapeHtml(task ? task.title : diagram.path.replace(/\/[^/]+$/, "/")), state: task ? stateHtml(task.status, TASK_TONES[task.status] || "quiet") : "", who: "",
+      mine: true, text: `${diagram.title} ${diagram.subtitle} ${diagram.path} ${diagram.task} ${task?.title || ""} ${task?.project || ""}`,
     });
   }
   if (ui.issues) {
@@ -185,7 +198,7 @@ function renderInspector() {
     pane.innerHTML = `<p class="code-detail-empty">Select a row to read it here.<br><br><kbd>J</kbd><kbd>K</kbd> move · <kbd>Enter</kbd> open in full · <kbd>O</kbd> new tab · <kbd>Y</kbd> copy link · <kbd>←</kbd><kbd>→</kbd> day · <kbd>F</kbd> filter · <kbd>Esc</kbd> clear</p>`;
     return;
   }
-  pane.innerHTML = row.kind === "slack" ? threadDetail(row.slack) : row.kind === "doc" ? docPanel(row) : row.kind === "pr" ? prPanel(row) : issueInspector(row.issue.key) || `<p class="code-muted">Loading issue…</p>`;
+  pane.innerHTML = row.kind === "diagram" ? diagramPanel(row) : row.kind === "slack" ? threadDetail(row.slack) : row.kind === "doc" ? docPanel(row) : row.kind === "pr" ? prPanel(row) : issueInspector(row.issue.key) || `<p class="code-muted">Loading issue…</p>`;
   pane.scrollTop = 0;
   fadeIn(pane, 140);
   const again = () => { if (ui.sel === row.id && ui.host?.isConnected) { const top = pane.scrollTop; pane.innerHTML = row.kind === "doc" ? docPanel(row) : row.kind === "pr" ? prPanel(row) : issueInspector(row.issue.key); pane.scrollTop = top; } };
@@ -209,6 +222,19 @@ function docPanel(row) {
   const markdown = body?.markdown?.replace(/^---\n[\s\S]*?\n---\n/, "").replace(/^\s*# .*\n/, "") || ""; // the title is in the header
   const preview = body ? `<section>${sideHead(task ? "Task" : doc.kind)}<div class="markdown activity-preview">${renderMarkdown(markdown, doc.path)}</div></section>` : `<section><p class="code-muted">Loading…</p></section>`;
   return `<div class="code-detail-head"><span class="activity-head-icon src-${row.source}">${SOURCE_ICONS[row.source]}</span><h3>${row.label ? `<code>${escapeHtml(row.label)}</code> ` : ""}${escapeHtml(row.title)}</h3>${tools("Open document", "", new URL(documentHref(doc.path, ""), location.href).href)}</div>${facts}${changed}${preview}`;
+}
+
+// A diagram reads as its drawing, large, with the task it belongs to; a click on it opens the viewer beside its source.
+function diagramPanel(row) {
+  const { diagram, owner } = row;
+  const task = owner?.task;
+  const facts = sideFacts([
+    ["Task", owner ? `<a class="markdown-document-link" href="${escapeHtml(documentHref(owner.path, ""))}" data-document-path="${escapeHtml(owner.path)}" data-document-anchor=""><code>${escapeHtml(task.id)}</code> ${escapeHtml(task.title)}</a>` : ""],
+    ["Status", task ? stateHtml(task.status, TASK_TONES[task.status] || "quiet") : ""],
+    ["Saved", `${when(diagram.modified)} ago<span class="code-muted">${escapeHtml(new Date(diagram.modified).toLocaleString())}</span>`],
+    ["Path", `<code>${escapeHtml(diagram.path)}</code>`],
+  ]);
+  return `<div class="code-detail-head"><span class="activity-head-icon src-diagrams">${SOURCE_ICONS.diagrams}</span><h3>${escapeHtml(diagram.title)}</h3>${tools("Open beside its source", "", new URL(row.href, location.href).href)}</div>${diagram.subtitle ? `<p class="activity-diagram-subtitle">${escapeHtml(diagram.subtitle)}</p>` : ""}<button type="button" class="activity-diagram" data-activity-expand aria-label="Open ${escapeHtml(diagram.title)} beside its source"><img src="${escapeHtml(diagramHref(diagram.path))}" alt="${escapeHtml(diagram.title)}"></button>${facts}`;
 }
 
 function prPanel(row) {
@@ -250,6 +276,7 @@ function move(step) {
 
 function openFull(row = selectedRow()) {
   if (!row) return;
+  if (row.diagram) return ui.openDiagram(row.diagram.path);
   if (row.doc) return ui.openDocument(row.doc.path, row.change?.sections[0]?.anchor || "");
   if (row.issue) return openIssue(row.issue.key, ui.visible.filter((candidate) => candidate.issue).map((candidate) => candidate.issue.key));
   if (row.slack) return openSlackThread(permalink(row.slack), "", { list: ui.visible.filter((candidate) => candidate.slack).map((candidate) => permalink(candidate.slack)), onStep: (href) => select(ui.visible.find((candidate) => candidate.slack && permalink(candidate.slack) === href)?.id, true) });
@@ -265,10 +292,10 @@ function stepDay(step) {
   render();
 }
 
-export function renderActivityPage(container, documents, { openDocument } = {}) {
+export function renderActivityPage(container, documents, { openDocument, openDiagram } = {}) {
   const params = new URLSearchParams(location.search);
   const fresh = ui.host !== container || !container.querySelector(".activity-surface");
-  Object.assign(ui, { host: container, documents, ...(openDocument ? { openDocument } : {}) });
+  Object.assign(ui, { host: container, documents, ...(openDocument ? { openDocument } : {}), ...(openDiagram ? { openDiagram } : {}) });
   if (fresh) Object.assign(ui, { source: params.get("source") in SOURCES ? params.get("source") : "all", range: params.get("range") in RANGES ? params.get("range") : "week", day: /^\d{4}-\d{2}-\d{2}$/.test(params.get("day") || "") ? params.get("day") : "", query: params.get("q") || "", mine: params.get("mine") === "1", sel: params.get("sel") || "", inspected: null });
   if (fresh) container.innerHTML = "";
   render();
@@ -279,6 +306,7 @@ export function renderActivityPage(container, documents, { openDocument } = {}) 
 }
 
 function refresh() {
+  fetch("/api/diagrams").then((response) => response.json()).then((body) => { ui.diagrams = body.diagrams || []; render(); }).catch(() => {});
   fetch("/api/changes").then((response) => response.json()).then((body) => { ui.changes = body.changes || []; render(); }).catch(() => {});
   if (issuesOn()) fetch("/api/issues").then((response) => response.json()).then((data) => { ui.issues = data; render(); }).catch(() => {});
   loadPrIndex().then((data) => { ui.prs = data; render(); }).catch(() => {});
@@ -347,8 +375,8 @@ window.addEventListener("keydown", (event) => {
     arrowleft: () => stepDay(-1), arrowright: () => stepDay(1),
     enter: () => openFull(),
     f: () => ui.host.querySelector("[data-activity-filter]")?.focus(),
-    o: () => row && window.open(row.pr?.url || (row.slack && permalink(row.slack)) || (row.issue && issueLink(row.issue.key)) || (row.doc ? documentHref(row.doc.path, "") : ""), "_blank", "noreferrer"),
-    y: () => row && navigator.clipboard.writeText(row.pr?.url || (row.slack && permalink(row.slack)) || (row.issue && issueLink(row.issue.key)) || new URL(documentHref(row.doc.path, ""), location.href).href),
+    o: () => row && window.open(row.diagram ? row.href : row.pr?.url || (row.slack && permalink(row.slack)) || (row.issue && issueLink(row.issue.key)) || (row.doc ? documentHref(row.doc.path, "") : ""), "_blank", "noreferrer"),
+    y: () => row && navigator.clipboard.writeText(row.diagram ? new URL(row.href, location.href).href : row.pr?.url || (row.slack && permalink(row.slack)) || (row.issue && issueLink(row.issue.key)) || new URL(documentHref(row.doc.path, ""), location.href).href),
     escape: () => { if (!ui.day && !ui.query && !ui.mine && ui.source === "all") return; Object.assign(ui, { day: "", query: "", mine: false, source: "all" }); syncUrl(); render(); },
   };
   const action = actions[event.key.toLowerCase()];

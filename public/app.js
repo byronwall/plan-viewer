@@ -730,7 +730,7 @@ function renderActivity() {
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
   elements.chunks.classList.add("code-page", "activity-page");
-  renderActivityPage(elements.chunks, state.documents, { openDocument: (path, anchor) => selectDocument(path, { historyMode: "push", anchor }) });
+  renderActivityPage(elements.chunks, state.documents, { openDocument: (path, anchor) => selectDocument(path, { historyMode: "push", anchor }), openDiagram: (path) => openDiagram(path) });
 }
 
 function composerTemplate(target) {
