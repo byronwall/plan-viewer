@@ -86,9 +86,10 @@ function prMark(pr) {
 function codeChips(issue) {
   const { prs, worktrees } = codeOf(issue);
   const open = prs.filter((pr) => pr.state === "OPEN");
-  const shown = (open.length ? open : prs).slice(0, 2);
+  // One PR (the newest open one, else the newest) and a count; the inspector lists them all.
+  const shown = (open.length ? open : prs).slice(0, 1);
   const more = prs.length - shown.length;
-  return `${shown.map(prMark).join("")}${more > 0 ? `<span class="code-muted" data-tip="${escapeHtml(prs.slice(2).map((pr) => `#${pr.number}`).join(", "))}">+${more}</span>` : ""}${worktrees.length ? `<span class="issue-local" data-tip="${escapeHtml(`Local worktree: ${worktrees.map((tree) => tree.branch).join(", ")}`)}">${icon("local")}</span>` : ""}${!prs.length && issue.prCount ? `<span class="code-muted" data-tip="Jira's development panel sees ${issue.prCount} ${issue.prCount === 1 ? "PR" : "PRs"} (${escapeHtml(issue.prState.toLowerCase())}) the viewer can't match">${issue.prCount} in Jira</span>` : ""}`;
+  return `${shown.map(prMark).join("")}${more > 0 ? `<span class="code-muted" data-tip="${escapeHtml(prs.filter((pr) => !shown.includes(pr)).map((pr) => `#${pr.number}`).join(", "))}">+${more}</span>` : ""}${worktrees.length ? `<span class="issue-local" data-tip="${escapeHtml(`Local worktree: ${worktrees.map((tree) => tree.branch).join(", ")}`)}">${icon("local")}</span>` : ""}${!prs.length && issue.prCount ? `<span class="code-muted" data-tip="Jira's development panel sees ${issue.prCount} ${issue.prCount === 1 ? "PR" : "PRs"} (${escapeHtml(issue.prState.toLowerCase())}) the viewer can't match">${issue.prCount} in Jira</span>` : ""}`;
 }
 
 // ---------- lists ----------
@@ -132,7 +133,7 @@ function issueRow(issue, { columns = COLUMNS, inGroup = false } = {}) {
   const key = issue.key;
   const cells = {
     "issue-col-check": () => `<input type="checkbox" data-issue-select="${escapeHtml(key)}" aria-label="Select ${escapeHtml(label(issue))}" ${ui.selected.has(key) ? "checked" : ""}>`,
-    "code-col-skills": () => skillButtons([key]),
+    "code-col-skills": () => skillTrigger([key]),
     "issue-col-priority": () => priorityIcon(issue),
     "issue-col-key": () => `<span class="issue-key-cell">${typeIcon(issue)}${inGroup ? shortKey(issue) : keyCell(issue)}</span>`,
     "code-col-main": () => `<div class="code-pr-title">${escapeHtml(issue.summary)}</div>${parentLine(issue)}`,
@@ -162,7 +163,7 @@ function grouped(issues, row, columns) {
   return `<table class="code-table issue-table">${tableHead(columns)}${sections}</table>`;
 }
 const PRIORITY_HEAD = `<span class="issue-priority-head" aria-label="Priority"><svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${PRIORITY.Urgent[1]}"/></svg></span>`;
-const COLUMNS = [["issue-col-priority", PRIORITY_HEAD], ["issue-col-key", "Issue"], ["code-col-main", "Title"], ["issue-col-status", "Status"], ["issue-col-person", "Reporter → Assignee"], ["issue-col-code", "Code"], ["code-col-when", "Updated"]];
+const COLUMNS = [["issue-col-priority", PRIORITY_HEAD], ["issue-col-key", "Issue"], ["code-col-main", "Title"], ["issue-col-status", "Status"], ["issue-col-person", "Assignee"], ["issue-col-code", "Code"], ["code-col-when", "Updated"]];
 // A column that would be blank, or the same, on every row stays out: GitHub issues carry no priority, a solo
 // repository has no assignees, and an all-open list needs no status.
 function columnsFor(issues) {
@@ -179,7 +180,7 @@ const checkHead = (issues) => {
   const picked = issues.filter((issue) => ui.selected.has(issue.key)).length;
   return `<input type="checkbox" data-issue-select-all aria-label="Select every issue shown" ${picked && picked === issues.length ? "checked" : ""}${picked && picked < issues.length ? " data-indeterminate" : ""}>`;
 };
-const withPicks = (issues, columns) => [["issue-col-check", checkHead(issues)], ...columns, ["code-col-skills", `Send to ${appName()}`]];
+const withPicks = (issues, columns) => [["issue-col-check", checkHead(issues)], ...columns, ["code-col-skills", ""]];
 // "repo" when every issue is a GitHub one, else "project" (a Jira project or a Linear team).
 const groupNoun = (issues) => (issues.every((issue) => issue.source === "github") ? "repo" : "project");
 const done = (issue) => issue.category === "done";
@@ -197,7 +198,7 @@ function byProject(issues, columns) {
     const home = sorted[0].source === "github" ? sorted[0].url.replace(/\/issues\/\d+$/, "/issues") : "";
     const picked = sorted.filter((issue) => ui.selected.has(issue.key)).length;
     const pick = `<th class="issue-col-check"><input type="checkbox" data-issue-select-group="${escapeHtml(project)}" aria-label="Select every ${escapeHtml(project)} issue shown" ${picked === sorted.length ? "checked" : ""}${picked && picked < sorted.length ? " data-indeterminate" : ""}></th>`;
-    const head = `<tr class="code-group-row issue-project-row">${pick}<th colspan="${columns.length - 3}"><button type="button" class="issue-project-toggle" data-issue-collapse="${escapeHtml(project)}" aria-expanded="${!collapsed}"><svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg><span class="issue-project-name">${escapeHtml(project)}</span><span class="issue-project-count">${[sorted.length - closed && `${sorted.length - closed} open`, closed && `${closed} closed`].filter(Boolean).join(" · ")}</span></button>${home ? `<a class="issue-project-link" href="${escapeHtml(home)}" target="_blank" rel="noreferrer" data-tip="${escapeHtml(project)} issues on GitHub">${icon("external")}</a>` : ""}</th><th class="code-col-when code-heat-${heat(latest)}" data-tip="Latest update in ${escapeHtml(project)}">${when(latest)}</th><th class="code-col-skills">${skillButtons(sorted.map((issue) => issue.key), project)}</th></tr>`;
+    const head = `<tr class="code-group-row issue-project-row">${pick}<th colspan="${columns.length - 3}"><button type="button" class="issue-project-toggle" data-issue-collapse="${escapeHtml(project)}" aria-expanded="${!collapsed}"><svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg><span class="issue-project-name">${escapeHtml(project)}</span><span class="issue-project-count">${[sorted.length - closed && `${sorted.length - closed} open`, closed && `${closed} closed`].filter(Boolean).join(" · ")}</span></button>${home ? `<a class="issue-project-link" href="${escapeHtml(home)}" target="_blank" rel="noreferrer" data-tip="${escapeHtml(project)} issues on GitHub">${icon("external")}</a>` : ""}</th><th class="code-col-when code-heat-${heat(latest)}" data-tip="Latest update in ${escapeHtml(project)}">${when(latest)}</th><th class="code-col-skills">${skillTrigger(sorted.map((issue) => issue.key), project)}</th></tr>`;
     return { latest, html: `<tbody>${head}${collapsed ? "" : sorted.map((issue) => issueRow(issue, { columns, inGroup: true })).join("")}</tbody>` };
   }).sort((a, b) => b.latest.localeCompare(a.latest));
   return `<table class="code-table issue-table">${tableHead(columns)}${sections.map((section) => section.html).join("")}${quietRepos(issues, columns)}</table>`;
@@ -339,12 +340,15 @@ function activityBody() {
 
 // ---------- inspector and overview ----------
 
-// `scope` names what the keys are ("explorEDA" for a repository's header); one issue's buttons answer to 1–N.
-// `copy` is the Copy row: the same skills, copying the prompt instead of opening a draft.
-function skillButtons(keys, scope = "", copy = false) {
+// `scope` names what the keys are ("explorEDA" for a repository's header); one issue's skills answer to 1–N.
+// Each skill is a labeled row that opens the draft, with a copy button for the bare prompt.
+function skillList(keys, scope = "") {
   const what = scope ? ` all ${keys.length} ${scope} issues` : keys.length > 1 ? ` ${keys.length} issues` : "";
-  return (ui.data.skills || []).map((skill, index) => iconButton(skill.icon || "review", copy ? `Copy the ${skill.label}${what} prompt, to paste into an open chat` : `${skill.label}${what} in ${appName()}${scope ? "" : ` (${index + 1})`} · ${altKey}-click copies the prompt`, `${copy ? "data-copy-prompt " : ""}data-issue-skill="${escapeHtml(skill.id)}" data-keys="${escapeHtml(keys.join(","))}"`)).join("");
+  const attrs = (skill) => `data-issue-skill="${escapeHtml(skill.id)}" data-keys="${escapeHtml(keys.join(","))}"`;
+  return `<ul class="issue-skill-list code-side-skills">${(ui.data.skills || []).map((skill, index) => `<li><button type="button" class="issue-skill-row" ${attrs(skill)}>${icon(skill.icon || "review")}<span>${escapeHtml(skill.label)}</span>${scope || keys.length > 1 ? "" : `<kbd>${index + 1}</kbd>`}</button>${iconButton("copy", `Copy the ${skill.label}${what} prompt, to paste into an open chat`, `data-copy-prompt ${attrs(skill)}`)}</li>`).join("")}</ul>`;
 }
+// A row (or a repository header) carries one button; the menu it opens is the labeled list.
+const skillTrigger = (keys, scope = "") => ui.data.skills?.length ? iconButton("session", `Send ${scope ? `all ${keys.length} ${scope} issues` : "to"} ${appName()}…`, `data-issue-skills="${escapeHtml(keys.join(","))}" data-scope="${escapeHtml(scope)}"`) : "";
 // The selection's own bar: labeled drafts for every picked issue, then Clear.
 function bulkBar() {
   if (!ui.selected.size) return "";
@@ -368,8 +372,7 @@ function issueFacts(issue, overlay = false) {
     ["Initiative", (issue.initiatives || []).map((item) => `<a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.name)}</a>`).join("")],
     ["Labels", issue.labels.filter((label) => !aliases.includes(label.toUpperCase())).map((label) => `<span class="code-tag">${escapeHtml(label)}</span>`).join("")],
     ["Was", aliases.map((alias) => `<code>${escapeHtml(alias)}</code>`).join(" ")],
-    [appName(), `<span class="code-side-skills">${skillButtons(keys)}</span>`],
-    ["Copy", `<span class="code-side-skills">${skillButtons(keys, "", true)}</span>`],
+    [appName(), ui.data.skills?.length ? skillList(keys) : ""],
     [trackerName(issue), `<span class="code-side-tools"><a class="code-icon-button" href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in ${trackerName(issue)} (O)" aria-label="Open in ${trackerName(issue)}">${icon("external")}</a>${iconButton("copy", "Copy link (Y)", `data-issue-copy="${escapeHtml(issueUrl(issue.key))}"`)}${overlay ? "" : iconButton("expand", "Open overview (Enter)", `data-issue-open="${escapeHtml(issue.key)}"`)}</span>`],
   ]);
 }
@@ -463,7 +466,7 @@ function migrationRow(group) {
 function migrationBody() {
   const groups = migrationGroups().filter((group) => group.kind === ui.migration);
   if (!groups.length) return emptyState(MIGRATION[ui.migration].toLowerCase());
-  const columns = [["issue-col-check", ""], ["code-col-main", "Title"], ["issue-col-side", "Linear"], ["issue-col-relation", ""], ["issue-col-side", "Jira"], ["issue-col-person", "Reporter → Assignee"], ["code-col-when", "Updated"]];
+  const columns = [["issue-col-check", ""], ["code-col-main", "Title"], ["issue-col-side", "Linear"], ["issue-col-relation", ""], ["issue-col-side", "Jira"], ["issue-col-person", "Assignee"], ["code-col-when", "Updated"]];
   const note = { linear: "Open Linear issues and projects with no Jira copy: what's left to migrate.", drift: "Linked across trackers, but at different stages: in progress on one side and in the backlog or finished on the other.", copies: "Jira issues the two-way sync copied into Linear, where the copy is still open: duplicates to close in Linear.", title: "No sync or import marker, but the same title: likely duplicates to confirm.", linked: "Linked by the sync or the import and in step." }[ui.migration];
   return `<p class="code-muted issue-migration-note">${note}</p>${grouped(groups.map((group) => ({ ...group.primary, updated: group.updated, group })), (item) => migrationRow(item.group), columns)}`;
 }
@@ -736,7 +739,7 @@ function patch(region, html) {
 function render({ animate = false } = {}) {
   if (!host?.isConnected || !ui.data?.enabled || !host.querySelector(".issue-surface, .issue-loading")) return;
   if (!host.querySelector(".issue-surface")) {
-    host.innerHTML = `<section class="issue-surface" aria-label="Issues"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="issue-people" class="code-settings code-branch-pop issue-people-pop" popover aria-label="Filter by person" data-region="people"></div></section>`;
+    host.innerHTML = `<section class="issue-surface" aria-label="Issues"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="issue-people" class="code-settings code-branch-pop issue-people-pop" popover aria-label="Filter by person" data-region="people"></div><div id="issue-skills" class="code-settings issue-skills-pop" popover aria-label="Send to ${appName()}" data-region="skills"></div></section>`;
     animate = true;
     new ResizeObserver(([entry]) => host.style.setProperty("--code-bar-h", `${Math.ceil(entry.borderBoxSize[0].blockSize)}px`)).observe(host.querySelector('[data-region="toolbar"]'));
   }
@@ -819,6 +822,16 @@ async function draft(skill, keys) {
   notify(`Drafted ${label} for ${keys.length === 1 ? keyLabel(keys[0]) : `${keys.length} issues`} in ${appName()}. Review it and press Enter to send.`);
 }
 
+function openSkillMenu(trigger) {
+  const menu = host.querySelector("#issue-skills");
+  patch("skills", skillList(trigger.dataset.issueSkills.split(","), trigger.dataset.scope));
+  menu.showPopover();
+  const anchor = trigger.getBoundingClientRect();
+  const below = anchor.bottom + 4 + menu.offsetHeight < innerHeight;
+  menu.style.top = `${below ? anchor.bottom + 4 : anchor.top - 4 - menu.offsetHeight}px`;
+  menu.style.left = `${Math.max(8, Math.min(innerWidth - menu.offsetWidth - 8, anchor.right - menu.offsetWidth))}px`;
+}
+
 async function handleClick(event) {
   const target = event.target.closest("button, input, a");
   const row = event.target.closest("[data-issue-row]");
@@ -870,8 +883,9 @@ async function handleClick(event) {
     if (dataset.issueExpand) { ui.expanded.has(dataset.issueExpand) ? ui.expanded.delete(dataset.issueExpand) : ui.expanded.add(dataset.issueExpand); return render(); }
     if (dataset.issueOpen) return openIssue(dataset.issueOpen, rowKeys().includes(dataset.issueOpen) ? rowKeys() : null);
     if (dataset.issueCopy) { await navigator.clipboard.writeText(dataset.issueCopy); return copied(target); }
+    if (dataset.issueSkills !== undefined) return openSkillMenu(target);
     if (dataset.issueSkill && (event.altKey || "copyPrompt" in dataset)) return copyPrompt(requestDraft(dataset.issueSkill, dataset.keys.split(","), true), target);
-    if (dataset.issueSkill) return draft(dataset.issueSkill, dataset.keys.split(","));
+    if (dataset.issueSkill) { target.closest("#issue-skills")?.hidePopover(); return draft(dataset.issueSkill, dataset.keys.split(",")); }
     if (dataset.issuePr) { const [slug, number] = dataset.issuePr.split("#"); return openPrOverlay(slug, Number(number)); }
     if (dataset.issueWt) return openWorktreeOverlay(dataset.issueWt);
     if ("issueClosedPrs" in dataset) { ui.showClosedPrs = !ui.showClosedPrs; renderDetail(); return dialog?.open && renderOverview(); }

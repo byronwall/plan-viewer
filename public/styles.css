@@ -1871,7 +1871,7 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 .issue-col-key { width: 1%; }
 .issue-col-priority, .issue-col-confidence { width: 22px; text-align: center; }
 .issue-col-status { white-space: nowrap; }
-.issue-col-person { white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis; color: var(--body-ink) !important; }
+.issue-col-person { white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; color: var(--body-ink) !important; }
 .issue-people { display: inline-flex; align-items: center; gap: 4px; }
 .issue-reporter { display: inline-flex; flex: none; width: 18px; }
 .issue-people-arrow { flex: none; color: var(--muted); font-size: .72rem; }
@@ -1886,14 +1886,16 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 .issue-status-triage { background: var(--dirty-field); color: #9a5b00; }
 .issue-status-indeterminate { background: #e9eefc; color: var(--action-ink); }
 .issue-status-done { background: #dcf3e8; color: #157a52; }
-.issue-sub { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 1px; color: var(--muted); font-size: .74rem; }
-.issue-parent { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+/* width 0 / min-width 100%: the sub-line never widens the title column; it ellipsizes to whatever the title leaves. */
+.issue-sub { display: flex; flex-wrap: wrap; gap: 2px 10px; width: 0; min-width: 100%; margin-top: 1px; color: var(--muted); font-size: .74rem; }
+.issue-parent { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
 .issue-parent .issue-type { width: 13px; height: 13px; }
 .issue-parent .code-icon { width: 11px; height: 11px; }
-.issue-parent > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+.issue-parent > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .issue-row.is-context td { opacity: .6; }
 .issue-row.is-done .code-pr-title { color: var(--muted); font-weight: 500; }
 .issue-table .code-col-main { max-width: 600px; }
+.issue-table .code-pr-title { overflow-wrap: anywhere; } /* a long identifier in a title must not widen the table past its column */
 /* Repository sections: the name reads as a heading, not an uppercase label; the chevron collapses the section. */
 .issue-project-row th { padding: 14px 6px 5px; text-transform: none; letter-spacing: 0; font-size: .8rem; vertical-align: middle; }
 .issue-project-row th > * { vertical-align: middle; }
@@ -1913,9 +1915,24 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 .issue-table .issue-row td:not(.code-col-main) { padding-top: 6px; }
 .issue-table .issue-row .code-col-when { padding-top: 6px; }
 .issue-table .issue-col-check input { margin: 2px 0 0; }
-.issue-table .code-col-skills { padding-top: 3px !important; padding-bottom: 0; }
+.issue-table .code-col-skills { width: 30px; padding: 3px 2px 0 !important; }
 .issue-table .code-col-skills .code-icon-button { width: 24px; height: 22px; }
 .issue-table .code-col-skills .code-icon { width: 14px; height: 14px; }
+/* Send to the agent: one button per row opens this menu; the inspector shows the same list inline. */
+.issue-skills-pop { position: fixed; margin: 0; width: max-content; min-width: 200px; max-width: min(320px, calc(100vw - 16px)); padding: 4px; display: none; }
+.issue-skills-pop:popover-open { display: block; }
+.issue-skill-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.issue-skill-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-radius: 6px; transition: background-color 140ms ease; }
+.issue-skill-list li:hover { background: var(--hover-field); }
+.issue-skill-row { display: flex; align-items: center; gap: 8px; min-width: 0; border: 0; background: none; padding: 3px 6px; color: var(--ink); font: inherit; font-size: .8rem; text-align: left; cursor: pointer; }
+.issue-skill-row .code-icon { flex: none; width: 14px; height: 14px; color: var(--muted); }
+.issue-skill-row span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue-skill-row kbd { flex: none; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; color: var(--quiet-text); font: .66rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.issue-skill-row:hover .code-icon, .issue-skill-row:hover span { color: var(--action-ink); }
+.issue-skill-list .code-icon-button { width: 24px; height: 24px; color: var(--quiet-text); opacity: 0; }
+.issue-skill-list li:hover .code-icon-button, .issue-skill-list .code-icon-button:focus-visible { opacity: 1; }
+.code-side-facts .issue-skill-list { margin: 0 0 0 -6px; }
+@media (prefers-reduced-motion: reduce) { .issue-skill-list li { transition: none; } }
 .issue-row.is-picked td { background: #f6f8fe; }
 .issue-project-row .issue-col-check { padding-left: 6px; text-transform: none; }
 .issue-project-row th.code-col-when, .issue-project-row th.code-col-skills { font-size: .74rem; font-weight: 500; letter-spacing: 0; vertical-align: middle; }
@@ -2176,6 +2193,7 @@ p.slack-row-new { margin: 8px 0 0; font-size: .78rem; }
 button.issue-parent { border: 0; border-radius: 5px; background: none; padding: 0 3px; margin-left: -3px; color: var(--muted); font: inherit; text-align: left; cursor: pointer; transition: background-color 140ms, color 140ms; }
 button.issue-parent:hover { background: var(--hover-field); color: var(--action-ink); }
 .issue-sub .issue-progress { width: 56px; height: 5px; }
+.issue-epics .issue-progress { width: 60px; }
 .issue-children { margin-top: 4px; }
 .issue-children tr[data-issue-open] { cursor: pointer; }
 .markdown blockquote { margin: 6px 0; border-radius: 6px; background: var(--hover-field); padding: 6px 10px; color: var(--body-ink); }
