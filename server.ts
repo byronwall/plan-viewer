@@ -669,6 +669,11 @@ export function buildGlobalCodexPrompt(commentary: string, document?: Awaited<Re
   return withAsk(`${config().user}'s request:`, commentary, (ask) => `Task from the local ${config().title}\n\nWork in the ${WORKSPACE} repository and follow its AGENTS.md instructions. No plan, file, or chunk context is attached to this task.\n\n${ask}Carry out ${config().user}'s request using relevant repository context. Preserve unrelated work.\n\n${CHAT_LINK_INSTRUCTION}`);
 }
 
+// A request about one `.draft` diagram, opened from the image viewer beside its source.
+export function buildDiagramPrompt(source: { relative: string; absolute: string }, commentary: string, document?: Awaited<ReturnType<typeof loadDocument>>) {
+  return withAsk(`${config().user}'s request about the diagram:`, commentary, (ask) => `Task: Revise the diagram ${basename(source.relative)}\n\nWork in the ${WORKSPACE} repository and follow its AGENTS.md instructions. The diagram's source file is authoritative.\n\nDiagram source: ${source.relative} (${source.absolute})\n${document ? `Embedded in: ${document.path}${document.task ? ` (${document.task.id} · ${document.task.title})` : ""}\n` : ""}\n${ask}Read the .draft source and the document that embeds it, then carry out ${config().user}'s request; if it asks what to change, propose the edits first. Follow the draftably skill: edit the source by id (\`draftably set\`, \`rm\`, \`mv\`), let \`draftably vary\` choose layout rather than hand-tuning it, and run \`draftably check\` until it reports no errors or drawing conflicts. Keep the embed as it is; the viewer redraws the diagram from the source. Preserve unrelated work.\n\n${CHAT_LINK_INSTRUCTION}`);
+}
+
 export function buildActionPrompt(document: Awaited<ReturnType<typeof loadDocument>>, action: { title: string; prompt: string }, commentary: string) {
   return `Advance this next action: ${action.title}\n\nPlanning workspace: ${ROOT}\n${sourceLines(document, document.absolutePath)}\nRead the source file and the workspace AGENTS.md before acting. Follow the applicable target repository instructions and preserve unrelated work.\n\n${commentary.trim() ? `${config().user}'s direction for this run (takes precedence over the stored prompt where they differ):\n${commentary.trim()}\n\n` : ""}Stored action prompt:\n${action.prompt}\n\nCarry out the bounded action and verify its result. Record evidence and any remaining blocker in the authoritative task file. Update task state and the work breakdown only when supported by the result. Do not treat drafting a message as authorization to send it.\n\n${CHAT_LINK_INSTRUCTION}`;
 }
@@ -713,7 +718,7 @@ export async function saveHandoffImages(images: unknown[]) {
 }
 
 // `copy` hands the prompt back instead of opening the app (Copy prompt), so it can be pasted into a chat already open.
-async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex", images: string[] = [], workItem = "", mode = "", selection = "", section = "", copy = false) {
+async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex", images: string[] = [], workItem = "", mode = "", selection = "", section = "", copy = false, diagram = "") {
   const openDraft = async (title: string, prompt: string) => {
     if (copy) return { accepted: true, prompt: withImages(prompt, images) };
     if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true, prompt };
@@ -742,6 +747,13 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
   }
   if (!commentary.trim() && !copy) throw new Error("Add a request before opening a draft.");
   if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Commentary is too long for this first version.");
+  if (scope === "diagram") {
+    const source = safeAssetPath(diagram);
+    if (extname(source.relative) !== ".draft") throw new Error("Not a .draft diagram.");
+    const prompt = buildDiagramPrompt(source, commentary, path ? await loadDocument(path) : undefined);
+    dispatchLog(requestId, "validated", { scope, diagram: source.relative, path, commentaryLength: commentary.length });
+    return openDraft(`Diagram: ${basename(source.relative, ".draft")}`, prompt);
+  }
   if (scope === "global") {
     const prompt = buildGlobalCodexPrompt(commentary, path ? await loadDocument(path) : undefined);
     dispatchLog(requestId, "validated", { scope, path, commentaryLength: commentary.length });
@@ -994,7 +1006,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request, 50_000_000);
       dispatchLog(requestId, "received", { path: String(body.path || ""), scope: String(body.scope || ""), chunkId: String(body.chunkId || "") });
       try {
-        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex"), await saveHandoffImages(Array.isArray(body.images) ? body.images : []), String(body.workItem || ""), String(body.mode || ""), String(body.selection || ""), String(body.section || ""), body.copy === true));
+        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex"), await saveHandoffImages(Array.isArray(body.images) ? body.images : []), String(body.workItem || ""), String(body.mode || ""), String(body.selection || ""), String(body.section || ""), body.copy === true, String(body.diagram || "")));
       } catch (error) {
         dispatchLog(requestId, "failed", { error: error instanceof Error ? error.message : String(error) });
         throw error;

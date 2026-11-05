@@ -9,7 +9,7 @@ import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as c
 import { dateKey, parseDateKey, startOfWeek } from "./public/dates.js";
 import { config, setConfig } from "./public/config.js";
 import { sourceHtml, statementId } from "./public/diagram.js";
-import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, renderDiagram, safeAssetPath, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
+import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, buildDiagramPrompt, renderDiagram, safeAssetPath, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
   const previous = process.env.SLACK_TOKEN;
@@ -317,6 +317,22 @@ test("embeds .draft diagrams as images drawn by the diagram command, and draws a
   } finally {
     setConfig(previous);
   }
+});
+
+test("consecutive diagram embeds share one thumbnail strip; other images stay full figures", () => {
+  const html = renderMarkdown("Intro.\n\n![A](TASK-0001-assets/a.draft)\n\n![B](TASK-0001-assets/b.draft) ![C](TASK-0001-assets/c.draft)\n\nAfter.\n\n![Shot](TASK-0001-assets/shot.png)", "tasks/TASK-0001.md");
+  assert.equal((html.match(/class="diagram-strip"/g) || []).length, 1);
+  assert.equal((html.match(/diagram-thumb"/g) || []).length, 3);
+  assert.match(html, /<span class="diagram-thumb-caption">B<\/span>/);
+  assert.match(html, /<p>After\.<\/p><figure class="markdown-figure"><button class="markdown-image-trigger" type="button"/);
+});
+
+test("a diagram request names the source and the task that embeds it", async () => {
+  const prompt = buildDiagramPrompt(safeAssetPath("tasks/TASK-0001-assets/flow.draft"), "Make it read left to right.", await loadDocument("tasks/TASK-0001.md"));
+  assert.match(prompt, /Diagram source: tasks\/TASK-0001-assets\/flow\.draft \(/);
+  assert.match(prompt, /Embedded in: tasks\/TASK-0001\.md \(TASK-0001 · /);
+  assert.match(prompt, /Make it read left to right\./);
+  assert.match(prompt, /draftably check/);
 });
 
 test("diagram source lines carry the id they declare and an edge's ends, for hover linking", () => {

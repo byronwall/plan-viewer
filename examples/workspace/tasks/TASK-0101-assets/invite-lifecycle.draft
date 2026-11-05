@@ -1,0 +1,19 @@
+diagram "Invite lifecycle" version=1
+subtitle "Every invite ends accepted, expired or revoked"
+
+node sent "Sent" color=blue shade=200
+node pending "Pending" color=blue
+node accepted "Accepted" color=green shade=300
+node expired "Expired" color=slate shade=200
+node revoked "Revoked" color=amber shade=300
+
+legend blue "Open"
+legend green "Joined" shade=300
+legend amber "Owner stopped it" shade=300
+
+edge mailed sent -> pending "email delivered"
+edge accept pending -> accepted "link opened"
+edge expire pending -> expired "7 days pass" kind=async
+edge revoke pending -> revoked "owner revokes"
+
+layout root engine=layered fit=slide

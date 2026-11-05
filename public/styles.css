@@ -2675,3 +2675,33 @@ body:has(.activity-page), body:has(.activity-page) .reading-pane { background: v
 @media (prefers-reduced-motion: reduce) {
   .draft-line.is-flashed, .diagram-source header button.is-copied { animation: none; }
 }
+
+/* Diagram embeds are thumbnails of one fixed size, in a wrapping row; a click opens the viewer's diagram mode. */
+.diagram-strip { display: flex; flex-wrap: wrap; gap: 12px; margin: 10px 0 14px; }
+.markdown-image-trigger.diagram-thumb { display: inline-grid; grid-template-rows: 132px auto; width: 216px; vertical-align: top; gap: 6px; border-radius: 8px; text-align: left; }
+.diagram-thumb-frame { display: grid; place-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #f6f5f1; padding: 6px; transition: border-color 140ms ease, background-color 140ms ease; }
+.diagram-thumb .markdown-image { width: 100%; height: 100%; object-fit: contain; border: 0; border-radius: 3px; background: transparent; transition: transform 200ms cubic-bezier(.2, .8, .2, 1); }
+.diagram-thumb-caption { min-width: 0; overflow: hidden; padding: 0 2px; color: var(--muted); font-size: .78rem; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; transition: color 140ms ease; }
+.markdown-image-trigger.diagram-thumb:hover .diagram-thumb-frame { border-color: #aeb8ca; background: #f1f0eb; }
+.markdown-image-trigger.diagram-thumb:hover .markdown-image { transform: scale(1.03); }
+.markdown-image-trigger.diagram-thumb:hover .diagram-thumb-caption { color: var(--ink); }
+.markdown-image-trigger.diagram-thumb:active .markdown-image { transform: scale(.99); }
+.markdown-image-trigger.diagram-thumb:focus-visible { outline: 0; }
+.markdown-image-trigger.diagram-thumb:focus-visible .diagram-thumb-frame { outline: 3px solid rgba(49, 87, 213, .3); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .diagram-thumb .markdown-image { transition: none; } .markdown-image-trigger.diagram-thumb:hover .markdown-image { transform: none; } }
+@media (max-width: 760px) { .markdown-image-trigger.diagram-thumb { width: calc(50% - 6px); grid-template-rows: 104px auto; } }
+
+/* The agent box under the diagram source, like the Slack overlay's: typed text survives closing; Enter opens the draft. */
+.diagram-source { grid-template-rows: auto minmax(0, 1fr) auto; }
+.diagram-ask { display: grid; gap: 6px; border-top: 1px solid var(--line); background: var(--paper); padding: 8px 10px 10px; }
+.diagram-ask textarea { width: 100%; min-height: 34px; max-height: 180px; resize: none; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 7px 9px; color: var(--ink); font: .82rem/1.4 system-ui, sans-serif; transition: border-color 140ms ease; }
+.diagram-ask textarea:hover { border-color: #aeb8ca; }
+.diagram-ask textarea:focus { outline: 0; border-color: var(--action); box-shadow: 0 0 0 3px rgba(49, 87, 213, .14); }
+.diagram-ask footer { display: flex; align-items: center; gap: 6px; }
+.diagram-ask button { height: 28px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 0 10px; color: #344057; font: 600 .74rem/1 system-ui, sans-serif; transition: background-color 140ms ease, border-color 140ms ease; }
+.diagram-ask button:hover { border-color: #aeb8ca; background: var(--hover-field); }
+.diagram-ask button.is-primary { border-color: var(--action); background: var(--action); color: #fff; }
+.diagram-ask button.is-primary:hover { background: color-mix(in srgb, var(--action) 88%, black); }
+.diagram-ask button:disabled { opacity: .6; cursor: progress; }
+.diagram-ask button.is-copied { animation: diagram-copied 600ms ease; }
+.image-viewer-thumbnail.is-diagram { background: #f6f5f1; } .image-viewer-thumbnail.is-diagram img { object-fit: contain; padding: 4px; }

@@ -33,7 +33,8 @@ export function sourceHtml(text) {
   return text.replace(/\n$/, "").split("\n").map((line, index) => {
     const id = statementId(line);
     const ends = line.match(/^\s*[+\-~.]?edge\s+\S+\s+([\w.-]+)\s*->\s*([\w.-]+)/);
-    return `<span class="draft-line" data-line="${index + 1}"${id ? ` data-id="${escapeHtml(id)}"` : ""}${ends ? ` data-ends="${escapeHtml(`${ends[1]} ${ends[2]}`)}"` : ""}>${highlight(line) || " "}</span>`;
+    const parent = /^\s*[+\-~.]?(node|group)\s/.test(line) && line.match(/\sin=([\w.-]+)/)?.[1];
+    return `<span class="draft-line" data-line="${index + 1}"${id ? ` data-id="${escapeHtml(id)}"` : ""}${ends ? ` data-ends="${escapeHtml(`${ends[1]} ${ends[2]}`)}"` : ""}${parent ? ` data-in="${escapeHtml(parent)}"` : ""}>${highlight(line) || " "}</span>`;
   }).join("");
 }
 

@@ -810,7 +810,8 @@ function fitImageViewer() {
   const blockInset = Number.parseFloat(styles.getPropertyValue("--image-fit-block")) || 0;
   const availableWidth = Math.max(1, rect.width - inlineInset);
   const availableHeight = Math.max(1, rect.height - blockInset);
-  imageViewerState.fitScale = Math.max(.01, Math.min(1, availableWidth / width, availableHeight / height));
+  // A drawn diagram is vector, so it may grow to fill the stage; raster images stop at their own size.
+  imageViewerState.fitScale = Math.max(.01, Math.min(item?.svg ? 2 : 1, availableWidth / width, availableHeight / height));
   imageViewerState.scale = imageViewerState.fitScale;
   imageViewerState.isFitView = true;
   imageViewerState.offset = { x: 0, y: 0 };
@@ -863,9 +864,9 @@ function renderImageViewer() {
   elements.imageViewer.innerHTML = `<section class="image-viewer-shell">
     <header class="image-viewer-header">
       <div class="image-viewer-heading">
-        <span>${imageViewerState.index + 1} / ${count}</span>
+        ${count > 1 ? `<span>${imageViewerState.index + 1} / ${count}</span>` : ""}
         <h2 id="image-viewer-title">${escapeHtml(item.alt)}</h2>
-        <p><span data-image-dimensions>${dimensions}</span> · Scroll to zoom · Drag to pan</p>
+        <p>${item.diagram ? "Scroll to zoom · Drag to pan · Hover a box to find its line" : `<span data-image-dimensions>${dimensions}</span> · Scroll to zoom · Drag to pan`}</p>
       </div>
       <div class="image-viewer-controls" aria-label="Image controls">
         ${item.diagram ? `<button class="image-viewer-text" type="button" data-image-action="toggle-source" aria-pressed="${imageViewerState.showSource}" title="Show the .draft source beside the drawing (S)">Source</button><button class="image-viewer-text image-viewer-edit" type="button" data-image-action="edit-diagram" title="Open ${escapeHtml(item.diagram.split("/").pop())} in the draftably editor; saves redraw here (E)">Edit</button>` : ""}
@@ -876,7 +877,7 @@ function renderImageViewer() {
       </div>
     </header>
     <div class="image-viewer-body${count === 1 ? " is-single" : ""}${source ? " has-source" : ""}">
-      ${count > 1 ? `<aside class="image-viewer-rail" aria-label="Images in this document">${imageViewerState.items.map((candidate, index) => `<button class="image-viewer-thumbnail" type="button" data-image-index="${index}" aria-current="${index === imageViewerState.index}" aria-label="View image ${index + 1}: ${escapeHtml(candidate.alt)}"><img src="${escapeHtml(candidate.src)}" alt=""><span>${index + 1}</span></button>`).join("")}</aside>` : ""}
+      ${count > 1 ? `<aside class="image-viewer-rail" aria-label="Images in this document">${imageViewerState.items.map((candidate, index) => `<button class="image-viewer-thumbnail${candidate.diagram ? " is-diagram" : ""}" type="button" data-image-index="${index}" aria-current="${index === imageViewerState.index}" aria-label="View image ${index + 1}: ${escapeHtml(candidate.alt)}"><img src="${escapeHtml(candidate.src)}" alt=""><span>${index + 1}</span></button>`).join("")}</aside>` : ""}
       <div class="image-viewer-stage" tabindex="0" aria-label="Zoomable image. Use arrow keys to browse, plus and minus to zoom, and zero to reset.">
         ${item.svg ? `<div class="image-viewer-main-image image-viewer-diagram" role="img" aria-label="${escapeHtml(item.alt)}">${item.svg}</div>` : item.html ? `<div class="image-viewer-main-image image-viewer-graph">${item.html}</div>` : `<img class="image-viewer-main-image" src="${escapeHtml(item.src)}" alt="${escapeHtml(item.alt)}" draggable="false">`}
         ${count > 1 ? `<button class="image-viewer-nav image-viewer-previous" type="button" data-image-action="previous" aria-label="Previous image">←</button><button class="image-viewer-nav image-viewer-next" type="button" data-image-action="next" aria-label="Next image">→</button>` : ""}
@@ -884,6 +885,10 @@ function renderImageViewer() {
       ${source ? `<aside class="diagram-source" aria-label="Diagram source">
         <header><span title="${escapeHtml(item.diagram)}">${escapeHtml(item.diagram.split("/").pop())}</span><button type="button" data-image-action="copy-source" title="Copy the source">${glyph("copy")}<span>Copy</span></button></header>
         <pre>${item.source === undefined ? `<span class="draft-loading">Loading…</span>` : sourceHtml(item.source)}</pre>
+        <form class="diagram-ask" data-diagram-ask>
+          <textarea rows="1" aria-label="Ask ${escapeHtml(agentName())} about this diagram" placeholder="Ask ${escapeHtml(agentName())} to change this diagram (D)…">${escapeHtml(diagramDrafts.get(item.diagram) || "")}</textarea>
+          <footer><span class="code-spacer"></span><button type="button" data-image-action="copy-prompt">Copy prompt</button><button class="is-primary" type="submit">Open in ${escapeHtml(agentName())}</button></footer>
+        </form>
       </aside>` : ""}
     </div>
   </section>`;
@@ -907,6 +912,7 @@ function renderImageViewer() {
   const activeThumbnail = elements.imageViewer.querySelector('.image-viewer-thumbnail[aria-current="true"]');
   window.requestAnimationFrame(() => activeThumbnail?.scrollIntoView({ block: "nearest", inline: "nearest" }));
   updateImageViewerTransform();
+  autosizeDiagramAsk();
 }
 
 function showImageViewer(trigger) {
@@ -2459,6 +2465,7 @@ elements.handoffPopover.addEventListener("click", (event) => {
 });
 elements.imageViewer.addEventListener("click", (event) => {
   if (event.target === elements.imageViewer) {
+    if (elements.imageViewer.querySelector("[data-diagram-ask] textarea")?.value.trim()) return; // typed text stays put
     closeImageViewer();
     return;
   }
@@ -2477,6 +2484,7 @@ elements.imageViewer.addEventListener("click", (event) => {
   else if (action === "edit-diagram") openDiagramEditor(imageViewerState.items[imageViewerState.index]?.diagram);
   else if (action === "toggle-source") toggleDiagramSource();
   else if (action === "copy-source") copyDiagramSource(event.target.closest("button"));
+  else if (action === "copy-prompt") askAboutDiagram(true);
   else if (!imageViewerState.moved) {
     // A click (not a drag) on a drawn object scrolls its statement into view.
     const id = event.target.closest(".image-viewer-diagram [data-id]")?.dataset.id;
@@ -2501,6 +2509,66 @@ function toggleDiagramSource() {
   storeFlag("plan-viewer:diagram-source", imageViewerState.showSource);
   renderImageViewer();
   if (imageViewerState.isFitView) fitImageViewer();
+}
+
+// What's typed for each diagram stays until it is sent, across closing and reopening the viewer.
+const diagramDrafts = new Map();
+
+// Opens a draft in the agent app about the diagram (or copies its prompt), naming the document it sits in.
+async function askAboutDiagram(copy = false) {
+  const item = currentDiagram();
+  const form = elements.imageViewer.querySelector("[data-diagram-ask]");
+  if (!item || !form) return;
+  const commentary = form.querySelector("textarea").value.trim();
+  if (!commentary && !copy) { form.querySelector("textarea").focus(); return; }
+  const button = form.querySelector(copy ? '[data-image-action="copy-prompt"]' : '[type="submit"]');
+  button.disabled = true;
+  try {
+    const result = await requestDispatch({ scope: "diagram", diagram: item.diagram, path: state.view === "document" ? state.selectedPath || "" : "", commentary }, copy);
+    if (copy) {
+      await navigator.clipboard.writeText(result.prompt);
+      button.classList.remove("is-copied");
+      void button.offsetWidth;
+      button.classList.add("is-copied");
+    } else {
+      diagramDrafts.delete(item.diagram);
+      form.querySelector("textarea").value = "";
+      autosizeDiagramAsk();
+      showNotice(`Draft loaded in ${agentName()}. Review or edit it there, then send it.`);
+    }
+  } catch (error) {
+    showNotice(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function autosizeDiagramAsk() {
+  const textarea = elements.imageViewer.querySelector("[data-diagram-ask] textarea");
+  if (!textarea) return;
+  textarea.style.height = "auto";
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
+}
+
+elements.imageViewer.addEventListener("submit", (event) => {
+  if (!event.target.closest("[data-diagram-ask]")) return;
+  event.preventDefault();
+  askAboutDiagram();
+});
+elements.imageViewer.addEventListener("input", (event) => {
+  const textarea = event.target.closest("[data-diagram-ask] textarea");
+  const item = currentDiagram();
+  if (!textarea || !item) return;
+  diagramDrafts.set(item.diagram, textarea.value);
+  autosizeDiagramAsk();
+});
+
+function focusDiagramAsk() {
+  if (!currentDiagram()) return;
+  if (!imageViewerState.showSource) toggleDiagramSource();
+  const textarea = elements.imageViewer.querySelector("[data-diagram-ask] textarea");
+  textarea?.focus();
+  textarea?.setSelectionRange(textarea.value.length, textarea.value.length);
 }
 
 async function copyDiagramSource(button) {
@@ -2538,7 +2606,7 @@ elements.imageViewer.addEventListener("mouseover", (event) => {
   if (!from || imageViewerState.pan) return;
   // A box brings its connections with it, in the drawing and the source.
   const id = CSS.escape(from.dataset.id);
-  const ids = [id, ...[...elements.imageViewer.querySelectorAll(`.draft-line[data-ends~="${id}"]`)].map((line) => CSS.escape(line.dataset.id))];
+  const ids = [id, ...[...elements.imageViewer.querySelectorAll(`.draft-line[data-ends~="${id}"], .draft-line[data-in="${id}"]`)].map((line) => CSS.escape(line.dataset.id))];
   for (const each of ids) for (const target of elements.imageViewer.querySelectorAll(`.image-viewer-diagram [data-id="${each}"], .draft-line[data-id="${each}"]`)) target.classList.add("is-linked");
 });
 
@@ -2607,10 +2675,18 @@ elements.imageViewer.addEventListener("pointercancel", () => {
 });
 elements.imageViewer.addEventListener("cancel", (event) => {
   event.preventDefault();
+  if (document.activeElement?.closest?.("[data-diagram-ask] textarea")) return; // Esc there leaves the box first
   closeImageViewer();
 });
 elements.imageViewer.addEventListener("keydown", (event) => {
   if (!elements.imageViewer.open) return;
+  const typing = event.target.closest("textarea");
+  if (typing) {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); askAboutDiagram(); }
+    else if (event.key === "Escape") { event.preventDefault(); typing.blur(); elements.imageViewer.querySelector(".image-viewer-stage")?.focus(); }
+    event.stopPropagation();
+    return;
+  }
   const key = event.key.toLowerCase();
   if (event.key === "ArrowLeft" && imageViewerState.items.length > 1) selectImageViewerItem(imageViewerState.index - 1);
   else if (event.key === "ArrowRight" && imageViewerState.items.length > 1) selectImageViewerItem(imageViewerState.index + 1);
@@ -2619,6 +2695,7 @@ elements.imageViewer.addEventListener("keydown", (event) => {
   else if (key === "0") resetImageViewerTransform();
   else if (key === "s" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) toggleDiagramSource();
   else if (key === "e" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) openDiagramEditor(currentDiagram().diagram);
+  else if (key === "d" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) focusDiagramAsk();
   else return;
   event.preventDefault();
   event.stopPropagation();

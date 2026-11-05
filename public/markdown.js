@@ -336,7 +336,9 @@ export function inlineMarkdown(value, currentPath = "", bare = true) {
       const asset = resolveMarkdownAsset(target, currentPath);
       if (asset.kind === "asset" || asset.kind === "remote") {
         const accessibleLabel = labelSource ? `Open ${labelSource} in image viewer` : "Open image in viewer";
-        output.push(`<button class="markdown-image-trigger" type="button" aria-label="${escapeHtml(accessibleLabel)}"${asset.diagram ? ` data-diagram="${escapeHtml(asset.path)}"` : ""}><img class="markdown-image" src="${escapeHtml(asset.href || assetHref(asset.path))}" alt="${escapeHtml(labelSource)}" loading="lazy" decoding="async"></button>`);
+        output.push(asset.diagram
+          ? `<button class="markdown-image-trigger diagram-thumb" type="button" aria-label="${escapeHtml(labelSource ? `Open the ${labelSource} diagram` : "Open the diagram")}" data-diagram="${escapeHtml(asset.path)}"><span class="diagram-thumb-frame"><img class="markdown-image" src="${escapeHtml(asset.href)}" alt="${escapeHtml(labelSource)}" loading="lazy" decoding="async"></span><span class="diagram-thumb-caption">${escapeHtml(labelSource || asset.path.split("/").pop())}</span></button>`
+          : `<button class="markdown-image-trigger" type="button" aria-label="${escapeHtml(accessibleLabel)}"><img class="markdown-image" src="${escapeHtml(asset.href || assetHref(asset.path))}" alt="${escapeHtml(labelSource)}" loading="lazy" decoding="async"></button>`);
       } else {
         const label = formatInlineText(labelSource || "Image", currentPath);
         output.push(`<span class="markdown-unavailable-image" role="img" aria-label="Unavailable image: ${escapeHtml(labelSource || "Image")}">${label} <span aria-hidden="true">— image unavailable</span></span>`);
@@ -593,6 +595,8 @@ const htmlMentions = (markdown) => markdown.replace(/<(pull-request|issue|projec
 const CODE_TOOLS = `<div class="table-tools" role="toolbar" aria-label="Code actions"><button type="button" data-code-copy>Copy</button><button type="button" data-code-download>Download</button></div>`;
 const fencedBlock = (lines, language) => `<div class="markdown-code" data-code-source="${escapeHtml(lines.join("\n"))}" data-code-language="${escapeHtml(language)}">${CODE_TOOLS}${codeBlock(lines, language)}</div>`;
 
+const DIAGRAM_LINE = /^\s*(?:!\[[^\]]*\]\([^\s)]+\.draft\)\s*)+$/i;
+
 export function renderMarkdown(markdown, currentPath = "") {
   const lines = htmlMentions(htmlImages(markdown)).split(/\r?\n/);
   const html = [];
@@ -628,6 +632,19 @@ export function renderMarkdown(markdown, currentPath = "") {
       }
       const [, summary = "Details", inner = ""] = block.join("\n").match(/^\s*<details>\s*(?:<summary>([\s\S]*?)<\/summary>)?([\s\S]*?)(?:<\/details>\s*)?$/i) || [];
       html.push(`<details class="markdown-details"><summary>${inlineMarkdown(summary.trim(), currentPath)}</summary>${renderMarkdown(inner, currentPath)}</details>`);
+      continue;
+    }
+
+    // Diagrams draw as a row of thumbnails: a line of `.draft` embeds and the diagram-only lines after it, blank lines
+    // between them included, share one strip. The viewer opens them full size beside their source.
+    if (DIAGRAM_LINE.test(line)) {
+      flushParagraph();
+      const embeds = [line];
+      for (let next = index + 1; next < lines.length; next += 1) {
+        if (DIAGRAM_LINE.test(lines[next])) { embeds.push(lines[next]); index = next; }
+        else if (lines[next].trim()) break;
+      }
+      html.push(`<div class="diagram-strip">${inlineMarkdown(embeds.map((text) => text.trim()).join(" "), currentPath)}</div>`);
       continue;
     }
 
