@@ -52,10 +52,10 @@ const priorityIcon = (issue) => {
 const isTriage = (issue) => issue.category === "new" && (issue.triage || ui.data.triage.statuses.includes(issue.status) || issue.labels.some((label) => ui.data.triage.labels.some((prefix) => label.startsWith(prefix))));
 const statusTag = (issue) => `<span class="code-tag issue-status issue-status-${isTriage(issue) && ui.data.triage.statuses.includes(issue.status) ? "triage" : issue.category}">${escapeHtml(issue.status)}</span>`;
 const firstName = (person) => (person?.name || "").split(" ")[0];
-const personMark = (person, full = false, tip = person?.name) => person ? `<span class="code-side-person" data-tip="${escapeHtml(tip)}">${avatar(person.login || "", person.name, person.email)}${escapeHtml(full ? person.name : firstName(person))}</span>` : '<span class="code-muted">Unassigned</span>';
+const personMark = (person, full = false, tip = person?.name) => person ? `<span class="code-side-person" data-tip="${escapeHtml(tip)}">${avatar(person.login || "", person.name, person.email)}<span class="issue-person-name">${escapeHtml(full ? person.name : firstName(person))}</span></span>` : '<span class="code-muted issue-person-name">Unassigned</span>';
 // List rows show who raised an issue beside who has it: the reporter's picture, an arrow, then the assignee. The
 // reporter slot keeps its width when empty so assignees line up down the column.
-const peopleMark = (issue) => `<span class="issue-people">${issue.reporter ? `<span class="issue-reporter" data-tip="Reported by ${escapeHtml(issue.reporter.name)}" role="img" aria-label="Reported by ${escapeHtml(issue.reporter.name)}">${avatar(issue.reporter.login || "", issue.reporter.name, issue.reporter.email)}</span>` : '<span class="issue-reporter"></span>'}<span class="issue-people-arrow" aria-hidden="true">→</span>${personMark(issue.assignee, false, issue.assignee && `Assigned to ${issue.assignee.name}`)}</span>`;
+const peopleMark = (issue) => `<span class="issue-people">${issue.reporter ? `<span class="issue-reporter" data-tip="Reported by ${escapeHtml(issue.reporter.name)}" role="img" aria-label="Reported by ${escapeHtml(issue.reporter.name)}">${avatar(issue.reporter.login || "", issue.reporter.name, issue.reporter.email)}</span>` : '<span class="issue-reporter"></span>'}<span class="issue-people-arrow" aria-hidden="true">${issue.reporter ? "→" : ""}</span>${personMark(issue.assignee, false, issue.assignee && `Assigned to ${issue.assignee.name}`)}</span>`;
 const isMine = (issue) => issue.source === "github" ? Boolean(ui.data.githubMe) && [issue.assignee?.login, issue.reporter?.login].includes(ui.data.githubMe) : Boolean(ui.data.me) && [issue.assignee?.email, issue.reporter?.email].includes(ui.data.me);
 // Linear keys are namespaced (`linear:MOD-12`) since a Jira project can share the prefix; the label is what shows.
 const label = (issue) => issue.label || issue.key;
@@ -87,7 +87,7 @@ function codeChips(issue) {
   const { prs, worktrees } = codeOf(issue);
   const open = prs.filter((pr) => pr.state === "OPEN");
   // One PR (the newest open one, else the newest) and a count; the inspector lists them all.
-  const shown = (open.length ? open : prs).slice(0, 1);
+  const shown = (open.length ? open : [...prs].sort((a, b) => (PR_ORDER[a.state] ?? 0) - (PR_ORDER[b.state] ?? 0))).slice(0, 1);
   const more = prs.length - shown.length;
   return `${shown.map(prMark).join("")}${more > 0 ? `<span class="code-muted" data-tip="${escapeHtml(prs.filter((pr) => !shown.includes(pr)).map((pr) => `#${pr.number}`).join(", "))}">+${more}</span>` : ""}${worktrees.length ? `<span class="issue-local" data-tip="${escapeHtml(`Local worktree: ${worktrees.map((tree) => tree.branch).join(", ")}`)}">${icon("local")}</span>` : ""}${!prs.length && issue.prCount ? `<span class="code-muted" data-tip="Jira's development panel sees ${issue.prCount} ${issue.prCount === 1 ? "PR" : "PRs"} (${escapeHtml(issue.prState.toLowerCase())}) the viewer can't match">${issue.prCount} in Jira</span>` : ""}`;
 }
@@ -215,7 +215,7 @@ function allBody() {
   const issues = visibleIssues();
   if (!issues.length) return emptyState(ui.showDone ? "issues" : "open issues");
   const columns = withPicks(issues, columnsFor(issues));
-  return ui.group === "repo" ? byProject(issues, columns.map(([name, head]) => [name, name === "issue-col-key" ? "#" : head])) : grouped(issues, (issue) => issueRow(issue, { columns }), columns);
+  return ui.group === "repo" ? byProject(issues, columns.map(([name, head]) => [name, name === "issue-col-key" && groupNoun(issues) === "repo" ? "#" : head])) : grouped(issues, (issue) => issueRow(issue, { columns }), columns);
 }
 
 function triageBody() {
@@ -348,7 +348,7 @@ function skillList(keys, scope = "") {
   return `<ul class="issue-skill-list code-side-skills">${(ui.data.skills || []).map((skill, index) => `<li><button type="button" class="issue-skill-row" ${attrs(skill)}>${icon(skill.icon || "review")}<span>${escapeHtml(skill.label)}</span>${scope || keys.length > 1 ? "" : `<kbd>${index + 1}</kbd>`}</button>${iconButton("copy", `Copy the ${skill.label}${what} prompt, to paste into an open chat`, `data-copy-prompt ${attrs(skill)}`)}</li>`).join("")}</ul>`;
 }
 // A row (or a repository header) carries one button; the menu it opens is the labeled list.
-const skillTrigger = (keys, scope = "") => ui.data.skills?.length ? iconButton("session", `Send ${scope ? `all ${keys.length} ${scope} issues` : "to"} ${appName()}…`, `data-issue-skills="${escapeHtml(keys.join(","))}" data-scope="${escapeHtml(scope)}"`) : "";
+const skillTrigger = (keys, scope = "") => ui.data.skills?.length ? iconButton("session", `Send ${scope ? `all ${keys.length} ${scope} issues` : keyLabel(keys[0])} to ${appName()}…`, `aria-haspopup="menu" aria-expanded="false" data-issue-skills="${escapeHtml(keys.join(","))}" data-scope="${escapeHtml(scope)}"`) : "";
 // The selection's own bar: labeled drafts for every picked issue, then Clear.
 function bulkBar() {
   if (!ui.selected.size) return "";
@@ -366,7 +366,7 @@ function issueFacts(issue, overlay = false) {
   return sideFacts([
     ["Status", `${status}${issue.resolution && issue.resolution !== "Done" ? `<span class="code-muted">${escapeHtml(issue.resolution)}</span>` : ""}${issue.confidence ? `<span>${escapeHtml(issue.confidence)}</span>` : ""}`],
     ["Type", `${typeIcon(issue)}<span>${escapeHtml(issue.type)}</span>${priorityIcon(issue)}<span class="code-muted">${escapeHtml(issue.priority)}</span>`],
-    ["Owner", `${personMark(issue.assignee, true)}${issue.reporter && issue.reporter.name !== issue.assignee?.name ? `<span class="code-muted">from ${escapeHtml(issue.reporter.name)}</span>` : ""}`],
+    ["Owner", `${personMark(issue.assignee, true)}${issue.reporter && issue.reporter.name !== issue.assignee?.name ? `<span class="code-muted">reported by ${escapeHtml(issue.reporter.name)}</span>` : ""}`],
     [issue.source === "linear" && parent?.type === "Project" ? "Project" : "Parent", parent ? `<button type="button" class="issue-link-row" data-issue-open="${escapeHtml(parent.key)}">${typeIcon(parent)}${keyMark(parent)}<span>${escapeHtml(parent.summary)}</span></button>` : issue.parent ? `<code>${escapeHtml(keyLabel(issue.parent))}</code>` : ""],
     ["Dates", `<span class="code-muted" data-tip="Created ${escapeHtml(new Date(issue.created).toLocaleString())}">opened ${ago(issue.created)} ago</span><span class="code-muted" data-tip="Updated ${escapeHtml(new Date(issue.updated).toLocaleString())}">updated ${ago(issue.updated)} ago</span>${dateRange(issue)}`],
     ["Initiative", (issue.initiatives || []).map((item) => `<a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.name)}</a>`).join("")],
@@ -704,7 +704,7 @@ function toolbar() {
   const groups = both ? migrationGroups() : [];
   const counts = { all: scoped.filter(open).length, triage: scoped.filter(isTriage).length, epics: epicGroups().reduce((sum, [, epics]) => sum + epics.length, 0), activity: "", migration: groups.filter((group) => ["drift", "copies", "title"].includes(group.kind)).length };
   // A tab or scope with nothing in it (Epics for GitHub issues, Mine when everything is mine) stays out unless it is the one open.
-  const tabs = `<div class="code-segment code-tabs">${Object.entries(TABS).filter(([id]) => (id !== "migration" || both) && (counts[id] !== 0 || ui.tab === id)).map(([id, label]) => `<button type="button" data-issue-tab="${id}" aria-pressed="${ui.tab === id}">${label}${counts[id] === "" ? "" : count(counts[id])}</button>`).join("")}</div>`;
+  const tabs = `<div class="code-segment code-tabs">${Object.entries(TABS).filter(([id]) => (id !== "migration" || both) && (counts[id] !== 0 || ui.tab === id || ui.filter || ui.people.size)).map(([id, label]) => `<button type="button" data-issue-tab="${id}" aria-pressed="${ui.tab === id}">${label}${counts[id] === "" ? "" : count(counts[id])}</button>`).join("")}</div>`;
   const people = `<button type="button" class="code-bar-button issue-people-trigger${ui.people.size ? " is-active" : ""}" popovertarget="issue-people" data-issue-people-trigger>${icon("person")}${ui.people.size === 1 ? escapeHtml([...ui.people][0] || "Unassigned") : ui.people.size ? `${ui.people.size} people` : "Everyone"} <kbd>A</kbd></button>`;
   let controls = "";
   let selection = "";
@@ -741,6 +741,7 @@ function render({ animate = false } = {}) {
   if (!host.querySelector(".issue-surface")) {
     host.innerHTML = `<section class="issue-surface" aria-label="Issues"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="issue-people" class="code-settings code-branch-pop issue-people-pop" popover aria-label="Filter by person" data-region="people"></div><div id="issue-skills" class="code-settings issue-skills-pop" popover aria-label="Send to ${appName()}" data-region="skills"></div></section>`;
     animate = true;
+    host.querySelector("#issue-skills").addEventListener("keydown", skillMenuKey);
     new ResizeObserver(([entry]) => host.style.setProperty("--code-bar-h", `${Math.ceil(entry.borderBoxSize[0].blockSize)}px`)).observe(host.querySelector('[data-region="toolbar"]'));
   }
   const filter = host.querySelector("[data-issue-filter]");
@@ -822,14 +823,33 @@ async function draft(skill, keys) {
   notify(`Drafted ${label} for ${keys.length === 1 ? keyLabel(keys[0]) : `${keys.length} issues`} in ${appName()}. Review it and press Enter to send.`);
 }
 
+let skillMenuTrigger = null;
+let skillMenuClosed = { trigger: null, at: 0 };
 function openSkillMenu(trigger) {
+  // A click on the open menu's own trigger closes it: light dismiss already did, on pointerdown, so don't reopen.
+  if (skillMenuClosed.trigger === trigger && performance.now() - skillMenuClosed.at < 400) return;
   const menu = host.querySelector("#issue-skills");
-  patch("skills", skillList(trigger.dataset.issueSkills.split(","), trigger.dataset.scope));
+  const keys = trigger.dataset.issueSkills.split(",");
+  const scope = trigger.dataset.scope;
+  patch("skills", `<p class="issue-skills-head">${scope ? `All ${keys.length} ${escapeHtml(scope)} issues` : `<code>${escapeHtml(keyLabel(keys[0]))}</code> ${escapeHtml(byKey().get(keys[0])?.summary || "")}`}</p>${skillList(keys, scope)}`);
+  skillMenuTrigger = trigger;
   menu.showPopover();
+  trigger.setAttribute("aria-expanded", "true");
   const anchor = trigger.getBoundingClientRect();
   const below = anchor.bottom + 4 + menu.offsetHeight < innerHeight;
   menu.style.top = `${below ? anchor.bottom + 4 : anchor.top - 4 - menu.offsetHeight}px`;
   menu.style.left = `${Math.max(8, Math.min(innerWidth - menu.offsetWidth - 8, anchor.right - menu.offsetWidth))}px`;
+  menu.querySelector(".issue-skill-row")?.focus();
+}
+// The open menu takes ↑ ↓ between skills and 1–N to run one; Esc (the popover's own) closes it and focus goes back.
+function skillMenuKey(event) {
+  const rows = [...event.currentTarget.querySelectorAll(".issue-skill-row")];
+  const at = rows.indexOf(document.activeElement);
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") rows.at((at + (event.key === "ArrowDown" ? 1 : -1)) % rows.length)?.focus();
+  else if (/^[1-9]$/.test(event.key) && rows[event.key - 1]) rows[event.key - 1].click();
+  else return;
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 async function handleClick(event) {
@@ -954,6 +974,12 @@ export function renderIssuesPage(container, { tab, showNotice }) {
       else if (event.target.matches("[data-issue-since]")) { ui.since = event.target.value; syncUrl(); render({ animate: true }); }
     });
     container.addEventListener("toggle", (event) => {
+      if (event.target.id === "issue-skills" && event.newState === "closed" && skillMenuTrigger) {
+        skillMenuTrigger.setAttribute("aria-expanded", "false");
+        skillMenuClosed = { trigger: skillMenuTrigger, at: performance.now() };
+        if (!document.activeElement || document.activeElement === document.body || event.target.contains(document.activeElement)) skillMenuTrigger.focus({ preventScroll: true });
+        skillMenuTrigger = null;
+      }
       if (event.target.id !== "issue-people" || event.newState !== "open") return;
       const anchor = container.querySelector("[data-issue-people-trigger]").getBoundingClientRect();
       event.target.style.top = `${anchor.bottom + 6}px`;

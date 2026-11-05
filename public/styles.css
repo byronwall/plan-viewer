@@ -1879,12 +1879,16 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 .issue-col-key { width: 1%; }
 .issue-col-priority, .issue-col-confidence { width: 22px; text-align: center; }
 .issue-col-status { white-space: nowrap; }
-.issue-col-person { white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; color: var(--body-ink) !important; }
+.issue-col-person { white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+td.issue-col-person { color: var(--body-ink) !important; }
 .issue-people { display: inline-flex; align-items: center; gap: 4px; }
 .issue-reporter { display: inline-flex; flex: none; width: 18px; }
-.issue-people-arrow { flex: none; color: var(--muted); font-size: .72rem; }
+.issue-people-arrow { flex: none; width: 1.1em; color: var(--muted); font-size: .72rem; text-align: center; }
 .issue-col-code { white-space: nowrap; min-width: 64px; }
 .issue-col-code > * + * { margin-left: 4px; }
+.issue-col-code > .code-muted:first-child { padding-left: 7px; } /* "1 in Jira" starts where a PR chip's text does */
+.issue-col-code > .code-muted[data-tip] { cursor: help; transition: color 140ms ease; }
+.issue-col-code > .code-muted[data-tip]:hover { color: var(--ink); }
 .issue-col-check { width: 22px; }
 .issue-col-check input, .issue-table thead input { margin: 0; vertical-align: -2px; }
 .issue-col-progress { white-space: nowrap; }
@@ -1926,6 +1930,10 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 .issue-table .code-col-skills { width: 30px; padding: 3px 2px 0 !important; }
 .issue-table .code-col-skills .code-icon-button { width: 24px; height: 22px; }
 .issue-table .code-col-skills .code-icon { width: 14px; height: 14px; }
+/* A row's send button stays out of sight until the row is hovered, selected or reached by keyboard; headers keep theirs. */
+.issue-row .code-col-skills .code-icon-button { opacity: 0; transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease; }
+.issue-row:hover .code-col-skills .code-icon-button, .issue-row[aria-selected="true"] .code-col-skills .code-icon-button, .issue-table .code-col-skills .code-icon-button:focus-visible, .issue-table .code-col-skills [aria-expanded="true"] { opacity: 1; }
+.issue-table .code-col-skills [aria-expanded="true"] { border-color: var(--line); background: var(--paper); color: var(--action-ink); }
 /* Send to the agent: one button per row opens this menu; the inspector shows the same list inline. */
 .issue-skills-pop { position: fixed; margin: 0; width: max-content; min-width: 200px; max-width: min(320px, calc(100vw - 16px)); padding: 4px; display: none; }
 .issue-skills-pop:popover-open { display: block; }
@@ -1939,8 +1947,20 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 .issue-skill-row:hover .code-icon, .issue-skill-row:hover span { color: var(--action-ink); }
 .issue-skill-list .code-icon-button { width: 24px; height: 24px; color: var(--quiet-text); opacity: 0; }
 .issue-skill-list li:hover .code-icon-button, .issue-skill-list .code-icon-button:focus-visible { opacity: 1; }
-.code-side-facts .issue-skill-list { margin: 0 0 0 -6px; }
-@media (prefers-reduced-motion: reduce) { .issue-skill-list li { transition: none; } }
+.code-side-facts .issue-skill-list { margin: 0 0 0 -6px; max-width: 280px; }
+.code-side-facts dt:has(+ dd > .issue-skill-list) { align-self: start; padding-top: 6px; }
+.issue-skills-head { margin: 2px 6px 4px; max-width: 300px; overflow: hidden; color: var(--muted); font-size: .74rem; text-overflow: ellipsis; white-space: nowrap; }
+.issue-skills-head code { color: var(--body-ink); font-size: .7rem; }
+.issue-skill-row:focus-visible { outline: 2px solid var(--action); outline-offset: -2px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { .issue-skill-list li, .issue-row .code-col-skills .code-icon-button { transition: none; } }
+/* A narrow list (no inspector, or a small window) keeps every column: assignees shrink to their pictures, titles wrap sooner. */
+@container (max-width: 1040px) {
+  .issue-table .code-side-person .issue-person-name, .issue-table .issue-reporter, .issue-table .issue-people-arrow { display: none; }
+  .issue-table td.issue-col-person, .issue-table th.issue-col-person { max-width: none; }
+  .issue-table .code-col-main, .issue-table .code-col-main:has(.code-pr-title) { min-width: 180px; }
+  .issue-epics .issue-progress { width: 44px; }
+  .issue-epics .issue-col-dates { white-space: normal; min-width: 4.5em; }
+}
 .issue-row.is-picked td { background: #f6f8fe; }
 .issue-project-row .issue-col-check { padding-left: 6px; text-transform: none; }
 .issue-project-row th.code-col-when, .issue-project-row th.code-col-skills { font-size: .74rem; font-weight: 500; letter-spacing: 0; vertical-align: middle; }
@@ -2196,7 +2216,7 @@ p.slack-row-new { margin: 8px 0 0; font-size: .78rem; }
 .code-side-progress { color: var(--action-ink); }
 .issue-people-pop { width: min(300px, calc(100vw - 16px)); }
 .issue-key-none { color: var(--quiet-text); font-size: .72rem; }
-.issue-priority-head { display: inline-grid; place-items: center; color: var(--quiet-text); cursor: help; }
+.issue-priority-head { display: inline-grid; place-items: center; color: var(--quiet-text); cursor: help; vertical-align: -2px; }
 .issue-priority-head .code-icon { width: 12px; height: 12px; stroke-width: 2.2; }
 button.issue-parent { border: 0; border-radius: 5px; background: none; padding: 0 3px; margin-left: -3px; color: var(--muted); font: inherit; text-align: left; cursor: pointer; transition: background-color 140ms, color 140ms; }
 button.issue-parent:hover { background: var(--hover-field); color: var(--action-ink); }
