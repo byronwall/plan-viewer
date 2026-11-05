@@ -565,6 +565,7 @@ async function loadDiagrams() {
   renderDiagramsPage();
   window.scrollTo({ top: y, behavior: "instant" });
   if (typing) elements.chunks.querySelector(".diagram-filter")?.focus();
+  if (pendingDiagram) { openDiagram(pendingDiagram); pendingDiagram = ""; }
 }
 
 function showDiagrams({ historyMode = "push" } = {}) {
@@ -873,6 +874,8 @@ function imageViewerItems(trigger) {
       src: image.currentSrc || image.src,
       alt: image.alt || `Image ${index + 1}`,
       diagram: trigger.dataset.diagram || "",
+      // On the Diagrams page each card sits under its task's heading; the rail repeats that grouping.
+      group: [...(trigger.closest(".diagram-group")?.querySelector(".diagram-group-title")?.children || [])].map((part) => part.textContent.trim()).join(" "),
       width: image.naturalWidth,
       height: image.naturalHeight,
     };
@@ -964,7 +967,7 @@ function renderImageViewer() {
       </div>
     </header>
     <div class="image-viewer-body${count === 1 ? " is-single" : ""}${source ? " has-source" : ""}">
-      ${count > 1 ? `<aside class="image-viewer-rail" aria-label="Images in this document">${imageViewerState.items.map((candidate, index) => `<button class="image-viewer-thumbnail${candidate.diagram ? " is-diagram" : ""}" type="button" data-image-index="${index}" aria-current="${index === imageViewerState.index}" aria-label="View image ${index + 1}: ${escapeHtml(candidate.alt)}"><img src="${escapeHtml(candidate.src)}" alt=""><span>${index + 1}</span></button>`).join("")}</aside>` : ""}
+      ${count > 1 ? imageViewerRail() : ""}
       <div class="image-viewer-stage" tabindex="0" aria-label="Zoomable image. Use arrow keys to browse, plus and minus to zoom, and zero to reset.">
         ${item.svg ? `<div class="image-viewer-main-image image-viewer-diagram" role="img" aria-label="${escapeHtml(item.alt)}">${item.svg}</div>` : item.html ? `<div class="image-viewer-main-image image-viewer-graph">${item.html}</div>` : `<img class="image-viewer-main-image" src="${escapeHtml(item.src)}" alt="${escapeHtml(item.alt)}" draggable="false">`}
         ${count > 1 ? `<button class="image-viewer-nav image-viewer-previous" type="button" data-image-action="previous" aria-label="Previous image">←</button><button class="image-viewer-nav image-viewer-next" type="button" data-image-action="next" aria-label="Next image">→</button>` : ""}
@@ -1000,6 +1003,7 @@ function renderImageViewer() {
   window.requestAnimationFrame(() => activeThumbnail?.scrollIntoView({ block: "nearest", inline: "nearest" }));
   updateImageViewerTransform();
   autosizeDiagramAsk();
+  filterImageViewerRail();
 }
 
 function showImageViewer(trigger) {
@@ -1011,12 +1015,13 @@ function showImageViewer(trigger) {
 function openDiagram(path, trigger = null) {
   const items = imageViewerItems(trigger || elements.chunks);
   let index = items.findIndex((item) => item.diagram === path);
-  if (index < 0) index = items.push({ trigger, diagram: path, src: diagramHref(path), alt: path.split("/").pop().replace(/\.draft$/, "") }) - 1;
+  if (index < 0) index = items.push({ trigger, diagram: path, src: diagramHref(path), alt: state.diagrams?.find((diagram) => diagram.path === path)?.title || path.split("/").pop().replace(/\.draft$/, "") }) - 1;
   openImageViewerAt(items, index, trigger);
 }
 
 function openImageViewerAt(items, index, trigger) {
   if (index < 0) return;
+  imageViewerState.railQuery = "";
   if (elements.imageViewer.open) closeImageViewer(false);
   imageViewerState.items = items;
   imageViewerState.index = index;
@@ -1058,6 +1063,36 @@ function closeImageViewer(returnFocus = true) {
   imageViewerState.trigger = null;
   elements.imageViewer.replaceChildren();
   if (returnFocus) trigger?.focus();
+}
+
+// The rail lists every image as a small thumbnail with its title, under its task's heading when the set has groups,
+// with a filter once the set is long. Titles, not pictures, are how one diagram is found among dozens.
+const RAIL_FILTER_AT = 12;
+function imageViewerRail() {
+  const { items, index: current } = imageViewerState;
+  let group = null;
+  const rows = items.map((item, index) => {
+    const heading = item.group && item.group !== group ? `<div class="image-viewer-rail-group" data-rail-group="${escapeHtml(item.group)}">${escapeHtml(item.group)}</div>` : "";
+    group = item.group;
+    return `${heading}<button class="image-viewer-thumbnail${item.diagram ? " is-diagram" : ""}" type="button" data-image-index="${index}" data-rail-text="${escapeHtml(`${item.alt} ${item.group || ""} ${item.diagram || ""}`.toLowerCase())}" data-rail-of="${escapeHtml(item.group || "")}" aria-current="${index === current}" aria-label="View image ${index + 1}: ${escapeHtml(item.alt)}"><span class="image-viewer-thumb"><img src="${escapeHtml(item.src)}" alt="" loading="lazy" decoding="async"></span><span class="image-viewer-thumb-title">${escapeHtml(item.alt)}</span></button>`;
+  }).join("");
+  const filter = items.length > RAIL_FILTER_AT ? `<input class="image-viewer-rail-filter" type="search" placeholder="Filter ${items.length} ${items.some((item) => item.diagram) ? "diagrams" : "images"}" aria-label="Filter the images" value="${escapeHtml(imageViewerState.railQuery || "")}" spellcheck="false">` : "";
+  return `<aside class="image-viewer-rail${filter ? " has-filter" : ""}" aria-label="Images">${filter}<div class="image-viewer-rail-list">${rows}<p class="image-viewer-rail-none" hidden>No match.</p></div></aside>`;
+}
+
+function filterImageViewerRail() {
+  const rail = elements.imageViewer.querySelector(".image-viewer-rail");
+  if (!rail) return;
+  const words = (imageViewerState.railQuery || "").toLowerCase().split(/\s+/).filter(Boolean);
+  const shownGroups = new Set();
+  let shown = 0;
+  for (const row of rail.querySelectorAll("[data-image-index]")) {
+    const match = words.every((word) => row.dataset.railText.includes(word));
+    row.hidden = !match;
+    if (match) { shown += 1; shownGroups.add(row.dataset.railOf); }
+  }
+  for (const heading of rail.querySelectorAll("[data-rail-group]")) heading.hidden = !shownGroups.has(heading.dataset.railGroup);
+  rail.querySelector(".image-viewer-rail-none").hidden = shown > 0;
 }
 
 function selectImageViewerItem(index) {
@@ -2034,6 +2069,7 @@ function announceChange(change) {
 }
 
 let diagramListTimer = 0;
+let pendingDiagram = "";
 function connectLiveUpdates() {
   const events = new EventSource("/api/events");
   events.addEventListener("diagram", (event) => {
@@ -2658,6 +2694,11 @@ elements.imageViewer.addEventListener("submit", (event) => {
   askAboutDiagram();
 });
 elements.imageViewer.addEventListener("input", (event) => {
+  if (event.target.matches(".image-viewer-rail-filter")) {
+    imageViewerState.railQuery = event.target.value;
+    filterImageViewerRail();
+    return;
+  }
   const textarea = event.target.closest("[data-diagram-ask] textarea");
   const item = currentDiagram();
   if (!textarea || !item) return;
@@ -2777,11 +2818,26 @@ elements.imageViewer.addEventListener("pointercancel", () => {
 });
 elements.imageViewer.addEventListener("cancel", (event) => {
   event.preventDefault();
-  if (document.activeElement?.closest?.("[data-diagram-ask] textarea")) return; // Esc there leaves the box first
+  if (document.activeElement?.closest?.("[data-diagram-ask] textarea, .image-viewer-rail-filter")) return; // Esc there leaves the box first
   closeImageViewer();
 });
 elements.imageViewer.addEventListener("keydown", (event) => {
   if (!elements.imageViewer.open) return;
+  const railFilter = event.target.closest(".image-viewer-rail-filter");
+  if (railFilter) {
+    // Enter shows the first match; Esc clears the filter, then leaves it; arrows still step through the matches.
+    const matches = [...elements.imageViewer.querySelectorAll(".image-viewer-rail [data-image-index]:not([hidden])")].map((row) => Number(row.dataset.imageIndex));
+    if (event.key === "Enter" && matches.length) { event.preventDefault(); selectImageViewerItem(matches[0]); elements.imageViewer.querySelector(".image-viewer-rail-filter")?.focus(); }
+    else if (event.key === "Escape") { event.preventDefault(); if (railFilter.value) { railFilter.value = ""; imageViewerState.railQuery = ""; filterImageViewerRail(); } else elements.imageViewer.querySelector(".image-viewer-stage")?.focus(); }
+    else if ((event.key === "ArrowDown" || event.key === "ArrowUp") && matches.length) {
+      event.preventDefault();
+      const at = matches.indexOf(imageViewerState.index);
+      selectImageViewerItem(matches[(at + (event.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length]);
+      elements.imageViewer.querySelector(".image-viewer-rail-filter")?.focus();
+    }
+    event.stopPropagation();
+    return;
+  }
   const typing = event.target.closest("textarea");
   if (typing) {
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); askAboutDiagram(); }
@@ -3518,7 +3574,8 @@ const OVERLAYS = [
     result: (params) => ({ icon: "slack", title: escapeHtml(slackThreadTitle(params.get("slack"))), detail: "Slack thread", side: "Slack" }),
     closed: (params) => ["Slack thread", slackThreadTitle(params.get("slack"))] },
   { param: "diagram",
-    open: (params) => openDiagram(params.get("diagram")),
+    // On the Diagrams page the cards arrive with the list, so the viewer waits for them and opens with all of them.
+    open: (params) => { if (state.view === "diagrams" && !state.diagrams) pendingDiagram = params.get("diagram"); else openDiagram(params.get("diagram")); },
     result: (params) => ({ icon: "file", title: escapeHtml(params.get("diagram").split("/").pop()), detail: escapeHtml(params.get("diagram")), side: "Diagram" }),
     closed: (params) => ["diagram", params.get("diagram").split("/").pop()] },
   { param: "plan", extra: ["doc"],
