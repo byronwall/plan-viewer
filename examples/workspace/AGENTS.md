@@ -48,11 +48,11 @@ Take the next free number for a new task's ID, and update `updated:` whenever yo
 
 ## Diagrams
 
-Draw a diagram whenever a picture explains the work faster than prose: the shape of a system, a flow, the matrix an audit runs, where something broke. They are cheap, so make them often, and keep each one to a single idea (5–30 boxes).
+Default to drawing. When the work has a shape (a system, a flow or lifecycle, a matrix of cases, where something broke), draw it without being asked. Diagrams are cheap, and readers look at them before the prose. Draw one idea per diagram.
 
-- Write [draftably](https://github.com/byronwall/draftably) source to `tasks/TASK-NNNN-assets/<name>.draft` and run `draftably check` on it until it is clean.
-- Embed it where it is discussed, as an image: `![What it shows](TASK-NNNN-assets/<name>.draft)`. The viewer draws it live from the source, so don't export or commit a PNG for the viewer.
-- Export a PNG (`draftably inspect <file> --png <out.png> --max-width 2000`) only for somewhere outside the workspace, such as a PR or Slack.
+- Write [draftably](https://github.com/byronwall/draftably) source to `tasks/TASK-NNNN-assets/<name>.draft`, with a title, a short takeaway subtitle and a legend row per color, and run `draftably check` until it is clean.
+- Embed it where it is discussed, as an image: `![What it shows](TASK-NNNN-assets/<name>.draft)`. The viewer shows it as a thumbnail captioned with the alt text (diagrams on consecutive lines share a row), draws it live from the source, and opens it beside its source on click. Don't export or commit a PNG for the viewer.
+- The viewer renders neither Mermaid nor ASCII art; draw a `.draft` instead. Export a PNG (`draftably inspect <file> --png <out.png>`) only for somewhere outside the workspace, such as a PR.
 
 ## Checks
 
