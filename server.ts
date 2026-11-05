@@ -916,6 +916,19 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       response.end(svg);
       return;
     }
+    // Copies the drawing to the macOS clipboard through draftably: a 2× PNG that carries its source (so `draftably
+    // extract` recovers the .draft), plus the SVG as text. A browser clipboard write would re-encode the PNG and drop it.
+    if (request.method === "POST" && url.pathname === "/api/diagram/copy") {
+      const asset = safeAssetPath(String((await readJson(request)).path || ""));
+      if (extname(asset.relative) !== ".draft") return json(response, 400, { error: "Not a .draft diagram." });
+      const [command, ...args] = config().diagrams.command;
+      try {
+        await promisify(execFile)(command, [...args, "inspect", asset.absolute, "--clipboard", "--scale", "2"], { timeout: 60_000 });
+      } catch (error: any) {
+        return json(response, 500, { error: String(error.stderr || error.message || "draftably could not copy the drawing.").trim().split("\n")[0] });
+      }
+      return json(response, 200, { copied: true });
+    }
     // Opens the draftably editor on the file (it reuses a running one for the folder and opens the browser itself).
     if (request.method === "POST" && url.pathname === "/api/diagram/open") {
       const asset = safeAssetPath(String((await readJson(request)).path || ""));

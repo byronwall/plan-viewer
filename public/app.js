@@ -959,7 +959,7 @@ function renderImageViewer() {
         <p>${item.diagram ? "Scroll to zoom · Drag to pan · Hover a box to find its line" : `<span data-image-dimensions>${dimensions}</span> · Scroll to zoom · Drag to pan`}</p>
       </div>
       <div class="image-viewer-controls" aria-label="Image controls">
-        ${item.diagram ? `<button class="image-viewer-text" type="button" data-image-action="toggle-source" aria-pressed="${imageViewerState.showSource}" title="Show the .draft source beside the drawing (S)">Source</button><button class="image-viewer-text image-viewer-edit" type="button" data-image-action="edit-diagram" title="Open ${escapeHtml(item.diagram.split("/").pop())} in the draftably editor; saves redraw here (E)">Edit</button>` : ""}
+        ${item.diagram ? `<button class="image-viewer-text" type="button" data-image-action="toggle-source" aria-pressed="${imageViewerState.showSource}" title="Show the .draft source beside the drawing (S)">Source</button><button class="image-viewer-text" type="button" data-image-action="copy-png" title="Copy the drawing as a PNG that carries its source (C)">Copy PNG</button><button class="image-viewer-text image-viewer-edit" type="button" data-image-action="edit-diagram" title="Open ${escapeHtml(item.diagram.split("/").pop())} in the draftably editor; saves redraw here (E)">Edit</button>` : ""}
         <button type="button" data-image-action="zoom-out" aria-label="Zoom out">−</button>
         <button class="image-viewer-reset" type="button" data-image-action="reset" aria-label="Reset image to fit"><span data-image-zoom>Fit</span><span>Reset</span></button>
         <button type="button" data-image-action="zoom-in" aria-label="Zoom in">+</button>
@@ -2623,6 +2623,7 @@ elements.imageViewer.addEventListener("click", (event) => {
   else if (action === "toggle-source") toggleDiagramSource();
   else if (action === "copy-source") copyDiagramSource(event.target.closest("button"));
   else if (action === "copy-prompt") askAboutDiagram(true);
+  else if (action === "copy-png") copyDiagramPng();
   else if (!imageViewerState.moved) {
     // A click (not a drag) on a drawn object scrolls its statement into view.
     const id = event.target.closest(".image-viewer-diagram [data-id]")?.dataset.id;
@@ -2712,6 +2713,27 @@ function focusDiagramAsk() {
   const textarea = elements.imageViewer.querySelector("[data-diagram-ask] textarea");
   textarea?.focus();
   textarea?.setSelectionRange(textarea.value.length, textarea.value.length);
+}
+
+async function copyDiagramPng() {
+  const item = currentDiagram();
+  const button = elements.imageViewer.querySelector('[data-image-action="copy-png"]');
+  if (!item || button?.getAttribute("aria-busy") === "true") return;
+  button?.setAttribute("aria-busy", "true");
+  try {
+    const response = await fetch("/api/diagram/copy", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: item.diagram }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "Could not copy the drawing.");
+    const now = elements.imageViewer.querySelector('[data-image-action="copy-png"]');
+    now?.classList.remove("is-copied");
+    void now?.offsetWidth;
+    now?.classList.add("is-copied");
+    showNotice(`Copied “${item.alt}” as a PNG. draftably extract recovers its source.`);
+  } catch (error) {
+    showNotice(error.message, true);
+  } finally {
+    elements.imageViewer.querySelector('[data-image-action="copy-png"]')?.removeAttribute("aria-busy");
+  }
 }
 
 async function copyDiagramSource(button) {
@@ -2854,6 +2876,7 @@ elements.imageViewer.addEventListener("keydown", (event) => {
   else if (key === "s" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) toggleDiagramSource();
   else if (key === "e" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) openDiagramEditor(currentDiagram().diagram);
   else if (key === "d" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) focusDiagramAsk();
+  else if (key === "c" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) copyDiagramPng();
   else return;
   event.preventDefault();
   event.stopPropagation();

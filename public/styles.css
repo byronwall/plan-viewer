@@ -2796,3 +2796,5 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
   .image-viewer-thumb { width: 64px; height: 56px; }
   .image-viewer-rail .image-viewer-thumbnail .image-viewer-thumb-title { display: none; }
 }
+.image-viewer-controls .image-viewer-text[aria-busy="true"] { opacity: .6; cursor: progress; }
+.image-viewer-controls .image-viewer-text.is-copied { animation: diagram-copied 600ms ease; }
