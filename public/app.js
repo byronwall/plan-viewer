@@ -1,6 +1,6 @@
 import { contextScore, fuzzyChunks, searchDocuments, searchPrs, termMatch, textScore } from "./search.js";
 import { isSettled, renderActions, renderWorkBreakdown, showDoneToggle, workStatusIcon, workStatusLabel } from "./actions.js";
-import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDocumentSort, selectDockSource } from "./dock.js";
+import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDocumentSort, selectDockSource, taskDocumentSequence } from "./dock.js";
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
 import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
@@ -1494,6 +1494,27 @@ function documentBreadcrumb(doc) {
   return [root, copyCrumb(doc.path, doc.path.replace(/^(plans|reference)\//, ""))].filter(Boolean).join(crumbSeparator);
 }
 
+// A task and its documents read in order: ‹ 3 of 14 › beside the crumbs, and P / N.
+function documentStepper(doc) {
+  const sequence = taskDocumentSequence(doc.path, state.documents);
+  const index = sequence.findIndex((candidate) => candidate.path === doc.path);
+  if (sequence.length < 2 || index < 0) return "";
+  const step = (direction, glyph, label, key) => {
+    const target = sequence[index + direction];
+    return `<button class="crumb doc-step" type="button" data-doc-step="${direction}" aria-label="${label} (${key})${target ? `: ${escapeHtml(target.title)}` : ""}"${target ? "" : " disabled"}>${glyph}</button>`;
+  };
+  return `<span class="doc-stepper">${step(-1, "‹", "Previous document", "P")}<span>${index + 1} of ${sequence.length}</span>${step(1, "›", "Next document", "N")}</span>`;
+}
+function stepTaskDocument(direction) {
+  const path = state.view === "document" && state.selectedPath;
+  const sequence = path ? taskDocumentSequence(path, state.documents) : [];
+  const index = sequence.findIndex((candidate) => candidate.path === path);
+  if (index < 0) return showNotice("N and P step through a task's documents; open a task or one of its documents first.");
+  const target = sequence[index + direction];
+  if (!target) return showNotice(direction > 0 ? "That was the last document." : "This is the first one.");
+  selectDocument(target.path);
+}
+
 function renderDocument() {
   const doc = state.document;
   if (!doc) return;
@@ -1501,7 +1522,7 @@ function renderDocument() {
   state.view = "document";
   resetPageNavigation();
   elements.title.textContent = doc.title;
-  elements.meta.innerHTML = documentBreadcrumb(doc);
+  elements.meta.innerHTML = documentBreadcrumb(doc) + documentStepper(doc);
   elements.taskPathValue.textContent = doc.path;
   elements.copyTaskPath.dataset.copyPath = doc.absolutePath || doc.path;
   elements.copyTaskPath.title = `Copy ${doc.absolutePath || doc.path}`;
@@ -2286,6 +2307,10 @@ document.addEventListener("click", (event) => {
   hideLinkTip();
   target.open();
 }, true);
+elements.meta.addEventListener("click", (event) => {
+  const step = event.target.closest("[data-doc-step]");
+  if (step) stepTaskDocument(Number(step.dataset.docStep));
+});
 // Images inside an overlay (an issue's description) open the same viewer, stacked above the overlay.
 document.addEventListener("click", (event) => {
   const imageTrigger = event.target.closest("dialog .markdown-image-trigger");
@@ -2305,7 +2330,11 @@ elements.chunks.addEventListener("click", (event) => {
   const source = event.target.closest("[data-dock-source]");
   if (source) return selectDockSource(source);
   const documentSort = event.target.closest("[data-doc-sort]");
-  if (documentSort) return selectDocumentSort(documentSort);
+  if (documentSort) {
+    selectDocumentSort(documentSort);
+    if (state.document) elements.meta.innerHTML = documentBreadcrumb(state.document) + documentStepper(state.document);
+    return;
+  }
   const dockPanel = event.target.closest(".doc-dock-panel");
   if (dockPanel && event.target.closest("a[href], [data-action-key], .handoff-button")) queueMicrotask(() => dockPanel.matches(":popover-open") && dockPanel.hidePopover());
   const imageTrigger = event.target.closest(".markdown-image-trigger");
@@ -2464,24 +2493,27 @@ document.addEventListener("click", (event) => {
   if (!state.openComposer || elements.handoffPopover.contains(event.target) || event.target.closest(".handoff-button, [data-action-key], .global-handoff, [data-dock-draft]")) return;
   requestComposerClose();
 });
-// Keep the shortcut guide and bindings together so the documentation stays current.
+// Keep the shortcut guide and bindings together so the documentation stays current. The guide shows them by `group`;
+// shortcuts sharing a `row` (J and K) share one line, with the first one's label.
 const shortcuts = [
-  { keys: ["T"], description: "Go to today’s plan", run: goToToday },
-  { keys: ["C"], description: "Open hovered action or section in the agent draft; otherwise a global draft", run: openCursorComposer },
-  { keys: ["D"], description: "Open an agent draft for the current file", run: openDocumentComposer },
-  { keys: ["⌘K", "Ctrl+K", "/"], description: "Search pages, plans, tasks, topics, reference files, and PRs", run: openSearch },
-  { keys: ["["], description: "Previous day’s plan", run: () => stepDay(-1) },
-  { keys: ["]"], description: "Next day’s plan", run: () => stepDay(1) },
-  { keys: ["A"], description: "Open Tasks", run: () => showTasks() },
-  { keys: ["V"], description: "Open Activity: tasks, daily plans, issues and PRs, newest first", run: () => showActivity() },
-  { keys: ["G"], description: "Open Code: worktrees, pull requests, cleanup", run: () => showCode() },
-  { keys: ["I"], description: "Open Issues: triage, epics, activity", run: () => issuesOn() && showIssues() },
-  { keys: ["⌘D", "Ctrl+D"], description: "Favorite (or unfavorite) whatever is open: a document, task, page, PR, worktree, issue, or initiative, even from an overview. Favorites list at the top of the sidebar" },
-  { keys: ["H"], description: "Recently viewed, from anywhere (even the PR overview): type to filter, ↑↓ to move, Enter to go back, 1–9 to jump, Esc clears the filter" },
-  { keys: ["J"], description: "Jump to the next document section", run: () => jumpSection(1) },
-  { keys: ["K"], description: "Jump to the previous document section", run: () => jumpSection(-1) },
-  { keys: ["?"], description: "Show keyboard shortcuts (Shift + /)", run: openShortcutGuide },
-  { keys: ["Esc"], description: "Close the current dialog or popover" },
+  { group: "Go to", keys: ["T"], label: "Today’s plan", run: goToToday },
+  { group: "Go to", keys: ["A"], label: "Tasks", run: () => showTasks() },
+  { group: "Go to", keys: ["V"], label: "Activity", hint: "tasks, plans, issues and PRs, newest first", run: () => showActivity() },
+  { group: "Go to", keys: ["G"], label: "Code", hint: "worktrees, pull requests, cleanup", run: () => showCode() },
+  { group: "Go to", keys: ["I"], label: "Issues", hint: "triage, epics, activity", run: () => issuesOn() && showIssues() },
+  { group: "Go to", keys: ["H"], label: "Recently viewed", hint: "type to filter, 1–9 to jump, even over an overview" },
+  { group: "Read", row: "section", keys: ["J"], label: "Next / previous section", run: () => jumpSection(1) },
+  { group: "Read", row: "section", keys: ["K"], run: () => jumpSection(-1) },
+  { group: "Read", row: "document", keys: ["N"], label: "Next / previous task document", hint: "in the Documents panel’s order", run: () => stepTaskDocument(1) },
+  { group: "Read", row: "document", keys: ["P"], run: () => stepTaskDocument(-1) },
+  { group: "Read", row: "day", keys: ["]"], label: "Next / previous day’s plan", run: () => stepDay(1) },
+  { group: "Read", row: "day", keys: ["["], run: () => stepDay(-1) },
+  { group: "Find and keep", keys: ["⌘K", "Ctrl+K", "/"], label: "Search", hint: "pages, plans, tasks, topics, reference, PRs", run: openSearch },
+  { group: "Find and keep", keys: ["⌘D", "Ctrl+D"], label: "Favorite what’s open", hint: "listed at the top of the sidebar" },
+  { group: "Agent drafts", keys: ["C"], label: "Draft the hovered action or section", hint: "or the selected text; elsewhere a blank draft", run: openCursorComposer },
+  { group: "Agent drafts", keys: ["D"], label: "Draft about the current file", run: openDocumentComposer },
+  { group: "General", keys: ["?"], label: "This guide", run: openShortcutGuide },
+  { group: "General", keys: ["Esc"], label: "Close the dialog or popover" },
 ];
 
 let cursorPosition = null;
@@ -2566,7 +2598,17 @@ function openViewerDialog(dialog, { stack = false } = {}) {
 }
 
 function openShortcutGuide() {
-  document.querySelector("#shortcut-list").innerHTML = shortcuts.map(shortcut => `<div class="shortcut-row"><span>${escapeHtml(shortcut.description)}</span><span>${shortcut.keys.map(key => `<kbd>${escapeHtml(key)}</kbd>`).join(" ")}</span></div>`).join("");
+  // Only this platform's modifier: ⌘K on a Mac, Ctrl+K elsewhere.
+  const mac = /Mac|iP(hone|ad)/.test(navigator.platform);
+  const shown = (keys) => keys.filter((key) => mac ? !key.startsWith("Ctrl+") : !key.startsWith("⌘"));
+  const rows = [];
+  for (const shortcut of shortcuts) {
+    const same = shortcut.row && rows.find((row) => row.row === shortcut.row);
+    if (same) same.keys.push(...shown(shortcut.keys));
+    else rows.push({ ...shortcut, keys: shown(shortcut.keys) });
+  }
+  const groups = [...new Set(rows.map((row) => row.group))];
+  document.querySelector("#shortcut-list").innerHTML = groups.map((group) => `<section class="shortcut-group"><h3>${escapeHtml(group)}</h3>${rows.filter((row) => row.group === group).map((row) => `<div class="shortcut-row"><span class="shortcut-keys">${row.keys.map((key) => `<kbd>${escapeHtml(key)}</kbd>`).join("")}</span><span class="shortcut-label">${escapeHtml(row.label)}${row.hint ? `<small>${escapeHtml(row.hint)}</small>` : ""}</span></div>`).join("")}</section>`).join("");
   openViewerDialog(elements.shortcutsDialog);
 }
 

@@ -215,15 +215,26 @@ function documentRow(sub, currentPath, sort) {
     + `<span class="dock-link-out" aria-hidden="true">→</span></a>`;
 }
 
+const ORDER = {
+  edited: (a, b) => (b.modified || 0) - (a.modified || 0),
+  created: (a, b) => (b.created || b.modified || 0) - (a.created || a.modified || 0),
+  name: (a, b) => a.title.localeCompare(b.title),
+};
+const sortDocuments = (subDocuments, sort) => [...subDocuments].sort((a, b) => ORDER[sort](a, b) || a.path.localeCompare(b.path));
+
+// The task, then its documents in the Documents panel's order: what N and P step through from the task or any of them.
+export function taskDocumentSequence(path, documents) {
+  const taskId = path.match(/^tasks\/(TASK-\d{4})(?:\.md$|-assets\/)/)?.[1];
+  if (!taskId) return [];
+  const task = documents.find((candidate) => candidate.path === `tasks/${taskId}.md`);
+  const subs = sortDocuments(documents.filter((candidate) => candidate.path.startsWith(`tasks/${taskId}-assets/`)), documentSort());
+  return subs.length ? [...(task ? [task] : []), ...subs] : [];
+}
+
 function documentLists(subDocuments, currentPath, parentTask) {
   const active = documentSort();
-  const order = {
-    edited: (a, b) => (b.modified || 0) - (a.modified || 0),
-    created: (a, b) => (b.created || b.modified || 0) - (a.created || a.modified || 0),
-    name: (a, b) => a.title.localeCompare(b.title),
-  };
   const lists = DOC_SORTS.map(([sort]) => {
-    const sorted = [...subDocuments].sort((a, b) => order[sort](a, b) || a.path.localeCompare(b.path));
+    const sorted = sortDocuments(subDocuments, sort);
     let body = sorted.map((sub) => documentRow(sub, currentPath, sort)).join("");
     if (sort !== "name") {
       const days = new Map();

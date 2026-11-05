@@ -114,6 +114,11 @@ button { cursor: pointer; }
 .crumb-copy:hover { background: var(--quiet-field); color: var(--ink); }
 .crumb-copy.is-copied { animation: path-copy-confirmation 900ms ease-out; }
 .crumb-sep { flex: none; color: var(--line-strong); font-weight: 500; }
+.doc-stepper { display: inline-flex; flex: none; align-items: center; gap: 2px; margin-left: 6px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.doc-stepper > span { min-width: 6ch; text-align: center; }
+.doc-stepper .doc-step { margin: 0; padding: 1px 6px; color: var(--muted); font-size: .9rem; line-height: 1; }
+.doc-stepper .doc-step:hover { color: var(--action-ink); }
+.doc-stepper .doc-step:disabled { color: var(--line-strong); background: none; cursor: default; }
 .crumb-siblings { display: inline-flex; gap: 2px; margin-left: 6px; border-radius: 7px; background: var(--quiet-field); padding: 2px; }
 .crumb-siblings .crumb { max-width: 24ch; margin: 0; padding: 2px 8px; color: var(--muted); }
 .crumb-siblings .crumb:hover { background: rgba(255, 255, 255, .6); color: var(--ink); }
@@ -895,10 +900,14 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .search-footer { display: flex; justify-content: space-between; gap: 12px; padding: 9px 16px; }
 .search-footer kbd { margin-right: 3px; padding: 0 4px; }
 .viewer-dialog-footer { padding: 12px 20px; border-top: 1px solid var(--line); background: var(--hover-field); color: var(--muted); font-size: .75rem; line-height: 1.5; }
-.shortcut-list { padding: 8px 20px; }
-.shortcut-row { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 9px 0; font-size: .82rem; }
-.shortcut-row > span:last-child { flex: none; }
-@media (max-width: 520px) { .shortcut-row { align-items: start; } .shortcut-row > span:last-child { max-width: 110px; text-align: right; } }
+/* A cheat sheet: groups in two columns, keys first in a fixed column so labels line up, the detail muted beneath. */
+.shortcuts-dialog { width: min(820px, calc(100vw - 32px)); }
+.shortcut-list { columns: 2 320px; column-gap: 32px; padding: 12px 20px 14px; }
+.shortcut-group { break-inside: avoid; padding-bottom: 12px; }
+.shortcut-group h3 { margin: 0 0 4px; color: var(--label-text); font-size: .66rem; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; }
+.shortcut-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: baseline; gap: 10px; padding: 4px 0; font-size: .82rem; }
+.shortcut-keys { display: flex; flex-wrap: wrap; gap: 3px; }
+.shortcut-label small { display: block; color: var(--muted); font-size: .74rem; line-height: 1.35; }
 
 /* Shared interaction feel. Layered so every component rule above still wins; this only fills gaps.
    Colors ease on hover; presses shrink with the standalone `scale` property so existing transforms compose. */
