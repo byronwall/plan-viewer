@@ -576,7 +576,7 @@ function renderDetail({ animate = false } = {}) {
   if (!pane) return;
   const issue = byKey().get(ui.sel);
   pane.innerHTML = issue
-    ? `<div class="code-detail-head">${typeIcon(issue)}<h3>${keyMark(issue)} ${escapeHtml(issue.summary)}</h3></div>${issueFacts(issue)}${codeSection(issue)}${relationsSection(issue)}${textSections(issue, false)}`
+    ? `<div class="code-detail-head">${typeIcon(issue)}<h3><a class="code-pr-link" href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in ${trackerName(issue)} (O)">${keyMark(issue) || escapeHtml(issue.key)}</a> ${escapeHtml(issue.summary)}</h3></div>${issueFacts(issue)}${codeSection(issue)}${relationsSection(issue)}${textSections(issue, false)}`
     : `<p class="code-detail-empty">Select an issue to see its details, code, and comments.<br><br><kbd>J</kbd><kbd>K</kbd> move · <kbd>Enter</kbd> overview · ${(ui.data.skills || []).length > 1 ? `<kbd>1</kbd>–<kbd>${ui.data.skills.length}</kbd> agent drafts` : "<kbd>1</kbd> agent draft"} · <kbd>Space</kbd> select · shift-click a range · ${ui.tab === "triage" ? "<kbd>X</kbd> seen · " : ""}<kbd>O</kbd> open · <kbd>Y</kbd> copy link · <kbd>A</kbd> people · <kbd>F</kbd> filter · <kbd>R</kbd> refresh</p>`;
   if (animate) { pane.scrollTop = 0; fadeIn(pane, 160); }
   if (issue) loadDetail(issue.key);
@@ -663,7 +663,7 @@ export async function openIssue(key, list = null) {
     ensureDialog();
     overview.key = key;
     syncIssueUrl(key);
-    dialog.querySelector('[data-o="head"]').innerHTML = `<span class="issue-reading">${icon("refresh")}</span><div class="issue-overview-title"><h3>${escapeHtml(key)}</h3><p class="code-muted">Reading from Jira…</p></div><span class="code-spacer"></span>${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
+    dialog.querySelector('[data-o="head"]').innerHTML = `<span class="issue-reading">${icon("refresh")}</span><div class="issue-overview-title"><h3><a class="code-pr-link" href="${escapeHtml(issueUrl(key))}" target="_blank" rel="noreferrer">${escapeHtml(key)}</a></h3><p class="code-muted">Reading from Jira…</p></div><span class="code-spacer"></span>${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
     dialog.querySelector('[data-o="side"]').innerHTML = "";
     dialog.querySelector('[data-o="main"]').innerHTML = `<p class="code-muted issue-overview-text">Loading…</p>`;
     if (!dialog.open) { dialog.showModal(); dialog.focus({ preventScroll: true }); }
