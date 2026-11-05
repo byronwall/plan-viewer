@@ -9,7 +9,7 @@ import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as c
 import { dateKey, parseDateKey, startOfWeek } from "./public/dates.js";
 import { config, setConfig } from "./public/config.js";
 import { sourceHtml, statementId } from "./public/diagram.js";
-import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, buildDiagramPrompt, renderDiagram, safeAssetPath, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
+import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, buildDiagramPrompt, listDiagrams, renderDiagram, safeAssetPath, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
   const previous = process.env.SLACK_TOKEN;
@@ -317,6 +317,14 @@ test("embeds .draft diagrams as images drawn by the diagram command, and draws a
   } finally {
     setConfig(previous);
   }
+});
+
+test("the Diagrams page lists every .draft with its title and owning task", async () => {
+  const diagrams = await listDiagrams();
+  const flow = diagrams.find((diagram) => diagram.path === "tasks/TASK-0001-assets/flow.draft");
+  assert.equal(flow?.title, "Fixture flow");
+  assert.equal(flow?.task, "TASK-0001");
+  assert.ok(diagrams.every((diagram) => diagram.path.endsWith(".draft")));
 });
 
 test("consecutive diagram embeds share one thumbnail strip; other images stay full figures", () => {

@@ -1,4 +1,4 @@
-import { escapeHtml, isSlackLink, parseUpdates, relativeDate, SERVICE_ICONS } from "./markdown.js";
+import { diagramHref, escapeHtml, isSlackLink, parseUpdates, relativeDate, SERVICE_ICONS } from "./markdown.js";
 import { glyph } from "./icons.js";
 
 // The sticky document dock: a thin bar of icon buttons that open the task's working sections, the document's
@@ -11,6 +11,7 @@ const ICONS = {
   links: glyph("link", "dock-glyph"),
   backlinks: glyph("corner-up-left", "dock-glyph"),
   doc: glyph("file-text", "dock-glyph"),
+  diagram: glyph("layout-panel-left", "dock-glyph"),
   chat: glyph("message-square", "dock-glyph"),
   web: glyph("globe", "dock-glyph"),
 };
@@ -159,8 +160,8 @@ export function linkBrowser(groups) {
   const total = groups.reduce((sum, group) => sum + group.items.length, 0);
   const tab = (key, name, icon, count, index) => `<button type="button" class="dock-source" role="tab" data-dock-source="${key}" aria-selected="${index === 0}" title="${escapeHtml(name)} (${index + 1})">${icon ? `<span class="dock-link-icon">${icon}</span>` : ""}<span>${escapeHtml(name)}</span><small>${count}</small></button>`;
   const tabs = [tab("all", "All", "", total, 0), ...groups.map((group, index) => tab(group.key, group.name, group.icon, group.items.length, index + 1))].join("");
-  const rows = (group) => group.key === "slack" ? slackChannels(group) : group.items.map((item) => linkRow(item, group.key === "tasks" ? group.icon : "")).join("");
-  const labeled = (group) => group.key === "tasks" || group.items.some((item) => item.label);
+  const rows = (group) => group.key === "slack" ? slackChannels(group) : group.items.map((item) => linkRow(item, item.icon || (group.key === "tasks" ? group.icon : ""))).join("");
+  const labeled = (group) => group.key === "tasks" || group.items.some((item) => item.label || item.icon);
   const all = groups.map((group) => `<section class="dock-channel dock-group"><h4 class="dock-channel-heading dock-group-heading"><span class="dock-link-icon">${group.icon}</span><span class="dock-channel-name">${escapeHtml(group.name)}</span><small>${group.items.length}</small></h4>${rows(group)}</section>`).join("");
   const panes = linkList(all, true, 'role="tabpanel" data-dock-source-list="all"')
     + groups.map((group) => linkList(rows(group), labeled(group), `role="tabpanel" data-dock-source-list="${group.key}" hidden`)).join("");
@@ -271,7 +272,9 @@ function progressRing(done, total) {
 }
 
 // `body(chunk)` renders a chunk exactly as the page does; the panels reuse it so actions stay launchable.
-export function renderDock({ doc, documents, links, body }) {
+// `diagrams` ({ path, title }) are the ones the page embeds, then the rest of the task's; the Diagrams panel shows them as
+// thumbnails that open the viewer.
+export function renderDock({ doc, documents, links, body, diagrams = [] }) {
   const chunk = (pattern) => doc.chunks.find((candidate) => pattern.test(candidate.title));
   const actions = chunk(/^(next actions|next steps)$/i);
   const work = chunk(/^work breakdown$/i);
@@ -295,10 +298,19 @@ export function renderDock({ doc, documents, links, body }) {
 
   const items = [];
   const add = (key, label, icon, badge, title, meta, content, jump, bare = false, workItem = "") => items.push({ key, label, icon, badge, title, meta, content, jump, bare, workItem });
-  if (actions) add("actions", "Next actions", ICONS.actions, `${readyActions || listed.length}`, actions.title, readyActions ? `${readyActions} ready of ${listed.length}` : `${listed.length} recorded`, body(actions), actions.id);
-  // Work opens the work item dialog (which carries the whole breakdown) at the first ready item, else the first live one.
+  // Next actions and the work breakdown share one button: the panel lists the actions, and its header opens the work
+  // item dialog (which carries the whole breakdown) at the first ready item, else the first live one.
   const start = leaves.find((node) => node.ready) || leaves.find((node) => ["open", "active", "waiting"].includes(node.status)) || leaves[0];
-  if (work && leaves.length) add("work", "Work", progressRing(doneLeaves, leaves.length), `${doneLeaves}/${leaves.length}`, work.title, `${doneLeaves} of ${leaves.length} items completed · opens ${start.id}`, "", work.id, false, start.id);
+  const hasWork = work && leaves.length;
+  const actionMeta = listed.length ? (readyActions ? `${readyActions} ready of ${listed.length} actions` : `${listed.length} ${listed.length === 1 ? "action" : "actions"}`) : "";
+  const workMeta = hasWork ? `${doneLeaves} of ${leaves.length} items completed` : "";
+  if (actions || hasWork) {
+    const label = hasWork ? "Work" : actions.title.replace(/^next/i, "Next");
+    const meta = [actionMeta, workMeta].filter(Boolean).join(" · ");
+    const content = actions ? body(actions) : '<p class="dock-empty">No next actions recorded; the work items say what is ready.</p>';
+    add("work", label, hasWork ? progressRing(doneLeaves, leaves.length) : ICONS.actions, hasWork ? `${doneLeaves}/${leaves.length}` : `${readyActions || listed.length}`, actions ? (hasWork ? "Next actions and work" : actions.title) : "Work", meta, content, actions?.id || work.id);
+    if (hasWork) items.at(-1).tools = `<button type="button" class="doc-dock-jump" data-work-item="${escapeHtml(start.id)}" title="Open the work items at ${escapeHtml(start.id)}">Work items <span aria-hidden="true">→</span></button>`;
+  }
   const entries = updates && parseUpdates(updates.markdown);
   const latest = entries?.map((entry) => entry.date).sort().at(-1);
   if (updates) add("updates", "Updates", ICONS.updates, `${entries?.length || countUpdates(updates.markdown) || ""}`, updates.title, latest ? `Latest ${relativeDate(latest)} · ${entries.length} ${entries.length === 1 ? "entry" : "entries"}` : "Recorded in the task", body(updates), updates.id);
@@ -307,10 +319,12 @@ export function renderDock({ doc, documents, links, body }) {
     add("documents", "Documents", ICONS.doc, `${subDocuments.length}`, "Task documents", `${subDocuments.length} in ${taskId}-assets${latest ? ` · last edited ${dayLabel(latest).toLowerCase()}` : ""}`, documentLists(subDocuments, doc.path, parentTask));
     items.at(-1).tools = sortSwitch();
   }
-  add("links", "Links", ICONS.links, `${linkCount}`, "Links out", linkCount ? `${linkCount} across ${links.length} ${links.length === 1 ? "source" : "sources"}` : "No links in this document", linkCount ? linkBrowser(links) : '<p class="dock-empty">This document doesn\'t link anywhere yet.</p>', "", Boolean(linkCount));
-  add("backlinks", "Backlinks", ICONS.backlinks, `${backlinks.length}`, "Linked from", backlinks.length ? `${backlinks.length} ${backlinks.length === 1 ? "document links" : "documents link"} here` : "Nothing links here yet", backlinks.length
-    ? linkList(backlinks.map((source) => linkRow(docItem(source, source.path), source.task ? SERVICE_ICONS.task : ICONS.doc)).join(""), true)
-    : '<p class="dock-empty">No other document mentions this one yet.</p>');
+  if (diagrams.length) add("diagrams", "Diagrams", ICONS.diagram, `${diagrams.length}`, "Diagrams", `${diagrams.length} ${diagrams.length === 1 ? "diagram" : "diagrams"}${taskId ? ` for ${taskId}` : " on this page"} · opens beside its source`, `<div class="dock-diagrams">${diagrams.map((diagram) => `<a class="dock-diagram" href="?${escapeHtml(new URLSearchParams({ path: doc.path, diagram: diagram.path }).toString())}" data-diagram-link="${escapeHtml(diagram.path)}" title="${escapeHtml(diagram.path)}"><span class="dock-diagram-frame"><img src="${escapeHtml(diagramHref(diagram.path))}" alt="" loading="lazy" decoding="async"></span><span class="dock-diagram-title">${escapeHtml(diagram.title)}</span>${diagram.embedded ? "" : '<span class="dock-diagram-note">Not embedded</span>'}</a>`).join("")}</div>`);
+  // Links out and the documents that link here share one panel; "Linked from" is its last tab.
+  const backGroup = backlinks.length ? [{ key: "backlinks", name: "Linked from", icon: ICONS.backlinks, items: backlinks.map((source) => ({ ...docItem(source, source.path), icon: source.task ? SERVICE_ICONS.task : ICONS.doc })) }] : [];
+  const groups = [...links, ...backGroup];
+  const total = linkCount + backlinks.length;
+  add("links", "Links", ICONS.links, `${total}`, "Links", total ? [linkCount && `${linkCount} out`, backlinks.length && `${backlinks.length} in`].filter(Boolean).join(" · ") : "No links in or out yet", total ? linkBrowser(groups) : '<p class="dock-empty">This document doesn\'t link anywhere, and nothing links here yet.</p>', "", Boolean(total));
 
   return `<div class="doc-dock" data-doc-dock><div class="doc-dock-bar">
     <span class="doc-dock-title" aria-hidden="true">${escapeHtml(doc.task ? `${doc.task.id} · ${doc.title}` : doc.title)}</span>

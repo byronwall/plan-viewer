@@ -296,7 +296,7 @@ function todayDate() {
   return todayPath().slice("daily/".length, -"/plan.md".length).replaceAll("/", "-");
 }
 
-async function walkDocuments(directory: string): Promise<string[]> {
+async function walkDocuments(directory: string, extensions = [".md", ".txt"]): Promise<string[]> {
   let entries;
   try {
     entries = await readdir(join(ROOT, directory), { withFileTypes: true });
@@ -307,8 +307,8 @@ async function walkDocuments(directory: string): Promise<string[]> {
   const found = await Promise.all(entries.map(async (entry) => {
     const child = join(directory, entry.name);
     if (isExcluded(child)) return [];
-    if (entry.isDirectory()) return walkDocuments(child);
-    return entry.isFile() && [".md", ".txt"].includes(extname(entry.name)) ? [child] : [];
+    if (entry.isDirectory()) return walkDocuments(child, extensions);
+    return entry.isFile() && extensions.includes(extname(entry.name)) ? [child] : [];
   }));
   return found.flat().sort();
 }
@@ -473,6 +473,18 @@ async function slackIndex() {
     threads: [...threads.values()].map((entry) => ({ ...entry, host: entry.host || host, channelName: cached[entry.key]?.channelName || named.get(entry.channel) || listed.get(entry.channel) || "", summary: cached[entry.key] || null })),
     syncing: slackThreads.status(),
   };
+}
+
+// Every `.draft` diagram in the workspace for the Diagrams page: its title and subtitle from the source, when it
+// changed, and the task whose assets hold it.
+export async function listDiagrams() {
+  const paths = (await Promise.all(["daily", "tasks", "plans", "reference"].map((folder) => walkDocuments(folder, [".draft"])))).flat();
+  const diagrams = await Promise.all(paths.map(async (path) => {
+    const [contents, { mtimeMs }] = await Promise.all([readFile(join(ROOT, path), "utf8"), stat(join(ROOT, path))]);
+    const quoted = (keyword: string) => contents.match(new RegExp(`^\\s*${keyword}\\s+"((?:[^"\\\\]|\\\\.)*)"`, "m"))?.[1]?.replace(/\\(.)/g, "$1") || "";
+    return { path, title: quoted("diagram") || basename(path, ".draft"), subtitle: quoted("subtitle"), modified: mtimeMs, task: path.match(/^tasks\/(TASK-\d{4})-assets\//)?.[1] || "" };
+  }));
+  return diagrams.sort((a, b) => b.modified - a.modified);
 }
 
 export async function listDocuments() {
@@ -897,6 +909,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       response.end(await readFile(asset.absolute));
       return;
     }
+    if (request.method === "GET" && url.pathname === "/api/diagrams") return json(response, 200, { diagrams: await listDiagrams() });
     if (request.method === "GET" && url.pathname === "/api/diagram") {
       const svg = await renderDiagram(url.searchParams.get("path") || "");
       response.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-cache", "x-content-type-options": "nosniff", "content-security-policy": "sandbox" });

@@ -11,6 +11,7 @@ import { openSlackThread, refreshSlackStars, setSlackFavorites, setSlackNotice, 
 import { channelLabel, fresh as freshThread, lastActive, opener, permalink, refreshSlackPage, renderSlackPage } from "./slack-page.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { inlineSvg, sourceHtml } from "./diagram.js";
+import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./dates.js";
@@ -30,6 +31,7 @@ const elements = {
   tasksButton: document.querySelector("#open-tasks"),
   topicsButton: document.querySelector("#open-topics"),
   referenceButton: document.querySelector("#open-reference"),
+  diagramsButton: document.querySelector("#open-diagrams"),
   activityButton: document.querySelector("#open-activity"),
   codeButton: document.querySelector("#open-code"),
   issuesButton: document.querySelector("#open-issues"),
@@ -141,11 +143,12 @@ function resetPageNavigation() {
   elements.tasksButton.setAttribute("aria-current", "false");
   elements.topicsButton.setAttribute("aria-current", "false");
   elements.referenceButton.setAttribute("aria-current", "false");
+  elements.diagramsButton.setAttribute("aria-current", "false");
   elements.codeButton.setAttribute("aria-current", "false");
   elements.issuesButton.setAttribute("aria-current", "false");
   elements.slackButton.setAttribute("aria-current", "false");
   elements.activityButton.setAttribute("aria-current", "false");
-  elements.chunks.classList.remove("tasks-page", "library-page", "code-page", "issues-page", "slack-page", "activity-page");
+  elements.chunks.classList.remove("tasks-page", "library-page", "diagrams-page", "code-page", "issues-page", "slack-page", "activity-page");
 }
 
 function documentButton(doc, dailyChild = false) {
@@ -268,6 +271,11 @@ function navSummary(view) {
       ...live.sort((a, b) => b.task.updated.localeCompare(a.task.updated)).map((doc) => tipRow(TASK_STATUS_LABELS[doc.task.status], doc.task.title, `${doc.task.id} · ${doc.task.project}`, doc.task.status, `doc:${doc.path}`))];
     const counts = [["active", by("active").length], ["open", by("open").length], ["waiting", by("waiting").length]].filter(([, count]) => count).map(([status, count]) => `${count} ${status}`).join(" · ");
     return { count: due.length ? plural(due.length, "check-in") : live.length ? `${live.length} open` : "", attention: due.length > 0, card: tipHead("Tasks", counts) + (rows.slice(0, 8).join("") || tipEmpty("No open tasks.")) + (rows.length > 8 ? tipEmpty(`+${rows.length - 8} more on the Tasks page`) : "") };
+  }
+  if (view === "diagrams") {
+    const diagrams = state.diagrams || [];
+    return { count: diagrams.length ? String(diagrams.length) : "", card: tipHead("Diagrams", diagrams.length ? `${plural(diagrams.length, "diagram")} · newest first` : "")
+      + (diagrams.slice(0, 6).map((diagram) => tipRow(ago(diagram.modified), diagram.title, diagram.task || diagram.path, "", `diagram:${diagram.path}`)).join("") || tipEmpty(state.diagrams ? "No diagrams yet." : "Loading diagrams…")) };
   }
   if (view in LIBRARY_VIEWS) {
     const group = docs.filter((doc) => doc.group === LIBRARY_VIEWS[view].group);
@@ -537,6 +545,85 @@ function renderLibraryPage(view) {
   elements.chunks.innerHTML = `<section class="library-list" aria-label="${config.title}"><p class="library-intro">${intro}</p>${body || '<p class="library-intro">Nothing here yet.</p>'}</section>`;
 }
 
+// Every `.draft` in the workspace; read on load and again when one is saved, created or deleted.
+async function loadDiagrams() {
+  try {
+    state.diagrams = (await fetch("/api/diagrams").then((response) => response.json())).diagrams || [];
+  } catch {
+    state.diagrams = state.diagrams || [];
+  }
+  updateNavCounts();
+  // The document dock's Diagrams panel counts the task's diagrams, so it is redrawn once the list arrives, unless a panel is open.
+  const dock = elements.chunks.querySelector("[data-doc-dock]");
+  if (state.view === "document" && state.document && dock && !dock.querySelector(".doc-dock-panel:popover-open")) {
+    dock.remove();
+    renderDocumentDock(state.document);
+  }
+  if (state.view !== "diagrams" || elements.imageViewer.open) return;
+  const y = scrollY;
+  const typing = document.activeElement?.matches(".diagram-filter");
+  renderDiagramsPage();
+  window.scrollTo({ top: y, behavior: "instant" });
+  if (typing) elements.chunks.querySelector(".diagram-filter")?.focus();
+}
+
+function showDiagrams({ historyMode = "push" } = {}) {
+  if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
+  closeComposer();
+  if (historyMode !== "none") {
+    const url = new URL(location.href);
+    url.search = new URLSearchParams({ view: "diagrams" });
+    url.hash = "";
+    history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
+  }
+  renderDiagramsPage();
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+
+function renderDiagramsPage() {
+  const query = new URLSearchParams(location.search).get("q") || "";
+  state.view = "diagrams";
+  resetPageNavigation();
+  elements.diagramsButton.setAttribute("aria-current", "page");
+  for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
+  elements.title.textContent = "Diagrams";
+  elements.meta.textContent = "Every .draft in the workspace";
+  elements.count.textContent = state.diagrams ? plural(state.diagrams.length, "diagram") : "";
+  elements.chunkNav.hidden = true;
+  elements.chunkNav.replaceChildren();
+  elements.chunks.classList.add("library-page", "diagrams-page");
+  if (!state.diagrams) {
+    elements.chunks.innerHTML = `<section class="library-list"><p class="library-intro">Loading diagrams…</p></section>`;
+    return;
+  }
+  elements.chunks.innerHTML = diagramsPageHtml(state.diagrams, state.documents, query, ago);
+  if (query) filterDiagrams(elements.chunks, query);
+}
+
+elements.chunks.addEventListener("input", (event) => {
+  const filter = event.target.closest(".diagram-filter");
+  if (!filter) return;
+  filterDiagrams(elements.chunks, filter.value);
+  setOverlayParams({ q: filter.value.trim() });
+});
+elements.chunks.addEventListener("keydown", (event) => {
+  const filter = event.target.closest(".diagram-filter");
+  if (!filter) return;
+  if (event.key === "Escape" && filter.value) { event.stopPropagation(); filter.value = ""; filter.dispatchEvent(new Event("input", { bubbles: true })); }
+  else if (event.key === "Escape") filter.blur();
+  else if (event.key === "Enter") elements.chunks.querySelector(".diagram-card:not([hidden])")?.click();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "/" || state.view !== "diagrams" || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (event.target.closest?.("input, textarea, [contenteditable]") || document.querySelector("dialog[open]")) return;
+  const filter = elements.chunks.querySelector(".diagram-filter");
+  if (!filter) return;
+  event.preventDefault();
+  filter.focus();
+  filter.select();
+});
+
 function showCode({ historyMode = "push", tab = "" } = {}) {
   if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
   closeComposer();
@@ -779,7 +866,7 @@ function closeComposer(returnFocus = false) {
 
 // Images in an open overlay (an issue's description) page among themselves; elsewhere among the document's.
 function imageViewerItems(trigger) {
-  return [...(trigger.closest("dialog") || elements.chunks).querySelectorAll(".markdown-image-trigger")].map((trigger, index) => {
+  return [...(trigger.closest("dialog") || elements.chunks).querySelectorAll(".markdown-image-trigger:not([hidden])")].map((trigger, index) => {
     const image = trigger.querySelector(".markdown-image");
     return {
       trigger,
@@ -1460,11 +1547,21 @@ function chunkBody(doc, chunk) {
       || `<div class="markdown">${renderMarkdownSource(chunk.markdown, state.selectedPath)}</div>`;
 }
 
+// The diagrams the page embeds, in page order, then the task's other `.draft` files (which the list from /api/diagrams knows).
+function dockDiagrams(doc) {
+  const known = new Map((state.diagrams || []).map((diagram) => [diagram.path, diagram]));
+  const embedded = [...new Set([...elements.chunks.querySelectorAll(".chunk-card [data-diagram]")].map((trigger) => trigger.dataset.diagram))];
+  const taskId = doc.task?.id || doc.path.match(/^tasks\/(TASK-\d{4})-assets\//)?.[1];
+  const rest = taskId ? (state.diagrams || []).filter((diagram) => diagram.task === taskId && !embedded.includes(diagram.path)).map((diagram) => diagram.path) : [];
+  return [...embedded.map((path) => ({ path, embedded: true })), ...rest.map((path) => ({ path, embedded: false }))]
+    .map((item) => ({ ...item, title: known.get(item.path)?.title || elements.chunks.querySelector(`[data-diagram="${CSS.escape(item.path)}"] img`)?.alt || item.path.split("/").pop().replace(/\.draft$/, "") }));
+}
+
 // Panels repeat chunk content, so their copies drop ids (SVG markers excepted) to keep anchors and jumps unique.
 function renderDocumentDock(doc) {
   if (doc.format === "text") return;
   const links = collectLinks(elements.chunks, state.documents, doc.path);
-  elements.chunks.insertAdjacentHTML("afterbegin", renderDock({ doc, documents: state.documents, links, body: chunk => chunkBody(doc, chunk) }));
+  elements.chunks.insertAdjacentHTML("afterbegin", renderDock({ doc, documents: state.documents, links, body: chunk => chunkBody(doc, chunk), diagrams: dockDiagrams(doc) }));
   for (const node of elements.chunks.querySelectorAll(".doc-dock-panel-body [id]")) if (node.localName !== "marker") node.removeAttribute("id");
   syncDockStuck();
   loadLinkMetadata(doc);
@@ -1936,10 +2033,13 @@ function announceChange(change) {
   changeToasts.set(change.path, showNotice(`${verb} “${change.title}”`, false, { kind: "info", description: changeSummary(change), action: open }));
 }
 
+let diagramListTimer = 0;
 function connectLiveUpdates() {
   const events = new EventSource("/api/events");
   events.addEventListener("diagram", (event) => {
     try { refreshDiagram(JSON.parse(event.data).path); } catch { /* malformed event */ }
+    clearTimeout(diagramListTimer);
+    diagramListTimer = setTimeout(loadDiagrams, 300);
   });
   events.addEventListener("markdown", (event) => {
     try {
@@ -2034,6 +2134,7 @@ elements.copyTaskPath.addEventListener("animationend", () => {
 elements.tasksButton.addEventListener("click", () => showTasks());
 elements.topicsButton.addEventListener("click", () => showLibrary("topics"));
 elements.referenceButton.addEventListener("click", () => showLibrary("reference"));
+elements.diagramsButton.addEventListener("click", () => showDiagrams());
 elements.activityButton.addEventListener("click", () => showActivity());
 elements.codeButton.addEventListener("click", () => showCode());
 elements.issuesButton.addEventListener("click", () => showIssues());
@@ -2235,6 +2336,7 @@ function openRailItem(target) {
   else if (kind === "pr") { const [slug, number] = value.split("#"); openPrOverlay(slug, Number(number)); }
   else if (kind === "issue") openIssue(value);
   else if (kind === "slack") openSlackThread(value);
+  else if (kind === "diagram") openDiagram(value);
 }
 elements.library.addEventListener("pointerover", (event) => {
   const row = railTarget(event.target);
@@ -2381,7 +2483,7 @@ elements.chunks.addEventListener("click", (event) => {
     return;
   }
   const dockPanel = event.target.closest(".doc-dock-panel");
-  if (dockPanel && event.target.closest("a[href], [data-action-key], .handoff-button")) queueMicrotask(() => dockPanel.matches(":popover-open") && dockPanel.hidePopover());
+  if (dockPanel && event.target.closest("a[href], [data-action-key], [data-work-item], .handoff-button")) queueMicrotask(() => dockPanel.matches(":popover-open") && dockPanel.hidePopover());
   const imageTrigger = event.target.closest(".markdown-image-trigger");
   if (imageTrigger) {
     showImageViewer(imageTrigger);
@@ -2927,6 +3029,7 @@ const PAGES = [
   { title: "Tasks", detail: "All tasks", icon: "task", run: () => showTasks() },
   { title: "Activity", detail: "Everything that changed, newest first", icon: "plan", run: () => showActivity() },
   ...Object.entries(LIBRARY_VIEWS).map(([view, { title, intro }]) => ({ title, detail: intro, icon: title === "Topics" ? "topic" : "reference", run: () => showLibrary(view) })),
+  { title: "Diagrams", detail: "Every diagram in the workspace", icon: "plan", run: () => showDiagrams() },
   { title: "Local servers", detail: "Dev servers the viewer started: URLs, output, restart, stop", icon: "server", run: () => openServers(showNotice) },
   ...Object.entries(CODE_TABS).map(([tab, title]) => ({ title, detail: `Code · ${title}`, icon: tab === "prs" ? "pr" : tab === "commits" ? "branch" : "code", run: () => showCode({ tab: tab === "prs" ? "" : tab }) })),
   ...Object.entries(ISSUE_TABS).map(([tab, title]) => ({ title: tab === "all" ? "Issues" : `${title} issues`, detail: `Issues · ${title}`, icon: "issue", issues: true, run: () => showIssues({ tab: tab === "all" ? "" : tab }) })),
@@ -3264,6 +3367,10 @@ window.addEventListener("popstate", () => {
     showLibrary(params.get("view"), { historyMode: "none" });
     return;
   }
+  if (params.get("view") === "diagrams") {
+    showDiagrams({ historyMode: "none" });
+    return;
+  }
   if (params.get("view") === "code") {
     showCode({ historyMode: "none", tab: params.get("tab") || "" });
     return;
@@ -3521,6 +3628,7 @@ function visitResult(href) {
   if (view === "issues") return page("issue", "Issues", ISSUE_TABS[params.get("tab") || "all"] || "All");
   if (view === "slack") return page("slack", "Slack", "Linked threads");
   if (view === "activity") return page("plan", "Activity", "Everything that changed");
+  if (view === "diagrams") return page("plan", "Diagrams", "Every diagram in the workspace");
   if (view in LIBRARY_VIEWS) return page(view === "topics" ? "topic" : "reference", LIBRARY_VIEWS[view].title, LIBRARY_VIEWS[view].intro);
   const path = params.get("path") || state.defaultPath;
   // A work item dialog (`?item=`) is its own place, not the task behind it.
@@ -3685,6 +3793,7 @@ async function boot() {
       renderTasksPage();
     }
     else if (requestedView in LIBRARY_VIEWS) renderLibraryPage(requestedView);
+    else if (requestedView === "diagrams") renderDiagramsPage();
     else if (requestedView === "code") renderCode();
     else if (requestedView === "issues") renderIssues();
     else if (requestedView === "slack") renderSlack();
@@ -3692,6 +3801,7 @@ async function boot() {
     else if (initial) await selectDocument(initial, { historyMode: "none", anchor: locationAnchor() });
     else showNotice("No supported files were found under daily, tasks, plans, or reference.", true);
     connectLiveUpdates();
+    loadDiagrams();
     loadPrIndex().catch(() => {}); // so ⌘K lists PRs on its first paint instead of inserting them a moment later
     openOverlays(new URLSearchParams(location.search));
     if (issuesOn()) loadIssues().then(() => { renderFavorites(); updateNavCounts(); }).catch(() => {}); // ⌘K finds issues by key and title
