@@ -1,0 +1,30 @@
+diagram "Workspace invite flow" version=1
+subtitle "One link, one use, seven days"
+
+group owner_side "Workspace owner" color=blue
+node invite "Invite by email" in=owner_side
+node pending "Pending invites" in=owner_side
+
+group service "Atlas" color=teal
+node api "Invites API" in=service
+node table "invites table" in=service shape=pill
+node mailer "Transactional mailer" in=service
+
+node teammate "New teammate" color=amber shade=300
+node account "Working account" shape=pill color=slate shade=200
+
+legend blue "Owner actions"
+legend teal "Our services"
+legend amber "The invitee" shade=300
+legend line solid "Request"
+legend line dashed "Email"
+
+edge create invite -> api "create"
+edge store api -> table "store, expires in 7 days"
+edge send api -> mailer "send"
+edge email mailer -> teammate "single-use link" kind=async
+edge accept teammate -> api "accept"
+edge join api -> account "join"
+edge list pending -> table "list, revoke"
+
+layout root engine=compound-spring fit=slide aspect=1.6

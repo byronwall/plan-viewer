@@ -7,7 +7,9 @@ import { createLinkMetadataStore, refreshSlackChannels } from "./link-metadata.t
 import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle, withImages } from "./codex-desktop.ts";
 import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
 import { dateKey, parseDateKey, startOfWeek } from "./public/dates.js";
-import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, safeAssetPath, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
+import { config, setConfig } from "./public/config.js";
+import { sourceHtml, statementId } from "./public/diagram.js";
+import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, renderDiagram, safeAssetPath, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
   const previous = process.env.SLACK_TOKEN;
@@ -293,6 +295,40 @@ test("serves only traversal-safe repository image paths", () => {
   assert.throws(() => safeAssetPath("viewer/public/index.html"), /Invalid asset path/);
   assert.throws(() => safeAssetPath("plans/topic/diagram.pdf"), /Invalid asset path/);
   assert.equal(safeAssetPath("plans/topic/diagram.dot").relative, "plans/topic/diagram.dot");
+});
+
+test("embeds .draft diagrams as images drawn by the diagram command, and draws a failure as its error", async () => {
+  const html = inlineMarkdown("![Flow](TASK-0001-assets/flow.draft)", "tasks/TASK-0001.md");
+  assert.match(html, /data-diagram="tasks\/TASK-0001-assets\/flow\.draft"/);
+  assert.match(html, /src="\/api\/diagram\?path=tasks%2FTASK-0001-assets%2Fflow\.draft"/);
+  assert.match(inlineMarkdown("[flow](TASK-0001-assets/flow.draft)", "tasks/TASK-0001.md"), /href="\/api\/diagram\?path=/);
+  assert.throws(() => safeAssetPath("../outside.draft"), /Invalid asset path/);
+  const previous = config();
+  try {
+    setConfig({ ...previous, diagrams: { command: ["/bin/sh", "-c", 'echo "<svg>$1 $3</svg>"', "sh"] } });
+    assert.match(await renderDiagram("tasks/TASK-0001-assets/flow.draft"), /<svg>inspect --svg<\/svg>/);
+    await assert.rejects(renderDiagram("tasks/TASK-0001-assets/missing.draft"));
+    setConfig({ ...previous, diagrams: { command: ["/bin/sh", "-c", 'echo "line 2: unknown <thing>" >&2; exit 1', "sh"] } });
+    const { utimes } = await import("node:fs/promises");
+    await utimes(join(ROOT, "tasks/TASK-0001-assets/flow.draft"), new Date(), new Date(Date.now() + 5000));
+    const failed = await renderDiagram("tasks/TASK-0001-assets/flow.draft");
+    assert.match(failed, /flow\.draft did not draw/);
+    assert.match(failed, /unknown &lt;thing&gt;/);
+  } finally {
+    setConfig(previous);
+  }
+});
+
+test("diagram source lines carry the id they declare and an edge's ends, for hover linking", () => {
+  assert.equal(statementId('node api "Invites API" in=service'), "api");
+  assert.equal(statementId("+edge send api -> mailer"), "send");
+  assert.equal(statementId("layout root flow"), "");
+  assert.equal(statementId('legend blue "Owners"'), "");
+  const html = sourceHtml('# note\nedge send api -> mailer "send <it>"\n');
+  assert.match(html, /data-line="2" data-id="send" data-ends="api mailer"/);
+  assert.match(html, /<span class="draft-keyword">edge<\/span><span class="draft-id"> send<\/span>/);
+  assert.match(html, /&lt;it&gt;/);
+  assert.match(html, /class="draft-comment"># note/);
 });
 
 test("keeps unavailable images readable without exposing an unsafe source", () => {

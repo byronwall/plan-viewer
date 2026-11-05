@@ -46,6 +46,14 @@ Then, in any order:
 
 Take the next free number for a new task's ID, and update `updated:` whenever you change a task.
 
+## Diagrams
+
+Draw a diagram whenever a picture explains the work faster than prose: the shape of a system, a flow, the matrix an audit runs, where something broke. They are cheap, so make them often, and keep each one to a single idea (5–30 boxes).
+
+- Write [draftably](https://github.com/byronwall/draftably) source to `tasks/TASK-NNNN-assets/<name>.draft` and run `draftably check` on it until it is clean.
+- Embed it where it is discussed, as an image: `![What it shows](TASK-NNNN-assets/<name>.draft)`. The viewer draws it live from the source, so don't export or commit a PNG for the viewer.
+- Export a PNG (`draftably inspect <file> --png <out.png> --max-width 2000`) only for somewhere outside the workspace, such as a PR or Slack.
+
 ## Checks
 
 Run these after editing and fix what they report:

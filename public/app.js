@@ -3,13 +3,14 @@ import { isSettled, renderActions, renderWorkBreakdown, showDoneToggle, workStat
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDocumentSort, selectDockSource, taskDocumentSequence } from "./dock.js";
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
-import { delimitedTable, documentHref, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
+import { delimitedTable, diagramHref, documentHref, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, connectPlanning, setPeople, ago, copyPrompt, cachedPrIndex, commitLinkMatch, diffSize, hideTip, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, isMyIssue, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { renderActivityPage } from "./activity.js";
 import { openSlackThread, refreshSlackStars, setSlackFavorites, setSlackNotice, slackThreadTitle } from "./slack.js";
 import { channelLabel, fresh as freshThread, lastActive, opener, permalink, refreshSlackPage, renderSlackPage } from "./slack-page.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
+import { inlineSvg, sourceHtml } from "./diagram.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./dates.js";
@@ -56,7 +57,14 @@ let navigationScrollLock = null;
 let navigationScrollTimer = 0;
 const chunkOutlines = new Map();
 const actionGroups = new Map();
-const imageViewerState = { items: [], index: 0, scale: 1, fitScale: 1, isFitView: true, offset: { x: 0, y: 0 }, pan: null, trigger: null };
+// A per-browser on/off preference; private windows and blocked storage fall back to the default.
+function storedFlag(key, fallback) {
+  try { const value = localStorage.getItem(key); return value === null ? fallback : value === "1"; } catch { return fallback; }
+}
+function storeFlag(key, value) {
+  try { localStorage.setItem(key, value ? "1" : "0"); } catch {}
+}
+const imageViewerState = { showSource: storedFlag("plan-viewer:diagram-source", true), items: [], index: 0, scale: 1, fitScale: 1, isFitView: true, offset: { x: 0, y: 0 }, pan: null, trigger: null };
 
 // Sonner-style toasts: stacked bottom-right above the history button, newest in front. Hovering fans the stack out
 // and pauses every timer; a fourth toast pushes the oldest out.
@@ -777,6 +785,7 @@ function imageViewerItems(trigger) {
       trigger,
       src: image.currentSrc || image.src,
       alt: image.alt || `Image ${index + 1}`,
+      diagram: trigger.dataset.diagram || "",
       width: image.naturalWidth,
       height: image.naturalHeight,
     };
@@ -845,6 +854,11 @@ function renderImageViewer() {
   const item = imageViewerState.items[imageViewerState.index];
   if (!item) return;
   const count = imageViewerState.items.length;
+  const source = item.diagram && imageViewerState.showSource;
+  if (item.diagram) {
+    setOverlayParams({ diagram: item.diagram });
+    if (!item.loaded) loadDiagram(item);
+  }
   const dimensions = item.width && item.height ? `${item.width} × ${item.height}` : "Loading dimensions…";
   elements.imageViewer.innerHTML = `<section class="image-viewer-shell">
     <header class="image-viewer-header">
@@ -854,18 +868,23 @@ function renderImageViewer() {
         <p><span data-image-dimensions>${dimensions}</span> · Scroll to zoom · Drag to pan</p>
       </div>
       <div class="image-viewer-controls" aria-label="Image controls">
+        ${item.diagram ? `<button class="image-viewer-text" type="button" data-image-action="toggle-source" aria-pressed="${imageViewerState.showSource}" title="Show the .draft source beside the drawing (S)">Source</button><button class="image-viewer-text image-viewer-edit" type="button" data-image-action="edit-diagram" title="Open ${escapeHtml(item.diagram.split("/").pop())} in the draftably editor; saves redraw here (E)">Edit</button>` : ""}
         <button type="button" data-image-action="zoom-out" aria-label="Zoom out">−</button>
         <button class="image-viewer-reset" type="button" data-image-action="reset" aria-label="Reset image to fit"><span data-image-zoom>Fit</span><span>Reset</span></button>
         <button type="button" data-image-action="zoom-in" aria-label="Zoom in">+</button>
         <button class="image-viewer-close" type="button" data-image-action="close" aria-label="Close image viewer">×</button>
       </div>
     </header>
-    <div class="image-viewer-body${count === 1 ? " is-single" : ""}">
+    <div class="image-viewer-body${count === 1 ? " is-single" : ""}${source ? " has-source" : ""}">
       ${count > 1 ? `<aside class="image-viewer-rail" aria-label="Images in this document">${imageViewerState.items.map((candidate, index) => `<button class="image-viewer-thumbnail" type="button" data-image-index="${index}" aria-current="${index === imageViewerState.index}" aria-label="View image ${index + 1}: ${escapeHtml(candidate.alt)}"><img src="${escapeHtml(candidate.src)}" alt=""><span>${index + 1}</span></button>`).join("")}</aside>` : ""}
       <div class="image-viewer-stage" tabindex="0" aria-label="Zoomable image. Use arrow keys to browse, plus and minus to zoom, and zero to reset.">
-        ${item.html ? `<div class="image-viewer-main-image image-viewer-graph">${item.html}</div>` : `<img class="image-viewer-main-image" src="${escapeHtml(item.src)}" alt="${escapeHtml(item.alt)}" draggable="false">`}
+        ${item.svg ? `<div class="image-viewer-main-image image-viewer-diagram" role="img" aria-label="${escapeHtml(item.alt)}">${item.svg}</div>` : item.html ? `<div class="image-viewer-main-image image-viewer-graph">${item.html}</div>` : `<img class="image-viewer-main-image" src="${escapeHtml(item.src)}" alt="${escapeHtml(item.alt)}" draggable="false">`}
         ${count > 1 ? `<button class="image-viewer-nav image-viewer-previous" type="button" data-image-action="previous" aria-label="Previous image">←</button><button class="image-viewer-nav image-viewer-next" type="button" data-image-action="next" aria-label="Next image">→</button>` : ""}
       </div>
+      ${source ? `<aside class="diagram-source" aria-label="Diagram source">
+        <header><span title="${escapeHtml(item.diagram)}">${escapeHtml(item.diagram.split("/").pop())}</span><button type="button" data-image-action="copy-source" title="Copy the source">${glyph("copy")}<span>Copy</span></button></header>
+        <pre>${item.source === undefined ? `<span class="draft-loading">Loading…</span>` : sourceHtml(item.source)}</pre>
+      </aside>` : ""}
     </div>
   </section>`;
   const mainImage = elements.imageViewer.querySelector(".image-viewer-main-image");
@@ -876,8 +895,10 @@ function renderImageViewer() {
     if (label) label.textContent = `${item.width} × ${item.height}`;
     if (imageViewerState.isFitView) fitImageViewer();
   };
-  mainImage.addEventListener("load", syncLoadedImage);
-  if (mainImage.complete && mainImage.naturalWidth) syncLoadedImage();
+  if (mainImage.tagName === "IMG") {
+    mainImage.addEventListener("load", syncLoadedImage);
+    if (mainImage.complete && mainImage.naturalWidth) syncLoadedImage();
+  }
   imageViewerResizeObserver?.disconnect();
   imageViewerResizeObserver = new ResizeObserver(() => {
     if (imageViewerState.isFitView) fitImageViewer();
@@ -890,8 +911,20 @@ function renderImageViewer() {
 
 function showImageViewer(trigger) {
   const items = imageViewerItems(trigger);
-  const index = items.findIndex((item) => item.trigger === trigger);
+  openImageViewerAt(items, items.findIndex((item) => item.trigger === trigger), trigger);
+}
+
+// A `.draft` named by a link or the URL opens among the document's images, at its embed when it has one.
+function openDiagram(path, trigger = null) {
+  const items = imageViewerItems(trigger || elements.chunks);
+  let index = items.findIndex((item) => item.diagram === path);
+  if (index < 0) index = items.push({ trigger, diagram: path, src: diagramHref(path), alt: path.split("/").pop().replace(/\.draft$/, "") }) - 1;
+  openImageViewerAt(items, index, trigger);
+}
+
+function openImageViewerAt(items, index, trigger) {
   if (index < 0) return;
+  if (elements.imageViewer.open) closeImageViewer(false);
   imageViewerState.items = items;
   imageViewerState.index = index;
   imageViewerState.trigger = trigger;
@@ -920,6 +953,10 @@ function showGraphViewer(trigger) {
 
 function closeImageViewer(returnFocus = true) {
   const trigger = imageViewerState.trigger;
+  if (new URLSearchParams(location.search).get("diagram")) {
+    announceClosed();
+    setOverlayParams({ diagram: "" });
+  }
   imageViewerState.pan = null;
   imageViewerResizeObserver?.disconnect();
   imageViewerResizeObserver = null;
@@ -934,6 +971,7 @@ function selectImageViewerItem(index) {
   const count = imageViewerState.items.length;
   if (!count) return;
   imageViewerState.index = ((index % count) + count) % count;
+  if (!imageViewerState.items[imageViewerState.index].diagram) setOverlayParams({ diagram: "" });
   imageViewerState.scale = 1;
   imageViewerState.fitScale = 1;
   imageViewerState.isFitView = true;
@@ -1894,6 +1932,9 @@ function announceChange(change) {
 
 function connectLiveUpdates() {
   const events = new EventSource("/api/events");
+  events.addEventListener("diagram", (event) => {
+    try { refreshDiagram(JSON.parse(event.data).path); } catch { /* malformed event */ }
+  });
   events.addEventListener("markdown", (event) => {
     try {
       const update = JSON.parse(event.data);
@@ -2340,6 +2381,12 @@ elements.chunks.addEventListener("click", (event) => {
     showImageViewer(imageTrigger);
     return;
   }
+  const diagramLink = event.target.closest("a[data-diagram-link]");
+  if (diagramLink && !(event.metaKey || event.ctrlKey || event.shiftKey)) {
+    event.preventDefault();
+    openDiagram(diagramLink.dataset.diagramLink, diagramLink);
+    return;
+  }
   const graphExpand = event.target.closest("[data-graph-expand]");
   if (graphExpand) {
     event.preventDefault();
@@ -2427,7 +2474,92 @@ elements.imageViewer.addEventListener("click", (event) => {
   else if (action === "zoom-in") zoomImageViewer(1.25);
   else if (action === "zoom-out") zoomImageViewer(.8);
   else if (action === "reset") resetImageViewerTransform();
+  else if (action === "edit-diagram") openDiagramEditor(imageViewerState.items[imageViewerState.index]?.diagram);
+  else if (action === "toggle-source") toggleDiagramSource();
+  else if (action === "copy-source") copyDiagramSource(event.target.closest("button"));
+  else if (!imageViewerState.moved) {
+    // A click (not a drag) on a drawn object scrolls its statement into view.
+    const id = event.target.closest(".image-viewer-diagram [data-id]")?.dataset.id;
+    const line = id && elements.imageViewer.querySelector(`.draft-line[data-id="${CSS.escape(id)}"]`);
+    if (line) {
+      line.scrollIntoView({ block: "center", behavior: "smooth" });
+      line.classList.remove("is-flashed");
+      void line.offsetWidth;
+      line.classList.add("is-flashed");
+    }
+  }
 });
+
+function currentDiagram() {
+  const item = imageViewerState.items[imageViewerState.index];
+  return item?.diagram ? item : null;
+}
+
+function toggleDiagramSource() {
+  if (!currentDiagram()) return;
+  imageViewerState.showSource = !imageViewerState.showSource;
+  storeFlag("plan-viewer:diagram-source", imageViewerState.showSource);
+  renderImageViewer();
+  if (imageViewerState.isFitView) fitImageViewer();
+}
+
+async function copyDiagramSource(button) {
+  const item = currentDiagram();
+  if (item?.source === undefined) return;
+  await navigator.clipboard.writeText(item.source);
+  button.classList.remove("is-copied");
+  void button.offsetWidth;
+  button.classList.add("is-copied");
+}
+
+// Draws the item inline from the server's SVG and reads its source; re-renders the viewer if it is still showing it.
+async function loadDiagram(item) {
+  item.loaded = true;
+  const [svg, source] = await Promise.all([
+    fetch(`${diagramHref(item.diagram)}&v=${Date.now()}`).then((response) => response.text()).catch(() => ""),
+    fetch(`/api/asset?${new URLSearchParams({ path: item.diagram })}`).then((response) => response.ok ? response.text() : "").catch(() => ""),
+  ]);
+  const drawn = inlineSvg(svg);
+  if (drawn) Object.assign(item, { svg: drawn.html, width: drawn.width, height: drawn.height });
+  item.source = source;
+  if (elements.imageViewer.open && imageViewerState.items[imageViewerState.index] === item) {
+    const scroll = elements.imageViewer.querySelector(".diagram-source pre")?.scrollTop || 0;
+    renderImageViewer();
+    const pre = elements.imageViewer.querySelector(".diagram-source pre");
+    if (pre) pre.scrollTop = scroll;
+    if (imageViewerState.isFitView) fitImageViewer();
+  }
+}
+
+// Hovering a drawn object marks its statement, and hovering a statement marks what it draws.
+elements.imageViewer.addEventListener("mouseover", (event) => {
+  const from = event.target.closest(".image-viewer-diagram [data-id], .draft-line[data-id]");
+  for (const marked of elements.imageViewer.querySelectorAll(".is-linked")) marked.classList.remove("is-linked");
+  if (!from || imageViewerState.pan) return;
+  // A box brings its connections with it, in the drawing and the source.
+  const id = CSS.escape(from.dataset.id);
+  const ids = [id, ...[...elements.imageViewer.querySelectorAll(`.draft-line[data-ends~="${id}"]`)].map((line) => CSS.escape(line.dataset.id))];
+  for (const each of ids) for (const target of elements.imageViewer.querySelectorAll(`.image-viewer-diagram [data-id="${each}"], .draft-line[data-id="${each}"]`)) target.classList.add("is-linked");
+});
+
+async function openDiagramEditor(path) {
+  if (!path) return;
+  const response = await fetch("/api/diagram/open", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path }) });
+  const result = await response.json().catch(() => ({}));
+  showNotice(response.ok ? "Opening the draftably editor. Saves redraw the diagram here." : result.error || "Could not open the draftably editor.", !response.ok);
+}
+
+// A saved `.draft` redraws every embed of it, the image viewer's included.
+function refreshDiagram(path) {
+  const src = `${diagramHref(path)}&v=${Date.now()}`;
+  for (const trigger of document.querySelectorAll(`[data-diagram="${CSS.escape(path)}"]`)) trigger.querySelector("img").src = src;
+  for (const item of imageViewerState.items) {
+    if (item.diagram !== path) continue;
+    item.src = src;
+    if (item === currentDiagram() && elements.imageViewer.open) loadDiagram(item);
+    else item.loaded = false;
+  }
+}
 elements.imageViewer.addEventListener("wheel", (event) => {
   const stage = event.target.closest(".image-viewer-stage");
   if (!stage) return;
@@ -2450,7 +2582,8 @@ elements.imageViewer.addEventListener("pointerdown", (event) => {
   stage.setPointerCapture(event.pointerId);
   stage.classList.add("is-panning");
   imageViewerState.isFitView = false;
-  imageViewerState.pan = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+  imageViewerState.pan = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY };
+  imageViewerState.moved = false;
 });
 elements.imageViewer.addEventListener("pointermove", (event) => {
   const pan = imageViewerState.pan;
@@ -2459,6 +2592,7 @@ elements.imageViewer.addEventListener("pointermove", (event) => {
   imageViewerState.offset.y += event.clientY - pan.y;
   pan.x = event.clientX;
   pan.y = event.clientY;
+  if (Math.abs(pan.x - pan.startX) + Math.abs(pan.y - pan.startY) > 4) imageViewerState.moved = true;
   updateImageViewerTransform();
 });
 elements.imageViewer.addEventListener("pointerup", (event) => {
@@ -2483,6 +2617,8 @@ elements.imageViewer.addEventListener("keydown", (event) => {
   else if (event.key === "+" || event.key === "=") zoomImageViewer(1.25);
   else if (event.key === "-") zoomImageViewer(.8);
   else if (key === "0") resetImageViewerTransform();
+  else if (key === "s" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) toggleDiagramSource();
+  else if (key === "e" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) openDiagramEditor(currentDiagram().diagram);
   else return;
   event.preventDefault();
   event.stopPropagation();
@@ -3197,6 +3333,10 @@ const OVERLAYS = [
     open: (params) => { if (isSlackLink(params.get("slack")) && config().slack.codex?.length) openSlackThread(params.get("slack")); },
     result: (params) => ({ icon: "slack", title: escapeHtml(slackThreadTitle(params.get("slack"))), detail: "Slack thread", side: "Slack" }),
     closed: (params) => ["Slack thread", slackThreadTitle(params.get("slack"))] },
+  { param: "diagram",
+    open: (params) => openDiagram(params.get("diagram")),
+    result: (params) => ({ icon: "file", title: escapeHtml(params.get("diagram").split("/").pop()), detail: escapeHtml(params.get("diagram")), side: "Diagram" }),
+    closed: (params) => ["diagram", params.get("diagram").split("/").pop()] },
   { param: "plan", extra: ["doc"],
     open: (params) => openPlan(params.get("plan"), params.get("doc") || ""),
     result: (params) => { const plan = params.get("plan"); return { icon: "initiative", title: escapeHtml(planTitle(plan) || plan.split("/").pop()), detail: escapeHtml(`${plan.split(":")[0].split("/").pop()} · ${params.get("doc")?.split("/").pop() || "initiative"}`), side: "Initiative" }; },

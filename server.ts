@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { readFileSync, unwatchFile, watch, watchFile, type FSWatcher } from "node:fs";
 import { mkdir, readFile, readdir, stat, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
@@ -46,7 +46,7 @@ const issueTracker = createIssueTracker(ROOT, async () => ({ prs: (await codeDas
 const slackThreads = createSlackThreads(ROOT, () => config().slack?.codex || []);
 const PORT = Number(process.env.PLAN_VIEWER_PORT || process.env.PORT || config().port);
 const MAX_COMMENT_LENGTH = 12_000;
-const ASSET_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".dot"]);
+const ASSET_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".dot", ".draft"]);
 const liveClients = new Set<ServerResponse>();
 // Recent document changes, newest first, so a page opened later still sees what agents changed since the server started.
 const recentChanges: DocumentChange[] = [];
@@ -320,7 +320,7 @@ export function isViewableDocumentPath(path: string) {
     || /^tasks\/TASK-\d{4}(\.md|-assets\/.+\.(md|txt))$/.test(normalized);
 }
 
-export function watchMarkdownSources(onChange: (path: string) => void, root = ROOT) {
+export function watchMarkdownSources(onChange: (path: string) => void, root = ROOT, onDiagram?: (path: string) => void) {
   const watchers: FSWatcher[] = [];
   const pending = new Map<string, NodeJS.Timeout>();
 
@@ -329,6 +329,7 @@ export function watchMarkdownSources(onChange: (path: string) => void, root = RO
       const watcher = watch(join(root, source), { recursive: true }, (_event, fileName) => {
         if (!fileName) return;
         const changedPath = join(source, fileName.toString()).replaceAll("\\", "/");
+        if (onDiagram && changedPath.endsWith(".draft")) return onDiagram(changedPath);
         if (!isViewableDocumentPath(changedPath)) return;
         clearTimeout(pending.get(changedPath));
         pending.set(changedPath, setTimeout(() => {
@@ -831,7 +832,33 @@ const contentTypes: Record<string, string> = {
   ".gif": "image/gif",
   ".webp": "image/webp",
   ".dot": "text/plain; charset=utf-8",
+  ".draft": "text/plain; charset=utf-8",
 };
+
+// A `.draft` diagram is drawn from its source on request by the draftably CLI (`diagrams.command`), so the
+// picture never goes stale. Cached by modification time; a source that fails to compile draws its error instead.
+const diagramCache = new Map<string, { mtime: number; svg: string }>();
+
+export async function renderDiagram(requested: string) {
+  const asset = safeAssetPath(requested);
+  if (extname(asset.relative) !== ".draft") throw new Error("Invalid diagram path.");
+  const mtime = (await stat(asset.absolute)).mtimeMs;
+  const cached = diagramCache.get(asset.relative);
+  if (cached?.mtime === mtime) return cached.svg;
+  const [command, ...args] = config().diagrams.command;
+  let svg: string;
+  try {
+    svg = (await promisify(execFile)(command, [...args, "inspect", asset.absolute, "--svg"], { maxBuffer: 32 * 1024 * 1024, timeout: 30_000 })).stdout;
+  } catch (error: any) {
+    const message = error.code === "ENOENT" ? [`${command} is not installed: npm install -g draftably`]
+      : String(error.stderr || error.message || "draftably failed").trim().split("\n").slice(0, 6);
+    svg = `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="${40 + message.length * 20}" font-family="ui-monospace, monospace" font-size="13"><rect width="100%" height="100%" fill="#fff6f4" stroke="#e6b4aa"/><text x="16" y="28" fill="#8a2c1b" font-weight="600">${escapeXml(basename(asset.relative))} did not draw</text>${message.map((line, index) => `<text x="16" y="${52 + index * 20}" fill="#5b2a20">${escapeXml(line.slice(0, 100))}</text>`).join("")}</svg>`;
+  }
+  diagramCache.set(asset.relative, { mtime, svg });
+  return svg;
+}
+
+const escapeXml = (value: string) => value.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]!);
 
 export async function handleRequest(request: IncomingMessage, response: ServerResponse) {
   try {
@@ -857,6 +884,22 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       });
       response.end(await readFile(asset.absolute));
       return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/diagram") {
+      const svg = await renderDiagram(url.searchParams.get("path") || "");
+      response.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-cache", "x-content-type-options": "nosniff", "content-security-policy": "sandbox" });
+      response.end(svg);
+      return;
+    }
+    // Opens the draftably editor on the file (it reuses a running one for the folder and opens the browser itself).
+    if (request.method === "POST" && url.pathname === "/api/diagram/open") {
+      const asset = safeAssetPath(String((await readJson(request)).path || ""));
+      if (extname(asset.relative) !== ".draft") return json(response, 400, { error: "Not a .draft diagram." });
+      const [command, ...args] = config().diagrams.command;
+      const child = spawn(command, [...args, "open", asset.absolute], { cwd: dirname(asset.absolute), detached: true, stdio: "ignore" });
+      child.on("error", () => {});
+      child.unref();
+      return json(response, 200, { opened: true });
     }
     if (request.method === "GET" && url.pathname === "/api/events") return serveLiveEvents(request, response);
     if (request.method === "POST" && url.pathname === "/api/open-slack") {
@@ -973,7 +1016,10 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 export function startServer(port = PORT) {
   const server = createServer(handleRequest);
   seedSnapshots().catch(() => {});
-  const closeWatchers = watchMarkdownSources(broadcastMarkdownChange);
+  const closeWatchers = watchMarkdownSources(broadcastMarkdownChange, ROOT, (path) => {
+    const message = `event: diagram\ndata: ${JSON.stringify({ path })}\n\n`;
+    for (const client of liveClients) client.write(message);
+  });
   codeDashboard.startBackgroundRefresh();
   issueTracker.startBackgroundRefresh();
   // Edits to viewer.config.json apply without a restart; pages pick them up on their next load. A broken edit keeps the

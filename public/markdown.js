@@ -152,6 +152,7 @@ export function resolveMarkdownAsset(href, currentPath) {
     const url = new URL(repositoryRelative, `https://plan-viewer.local/${currentPath}`);
     if (url.origin !== "https://plan-viewer.local" || url.search || url.hash) return { kind: "unavailable" };
     const path = safeDecode(url.pathname.slice(1));
+    if (/^(daily|tasks|plans|reference)\/.+\.draft$/i.test(path)) return { kind: "asset", path, diagram: true, href: diagramHref(path) };
     if (!/^(daily|tasks|plans|reference)\/.+\.(?:png|jpe?g|gif|webp|svg)$/i.test(path)) return { kind: "unavailable" };
     return { kind: "asset", path };
   } catch {
@@ -168,7 +169,7 @@ export function resolveMarkdownAttachment(href, currentPath) {
     const url = new URL(repositoryRelative, `https://plan-viewer.local/${currentPath}`);
     if (url.origin !== "https://plan-viewer.local" || url.search || url.hash) return { kind: "unavailable" };
     const path = safeDecode(url.pathname.slice(1));
-    if (!/^(daily|tasks|plans|reference)\/.+\.(?:png|jpe?g|gif|webp|svg|dot)$/i.test(path)) return { kind: "unavailable" };
+    if (!/^(daily|tasks|plans|reference)\/.+\.(?:png|jpe?g|gif|webp|svg|dot|draft)$/i.test(path)) return { kind: "unavailable" };
     return { kind: "asset", path };
   } catch {
     return { kind: "unavailable" };
@@ -315,6 +316,11 @@ function assetHref(path) {
   return `/api/asset?${new URLSearchParams({ path })}`;
 }
 
+// A `.draft` diagram, drawn from its source by the server.
+export function diagramHref(path) {
+  return `/api/diagram?${new URLSearchParams({ path })}`;
+}
+
 // `bare: false` leaves unqualified SHAs as text: headings name things (`### c4574f89: Connection dropped`) rather than cite commits.
 export function inlineMarkdown(value, currentPath = "", bare = true) {
   const linkPattern = /(!?)\[([^\]]*)\]\(([^\s)]+)\)/g;
@@ -330,7 +336,7 @@ export function inlineMarkdown(value, currentPath = "", bare = true) {
       const asset = resolveMarkdownAsset(target, currentPath);
       if (asset.kind === "asset" || asset.kind === "remote") {
         const accessibleLabel = labelSource ? `Open ${labelSource} in image viewer` : "Open image in viewer";
-        output.push(`<button class="markdown-image-trigger" type="button" aria-label="${escapeHtml(accessibleLabel)}"><img class="markdown-image" src="${escapeHtml(asset.href || assetHref(asset.path))}" alt="${escapeHtml(labelSource)}" loading="lazy" decoding="async"></button>`);
+        output.push(`<button class="markdown-image-trigger" type="button" aria-label="${escapeHtml(accessibleLabel)}"${asset.diagram ? ` data-diagram="${escapeHtml(asset.path)}"` : ""}><img class="markdown-image" src="${escapeHtml(asset.href || assetHref(asset.path))}" alt="${escapeHtml(labelSource)}" loading="lazy" decoding="async"></button>`);
       } else {
         const label = formatInlineText(labelSource || "Image", currentPath);
         output.push(`<span class="markdown-unavailable-image" role="img" aria-label="Unavailable image: ${escapeHtml(labelSource || "Image")}">${label} <span aria-hidden="true">— image unavailable</span></span>`);
@@ -349,7 +355,9 @@ export function inlineMarkdown(value, currentPath = "", bare = true) {
     } else if (link.kind === "external") {
       output.push(externalLink(link.href, label));
     } else if (attachment?.kind === "asset") {
-      output.push(`<a class="markdown-asset-link" href="${escapeHtml(assetHref(attachment.path))}" target="_blank" rel="noreferrer">${label}&#8288;<span class="external-mark" aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>`);
+      output.push(attachment.path.endsWith(".draft")
+        ? `<a class="markdown-asset-link" href="${escapeHtml(diagramHref(attachment.path))}" data-diagram-link="${escapeHtml(attachment.path)}">${label}</a>`
+        : `<a class="markdown-asset-link" href="${escapeHtml(assetHref(attachment.path))}" target="_blank" rel="noreferrer">${label}&#8288;<span class="external-mark" aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>`);
     } else {
       output.push(`<span class="markdown-unavailable-link" title="This target is not available in the plan viewer">${label}</span>`);
     }

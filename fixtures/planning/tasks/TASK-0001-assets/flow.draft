@@ -1,0 +1,4 @@
+diagram "Fixture flow" version=1
+node a "Start"
+node b "Finish"
+edge go a -> b
