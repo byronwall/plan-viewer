@@ -2649,10 +2649,10 @@ body:has(.activity-page), body:has(.activity-page) .reading-pane { background: v
 /* Diagram mode of the image viewer: the drawing inline, its .draft source beside it, hover linking the two. */
 .image-viewer-controls .image-viewer-text { font-size: .76rem; transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease; }
 .image-viewer-controls .image-viewer-text[aria-pressed="true"] { border-color: color-mix(in srgb, var(--action) 45%, var(--line)); background: color-mix(in srgb, var(--action) 9%, var(--paper)); color: var(--action-ink); }
-/* Side by side | Stacked: two buttons joined into one control, spaced from the rest. */
+/* Inline | Side by side | Stacked: buttons joined into one control, spaced from the rest. */
 .image-viewer-segmented { display: inline-flex; margin-right: 6px; }
-.image-viewer-segmented .image-viewer-text:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.image-viewer-segmented .image-viewer-text:last-child { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.image-viewer-segmented .image-viewer-text:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.image-viewer-segmented .image-viewer-text:not(:first-child) { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .image-viewer-segmented .image-viewer-text[aria-pressed="true"] { position: relative; }
 .image-viewer-body.has-source { grid-template-columns: minmax(0, 1fr) clamp(340px, 34vw, 560px); }
 .image-viewer-body.has-source:not(.is-single) { grid-template-columns: 232px minmax(0, 1fr) clamp(340px, 30vw, 520px); }

@@ -879,6 +879,8 @@ test("draws a diff diagram's panels side by side or stacked on request, and leav
   assert.equal(comparePanels(diff), "down");
   assert.match(withPanels(diff, "right"), /^compare "main" "PR" direction=right$/m);
   assert.equal(withPanels(diff, ""), diff);
+  assert.equal(withPanels(diff, "inline"), 'node a "A"\n+node b "B"\n');
+  assert.equal(comparePanels('node a "A"\n+node b "B"\n'), "inline");
   assert.match(withPanels('node a "A"\n~edge e a -> a\n', "down"), /\ncompare direction=down\n$/);
   const plain = 'node a "A"\nedge e a -> a "x-y"\n';
   assert.equal(isDiffDiagram(plain), false);

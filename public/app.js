@@ -66,9 +66,11 @@ function storedFlag(key, fallback) {
 function storeFlag(key, value) {
   try { localStorage.setItem(key, value ? "1" : "0"); } catch {}
 }
-// How a diff diagram's two panels sit: "right" (side by side), "down" (stacked), or "" for what the file says.
+// How a diff diagram draws its changes: "inline" (one drawing with marks), "right" (panels side by side), "down"
+// (stacked), or "" for what the file says.
+const DIFF_LAYOUTS = [["inline", "Inline", "as one drawing with change marks"], ["right", "Side by side", "as before and after panels side by side"], ["down", "Stacked", "as before and after panels one above the other"]];
 function storedPanels() {
-  try { const value = localStorage.getItem("plan-viewer:diagram-panels"); return value === "right" || value === "down" ? value : ""; } catch { return ""; }
+  try { const value = localStorage.getItem("plan-viewer:diagram-panels"); return DIFF_LAYOUTS.some(([layout]) => layout === value) ? value : ""; } catch { return ""; }
 }
 const imageViewerState = { showSource: storedFlag("plan-viewer:diagram-source", true), panels: storedPanels(), items: [], index: 0, scale: 1, fitScale: 1, isFitView: true, offset: { x: 0, y: 0 }, pan: null, trigger: null };
 
@@ -2646,10 +2648,10 @@ elements.imageViewer.addEventListener("click", (event) => {
   }
 });
 
-// Side by side or stacked, for a diff diagram's before and after panels. The pressed one is what is drawn.
+// Inline, side by side or stacked, for a diff diagram. The pressed one is what is drawn.
 function panelsToggle(item) {
   const panels = imageViewerState.panels || comparePanels(item.source);
-  return `<span class="image-viewer-segmented" role="group" aria-label="Arrange the before and after panels">${[["right", "Side by side"], ["down", "Stacked"]].map(([value, label]) => `<button class="image-viewer-text" type="button" data-image-action="panels" data-panels="${value}" aria-pressed="${panels === value}" title="Draw the before and after panels ${value === "right" ? "side by side" : "one above the other"} (L)">${label}</button>`).join("")}</span>`;
+  return `<span class="image-viewer-segmented" role="group" aria-label="How the changes are drawn">${DIFF_LAYOUTS.map(([value, label, how]) => `<button class="image-viewer-text" type="button" data-image-action="panels" data-panels="${value}" aria-pressed="${panels === value}" title="Draw the changes ${how} (L cycles)">${label}</button>`).join("")}</span>`;
 }
 
 function setDiagramPanels(panels) {
@@ -2911,7 +2913,7 @@ elements.imageViewer.addEventListener("keydown", (event) => {
   else if (key === "e" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) openDiagramEditor(currentDiagram().diagram);
   else if (key === "d" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) focusDiagramAsk();
   else if (key === "c" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) copyDiagramPng();
-  else if (key === "l" && isDiffDiagram(currentDiagram()?.source) && !(event.metaKey || event.ctrlKey || event.altKey)) setDiagramPanels((imageViewerState.panels || comparePanels(currentDiagram().source)) === "right" ? "down" : "right");
+  else if (key === "l" && isDiffDiagram(currentDiagram()?.source) && !(event.metaKey || event.ctrlKey || event.altKey)) setDiagramPanels(DIFF_LAYOUTS[(DIFF_LAYOUTS.findIndex(([layout]) => layout === (imageViewerState.panels || comparePanels(currentDiagram().source))) + 1) % DIFF_LAYOUTS.length][0]);
   else return;
   event.preventDefault();
   event.stopPropagation();

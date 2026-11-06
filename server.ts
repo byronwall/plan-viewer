@@ -869,17 +869,20 @@ const contentTypes: Record<string, string> = {
 // picture never goes stale. Cached by modification time; a source that fails to compile draws its error instead.
 const diagramCache = new Map<string, { mtime: number; svg: string }>();
 
-// A diff diagram (one with `+ - ~` marks or a `compare` line; isDiffDiagram is shared with the viewer) has panels that sit side by side (`right`) or stacked (`down`) as its `compare` line says; the viewer can
+// A diff diagram (one with `+ - ~` marks or a `compare` line; isDiffDiagram is shared with the viewer) draws inline, as
+// one drawing with change marks, or, with a `compare` line, as panels side by side (`right`) or stacked (`down`); the viewer can
 // ask for the other arrangement, drawn from a temporary copy whose `compare` line (added when missing) says so.
+const PANELS = new Set(["inline", "right", "down"]);
 export function withPanels(source: string, panels: string) {
-  if ((panels !== "right" && panels !== "down") || !isDiffDiagram(source)) return source;
+  if (!PANELS.has(panels) || !isDiffDiagram(source)) return source;
   const line = /^([ \t]*compare\b)(.*)$/m;
+  if (panels === "inline") return source.replace(/^[ \t]*compare\b.*(\r?\n|$)/m, "");
   if (line.test(source)) return source.replace(line, (_, head, rest) => `${head}${rest.replace(/\s+direction=\S+/, "")} direction=${panels}`);
   return `${source.replace(/\n?$/, "\n")}compare direction=${panels}\n`;
 }
 
 async function withDiagramFile<T>(absolute: string, panels: string, run: (file: string) => Promise<T>) {
-  if (panels !== "right" && panels !== "down") return run(absolute);
+  if (!PANELS.has(panels)) return run(absolute);
   const folder = await mkdtemp(join(tmpdir(), "plan-viewer-diagram-"));
   try {
     const file = join(folder, basename(absolute));
@@ -894,7 +897,7 @@ export async function renderDiagram(requested: string, panels = "") {
   const asset = safeAssetPath(requested);
   if (extname(asset.relative) !== ".draft") throw new Error("Invalid diagram path.");
   const mtime = (await stat(asset.absolute)).mtimeMs;
-  const key = panels === "right" || panels === "down" ? `${asset.relative}|${panels}` : asset.relative;
+  const key = PANELS.has(panels) ? `${asset.relative}|${panels}` : asset.relative;
   const cached = diagramCache.get(key);
   if (cached?.mtime === mtime) return cached.svg;
   const [command, ...args] = config().diagrams.command;
