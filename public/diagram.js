@@ -19,6 +19,11 @@ export function inlineSvg(text) {
   return { html: new XMLSerializer().serializeToString(svg), width, height };
 }
 
+// A diff diagram: `draftably compare` output, with `+ - ~` change marks or a `compare` line that draws them as panels.
+export const isDiffDiagram = (source) => /^[ \t]*(compare\b|[+~-][ \t]*(node|group|edge)\b)/m.test(source || "");
+// The arrangement its `compare` line asks for: `right` (side by side), `down` (stacked), or "" when draftably picks.
+export const comparePanels = (source) => (source || "").match(/^[ \t]*compare\b.*\sdirection=(right|down)\b/m)?.[1] || "";
+
 const DECLARES = /^\s*[+\-~.]?(node|group|edge|legend|note|layout|order|align|near|nudge|pin|stay|size|state|phase|diagram|subtitle|theme|theme-color|routing|config|compare)\b/;
 // The id a statement declares (`node api …`, `edge send api -> db`), or the scope it refines (`layout services …`).
 export function statementId(line) {

@@ -10,7 +10,7 @@ import { renderActivityPage } from "./activity.js";
 import { openSlackThread, refreshSlackStars, setSlackFavorites, setSlackNotice, slackThreadTitle } from "./slack.js";
 import { channelLabel, fresh as freshThread, lastActive, opener, permalink, refreshSlackPage, renderSlackPage } from "./slack-page.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
-import { inlineSvg, sourceHtml } from "./diagram.js";
+import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
@@ -66,7 +66,11 @@ function storedFlag(key, fallback) {
 function storeFlag(key, value) {
   try { localStorage.setItem(key, value ? "1" : "0"); } catch {}
 }
-const imageViewerState = { showSource: storedFlag("plan-viewer:diagram-source", true), items: [], index: 0, scale: 1, fitScale: 1, isFitView: true, offset: { x: 0, y: 0 }, pan: null, trigger: null };
+// How a diff diagram's two panels sit: "right" (side by side), "down" (stacked), or "" for what the file says.
+function storedPanels() {
+  try { const value = localStorage.getItem("plan-viewer:diagram-panels"); return value === "right" || value === "down" ? value : ""; } catch { return ""; }
+}
+const imageViewerState = { showSource: storedFlag("plan-viewer:diagram-source", true), panels: storedPanels(), items: [], index: 0, scale: 1, fitScale: 1, isFitView: true, offset: { x: 0, y: 0 }, pan: null, trigger: null };
 
 // Sonner-style toasts: stacked bottom-right above the history button, newest in front. Hovering fans the stack out
 // and pauses every timer; a fourth toast pushes the oldest out.
@@ -959,6 +963,7 @@ function renderImageViewer() {
         <p>${item.diagram ? "Scroll to zoom · Drag to pan · Hover a box to find its line" : `<span data-image-dimensions>${dimensions}</span> · Scroll to zoom · Drag to pan`}</p>
       </div>
       <div class="image-viewer-controls" aria-label="Image controls">
+        ${item.diagram && isDiffDiagram(item.source) ? panelsToggle(item) : ""}
         ${item.diagram ? `<button class="image-viewer-text" type="button" data-image-action="toggle-source" aria-pressed="${imageViewerState.showSource}" title="Show the .draft source beside the drawing (S)">Source</button><button class="image-viewer-text" type="button" data-image-action="copy-png" title="Copy the drawing as a PNG that carries its source (C)">Copy PNG</button><button class="image-viewer-text image-viewer-edit" type="button" data-image-action="edit-diagram" title="Open ${escapeHtml(item.diagram.split("/").pop())} in the draftably editor; saves redraw here (E)">Edit</button>` : ""}
         <button type="button" data-image-action="zoom-out" aria-label="Zoom out">−</button>
         <button class="image-viewer-reset" type="button" data-image-action="reset" aria-label="Reset image to fit"><span data-image-zoom>Fit</span><span>Reset</span></button>
@@ -2627,6 +2632,7 @@ elements.imageViewer.addEventListener("click", (event) => {
   else if (action === "copy-source") copyDiagramSource(event.target.closest("button"));
   else if (action === "copy-prompt") askAboutDiagram(true);
   else if (action === "copy-png") copyDiagramPng();
+  else if (action === "panels") setDiagramPanels(event.target.closest("[data-panels]").dataset.panels);
   else if (!imageViewerState.moved) {
     // A click (not a drag) on a drawn object scrolls its statement into view.
     const id = event.target.closest(".image-viewer-diagram [data-id]")?.dataset.id;
@@ -2639,6 +2645,22 @@ elements.imageViewer.addEventListener("click", (event) => {
     }
   }
 });
+
+// Side by side or stacked, for a diff diagram's before and after panels. The pressed one is what is drawn.
+function panelsToggle(item) {
+  const panels = imageViewerState.panels || comparePanels(item.source);
+  return `<span class="image-viewer-segmented" role="group" aria-label="Arrange the before and after panels">${[["right", "Side by side"], ["down", "Stacked"]].map(([value, label]) => `<button class="image-viewer-text" type="button" data-image-action="panels" data-panels="${value}" aria-pressed="${panels === value}" title="Draw the before and after panels ${value === "right" ? "side by side" : "one above the other"} (L)">${label}</button>`).join("")}</span>`;
+}
+
+function setDiagramPanels(panels) {
+  const item = currentDiagram();
+  if (!item || !isDiffDiagram(item.source)) return;
+  imageViewerState.panels = panels;
+  try { localStorage.setItem("plan-viewer:diagram-panels", panels); } catch {}
+  for (const button of elements.imageViewer.querySelectorAll("[data-panels]")) button.setAttribute("aria-pressed", String(button.dataset.panels === panels));
+  imageViewerState.isFitView = true;
+  loadDiagram(item);
+}
 
 function currentDiagram() {
   const item = imageViewerState.items[imageViewerState.index];
@@ -2724,7 +2746,7 @@ async function copyDiagramPng() {
   if (!item || button?.getAttribute("aria-busy") === "true") return;
   button?.setAttribute("aria-busy", "true");
   try {
-    const response = await fetch("/api/diagram/copy", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: item.diagram }) });
+    const response = await fetch("/api/diagram/copy", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: item.diagram, panels: imageViewerState.panels }) });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || "Could not copy the drawing.");
     const now = elements.imageViewer.querySelector('[data-image-action="copy-png"]');
@@ -2752,17 +2774,18 @@ async function copyDiagramSource(button) {
 async function loadDiagram(item) {
   item.loaded = true;
   const [svg, source] = await Promise.all([
-    fetch(`${diagramHref(item.diagram)}&v=${Date.now()}`).then((response) => response.text()).catch(() => ""),
+    fetch(`${diagramHref(item.diagram)}&panels=${imageViewerState.panels}&v=${Date.now()}`).then((response) => response.text()).catch(() => ""),
     fetch(`/api/asset?${new URLSearchParams({ path: item.diagram })}`).then((response) => response.ok ? response.text() : "").catch(() => ""),
   ]);
   const drawn = inlineSvg(svg);
   if (drawn) Object.assign(item, { svg: drawn.html, width: drawn.width, height: drawn.height });
+  const wasDiff = isDiffDiagram(item.source);
   item.source = source;
   if (elements.imageViewer.open && imageViewerState.items[imageViewerState.index] === item) {
     // A redraw swaps the drawing and source in place, so zoom, pan, scroll and a half-typed request stay put.
     const drawing = elements.imageViewer.querySelector(".image-viewer-diagram");
     const pre = elements.imageViewer.querySelector(".diagram-source pre");
-    if (drawing && item.svg) {
+    if (drawing && item.svg && wasDiff === isDiffDiagram(source)) {
       drawing.innerHTML = item.svg;
       if (pre) { const scroll = pre.scrollTop; pre.innerHTML = sourceHtml(item.source); pre.scrollTop = scroll; }
     } else {
@@ -2888,6 +2911,7 @@ elements.imageViewer.addEventListener("keydown", (event) => {
   else if (key === "e" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) openDiagramEditor(currentDiagram().diagram);
   else if (key === "d" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) focusDiagramAsk();
   else if (key === "c" && currentDiagram() && !(event.metaKey || event.ctrlKey || event.altKey)) copyDiagramPng();
+  else if (key === "l" && isDiffDiagram(currentDiagram()?.source) && !(event.metaKey || event.ctrlKey || event.altKey)) setDiagramPanels((imageViewerState.panels || comparePanels(currentDiagram().source)) === "right" ? "down" : "right");
   else return;
   event.preventDefault();
   event.stopPropagation();

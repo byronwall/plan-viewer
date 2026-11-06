@@ -1,13 +1,14 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { execFile, spawn } from "node:child_process";
 import { readFileSync, unwatchFile, watch, watchFile, type FSWatcher } from "node:fs";
-import { mkdir, readFile, readdir, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseActions, parseWorkBreakdown, stalledTaskReason } from "./public/actions.js";
 import { extractChatLinks, inlineMarkdown } from "./public/markdown.js";
+import { isDiffDiagram } from "./public/diagram.js";
 import { metadataKey } from "./public/dock.js";
 import { CodexDesktopClient, taskTitle, withImages } from "./codex-desktop.ts";
 import { createLinkMetadataStore, slackChannelNames } from "./link-metadata.ts";
@@ -868,22 +869,44 @@ const contentTypes: Record<string, string> = {
 // picture never goes stale. Cached by modification time; a source that fails to compile draws its error instead.
 const diagramCache = new Map<string, { mtime: number; svg: string }>();
 
-export async function renderDiagram(requested: string) {
+// A diff diagram (one with `+ - ~` marks or a `compare` line; isDiffDiagram is shared with the viewer) has panels that sit side by side (`right`) or stacked (`down`) as its `compare` line says; the viewer can
+// ask for the other arrangement, drawn from a temporary copy whose `compare` line (added when missing) says so.
+export function withPanels(source: string, panels: string) {
+  if ((panels !== "right" && panels !== "down") || !isDiffDiagram(source)) return source;
+  const line = /^([ \t]*compare\b)(.*)$/m;
+  if (line.test(source)) return source.replace(line, (_, head, rest) => `${head}${rest.replace(/\s+direction=\S+/, "")} direction=${panels}`);
+  return `${source.replace(/\n?$/, "\n")}compare direction=${panels}\n`;
+}
+
+async function withDiagramFile<T>(absolute: string, panels: string, run: (file: string) => Promise<T>) {
+  if (panels !== "right" && panels !== "down") return run(absolute);
+  const folder = await mkdtemp(join(tmpdir(), "plan-viewer-diagram-"));
+  try {
+    const file = join(folder, basename(absolute));
+    await writeFile(file, withPanels(await readFile(absolute, "utf8"), panels));
+    return await run(file);
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
+}
+
+export async function renderDiagram(requested: string, panels = "") {
   const asset = safeAssetPath(requested);
   if (extname(asset.relative) !== ".draft") throw new Error("Invalid diagram path.");
   const mtime = (await stat(asset.absolute)).mtimeMs;
-  const cached = diagramCache.get(asset.relative);
+  const key = panels === "right" || panels === "down" ? `${asset.relative}|${panels}` : asset.relative;
+  const cached = diagramCache.get(key);
   if (cached?.mtime === mtime) return cached.svg;
   const [command, ...args] = config().diagrams.command;
   let svg: string;
   try {
-    svg = (await promisify(execFile)(command, [...args, "inspect", asset.absolute, "--svg"], { maxBuffer: 32 * 1024 * 1024, timeout: 30_000 })).stdout;
+    svg = await withDiagramFile(asset.absolute, panels, async (file) => (await promisify(execFile)(command, [...args, "inspect", file, "--svg"], { maxBuffer: 32 * 1024 * 1024, timeout: 30_000 })).stdout);
   } catch (error: any) {
     const message = error.code === "ENOENT" ? [`${command} is not installed: npm install -g draftably`]
       : String(error.stderr || error.message || "draftably failed").trim().split("\n").slice(0, 6);
     svg = `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="${40 + message.length * 20}" font-family="ui-monospace, monospace" font-size="13"><rect width="100%" height="100%" fill="#fff6f4" stroke="#e6b4aa"/><text x="16" y="28" fill="#8a2c1b" font-weight="600">${escapeXml(basename(asset.relative))} did not draw</text>${message.map((line, index) => `<text x="16" y="${52 + index * 20}" fill="#5b2a20">${escapeXml(line.slice(0, 100))}</text>`).join("")}</svg>`;
   }
-  diagramCache.set(asset.relative, { mtime, svg });
+  diagramCache.set(key, { mtime, svg });
   return svg;
 }
 
@@ -916,7 +939,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
     if (request.method === "GET" && url.pathname === "/api/diagrams") return json(response, 200, { diagrams: await listDiagrams() });
     if (request.method === "GET" && url.pathname === "/api/diagram") {
-      const svg = await renderDiagram(url.searchParams.get("path") || "");
+      const svg = await renderDiagram(url.searchParams.get("path") || "", url.searchParams.get("panels") || "");
       response.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-cache", "x-content-type-options": "nosniff", "content-security-policy": "sandbox" });
       response.end(svg);
       return;
@@ -924,11 +947,12 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     // Copies the drawing to the macOS clipboard through draftably: a 2× PNG that carries its source (so `draftably
     // extract` recovers the .draft), plus the SVG as text. A browser clipboard write would re-encode the PNG and drop it.
     if (request.method === "POST" && url.pathname === "/api/diagram/copy") {
-      const asset = safeAssetPath(String((await readJson(request)).path || ""));
+      const body = await readJson(request);
+      const asset = safeAssetPath(String(body.path || ""));
       if (extname(asset.relative) !== ".draft") return json(response, 400, { error: "Not a .draft diagram." });
       const [command, ...args] = config().diagrams.command;
       try {
-        await promisify(execFile)(command, [...args, "inspect", asset.absolute, "--clipboard", "--scale", "2"], { timeout: 60_000 });
+        await withDiagramFile(asset.absolute, String(body.panels || ""), (file) => promisify(execFile)(command, [...args, "inspect", file, "--clipboard", "--scale", "2"], { timeout: 60_000 }));
       } catch (error: any) {
         return json(response, 500, { error: String(error.stderr || error.message || "draftably could not copy the drawing.").trim().split("\n")[0] });
       }

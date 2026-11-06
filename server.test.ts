@@ -8,8 +8,8 @@ import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle, wi
 import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
 import { dateKey, parseDateKey, startOfWeek } from "./public/dates.js";
 import { config, setConfig } from "./public/config.js";
-import { sourceHtml, statementId } from "./public/diagram.js";
-import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, buildDiagramPrompt, listDiagrams, renderDiagram, safeAssetPath, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
+import { comparePanels, isDiffDiagram, sourceHtml, statementId } from "./public/diagram.js";
+import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, buildDiagramPrompt, listDiagrams, renderDiagram, safeAssetPath, withPanels, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
   const previous = process.env.SLACK_TOKEN;
@@ -871,4 +871,16 @@ test("summarizes a document edit by lines and the headings they sit under", () =
   });
   assert.equal(describeChange("plans/x.md", undefined, after).kind, "created");
   assert.equal(describeChange("plans/x.md", before, undefined).kind, "deleted");
+});
+
+test("draws a diff diagram's panels side by side or stacked on request, and leaves other diagrams alone", () => {
+  const diff = 'node a "A"\n+node b "B"\ncompare "main" "PR" direction=down\n';
+  assert.equal(isDiffDiagram(diff), true);
+  assert.equal(comparePanels(diff), "down");
+  assert.match(withPanels(diff, "right"), /^compare "main" "PR" direction=right$/m);
+  assert.equal(withPanels(diff, ""), diff);
+  assert.match(withPanels('node a "A"\n~edge e a -> a\n', "down"), /\ncompare direction=down\n$/);
+  const plain = 'node a "A"\nedge e a -> a "x-y"\n';
+  assert.equal(isDiffDiagram(plain), false);
+  assert.equal(withPanels(plain, "right"), plain);
 });
