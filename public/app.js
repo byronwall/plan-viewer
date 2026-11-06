@@ -1062,7 +1062,9 @@ function closeImageViewer(returnFocus = true) {
   imageViewerState.items = [];
   imageViewerState.trigger = null;
   elements.imageViewer.replaceChildren();
-  if (returnFocus) trigger?.focus();
+  // A live refresh may have redrawn the page behind the viewer, so the original trigger can be gone.
+  const target = trigger?.isConnected ? trigger : trigger?.dataset?.diagram && document.querySelector(`[data-diagram="${CSS.escape(trigger.dataset.diagram)}"]`);
+  if (returnFocus) target?.focus();
 }
 
 // The rail lists every image as a small thumbnail with its title, under its task's heading when the set has groups,
@@ -1692,7 +1694,6 @@ function stepTaskDocument(direction) {
 function renderDocument() {
   const doc = state.document;
   if (!doc) return;
-  if (elements.imageViewer.open) closeImageViewer(false);
   state.view = "document";
   resetPageNavigation();
   elements.title.textContent = doc.title;
@@ -1872,6 +1873,8 @@ async function selectDocument(path, { historyMode = "push", anchor = "" } = {}) 
     state.selectedPath = path;
     state.document = body;
     closeComposer();
+    // Opening a document closes an open image viewer; a live refresh of the same document (refreshFromMarkdown) leaves it open.
+    if (elements.imageViewer.open) closeImageViewer(false);
     renderLibrary();
     elements.chunks.classList.remove("is-live-refresh");
     renderDocument();
@@ -2756,10 +2759,18 @@ async function loadDiagram(item) {
   if (drawn) Object.assign(item, { svg: drawn.html, width: drawn.width, height: drawn.height });
   item.source = source;
   if (elements.imageViewer.open && imageViewerState.items[imageViewerState.index] === item) {
-    const scroll = elements.imageViewer.querySelector(".diagram-source pre")?.scrollTop || 0;
-    renderImageViewer();
+    // A redraw swaps the drawing and source in place, so zoom, pan, scroll and a half-typed request stay put.
+    const drawing = elements.imageViewer.querySelector(".image-viewer-diagram");
     const pre = elements.imageViewer.querySelector(".diagram-source pre");
-    if (pre) pre.scrollTop = scroll;
+    if (drawing && item.svg) {
+      drawing.innerHTML = item.svg;
+      if (pre) { const scroll = pre.scrollTop; pre.innerHTML = sourceHtml(item.source); pre.scrollTop = scroll; }
+    } else {
+      const scroll = pre?.scrollTop || 0;
+      renderImageViewer();
+      const next = elements.imageViewer.querySelector(".diagram-source pre");
+      if (next) next.scrollTop = scroll;
+    }
     if (imageViewerState.isFitView) fitImageViewer();
   }
 }
