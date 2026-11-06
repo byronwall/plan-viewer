@@ -60,6 +60,12 @@ test("task documents carry their size and sections for the Documents popover", (
   assert.equal(summarize("plans/notes.md", markdown).outline, undefined);
 });
 
+test("a half-written task is listed as invalid instead of breaking the library", () => {
+  const summary = summarize("tasks/TASK-0099.md", "---\nid: TASK-0099\ntitle: placeholder\n---\n");
+  assert.equal(summary.kind, "Invalid task");
+  assert.equal(summary.task, undefined);
+});
+
 test("parses structured milestones as complete work chunks", () => {
   const chunks = parseChunks(`# Plan\n\nIntro.\n\n## Milestone 1: First slice\n\nOutcome one.\n\n### Desired end state\n\n- Works\n\n## Milestone 2: Second slice\n\nOutcome two.`);
   assert.equal(chunks.length, 3);

@@ -433,8 +433,13 @@ export function summarize(path: string, contents: string, currentDate = todayDat
   const taskAsset = path.match(/^tasks\/(TASK-\d{4})-assets\//);
   if (taskAsset) return { path, title, group: "Task documents", format, kind: `${taskAsset[1]} document`, isToday: false, outline: outline(contents) };
   if (path.startsWith("tasks/")) {
-    const { task } = parseTaskDocument(path, contents);
-    return { path, title: task.title, group: "Tasks", format: "markdown", kind: "Task", isToday: false, task };
+    // A half-written task (an agent reserving its ID) must not take the whole library down; `lint` still reports it.
+    try {
+      const { task } = parseTaskDocument(path, contents);
+      return { path, title: task.title, group: "Tasks", format: "markdown", kind: "Task", isToday: false, task };
+    } catch {
+      return { path, title, group: "Reference", format, kind: "Invalid task", isToday: false };
+    }
   }
   if (path.startsWith("plans/")) return { path, title, group: "Topics", format, kind: format === "text" ? "Text file" : "Topic", isToday: false };
   return { path, title, group: "Reference", format, kind: format === "text" ? "Text file" : "Reference", isToday: false };
