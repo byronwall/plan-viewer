@@ -28,6 +28,9 @@ export function codexNewTaskUrl(prompt: string, workspace: string) {
 // Claude Desktop opens a local session preset (an "environment" in its picker) from the preset's folder; its own
 // deep links send `folder=<cwd>` for one. `environment=` names only cloud environment IDs, so a local preset's name
 // there is ignored and the draft lands in the default preset instead.
+// The link cannot choose a model: the app forwards only q/prompt, folder, file, ssh_*, environment and runner_pool,
+// and even a local preset's id in `environment` is ignored. The draft takes the built-in Local preset's model, which
+// the user sets in the app's new-session picker. A session cannot switch itself either (set_session_model refuses self).
 // Claude Desktop sometimes drops `folder` between opening the draft and sending it, starting the session in a "No
 // folder" scratch workspace. The prompt names the folder too, so the agent can move itself there. change_directory
 // only takes effect when the turn ends, so the first turn still runs without the folder's instructions and skills.
