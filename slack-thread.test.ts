@@ -85,3 +85,13 @@ test("a parent with no replies drops the connector's trailing note", () => {
   assert.equal(parent.text, "Ship it?");
   assert.equal(parent.reactions, "white_check_mark (1)");
 });
+
+test("forwarded messages split out of the text, with their own files line left on the message", () => {
+  const [parent] = parseSlackThread("=== THREAD PARENT MESSAGE ===\nFrom: Ada <ada@acme.test> (U01)\nTime: x\nMessage TS: 1791473016.225909\nSee this\nFiles: notes.png (ID: F01, image/png, 1 KB)\nForwarded message from Bo Lin (https://acme.slack.com/archives/C01/p1791473000000001): First line\n\nSecond — use slack_read_thread or slack_read_channel to read it in context\nForwarded message from Cy (https://acme.slack.com/archives/C02/p1791473000000002): Whole\n\nNo thread messsages");
+  assert.equal(parent.text, "See this");
+  assert.deepEqual(parent.files, ["notes.png"]);
+  assert.deepEqual(parent.forwards, [
+    { author: "Bo Lin", url: "https://acme.slack.com/archives/C01/p1791473000000001", text: "First line\n\nSecond", truncated: true },
+    { author: "Cy", url: "https://acme.slack.com/archives/C02/p1791473000000002", text: "Whole", truncated: false },
+  ]);
+});

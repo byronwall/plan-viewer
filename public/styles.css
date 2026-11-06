@@ -2120,6 +2120,18 @@ a.issue-link-row[data-planning-path] > svg { align-self: center; }
 .slack-message.is-parent .issue-markdown { font-size: .95rem; }
 .slack-message.is-linked, .slack-message.is-linked:hover { margin-top: 4px; background: var(--selected); }
 .slack-message.is-dimmed { opacity: .32; }
+.slack-forward { margin: 6px 0 2px; padding: 6px 10px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+.slack-forward > header { display: flex; align-items: center; gap: 4px; margin: 0 -4px 2px; }
+.slack-forward-head { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; padding: 2px 4px; border: 0; border-radius: 4px; background: none; color: var(--ink); font: inherit; font-size: .84rem; cursor: pointer; transition: background-color 140ms ease; }
+.slack-forward-head:hover { background: var(--hover-field); }
+.slack-forward-head .dock-glyph { align-self: center; width: 13px; height: 13px; color: var(--muted); transform: scaleX(-1); }
+.slack-forward-head .code-muted { font-size: .76rem; }
+.slack-forward > header .code-icon-button { opacity: 0; transition: opacity 140ms ease; }
+.slack-forward:hover > header .code-icon-button { opacity: 1; }
+.slack-forward .issue-markdown { font-size: .86rem; }
+.slack-forward-more { margin: 4px 0 0; font-size: .76rem; }
+.slack-forward-more a { color: var(--action-ink); text-decoration: none; }
+.slack-forward-more a:hover { text-decoration: underline; }
 .slack-files { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 3px; color: var(--muted); font-size: .78rem; }
 .slack-files span { display: inline-flex; align-items: center; gap: 4px; }
 .slack-files .code-icon { width: 13px; height: 13px; }

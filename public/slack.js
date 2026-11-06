@@ -95,6 +95,7 @@ function ensureDialog() {
     const source = event.target.closest("[data-dock-source]");
     if (source) return selectDockSource(source);
     if (event.target.closest("[data-slack-close]")) dialog.close();
+    else if (event.target.closest("[data-slack-thread]") && !event.metaKey && !event.ctrlKey) { event.preventDefault(); openSlackThread(event.target.closest("[data-slack-thread]").dataset.slackThread); }
     else if (event.target.closest("[data-slack-open]")) openInSlack(event.target.closest("[data-slack-open]").dataset.slackOpen);
     else if (event.target.closest("[data-slack-refresh]")) load(true);
     else if (event.target.closest("[data-slack-copy-prompt]")) copyDiscussPrompt(event.target.closest("[data-slack-copy-prompt]"));
@@ -155,6 +156,18 @@ const permalink = (ts) => {
   return `${current.href.replace(/\/p\d{16}.*$/, "")}/p${ts.replace(".", "")}${ts === parent ? "" : `?thread_ts=${parent}`}`;
 };
 
+// A forwarded or shared message as the message it is: who wrote it, where and when, its text, and a header that
+// opens its own thread in this overlay (the ↗ opens it in Slack).
+function forwardCard(forward, mentions) {
+  const ref = forward.url.match(/\/archives\/(\w+)\/p(\d{10})\d{6}/);
+  // Another channel's name arrives with the link metadata (renderLinks).
+  const where = !ref ? "" : ref[1] === current.channel ? "in this channel · " : `<span data-forward-channel="${escapeHtml(metadataKey(forward.url))}"></span>`;
+  const when = ref ? `${day(Number(ref[2]))} ${stamp(Number(ref[2]))}` : "";
+  const body = `<div class="markdown issue-markdown">${mentions(renderMarkdown(slackMarkdown(forward.text), ""))}</div>${forward.truncated ? `<p class="slack-forward-more code-muted">Slack cut this short · <a href="${escapeHtml(forward.url)}" data-slack-thread="${escapeHtml(forward.url)}">open the thread to read the rest</a></p>` : ""}`;
+  if (!ref) return `<div class="slack-forward">${body}</div>`;
+  return `<div class="slack-forward"><header><button type="button" class="slack-forward-head" data-slack-thread="${escapeHtml(forward.url)}" data-tip="Open this message's thread">${glyph("corner-up-left", "dock-glyph")}<b>${escapeHtml(forward.author || "Forwarded message")}</b><span class="code-muted">${where}${when}</span></button>${iconButton("external", "Open this message in Slack", `data-slack-open="${escapeHtml(forward.url)}"`)}</header>${body}</div>`;
+}
+
 // Tasks first, then plans and notes that link any message in the thread; `messages` maps a message to its citers.
 function citations() {
   const prefix = `${current.channel}/${current.thread.messages[0].ts}/`;
@@ -209,7 +222,7 @@ function renderThread(scrollToLinked = true) {
     const cites = marks ? `<span class="slack-cites">${marks}</span>` : "";
     const head = continued ? `<span class="slack-gutter-time">${clock(seconds)}</span>${cites}` : `${avatar("", message.author, message.email)}<header><b>${escapeHtml(message.author || "Unknown")}</b>${stamp(seconds)}${cites}</header>`;
     const classes = [index === 0 && "is-parent", continued && "is-continued", message.ts === linked && "is-linked", lastRead && index > 0 && message.ts > lastRead && "is-new"].filter(Boolean).join(" ");
-    out.push(`<li class="slack-message ${classes}" data-ts="${message.ts}">${head}<div class="slack-message-body"><div class="markdown issue-markdown">${mentions(renderMarkdown(slackMarkdown(message.text), ""))}</div>${message.files?.length ? `<div class="slack-files">${message.files.map((file) => `<span data-tip="Attached in Slack; open the message to see it">${icon("doc")}${escapeHtml(file)}</span>`).join("")}</div>` : ""}${reactions ? `<div class="slack-reactions">${reactions}</div>` : ""}</div><span class="slack-message-actions"><button type="button" class="code-icon-button slack-star" data-slack-star="${escapeHtml(permalink(message.ts))}" aria-pressed="false" data-tip="Add this message to favorites"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.star}</svg></button>${iconButton("external", "Open this message in Slack", `data-slack-open="${escapeHtml(permalink(message.ts))}"`)}</span></li>`);
+    out.push(`<li class="slack-message ${classes}" data-ts="${message.ts}">${head}<div class="slack-message-body">${message.text ? `<div class="markdown issue-markdown">${mentions(renderMarkdown(slackMarkdown(message.text), ""))}</div>` : ""}${message.files?.length ? `<div class="slack-files">${message.files.map((file) => `<span data-tip="Attached in Slack; open the message to see it">${icon("doc")}${escapeHtml(file)}</span>`).join("")}</div>` : ""}${(message.forwards || []).map((forward) => forwardCard(forward, mentions)).join("")}${reactions ? `<div class="slack-reactions">${reactions}</div>` : ""}</div><span class="slack-message-actions"><button type="button" class="code-icon-button slack-star" data-slack-star="${escapeHtml(permalink(message.ts))}" aria-pressed="false" data-tip="Add this message to favorites"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.star}</svg></button>${iconButton("external", "Open this message in Slack", `data-slack-open="${escapeHtml(permalink(message.ts))}"`)}</span></li>`);
     previous = message;
     return out.join("");
   }).join("");
@@ -232,12 +245,15 @@ async function renderLinks() {
   if (count) { count.textContent = String(total); count.closest("button").hidden = !total; }
   panel.style.minHeight = "";
   panel.innerHTML = total ? linkBrowser(groups) : "";
-  const keys = [...new Set([...dialog.querySelectorAll(".slack-thread a[href], #slack-links a[href]")].map((link) => link.dataset.metaKey || metadataKey(link.href)).filter(Boolean))];
+  const keys = [...new Set([...dialog.querySelectorAll(".slack-thread a[href], #slack-links a[href]")].map((link) => link.dataset.metaKey || metadataKey(link.href)).concat([...dialog.querySelectorAll("[data-forward-channel]")].map((span) => span.dataset.forwardChannel)).filter(Boolean))];
   if (!keys.length) return;
   const opened = current;
   try {
     const response = await fetch("/api/link-metadata", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ keys }) });
-    if (response.ok && current === opened) applyLinkMetadata(dialog, (await response.json()).metadata || {});
+    if (!response.ok || current !== opened) return;
+    const metadata = (await response.json()).metadata || {};
+    applyLinkMetadata(dialog, metadata);
+    for (const span of dialog.querySelectorAll("[data-forward-channel]")) if (/^[#@]/.test(metadata[span.dataset.forwardChannel]?.state || "")) span.textContent = `in ${metadata[span.dataset.forwardChannel].state} · `;
   } catch {}
 }
 

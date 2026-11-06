@@ -6,7 +6,9 @@ import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import { claudeNewSessionUrl, codexNewTaskUrl } from "./codex-desktop.ts";
 
-export type SlackMessage = { author: string; email: string; user: string; ts: string; text: string; reactions: string; files?: string[] };
+// A message forwarded or shared into this one; `truncated` when the connector cut its text short.
+export type SlackForward = { author: string; url: string; text: string; truncated: boolean };
+export type SlackMessage = { author: string; email: string; user: string; ts: string; text: string; reactions: string; files?: string[]; forwards?: SlackForward[] };
 export type SlackThread = { channelName: string; messages: SlackMessage[]; fetchedAt: string };
 
 // A permalink's channel and the thread it belongs to: `thread_ts` for a reply, else the message itself.
@@ -27,17 +29,33 @@ export function parseSlackThread(text: string): SlackMessage[] {
     const lines = block.replace(/\n+=== THREAD REPLIES.*===\s*$/, "").trim().split("\n");
     const [, author = "", email = "", user = ""] = lines[0]?.match(/^From: (.*?)(?: <([^>]*)>)?(?: \((\w+)\))?$/) || [];
     const ts = lines.find((line) => line.startsWith("Message TS: "))?.slice(12) || "";
-    const body = lines.slice(lines.findIndex((line) => line.startsWith("Message TS: ")) + 1);
-    // Trailing metadata, in any order: `Reactions: …`, `Files: name (ID: F…, type, size), …`, and a parent with no
-    // replies ends `No thread messsages` (sic).
-    let reactions = "", files: string[] = [];
-    for (let line = body.at(-1); line !== undefined && /^(Reactions: |Files: |No thread mess+ages$|\s*$)/.test(line); line = body.at(-1)) {
-      body.pop();
-      if (line.startsWith("Reactions: ")) reactions = line.slice(11);
-      if (line.startsWith("Files: ")) files = [...line.slice(7).matchAll(/([^,(]+?) \(ID: /g)].map((match) => match[1].trim());
-    }
-    return { author, email, user, ts, text: body.join("\n").trim(), reactions, files };
+    const body = lines.slice(lines.findIndex((line) => line.startsWith("Message TS: ")) + 1).join("\n").trim();
+    return tidySlackMessage({ author, email, user, ts, text: body, reactions: "" });
   }).filter((message) => message.ts);
+}
+
+// Trailing metadata, in any order: `Reactions: …`, `Files: name (ID: F…, type, size), …`, and a parent with no
+// replies ends `No thread messsages` (sic). Forwarded messages follow the message's own text and metadata, one
+// `Forwarded message from Name (permalink): text` block each, ending `— use slack_read_thread…` when cut short.
+// Runs again on cached messages, so threads read before forwards were split still show them as cards.
+export function tidySlackMessage(message: SlackMessage): SlackMessage {
+  let reactions = message.reactions, files = message.files || [];
+  const strip = (text: string) => {
+    const lines = text.split("\n");
+    for (let line = lines.at(-1); line !== undefined && /^(Reactions: |Files: |No thread mess+ages$|\s*$)/.test(line); line = lines.at(-1)) {
+      lines.pop();
+      if (line.startsWith("Reactions: ")) reactions = line.slice(11);
+      if (line.startsWith("Files: ")) files = [...line.slice(7).matchAll(/(?:^|\), )(.+?) \(ID: /g)].map((match) => match[1].trim());
+    }
+    return lines.join("\n").trim();
+  };
+  const [text, ...parts] = strip(message.text).split(/\n?^Forwarded message from /m);
+  const forwards = parts.map((part) => {
+    const [, author = "", url = "", body = part] = part.match(/^(.*?) \((https:\/\/[^\s)]+)\): ([\s\S]*)$/) || [];
+    const cut = / — use slack_read_thread or slack_read_channel to read it in context$/;
+    return { author, url, text: body.replace(cut, "").trim(), truncated: cut.test(body) };
+  });
+  return { ...message, text: strip(text), reactions, files, ...(forwards.length || message.forwards ? { forwards: [...message.forwards || [], ...forwards] } : {}) };
 }
 
 // The thread as Markdown for an agent to read: one heading per message, with its time and permalink.
@@ -48,6 +66,7 @@ export function slackTranscript(thread: SlackThread, permalink: string) {
   for (const message of thread.messages) {
     const link = `${base}/p${message.ts.replace(".", "")}${message.ts === parent ? "" : `?thread_ts=${parent}`}`;
     lines.push(`## ${message.author} · ${new Date(Number(message.ts) * 1000).toISOString().replace("T", " ").slice(0, 16)} UTC`, "", `[permalink](${link})${message.reactions ? ` · reactions: ${message.reactions}` : ""}`, "", message.text, "");
+    for (const forward of message.forwards || []) lines.push(`> Forwarded from ${forward.author} (${forward.url})${forward.truncated ? ", cut short" : ""}:`, ">", ...forward.text.split("\n").map((line) => `> ${line}`), "");
   }
   return lines.join("\n");
 }
@@ -63,7 +82,7 @@ export function createSlackThreads(root: string, command: () => string[]) {
   async function read(permalink: string, refresh = false) {
     const ref = slackThreadRef(permalink);
     const cached = (await readCache())[ref.key];
-    if (cached && !refresh) return { ...cached, ...ref };
+    if (cached && !refresh) return { ...cached, messages: cached.messages.map(tidySlackMessage), ...ref };
     if (!inFlight.has(ref.key)) inFlight.set(ref.key, fetchThread(ref).finally(() => inFlight.delete(ref.key)));
     return { ...await inFlight.get(ref.key)!, ...ref };
   }
