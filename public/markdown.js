@@ -321,6 +321,33 @@ export function diagramHref(path) {
   return `/api/diagram?${new URLSearchParams({ path })}`;
 }
 
+// A link to an image in the workspace draws as a thumbnail like a diagram's: the link text is the caption, and `note` (the
+// rest of a list item) sits under it. It opens the image viewer.
+function imageThumb(label, path, currentPath, note = "") {
+  const alt = label.replace(/[*_`]/g, "");
+  return `<button class="markdown-image-trigger diagram-thumb image-thumb" type="button" aria-label="${escapeHtml(`Open ${alt} in image viewer`)}" data-image-path="${escapeHtml(path)}"><span class="diagram-thumb-frame"><img class="markdown-image" src="${escapeHtml(assetHref(path))}" alt="${escapeHtml(alt)}" loading="lazy" decoding="async"></span><span class="diagram-thumb-caption">${formatInlineText(label, currentPath, false)}</span>${note ? `<span class="image-thumb-note">${formatInlineText(note, currentPath, false)}</span>` : ""}</button>`;
+}
+
+const IMAGE_LINK = /(?<!!)\[([^\]]+)\]\(<?([^\s)>]+?)>?\)/g;
+const linkedImage = (target, currentPath) => {
+  if (/\.draft$/i.test(target)) return null;
+  const asset = resolveMarkdownAsset(target, currentPath);
+  return asset.kind === "asset" ? asset.path : null;
+};
+
+// The images a block of text links to, as a strip of thumbnails after it. Each image appears once.
+function linkedImageStrip(text, currentPath) {
+  const seen = new Set();
+  const thumbs = [];
+  for (const [, label, target] of text.matchAll(IMAGE_LINK)) {
+    const path = linkedImage(target, currentPath);
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    thumbs.push(imageThumb(label, path, currentPath));
+  }
+  return thumbs.length ? `<div class="diagram-strip">${thumbs.join("")}</div>` : "";
+}
+
 // `bare: false` leaves unqualified SHAs as text: headings name things (`### c4574f89: Connection dropped`) rather than cite commits.
 export function inlineMarkdown(value, currentPath = "", bare = true) {
   const linkPattern = /(!?)\[([^\]]*)\]\(([^\s)]+)\)/g;
@@ -359,6 +386,7 @@ export function inlineMarkdown(value, currentPath = "", bare = true) {
     } else if (attachment?.kind === "asset") {
       output.push(attachment.path.endsWith(".draft")
         ? `<a class="markdown-asset-link" href="${escapeHtml(diagramHref(attachment.path))}" data-diagram-link="${escapeHtml(attachment.path)}">${label}</a>`
+        : linkedImage(target, currentPath) ? `<a class="markdown-asset-link" href="${escapeHtml(assetHref(attachment.path))}" data-image-link="${escapeHtml(attachment.path)}" target="_blank" rel="noreferrer">${label}</a>`
         : `<a class="markdown-asset-link" href="${escapeHtml(assetHref(attachment.path))}" target="_blank" rel="noreferrer">${label}&#8288;<span class="external-mark" aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>`);
     } else {
       output.push(`<span class="markdown-unavailable-link" title="This target is not available in the plan viewer">${label}</span>`);
@@ -514,13 +542,28 @@ function renderMarkdownList(lines, currentPath) {
     stack.at(-1).list.items.push({ content: item.content, contentIndent: item.contentIndent, children: [] });
   }
 
-  const renderList = (list) => `<${list.type}${list.type === "ol" && list.start !== 1 ? ` start="${list.start}"` : ""}>${list.items.map((item) => {
+  // A list whose every item leads with a link to an image draws as a strip of thumbnails, like diagrams: the link text is
+  // the caption and the rest of the item sits under it. Each opens the image viewer.
+  // Elsewhere, an item that links to images gets their thumbnails under its text.
+  const imageCard = (item) => {
+    const match = !item.children.length && item.content.match(/^\[([^\]]+)\]\(<?([^\s)>]+?)>?\)\s*(?:[:—–-]\s*)?(.*)$/);
+    const path = match && !IMAGE_LINK.test(match[3]) && linkedImage(match[2], currentPath);
+    IMAGE_LINK.lastIndex = 0;
+    return path ? imageThumb(match[1], path, currentPath, match[3]) : null;
+  };
+
+  const renderList = (list) => {
+    const cards = list.items.map(imageCard);
+    if (cards.every(Boolean)) return `<div class="diagram-strip">${cards.join("")}</div>`;
+    return renderItems(list);
+  };
+  const renderItems = (list) => `<${list.type}${list.type === "ol" && list.start !== 1 ? ` start="${list.start}"` : ""}>${list.items.map((item) => {
     const task = item.content.match(/^\[([ xX])\]\s+(.+)$/);
     const content = task
       ? `<input class="task-box" type="checkbox" ${task[1].toLowerCase() === "x" ? "checked" : ""} tabindex="-1" aria-hidden="true">${inlineMarkdown(task[2], currentPath)}`
       : inlineMarkdown(item.content, currentPath);
     const children = item.children.map((child) => !Array.isArray(child) ? renderList(child) : child.some((line) => line.trim()) ? renderMarkdown(child.join("\n"), currentPath) : "");
-    return `<li>${content}${children.join("")}</li>`;
+    return `<li>${content}${linkedImageStrip(item.content, currentPath)}${children.join("")}</li>`;
   }).join("")}</${list.type}>`;
 
   return roots.map(renderList).join("");
@@ -606,7 +649,7 @@ export function renderMarkdown(markdown, currentPath = "") {
   let language = "";
 
   const flushParagraph = () => {
-    if (paragraph.length) html.push(`<p>${inlineMarkdown(paragraph.join(" "), currentPath)}</p>`);
+    if (paragraph.length) html.push(`<p>${inlineMarkdown(paragraph.join(" "), currentPath)}</p>${linkedImageStrip(paragraph.join(" "), currentPath)}`);
     paragraph = [];
   };
   for (let index = 0; index < lines.length; index += 1) {

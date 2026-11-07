@@ -2700,6 +2700,12 @@ body:has(.activity-page), body:has(.activity-page) .reading-pane { background: v
 .diagram-thumb-frame { display: grid; place-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #f6f5f1; padding: 6px; transition: border-color 140ms ease, background-color 140ms ease; }
 .diagram-thumb .markdown-image { width: 100%; height: 100%; object-fit: contain; border: 0; border-radius: 3px; background: transparent; transition: transform 200ms cubic-bezier(.2, .8, .2, 1); }
 .diagram-thumb-caption { min-width: 0; overflow: hidden; padding: 0 2px; color: var(--muted); font-size: .78rem; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; transition: color 140ms ease; }
+.markdown-image-trigger.image-thumb { grid-template-rows: 132px auto auto; gap: 3px; }
+.image-thumb .diagram-thumb-frame { margin-bottom: 3px; padding: 0; }
+.image-thumb .markdown-image { object-fit: cover; object-position: top; border-radius: 7px; }
+.image-thumb .diagram-thumb-caption { color: var(--ink); font-size: .84rem; font-weight: 600; white-space: normal; }
+li > .diagram-strip { margin: 6px 0 8px; }
+.image-thumb-note { padding: 0 2px; color: var(--muted); font-size: .78rem; line-height: 1.35; }
 .markdown-image-trigger.diagram-thumb:hover .diagram-thumb-frame { border-color: #aeb8ca; background: #f1f0eb; }
 .markdown-image-trigger.diagram-thumb:hover .markdown-image { transform: scale(1.03); }
 .markdown-image-trigger.diagram-thumb:hover .diagram-thumb-caption { color: var(--ink); }

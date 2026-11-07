@@ -2535,6 +2535,13 @@ elements.chunks.addEventListener("click", (event) => {
     showImageViewer(imageTrigger);
     return;
   }
+  const imageLink = event.target.closest("a[data-image-link]");
+  const imageThumb = imageLink && [...elements.chunks.querySelectorAll(".markdown-image-trigger[data-image-path]")].find((thumb) => thumb.dataset.imagePath === imageLink.dataset.imageLink);
+  if (imageThumb && !(event.metaKey || event.ctrlKey || event.shiftKey)) {
+    event.preventDefault();
+    showImageViewer(imageThumb);
+    return;
+  }
   const diagramLink = event.target.closest("a[data-diagram-link]");
   if (diagramLink && !(event.metaKey || event.ctrlKey || event.shiftKey)) {
     event.preventDefault();
