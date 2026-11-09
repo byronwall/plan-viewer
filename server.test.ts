@@ -817,6 +817,15 @@ test("related chats preserve conversation links and ignore examples and snapshot
   assert.match(renderChatLinks([{ href: codex, label: '<img src=x onerror="alert(1)">' }]), /&lt;img/);
 });
 
+test("Claude Desktop session links are chat links", async () => {
+  const { chatLink, inlineMarkdown } = await import("./public/markdown.js");
+  for (const href of ["claude://claude.ai/epitaxy/local_01a1350b-b433-4c1d-9e0a-123456789abc", "claude://session/local_01a1350b-b433-4c1d-9e0a-123456789abc"]) {
+    assert.equal(chatLink(href)?.provider, "Claude Code");
+    assert.match(inlineMarkdown(`[Chat](${href})`), /href="claude:\/\//);
+  }
+  for (const unsafe of ["claude://code/new?q=do-work", "claude://session/local_abc?x=1", "claude://claude.ai/settings"]) assert.equal(chatLink(unsafe), null);
+});
+
 test("Codex conversation Markdown opens the existing chat and blocks other app commands", () => {
   const href = "codex://threads/019abcde-1234-7000-8000-123456789abc";
   assert.deepEqual(resolveMarkdownLink(href, "tasks/TASK-0001.md"), { kind: "app", href });

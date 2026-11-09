@@ -89,6 +89,10 @@ export function chatLink(href) {
     if (url.protocol === "codex:" && url.hostname === "threads" && /^\/[a-z0-9-]+\/?$/i.test(url.pathname) && url.pathname.replaceAll("/", "") !== "new" && !url.search && !url.hash) {
       return { href: url.href, provider: "Codex" };
     }
+    // Claude Desktop sessions: claude://claude.ai/epitaxy/local_<id> and claude://session/local_<id>.
+    if (url.protocol === "claude:" && !url.search && !url.hash && /^(?:claude\.ai\/epitaxy|session)\/local_[a-z0-9-]+\/?$/i.test(`${url.hostname}${url.pathname}`)) {
+      return { href: url.href, provider: "Claude Code" };
+    }
     if (url.protocol === "https:" && ["chatgpt.com", "chat.openai.com"].includes(url.hostname) && /^\/(?:g\/[^/]+\/)?c\/[a-z0-9-]+\/?$/i.test(url.pathname)) {
       return { href: url.href, provider: "ChatGPT" };
     }
@@ -130,7 +134,7 @@ export function resolveMarkdownLink(href, currentPath) {
       return { kind: "document", path, anchor: safeDecode(url.hash.slice(1)) };
     }
     if (url.protocol === "mailto:") return { kind: "external", href: url.href };
-    if (url.protocol === "codex:" && chatLink(value)) return { kind: "app", href: url.href };
+    if ((url.protocol === "codex:" || url.protocol === "claude:") && chatLink(value)) return { kind: "app", href: url.href };
   } catch {
     // Malformed and unsafe links remain readable, but never become interactive.
   }
@@ -380,7 +384,7 @@ export function inlineMarkdown(value, currentPath = "", bare = true) {
     if (link.kind === "document") {
       output.push(documentLink(link, label));
     } else if (link.kind === "app") {
-      output.push(`<a class="markdown-external-link" href="${escapeHtml(link.href)}">${label}&#8288;<span class="external-mark" aria-hidden="true">↗</span><span class="sr-only"> (opens in Codex)</span></a>`);
+      output.push(`<a class="markdown-external-link" href="${escapeHtml(link.href)}">${label}&#8288;<span class="external-mark" aria-hidden="true">↗</span><span class="sr-only"> (opens in ${link.href.startsWith("claude:") ? "Claude" : "Codex"})</span></a>`);
     } else if (link.kind === "external") {
       output.push(externalLink(link.href, label));
     } else if (attachment?.kind === "asset") {

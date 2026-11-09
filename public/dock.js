@@ -114,7 +114,7 @@ export function collectLinks(root, documents, selfPath = "", selector = ".chunk-
     else if (url.hostname === "linear.app") [group, label, detail, placeholder] = ["linear", issue?.[1] || text, issue && text !== issue[1] ? text : "Linear issue", !(issue && text !== issue[1])];
     else if (url.hostname.endsWith(".atlassian.net")) [group, label, detail, placeholder] = ["jira", issue?.[1] || text, issue && text !== issue[1] ? text : "Jira issue", !(issue && text !== issue[1])];
     else if (isSlackLink(href)) [group, label, detail, state] = ["slack", ...slackSummary(url, text)];
-    else if (url.protocol === "codex:" || url.hostname === "chatgpt.com") [group, label, detail] = ["chats", url.protocol === "codex:" ? "Codex" : "ChatGPT", text || "Conversation"];
+    else if (url.protocol === "codex:" || url.protocol === "claude:" || url.hostname === "chatgpt.com") [group, label, detail] = ["chats", url.protocol === "codex:" ? "Codex" : url.protocol === "claude:" ? "Claude Code" : "ChatGPT", text || "Conversation"];
     // One row per thing linked: an issue's comment links and a commit's longer or shorter hash fold into its first row,
     // which takes the plainest URL seen (no query string) so it opens the item itself.
     const metaKey = metadataKey(href);
@@ -124,7 +124,7 @@ export function collectLinks(root, documents, selfPath = "", selector = ".chunk-
       if (!url.search && seen.href.includes("?")) seen.href = href;
       continue;
     }
-    groups.get(group).set(key, { href, label, detail, placeholder, external: url.protocol !== "codex:", metaKey, state, slack: group === "slack", channel: group === "slack" ? url.pathname.split("/")[2] : "" });
+    groups.get(group).set(key, { href, label, detail, placeholder, external: url.protocol !== "codex:" && url.protocol !== "claude:", metaKey, state, slack: group === "slack", channel: group === "slack" ? url.pathname.split("/")[2] : "" });
   }
   return SOURCES.map(([key, name, icon]) => ({ key, name, icon, items: [...groups.get(key).values()] })).filter((group) => group.items.length);
 }
