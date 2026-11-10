@@ -1037,10 +1037,11 @@ function ensureDiffDialog() {
       return;
     }
     if (event.target.closest("[data-code-skill], [data-code-open], [data-code-session], [data-code-preview], [data-code-run], [data-code-stop-run]")) return handleClick(event);
-    const button = event.target.closest("[data-diff-hide], [data-diff-list], [data-map-zoom], [data-map-move], [data-map-edges], [data-map-export], [data-map-full], [data-diff-viewed], [data-diff-collapse], [data-diff-local-dir], [data-diff-file], [data-diff-mode], [data-diff-layout], [data-diff-view], [data-diff-scope], [data-diff-pr], [data-diff-wt], [data-diff-local], [data-diff-load], [data-diff-close], [data-diff-wide], [data-diff-bots], [data-code-copy]");
+    const button = event.target.closest("[data-diff-hide], [data-diff-list], [data-map-zoom], [data-map-move], [data-map-edges], [data-map-export], [data-map-full], [data-diff-viewed], [data-diff-collapse], [data-diff-local-dir], [data-diff-file], [data-diff-mode], [data-diff-layout], [data-diff-view], [data-diff-scope], [data-diff-pr], [data-diff-wt], [data-diff-local], [data-diff-load], [data-diff-close], [data-diff-wide], [data-diff-bots], [data-diff-refresh], [data-code-copy]");
     if (!button) return;
     const { dataset } = button;
     if ("diffWide" in dataset) return toggleDiffWide();
+    if ("diffRefresh" in dataset) return refreshOverview();
     if ("diffBots" in dataset) { showBotComments = !showBotComments; return renderDiff(); }
     if ("diffHide" in dataset) return toggleHideViewed();
     if (dataset.diffList) return setFileListMode(dataset.diffList);
@@ -1101,6 +1102,7 @@ function ensureDiffDialog() {
     else if (key === "v") { diffView = diffView === "all" ? "single" : "all"; storage.set("code-diff-view", diffView); renderDiff(); scrollToFile(); }
     else if (key === "m" && diffView === "single") { diff.mode = diff.mode === "rendered" ? "diff" : "rendered"; renderDiff(); }
     else if (key === "g") toggleDiffWide();
+    else if (key === "r" && subject()) refreshOverview();
     else if (key === "s") { diffLayout = diffLayout === "split" ? "unified" : "split"; storage.set("code-diff-layout", diffLayout); renderDiff(); }
     else return;
     event.preventDefault();
@@ -1325,11 +1327,29 @@ function prReviewers(pr) {
 // Skills as icons in one row; 1–9 press them from anywhere in the overlay.
 const sideSkills = (pr, workspace, tree, copy = false) => `<span class="code-side-skills">${skillButtons(pr, workspace, tree, copy)}</span>`;
 
+// R in a PR or worktree overview: re-read just that one (details, CI, comments, diff, notes) and stay on the same
+// file and view, instead of rescanning the whole Code page.
+async function refreshOverview() {
+  if (diff.refreshing) return;
+  const { pr, wt } = diff;
+  const file = diff.files?.[diff.index]?.path || "";
+  diff.refreshing = true;
+  renderDiff();
+  // Drops the server's cached details and diffs for this PR; the reopen below reads them fresh.
+  if (pr) await fetch(`/api/code/pr?${new URLSearchParams({ slug: pr.slug, number: pr.number, refresh: "1" })}`).catch(noop);
+  diff.refreshing = false;
+  if (diff.pr !== pr || diff.wt !== wt || !diffDialog.open) return; // moved on while it ran
+  patches.clear();
+  if (pr) { ui.detail.delete(`pr:${pr.key}`); await openPrOverlay(pr.slug, pr.number, file, diff.scope); }
+  else await openWorktreeOverlay(wt.path, file, diff.scope);
+}
+
 // ---------- worktree overview ----------
 
 // A worktree browsed like a PR: everything since main as "All changes", plus what only exists on this disk.
-export async function openWorktreeOverlay(path, file = "", scope = "all") {
+export async function openWorktreeOverlay(path, file = "", scope = "") {
   if (!path) return;
+  scope ||= "all"; // a ?wt= URL without &scope= passes ""
   ensureDiffDialog();
   loadHighlighter();
   if (!diffDialog.open) patches.clear();
@@ -2204,9 +2224,9 @@ function renderDiff() {
   const viewedCount = subject() && files && !description && !local ? files.filter(isViewed).length : 0;
   const progress = subject() && files?.length && !description && !local
     ? ` · <span class="code-diff-progress${viewedCount === files.length ? " is-done" : viewedCount ? "" : " is-none"}">${viewedCount === files.length ? `All ${files.length} viewed` : `${viewedCount} of ${files.length} viewed`}</span>` : "";
-  const keys = [["J K", "next / previous file"], ...(subject() ? [["X", "mark viewed"], ["U", "unviewed only"], ["D", wt ? "next view" : "description"], ["N P", wt ? "next / previous scope" : "next / previous commit"]] : []), ["/", "filter files"], ["T", "change map"], ["V", "one file / all files"], ["S", "split / unified"], ["G", "full width"], ...(markdown ? [["M", "rendered markdown"]] : []), ...(pr ? [["C", "note on selected lines"]] : []), ...(pr && prStack().stack.length > 1 ? [["[ ]", "down / up the stack"]] : [])];
+  const keys = [["J K", "next / previous file"], ...(subject() ? [["X", "mark viewed"], ["U", "unviewed only"], ["D", wt ? "next view" : "description"], ["N P", wt ? "next / previous scope" : "next / previous commit"]] : []), ["/", "filter files"], ["T", "change map"], ["V", "one file / all files"], ["S", "split / unified"], ["G", "full width"], ...(subject() ? [["R", wt ? "re-read this worktree" : "re-read this PR"]] : []), ...(markdown ? [["M", "rendered markdown"]] : []), ...(pr ? [["C", "note on selected lines"]] : []), ...(pr && prStack().stack.length > 1 ? [["[ ]", "down / up the stack"]] : [])];
   const hints = `<button type="button" class="code-diff-keys" data-tip="${escapeHtml(keys.map(([key, what]) => `${key} — ${what}`).join("\n"))}" aria-label="Keyboard shortcuts">${icon("keyboard")}</button>`;
-  diffRegion("head", `<div class="code-diff-title"><h3>${title}</h3><p class="code-muted">${sub}${files && !description && !local && !progress ? ` · ${files.length} ${files.length === 1 ? "file" : "files"}` : ""}${progress}</p></div>${diffViews()}${diffSegment("data-diff-view", diffView, { single: "One file", all: "All files" })}${diffSegment("data-diff-layout", diffLayout, { split: "Split", unified: "Unified" })}${iconButton(diffWide ? "minimize" : "expand", diffWide ? "Restore size (G)" : "Full width (G)", `data-diff-wide aria-pressed="${diffWide}"`)}${hints}<button type="button" class="code-icon-button" data-diff-close aria-label="Close (Esc)">${icon("fail")}</button>`);
+  diffRegion("head", `<div class="code-diff-title"><h3>${title}</h3><p class="code-muted">${sub}${files && !description && !local && !progress ? ` · ${files.length} ${files.length === 1 ? "file" : "files"}` : ""}${progress}</p></div>${diffViews()}${diffSegment("data-diff-view", diffView, { single: "One file", all: "All files" })}${diffSegment("data-diff-layout", diffLayout, { split: "Split", unified: "Unified" })}${subject() ? iconButton("refresh", wt ? "Re-read this worktree (R)" : "Re-read this PR from GitHub (R)", "data-diff-refresh").replace('class="code-icon-button"', `class="code-icon-button${diff.refreshing ? " is-spinning" : ""}"`) : ""}${iconButton(diffWide ? "minimize" : "expand", diffWide ? "Restore size (G)" : "Full width (G)", `data-diff-wide aria-pressed="${diffWide}"`)}${hints}<button type="button" class="code-icon-button" data-diff-close aria-label="Close (Esc)">${icon("fail")}</button>`);
   diffDialog.toggleAttribute("data-wide", diffWide);
   diffDialog.querySelector(".code-diff-split").classList.toggle("has-pr", Boolean(subject()));
   diffDialog.toggleAttribute("data-notes", Boolean(pr));

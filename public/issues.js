@@ -608,6 +608,7 @@ function ensureDialog() {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) return;
     if (event.target.closest("[data-issue-close]")) return dialog.close();
+    if (event.target.closest("[data-issue-reread]")) return rereadIssue(byKey().get(overview.key));
     handleClick(event);
   });
   dialog.addEventListener("pointerover", (event) => { const target = event.target.closest("[data-tip]"); if (target) showTip(target); else hideTip(); });
@@ -627,6 +628,7 @@ function ensureDialog() {
     else if (key === "y" && issue) navigator.clipboard.writeText(issueUrl(issue.key)).then(() => notify(`Copied ${issueUrl(issue.key)}`));
     else if (/^[1-9]$/.test(key) && dialog.querySelectorAll(".code-side-skills [data-issue-skill]:not([data-copy-prompt])")[key - 1]) dialog.querySelectorAll(".code-side-skills [data-issue-skill]:not([data-copy-prompt])")[key - 1].click();
     else if (key === "w" && dialog.querySelector("[data-issue-wt]")) dialog.querySelector("[data-issue-wt]").click();
+    else if (key === "r" && issue) rereadIssue(issue);
     else return;
     event.preventDefault();
   });
@@ -648,11 +650,26 @@ function renderOverview() {
   const position = overview.list.indexOf(issue.key);
   const walk = position >= 0 && overview.list.length > 1 ? `<span class="code-muted">${position + 1} of ${overview.list.length} · <kbd>J</kbd><kbd>K</kbd> walk · <kbd>X</kbd> seen and next</span>` : "";
   const where = issue.source === "linear" ? `Linear · ${issue.project} team${issue.mirrorOf ? ` · synced copy of ${issue.mirrorOf}` : ""}` : issue.source === "github" ? `GitHub · ${issue.project}${issue.components.length ? ` · ${issue.components.join(", ")}` : ""}` : `${issue.project} · ${issue.components.join(", ") || "no component"}`;
-  dialog.querySelector('[data-o="head"]').innerHTML = `${typeIcon(issue)}<div class="issue-overview-title"><h3><a class="code-pr-link" href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in ${trackerName(issue)} (O)">${keyMark(issue) || escapeHtml(issue.key)}</a> ${escapeHtml(issue.summary)}</h3><p class="code-muted">${escapeHtml(where)}${issue.inScope ? "" : " · outside the configured scope"}${isSeen(issue) ? " · seen" : ""}</p></div><span class="code-spacer"></span>${walk}${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
+  dialog.querySelector('[data-o="head"]').innerHTML = `${typeIcon(issue)}<div class="issue-overview-title"><h3><a class="code-pr-link" href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in ${trackerName(issue)} (O)">${keyMark(issue) || escapeHtml(issue.key)}</a> ${escapeHtml(issue.summary)}</h3><p class="code-muted">${escapeHtml(where)}${issue.inScope ? "" : " · outside the configured scope"}${isSeen(issue) ? " · seen" : ""}</p></div><span class="code-spacer"></span>${walk}${issue.source === "jira" ? iconButton("refresh", "Re-read this issue from Jira (R)", "data-issue-reread").replace('class="code-icon-button"', `class="code-icon-button${overview.rereading === issue.key ? " is-spinning" : ""}"`) : ""}${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
   dialog.querySelector('[data-o="side"]').innerHTML = issueFacts(issue, true) + codeSection(issue) + relationsSection(issue, true);
   dialog.querySelector('[data-o="main"]').innerHTML = `<div class="issue-overview-text">${textSections(issue, true)}</div>`;
 }
 const syncIssueUrl = (key) => setOverlayParams({ issue: key });
+
+// R in the overview: re-read just this issue from Jira now, instead of waiting for the next sync of every issue.
+async function rereadIssue(issue) {
+  if (!issue) return;
+  if (issue.source !== "jira") return notify(`${trackerName(issue)} issues re-read with the next sync; R on the Issues page starts one.`);
+  if (overview.rereading) return;
+  overview.rereading = issue.key;
+  renderOverview();
+  const response = await fetch("/api/issues/fetch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: issue.key, refresh: true }) }).catch(() => null);
+  overview.rereading = "";
+  if (!response?.ok) { renderOverview(); return notify(`Couldn't re-read ${issue.key} from Jira.`, true); }
+  ui.detail.delete(issue.key);
+  await load().catch(() => {}); // redraws the list and this overview
+  if (overview.key === issue.key && dialog.open) loadDetail(issue.key);
+}
 
 // Opens the overview from anywhere (the Issues page, ⌘K, an ?issue= URL, Recently viewed).
 export async function openIssue(key, list = null) {

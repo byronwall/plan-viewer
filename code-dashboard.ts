@@ -538,8 +538,10 @@ export function createCodeDashboard(root: string) {
     return value;
   }
 
-  async function prDetail(slug: string, number: number) {
+  // `refresh` drops this PR's cached details, refs and diffs (R in its overview) so the next reads go to gh and git.
+  async function prDetail(slug: string, number: number, refresh = false) {
     if (!/^[\w.-]+\/[\w.-]+$/.test(slug) || !Number.isInteger(number)) throw new Error("Bad pull request.");
+    if (refresh) for (const key of prCache.keys()) if (key.endsWith(` ${slug}#${number}`)) prCache.delete(key);
     const detail = await cachedPr("detail", slug, number, () => loadPrDetail(slug, number));
     // Checked on every call (one `git worktree list`), since a worktree can appear after the details were cached.
     const tree = detail.repo ? (await listWorktrees(detail.repo).catch(() => [])).find((candidate) => !candidate.main && candidate.branch === detail.branch) : null;

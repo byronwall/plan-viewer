@@ -53,6 +53,11 @@ test("a sync reads the scope, its parents and epic children, and joins issues to
   assert.ok(keys.includes("OPS-100"), "the parent initiative outside the scope is fetched as context");
   assert.ok(keys.includes("OPS-122"), "an epic's child outside the scope is fetched as context");
   assert.equal(data.issues.find((issue: any) => issue.key === "OPS-122").inScope, false);
+  tracker.detail("OPS-122").summary = "stale";
+  await tracker.fetchIssue("OPS-122");
+  assert.equal(tracker.detail("OPS-122").summary, "stale", "a cached issue answers from the cache");
+  await tracker.fetchIssue("OPS-122", true);
+  assert.notEqual(tracker.detail("OPS-122").summary, "stale", "refresh reads it again");
   assert.equal(data.issues.find((issue: any) => issue.key === "OPS-130").bot, true);
   assert.equal(data.me, "alex@acme.test");
   assert.equal(data.aliases["ATL-2845"], "OPS-113");
@@ -73,6 +78,11 @@ test("a Jira key outside the scope is read on demand as context", async (t) => {
   await tracker.fetchIssue("OPS-122");
   const data: any = await tracker.load();
   assert.equal(data.issues.find((issue: any) => issue.key === "OPS-122").inScope, false);
+  tracker.detail("OPS-122").summary = "stale";
+  await tracker.fetchIssue("OPS-122");
+  assert.equal(tracker.detail("OPS-122").summary, "stale", "a cached issue answers from the cache");
+  await tracker.fetchIssue("OPS-122", true);
+  assert.notEqual(tracker.detail("OPS-122").summary, "stale", "refresh reads it again");
   await assert.rejects(tracker.fetchIssue("--help"), /Can't read/);
 });
 

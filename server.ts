@@ -1008,7 +1008,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (request.method === "GET" && url.pathname === "/api/code/commit-summary") return json(response, 200, await codeDashboard.commitSummary(url.searchParams));
     if (request.method === "GET" && url.pathname === "/api/code/sides") return json(response, 200, await codeDashboard.fileSides(url.searchParams));
     if (request.method === "GET" && url.pathname === "/api/code/file") return json(response, 200, await codeDashboard.fileContent(url.searchParams));
-    if (request.method === "GET" && url.pathname === "/api/code/pr") return json(response, 200, await codeDashboard.prDetail(url.searchParams.get("slug") || "", Number(url.searchParams.get("number"))));
+    if (request.method === "GET" && url.pathname === "/api/code/pr") return json(response, 200, await codeDashboard.prDetail(url.searchParams.get("slug") || "", Number(url.searchParams.get("number")), url.searchParams.has("refresh")));
     if (request.method === "GET" && url.pathname === "/api/code/runs") return json(response, 200, { runs: codeDashboard.allRuns() });
     if (request.method === "GET" && url.pathname === "/api/code/run") return json(response, 200, codeDashboard.runLog(url.searchParams.get("path") || "") || { state: "stopped", log: [] });
     if (request.method === "GET" && url.pathname === "/api/code/notes") return json(response, 200, await codeDashboard.notes.list(...checkedPr(url.searchParams.get("slug"), url.searchParams.get("number"))));
@@ -1035,7 +1035,10 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
     if (request.method === "GET" && url.pathname === "/api/issues") return json(response, 200, await issueTracker.load(url.searchParams.has("refresh")));
     if (request.method === "GET" && url.pathname === "/api/issues/issue") return json(response, 200, issueTracker.detail(url.searchParams.get("key") || ""));
-    if (request.method === "POST" && url.pathname === "/api/issues/fetch") return json(response, 200, await issueTracker.fetchIssue(String((await readJson(request)).key || "")));
+    if (request.method === "POST" && url.pathname === "/api/issues/fetch") {
+      const body = await readJson(request);
+      return json(response, 200, await issueTracker.fetchIssue(String(body.key || ""), Boolean(body.refresh)));
+    }
     if (request.method === "POST" && url.pathname === "/api/issues/agent") {
       const body = await readJson(request);
       const copied = await issueTracker.launchAgent(String(body.app || ""), String(body.skill || ""), Array.isArray(body.keys) ? body.keys.map(String).slice(0, 50) : [], body.copy === true);

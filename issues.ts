@@ -411,10 +411,11 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
   }
 
   // A Jira issue a document links to outside the configured scope, read on its first click and kept as context.
-  async function fetchIssue(key: string) {
+  // `refresh` re-reads one issue now (R in its overview) instead of waiting for the next sync.
+  async function fetchIssue(key: string, refresh = false) {
     if (!settings().jql || !/^[A-Z][A-Z0-9]+-\d+$/.test(key)) throw new Error(`Can't read ${key} from Jira.`);
-    if (!cache.issues[key]) {
-      cache.issues[key] = await view(key);
+    if (!cache.issues[key] || refresh) {
+      store([await view(key)]);
       await mkdir(join(root, "tmp"), { recursive: true });
       await writeFile(cachePath, JSON.stringify(cache));
     }
