@@ -2921,3 +2921,5 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .world-back { flex: none; }
 .world-back-arrow { color: var(--muted); }
 .world-back[hidden] { display: none; }
+.world-open { flex: none; height: 28px; text-decoration: none; }
+.world-open kbd { border: 1px solid #ffffff66; border-radius: 4px; padding: 0 4px; font: 600 .64rem/1.4 ui-monospace, Menlo, monospace; }

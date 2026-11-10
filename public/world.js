@@ -3,7 +3,7 @@
 // nothing happening are skipped and marked as gaps; days more than two weeks before the newest are faded but stay
 // one drag away. Drag pans, pinch or ⌘-wheel zooms around the cursor.
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
-import { diagramHref, escapeHtml } from "./markdown.js";
+import { diagramHref, documentHref, escapeHtml } from "./markdown.js";
 import { localTodayKey } from "./dates.js";
 import { workStatusIcon } from "./actions.js";
 
@@ -22,7 +22,7 @@ const READY_SHOWN = 4;
 const RECENT_DAYS = 14;
 const DAY_MS = 86_400_000;
 
-// app.js supplies what the world opens into: { documents(), tasks(), peek(path, anchor), images(items, index, trigger), copy(path, button) }.
+// app.js supplies what the world opens into: { documents(), tasks(), peek(path, anchor), images(items, index, trigger), copy(path, button), open(path) }.
 let host = null;
 export const connectWorld = (value) => { host = value; };
 
@@ -30,6 +30,7 @@ let dialog = null;
 let current = { id: "", day: "" };
 // Views to go back to, newest last: each a snapshot of what was on screen, so Back returns to the same scroll and zoom.
 const trail = [];
+let leaving = false;
 
 const dayNumber = (key) => Date.UTC(...key.split("-").map((part, index) => Number(part) - (index === 1 ? 1 : 0))) / DAY_MS;
 const dayLabel = (key, weekday = true) => new Date(`${key}T12:00:00`).toLocaleDateString(undefined, { ...(weekday ? { weekday: "short" } : {}), month: "short", day: "numeric" });
@@ -95,7 +96,8 @@ function shell(className) {
   dialog.innerHTML = `<header class="code-diff-head" data-w="head"></header><div class="world-scroller" data-w="scroller" tabindex="-1"></div>`;
   dialog.addEventListener("close", () => {
     if (dialog.open) return;
-    announceClosed();
+    if (!leaving) announceClosed(); // not when Open task took you to the page
+    leaving = false;
     setOverlayParams({ world: "", "world-day": "" });
     dialog.querySelector('[data-w="scroller"]').replaceChildren();
     trail.length = 0;
@@ -105,6 +107,8 @@ function shell(className) {
   dialog.addEventListener("keydown", (event) => {
     if (event.target.closest("input, textarea")) return;
     if (event.key === "Backspace" || (event.altKey && event.key === "ArrowLeft")) { event.preventDefault(); back(); }
+    // Enter opens the task in view as the page, as it does in the document peek; on a focused control it presses that.
+    if (event.key === "Enter" && current.id !== "all" && !event.target.closest("a, button") && !(event.metaKey || event.ctrlKey || event.altKey)) { event.preventDefault(); openTask(); }
   });
   dialog.addEventListener("mouseup", (event) => { if (event.button === 3) { event.preventDefault(); back(); } });
   installPanZoom(dialog.querySelector('[data-w="scroller"]'));
@@ -123,7 +127,7 @@ export async function fetchWorld() {
 const head = (title, detail, tools, lead = "", ready = true) => `${lead}<div class="issue-overview-title"><h3>${title}</h3><p class="code-muted">${detail}</p></div><span class="code-spacer"></span>${tools}<span class="world-frame"><button type="button" class="code-bar-button" data-world-fit="recent" title="Newest two weeks at full size"${ready ? "" : " disabled"}>Recent</button><button type="button" class="code-bar-button" data-world-fit="all" title="Zoom out to the whole history"${ready ? "" : " disabled"}>All</button><button type="button" class="world-zoom" data-world-zoom title="Reset to 100%"${ready ? "" : " disabled"}>100%</button></span><button type="button" class="code-icon-button" data-world-close aria-label="Close (Esc)">×</button>`;
 // A failed load says so in the header (replacing "Loading…") and offers the retry beside the message.
 function failed(box, title, error) {
-  box.querySelector('[data-w="head"]').innerHTML = head(title, "Not loaded", "", backButton, false);
+  box.querySelector('[data-w="head"]').innerHTML = head(title, "Not loaded", current.id === "all" ? "" : openTaskButton(current.id), backButton, false);
   syncBack();
   box.querySelector('[data-w="scroller"]').innerHTML = `<div class="world-empty"><p class="work-warning">${escapeHtml(error.message)}</p><button type="button" class="code-bar-button" data-world-retry>Try again</button></div>`;
 }
@@ -184,6 +188,13 @@ function syncBack() {
 }
 const backButton = `<button type="button" class="code-bar-button world-back" data-world-back hidden><span aria-hidden="true" class="world-back-arrow">←</span><span></span></button>`;
 
+// Leaves the world for the task's page, wherever the world was opened from.
+function openTask() {
+  leaving = true;
+  host.open(`tasks/${current.id}.md`);
+}
+const openTaskButton = (id) => `<a class="code-bar-button is-primary world-open" href="${escapeHtml(documentHref(`tasks/${id}.md`, ""))}" data-world-open-task title="Open ${escapeHtml(id)} as the page (Enter)">Open task <kbd>↵</kbd></a>`;
+
 // ---------- one task ----------
 
 export async function openTaskWorld(id, day = "") {
@@ -193,7 +204,7 @@ export async function openTaskWorld(id, day = "") {
   const task = host.documents().find((doc) => doc.path === `tasks/${id}.md`)?.task;
   const scroller = box.querySelector('[data-w="scroller"]');
   const title = `<code>${escapeHtml(id)}</code>${escapeHtml(task?.title || "")}`;
-  box.querySelector('[data-w="head"]').innerHTML = head(title, "Loading files…", "", backButton, false);
+  box.querySelector('[data-w="head"]').innerHTML = head(title, "Loading files…", openTaskButton(id), backButton, false);
   syncBack();
   scroller.innerHTML = "";
   if (!box.open) { box.showModal(); box.focus({ preventScroll: true }); }
@@ -206,7 +217,7 @@ export async function openTaskWorld(id, day = "") {
   const counts = Object.fromEntries(lanes.map((lane) => [lane.key, items.filter((item) => item.lane === lane.key && !item.created && !item.ready).length]));
   const readyCount = (task?.work || []).filter((node) => node.ready && !task.work.some((child) => child.parent === node.id)).length;
   const span = columns.length ? `${dayLabel(columns[0].day, false)} – ${dayLabel(columns.at(-1).day, false)} · ${columns.length} active ${columns.length === 1 ? "day" : "days"}` : "Nothing filed yet";
-  box.querySelector('[data-w="head"]').innerHTML = head(title, escapeHtml(span + (readyCount ? ` · ${readyCount} ready now` : "")), legend(counts), backButton);
+  box.querySelector('[data-w="head"]').innerHTML = head(title, escapeHtml(span + (readyCount ? ` · ${readyCount} ready now` : "")), legend(counts) + openTaskButton(id), backButton);
   syncBack();
   // Images and diagrams open in the image viewer together, newest first, grouped by day, so its rail is the task's gallery.
   const visuals = items.filter((item) => item.lane === "image" || item.lane === "diagram").reverse();
@@ -283,6 +294,8 @@ export async function openPortfolio(tasks) {
 
 function onClick(event) {
   if (event.target === dialog) return;
+  const openLink = event.target.closest("[data-world-open-task]");
+  if (openLink && !(event.metaKey || event.ctrlKey || event.shiftKey)) { event.preventDefault(); return openTask(); }
   const target = event.target.closest("[data-world-close], [data-world-back], [data-world-fit], [data-world-zoom], [data-world-retry], [data-world-peek], [data-world-visual], [data-world-copy], [data-world-task]");
   if (!target) return;
   const scroller = dialog.querySelector('[data-w="scroller"]');

@@ -3697,6 +3697,8 @@ function openWorld() {
 connectWorld({
   documents: () => state.documents,
   tasks: portfolioTasks,
+  // Open task: every overlay closes and the task becomes the page, with its own history entry so Back returns here.
+  open: (path) => { closeOverview(); selectDocument(path, { historyMode: "push" }); },
   // An update opens the task in the peek at its Updates section, so the world stays underneath.
   peek: async (path, anchor) => { await peekDocument(path); if (anchor) document.getElementById(`peek-${anchor}`)?.scrollIntoView({ block: "start", behavior: "instant" }); },
   images: (items, index, trigger) => openImageViewerAt(items.map((item) => ({ ...item, trigger })), index, trigger),
