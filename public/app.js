@@ -12,7 +12,7 @@ import { channelLabel, fresh as freshThread, lastActive, opener, permalink, refr
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
-import { connectWorld, openPortfolio, openTaskWorld } from "./world.js";
+import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./dates.js";
@@ -343,9 +343,31 @@ const TASK_SORTS = {
   status: (a, b) => statusRank(a) - statusRank(b) || b.task.updated.localeCompare(a.task.updated),
   project: (a, b) => a.task.project.localeCompare(b.task.project),
   refs: (a, b) => (a.task.referencedBy?.length || 0) - (b.task.referencedBy?.length || 0),
+  contents: (a, b) => CONTENT_KINDS.reduce((sum, [kind]) => sum + contentCount(a, kind) - contentCount(b, kind), 0),
   updated: (a, b) => a.task.updated.localeCompare(b.task.updated),
 };
 const taskSort = { key: "status", dir: 1 };
+// What each task's assets folder holds (documents, diagrams, images), from the world view's file list; filled after the
+// first Tasks render so the table never waits on it, and refreshed on each visit.
+let contentCounts = {};
+let contentCountsAsked = false;
+const contentCount = (doc, kind) => contentCounts[doc.task.id]?.[kind] || 0;
+const CONTENT_KINDS = [["document", "file-text", "document"], ["diagram", "layout-panel-left", "diagram"], ["image", "image", "image"]];
+// One aligned slot per kind, so the column reads as three: an icon and its count, blank when there are none.
+const contentCell = (doc) => {
+  const parts = CONTENT_KINDS.map(([kind, glyph, noun]) => [contentCount(doc, kind), glyph, noun]);
+  const label = parts.filter(([count]) => count).map(([count, , noun]) => `${count} ${noun}${count === 1 ? "" : "s"}`).join(", ") || "Nothing in its assets folder";
+  return `<span class="task-contents" aria-label="${label}" title="${label}">${parts.map(([count, glyph]) => `<span${count ? "" : ' class="is-none"'}><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS[glyph]}</svg>${count || ""}</span>`).join("")}</span>`;
+};
+async function loadContentCounts() {
+  contentCountsAsked = true;
+  try {
+    const next = taskCounts(await fetchWorld(), state.documents);
+    const changed = JSON.stringify(next) !== JSON.stringify(contentCounts);
+    contentCounts = next;
+    if (changed && state.view === "tasks") renderTasksPage();
+  } catch {}
+}
 let selectedTaskPath = "";
 // `?view=tasks&task=TASK-0035` restores the selected row on refresh and history navigation.
 const taskFromUrl = () => {
@@ -402,12 +424,13 @@ function renderTasksPage() {
   if (!tasks.some((doc) => doc.path === selectedTaskPath)) selectedTaskPath = taskPaneVisible() ? tasks[0]?.path || "" : "";
   elements.chunks.innerHTML = `<section class="task-browser" aria-label="Unfinished tasks">
     <div class="task-index"><div class="task-index-tools">${settled ? showDoneToggle(settled, `data-show-done-tasks${showDoneTasks ? " checked" : ""}`) : ""}<button type="button" class="code-bar-button task-world-button" data-world-all title="Every listed task on one timeline (W)">World view</button></div>${tasks.length ? `<table class="task-table">
-      <thead><tr>${taskSortHeader("id", "ID")}${taskSortHeader("title", "Task")}${taskSortHeader("status", "Status")}${taskSortHeader("project", "Project")}${taskSortHeader("refs", "Refs")}${taskSortHeader("updated", "Updated")}</tr></thead>
+      <thead><tr>${taskSortHeader("id", "ID")}${taskSortHeader("title", "Task")}${taskSortHeader("status", "Status")}${taskSortHeader("project", "Project")}${taskSortHeader("contents", "Contents")}${taskSortHeader("refs", "Refs")}${taskSortHeader("updated", "Updated")}</tr></thead>
       <tbody>${tasks.map((doc) => `<tr data-select-task="${escapeHtml(doc.path)}" aria-selected="${doc.path === selectedTaskPath}"${isSettled(doc.task.status) ? ' class="is-done"' : ""}>
         <td class="task-col-id"><button class="task-list-id" type="button" data-task-path="${escapeHtml(doc.path)}" title="Open ${escapeHtml(doc.task.id)}">${escapeHtml(doc.task.id)}</button></td>
         <td class="task-col-title"><button class="task-row-select" type="button" data-select-task="${escapeHtml(doc.path)}">${escapeHtml(doc.task.title)}</button></td>
         <td class="task-col-status">${statusPill(doc.task, doc.path)}</td>
         <td class="task-col-project">${escapeHtml(doc.task.project)}</td>
+        <td class="task-col-contents">${contentCell(doc)}</td>
         <td class="task-col-refs">${doc.task.referencedBy?.length || "—"}</td>
         <td class="task-col-updated"><time datetime="${escapeHtml(doc.task.updated)}" title="${escapeHtml(formatDate(doc.task.updated, true))}">${escapeHtml(shortDate(doc.task.updated))}</time></td>
       </tr>`).join("")}</tbody>
@@ -415,6 +438,7 @@ function renderTasksPage() {
     <aside class="task-detail" id="task-detail" aria-live="polite"></aside>
   </section>`;
   renderTaskDetail();
+  if (!contentCountsAsked) loadContentCounts();
 }
 
 // What a waiting task is waiting for: its check-in date and the items its Next actions name, moved ones first.
@@ -491,6 +515,7 @@ function showTasks({ historyMode = "push" } = {}) {
   closeComposer();
   updateTasksUrl(historyMode);
   renderTasksPage();
+  loadContentCounts();
 }
 
 // Topics and Reference get their own pages instead of sidebar lists. Topics group each `plans/<topic>/` folder under its README.
@@ -2563,7 +2588,7 @@ elements.chunks.addEventListener("click", (event) => {
   }
   const sort = event.target.closest("[data-task-sort]");
   if (sort) {
-    taskSort.dir = taskSort.key === sort.dataset.taskSort ? -taskSort.dir : sort.dataset.taskSort === "refs" || sort.dataset.taskSort === "updated" ? -1 : 1;
+    taskSort.dir = taskSort.key === sort.dataset.taskSort ? -taskSort.dir : ["refs", "updated", "contents"].includes(sort.dataset.taskSort) ? -1 : 1;
     taskSort.key = sort.dataset.taskSort;
     renderTasksPage();
     return;
@@ -3671,9 +3696,10 @@ function openWorld() {
 }
 connectWorld({
   documents: () => state.documents,
-  peek: (path) => peekDocument(path),
+  tasks: portfolioTasks,
+  // An update opens the task in the peek at its Updates section, so the world stays underneath.
+  peek: async (path, anchor) => { await peekDocument(path); if (anchor) document.getElementById(`peek-${anchor}`)?.scrollIntoView({ block: "start", behavior: "instant" }); },
   images: (items, index, trigger) => openImageViewerAt(items.map((item) => ({ ...item, trigger })), index, trigger),
-  open: (path, anchor) => selectDocument(path, { historyMode: "push", anchor }),
   copy: async (path, button) => {
     try { await navigator.clipboard.writeText(path); button.classList.remove("is-copied"); void button.offsetWidth; button.classList.add("is-copied"); } catch { showNotice("Could not copy.", true); }
   },

@@ -18,12 +18,14 @@ export const LANES = [
 const RECENT_DAYS = 14;
 const DAY_MS = 86_400_000;
 
-// app.js supplies what the world opens into: { documents(), peek(path), images(items, index, trigger), open(path, anchor), copy(path, button) }.
+// app.js supplies what the world opens into: { documents(), tasks(), peek(path, anchor), images(items, index, trigger), copy(path, button) }.
 let host = null;
 export const connectWorld = (value) => { host = value; };
 
 let dialog = null;
 let current = { id: "", day: "" };
+// Views to go back to, newest last: each a snapshot of what was on screen, so Back returns to the same scroll and zoom.
+const trail = [];
 
 const dayNumber = (key) => Date.UTC(...key.split("-").map((part, index) => Number(part) - (index === 1 ? 1 : 0))) / DAY_MS;
 const dayLabel = (key, weekday = true) => new Date(`${key}T12:00:00`).toLocaleDateString(undefined, { ...(weekday ? { weekday: "short" } : {}), month: "short", day: "numeric" });
@@ -44,12 +46,24 @@ export function taskItems(id, world, documents) {
     if (doc?.date) items.push({ lane: "days", day: doc.date, path, title: doc.kind === "Plan" ? "Plan" : doc.title });
   }
   const folder = `tasks/${id}-assets/`;
+  // A picture exported beside its `.draft` (flow.png next to flow.draft) is the same drawing; the diagram stands for it.
+  const drafts = new Set(entry.files.filter((file) => file.kind === "diagram").map((file) => file.path.replace(/\.draft$/, "")));
   for (const file of entry.files) {
+    if (file.kind === "image" && drafts.has(file.path.replace(/\.[^./]+$/, ""))) continue;
     const doc = documents.find((candidate) => candidate.path === file.path);
     const sub = file.path.slice(folder.length);
     items.push({ lane: file.kind, day: localTodayKey(new Date(file.modified)), path: file.path, modified: file.modified, title: doc?.title || fileName(file.path).replace(/\.draft$/, ""), folder: sub.includes("/") ? sub.slice(0, sub.lastIndexOf("/") + 1) : "" });
   }
   return items.sort((a, b) => a.day.localeCompare(b.day) || (b.modified || 0) - (a.modified || 0));
+}
+
+// How much each task holds, for the Tasks table: { "TASK-0082": { document, diagram, image } }, PNG exports excluded.
+export function taskCounts(world, documents) {
+  return Object.fromEntries(Object.keys(world.tasks).map((id) => {
+    const counts = { document: 0, diagram: 0, image: 0 };
+    for (const item of taskItems(id, world, documents)) if (item.lane in counts) counts[item.lane] += 1;
+    return [id, counts];
+  }));
 }
 
 // The day columns: every day with an item, oldest first, each knowing the gap before it and whether it is recent.
@@ -68,25 +82,84 @@ function shell(className) {
     announceClosed();
     setOverlayParams({ world: "", "world-day": "" });
     dialog.querySelector('[data-w="scroller"]').replaceChildren();
+    trail.length = 0;
   });
   dialog.addEventListener("click", onClick);
+  // Backspace, Alt+← and the mouse's back button step back through the trail instead of leaving the page.
+  dialog.addEventListener("keydown", (event) => {
+    if (event.target.closest("input, textarea")) return;
+    if (event.key === "Backspace" || (event.altKey && event.key === "ArrowLeft")) { event.preventDefault(); back(); }
+  });
+  dialog.addEventListener("mouseup", (event) => { if (event.button === 3) { event.preventDefault(); back(); } });
   installPanZoom(dialog.querySelector('[data-w="scroller"]'));
   dialog.className = `code-diff world-overlay ${className}`;
   return dialog;
 }
 
-async function fetchWorld() {
+export async function fetchWorld() {
   const response = await fetch("/api/task-world");
   if (!response.ok) throw new Error("Could not load the task files.");
   return response.json();
 }
 
-const head = (title, detail, tools) => `<div class="issue-overview-title"><h3>${title}</h3><p class="code-muted">${detail}</p></div><span class="code-spacer"></span>${tools}<button type="button" class="code-bar-button" data-world-fit="recent" title="Newest two weeks at full size">Recent</button><button type="button" class="code-bar-button" data-world-fit="all" title="Zoom out to the whole history">All</button><span class="world-zoom" data-world-zoom>100%</span><button type="button" class="code-icon-button" data-world-close aria-label="Close (Esc)">×</button>`;
+// `lead` sits before the title: the way back (or up to All tasks).
+const head = (title, detail, tools, lead = "") => `${lead}<div class="issue-overview-title"><h3>${title}</h3><p class="code-muted">${detail}</p></div><span class="code-spacer"></span>${tools}<button type="button" class="code-bar-button" data-world-fit="recent" title="Newest two weeks at full size">Recent</button><button type="button" class="code-bar-button" data-world-fit="all" title="Zoom out to the whole history">All</button><span class="world-zoom" data-world-zoom>100%</span><button type="button" class="code-icon-button" data-world-close aria-label="Close (Esc)">×</button>`;
 
 const noun = (lane, count) => `${count} ${lane.label.toLowerCase().replace(count === 1 ? /s$/ : /$^/, "")}`;
 function legend(counts) {
   return `<span class="world-legend">${LANES.filter((lane) => counts[lane.key]).map((lane) => `<span><i class="world-dot" data-lane="${lane.key}"></i>${escapeHtml(noun(lane, counts[lane.key]))}</span>`).join("")}</span>`;
 }
+
+// ---------- moving between views ----------
+
+function snapshot() {
+  const scroller = dialog.querySelector('[data-w="scroller"]');
+  return { current: { ...current }, className: dialog.className, head: dialog.querySelector('[data-w="head"]').innerHTML, body: scroller.innerHTML, left: scroller.scrollLeft, top: scroller.scrollTop, zoom: zoomOf(scroller), visuals: dialog.visuals };
+}
+
+function back() {
+  const view = trail.pop();
+  if (!view) return current.id !== "all" && up();
+  const scroller = dialog.querySelector('[data-w="scroller"]');
+  current = view.current;
+  dialog.className = view.className;
+  dialog.visuals = view.visuals;
+  dialog.querySelector('[data-w="head"]').innerHTML = view.head;
+  scroller.style.setProperty("--zoom", String(view.zoom));
+  scroller.innerHTML = view.body;
+  scroller.scrollLeft = view.left;
+  scroller.scrollTop = view.top;
+  setOverlayParams({ world: current.id, "world-day": current.day || "" });
+  syncBack();
+}
+
+// From a task to All tasks: back to the one you came from when that is where you were, else a fresh one.
+function up() {
+  if (trail.at(-1)?.current.id === "all") return back();
+  trail.push(snapshot());
+  openPortfolio(host.tasks());
+}
+
+function go(id, day) {
+  trail.push(snapshot());
+  openTaskWorld(id, day);
+}
+
+// The ← button names where it goes; a task view with nothing behind it offers All tasks instead.
+function backLabel() {
+  const previous = trail.at(-1)?.current;
+  if (previous) return previous.id === "all" ? "All tasks" : previous.id;
+  return current.id === "all" ? "" : "All tasks";
+}
+function syncBack() {
+  const button = dialog.querySelector("[data-world-back]");
+  const label = backLabel();
+  if (!button) return;
+  button.hidden = !label;
+  button.querySelector("span:last-child").textContent = label;
+  button.title = trail.length ? `Back to ${label} (⌫)` : "Every task on one timeline (⌫)";
+}
+const backButton = `<button type="button" class="code-bar-button world-back" data-world-back hidden><span aria-hidden="true" class="world-back-arrow">←</span><span></span></button>`;
 
 // ---------- one task ----------
 
@@ -96,7 +169,8 @@ export async function openTaskWorld(id, day = "") {
   setOverlayParams({ world: id, "world-day": day });
   const task = host.documents().find((doc) => doc.path === `tasks/${id}.md`)?.task;
   const scroller = box.querySelector('[data-w="scroller"]');
-  box.querySelector('[data-w="head"]').innerHTML = head(`<code>${escapeHtml(id)}</code>${escapeHtml(task?.title || "")}`, "Loading…", "");
+  box.querySelector('[data-w="head"]').innerHTML = head(`<code>${escapeHtml(id)}</code>${escapeHtml(task?.title || "")}`, "Loading…", "", backButton);
+  syncBack();
   scroller.innerHTML = "";
   if (!box.open) { box.showModal(); box.focus({ preventScroll: true }); }
   let world;
@@ -107,13 +181,14 @@ export async function openTaskWorld(id, day = "") {
   const lanes = LANES.filter((lane) => items.some((item) => item.lane === lane.key));
   const counts = Object.fromEntries(lanes.map((lane) => [lane.key, items.filter((item) => item.lane === lane.key && !item.created).length]));
   const span = columns.length ? `${dayLabel(columns[0].day, false)} – ${dayLabel(columns.at(-1).day, false)} · ${columns.length} active ${columns.length === 1 ? "day" : "days"}` : "Nothing filed yet";
-  box.querySelector('[data-w="head"]').innerHTML = head(`<code>${escapeHtml(id)}</code>${escapeHtml(task?.title || "")}`, escapeHtml(span), legend(counts));
+  box.querySelector('[data-w="head"]').innerHTML = head(`<code>${escapeHtml(id)}</code>${escapeHtml(task?.title || "")}`, escapeHtml(span), legend(counts), backButton);
+  syncBack();
   // Images and diagrams open in the image viewer together, newest first, grouped by day, so its rail is the task's gallery.
   const visuals = items.filter((item) => item.lane === "image" || item.lane === "diagram").reverse();
   box.visuals = visuals.map((item) => ({ src: item.lane === "diagram" ? diagramHref(item.path) : assetHref(item.path), alt: item.title, ...(item.lane === "diagram" ? { diagram: item.path } : {}), group: dayLabel(item.day) }));
   const visualIndex = new Map(visuals.map((item, index) => [item, index]));
   const cell = (lane, items) => {
-    if (lane === "updates") return items.map((item) => `<button type="button" class="world-card world-update${item.created ? " is-created" : ""}" data-world-open="tasks/${escapeHtml(id)}.md" data-world-anchor="${item.created ? "" : "updates"}">${codeSpans(item.title)}</button>`).join("");
+    if (lane === "updates") return items.map((item) => `<button type="button" class="world-card world-update${item.created ? " is-created" : ""}" data-world-peek="tasks/${escapeHtml(id)}.md" data-world-anchor="${item.created ? "" : "updates"}">${codeSpans(item.title)}</button>`).join("");
     if (lane === "days") return `<span class="world-chips">${items.map((item) => `<button type="button" class="world-chip" data-world-peek="${escapeHtml(item.path)}">${escapeHtml(item.title)}</button>`).join("")}</span>`;
     if (lane === "document") return items.map((item) => `<button type="button" class="world-card" data-world-peek="${escapeHtml(item.path)}" title="${escapeHtml(item.path)}"><span>${escapeHtml(item.title)}</span>${item.folder ? `<small>${escapeHtml(item.folder)}</small>` : ""}</button>`).join("");
     if (lane === "file") return items.map((item) => `<button type="button" class="world-file" data-world-copy="${escapeHtml(item.path)}" title="Copy ${escapeHtml(item.path)}">${item.folder ? `<small>${escapeHtml(item.folder)}</small>` : ""}${escapeHtml(fileName(item.path))}</button>`).join("");
@@ -138,7 +213,8 @@ export async function openPortfolio(tasks) {
   current = { id: "all", day: "", tasks };
   setOverlayParams({ world: "all", "world-day": "" });
   const scroller = box.querySelector('[data-w="scroller"]');
-  box.querySelector('[data-w="head"]').innerHTML = head("All tasks", "Loading…", "");
+  box.querySelector('[data-w="head"]').innerHTML = head("All tasks", "Loading…", "", backButton);
+  syncBack();
   scroller.innerHTML = "";
   if (!box.open) { box.showModal(); box.focus({ preventScroll: true }); }
   let world;
@@ -149,7 +225,8 @@ export async function openPortfolio(tasks) {
   const columns = dayColumns(rowsData.flatMap((row) => row.items));
   const counts = {};
   for (const item of rowsData.flatMap((row) => row.items)) counts[item.lane] = (counts[item.lane] || 0) + 1;
-  box.querySelector('[data-w="head"]').innerHTML = head("All tasks", escapeHtml(`${tasks.length} ${tasks.length === 1 ? "task" : "tasks"} · ${columns.length} active days · newest at the right`), legend(counts));
+  box.querySelector('[data-w="head"]').innerHTML = head("All tasks", escapeHtml(`${tasks.length} ${tasks.length === 1 ? "task" : "tasks"} · ${columns.length} active days · newest at the right`), legend(counts), backButton);
+  syncBack();
   if (!columns.length) { scroller.innerHTML = `<p class="world-empty">No task has updates, plan mentions or files yet.</p>`; return; }
   const columnClass = (column) => `${column.old ? " is-old" : ""}${column.gap ? " has-gap" : ""}`;
   const header = columns.map((column) => `<div class="world-day${columnClass(column)}" data-world-day="${column.day}"><strong>${escapeHtml(dayLabel(column.day, false))}</strong></div>`).join("");
@@ -171,16 +248,16 @@ export async function openPortfolio(tasks) {
 
 function onClick(event) {
   if (event.target === dialog) return;
-  const target = event.target.closest("[data-world-close], [data-world-fit], [data-world-peek], [data-world-open], [data-world-visual], [data-world-copy], [data-world-task]");
+  const target = event.target.closest("[data-world-close], [data-world-back], [data-world-fit], [data-world-peek], [data-world-visual], [data-world-copy], [data-world-task]");
   if (!target) return;
   const scroller = dialog.querySelector('[data-w="scroller"]');
   if (target.matches("[data-world-close]")) dialog.close();
   else if (target.matches("[data-world-fit]")) fit(scroller, target.dataset.worldFit);
-  else if (target.matches("[data-world-peek]")) host.peek(target.dataset.worldPeek);
-  else if (target.matches("[data-world-open]")) { dialog.close(); host.open(target.dataset.worldOpen, target.dataset.worldAnchor); }
+  else if (target.matches("[data-world-back]")) back();
+  else if (target.matches("[data-world-peek]")) host.peek(target.dataset.worldPeek, target.dataset.worldAnchor || "");
   else if (target.matches("[data-world-visual]")) host.images(dialog.visuals, Number(target.dataset.worldVisual), target);
   else if (target.matches("[data-world-copy]")) host.copy(target.dataset.worldCopy, target);
-  else if (target.matches("[data-world-task]")) openTaskWorld(target.dataset.worldTask, target.dataset.worldAt || "");
+  else if (target.matches("[data-world-task]")) go(target.dataset.worldTask, target.dataset.worldAt || "");
 }
 
 const zoomOf = (scroller) => Number(scroller.style.getPropertyValue("--zoom")) || 1;
