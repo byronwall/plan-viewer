@@ -9,7 +9,7 @@ import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as c
 import { dateKey, parseDateKey, startOfWeek } from "./public/dates.js";
 import { config, setConfig } from "./public/config.js";
 import { comparePanels, isDiffDiagram, sourceHtml, statementId } from "./public/diagram.js";
-import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, buildDiagramPrompt, listDiagrams, renderDiagram, safeAssetPath, withPanels, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
+import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, buildDiagramPrompt, listDiagrams, listTaskWorld, renderDiagram, safeAssetPath, withPanels, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
   const previous = process.env.SLACK_TOKEN;
@@ -331,6 +331,14 @@ test("the Diagrams page lists every .draft with its title and owning task", asyn
   assert.equal(flow?.title, "Fixture flow");
   assert.equal(flow?.task, "TASK-0001");
   assert.ok(diagrams.every((diagram) => diagram.path.endsWith(".draft")));
+});
+
+test("the world view lists a task's asset files by kind and its dated updates", async () => {
+  const { tasks } = await listTaskWorld();
+  const flow = tasks["TASK-0001"]?.files.find((file) => file.path === "tasks/TASK-0001-assets/flow.draft");
+  assert.equal(flow?.kind, "diagram");
+  assert.ok(flow.modified > 0);
+  assert.ok(Object.values(tasks).every((task) => task.updates.every((update) => /^\d{4}-\d{2}-\d{2}$/.test(update.date))));
 });
 
 test("consecutive diagram embeds share one thumbnail strip; other images stay full figures", () => {

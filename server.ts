@@ -297,7 +297,8 @@ function todayDate() {
   return todayPath().slice("daily/".length, -"/plan.md".length).replaceAll("/", "-");
 }
 
-async function walkDocuments(directory: string, extensions = [".md", ".txt"]): Promise<string[]> {
+// `extensions: null` takes every file (a task's assets folder for its world view).
+async function walkDocuments(directory: string, extensions: string[] | null = [".md", ".txt"]): Promise<string[]> {
   let entries;
   try {
     entries = await readdir(join(ROOT, directory), { withFileTypes: true });
@@ -309,7 +310,7 @@ async function walkDocuments(directory: string, extensions = [".md", ".txt"]): P
     const child = join(directory, entry.name);
     if (isExcluded(child)) return [];
     if (entry.isDirectory()) return walkDocuments(child, extensions);
-    return entry.isFile() && extensions.includes(extname(entry.name)) ? [child] : [];
+    return entry.isFile() && (!extensions || extensions.includes(extname(entry.name))) ? [child] : [];
   }));
   return found.flat().sort();
 }
@@ -491,6 +492,27 @@ export async function listDiagrams() {
     return { path, title: quoted("diagram") || basename(path, ".draft"), subtitle: quoted("subtitle"), modified: mtimeMs, task: path.match(/^tasks\/(TASK-\d{4})-assets\//)?.[1] || "" };
   }));
   return diagrams.sort((a, b) => b.modified - a.modified);
+}
+
+const WORLD_KINDS: Record<string, string> = { ".md": "document", ".txt": "document", ".draft": "diagram", ".png": "image", ".jpg": "image", ".jpeg": "image", ".gif": "image", ".webp": "image", ".svg": "image" };
+
+// Each task's world view: every file in its assets folder (kind and when it last changed) and its dated Updates entries.
+export async function listTaskWorld() {
+  const tasks: Record<string, { files: { path: string; kind: string; modified: number }[]; updates: { date: string; title: string }[] }> = {};
+  const entry = (id: string) => (tasks[id] ||= { files: [], updates: [] });
+  const paths = await walkDocuments("tasks", null);
+  await Promise.all(paths.map(async (path) => {
+    const id = path.match(/^tasks\/(TASK-\d{4})(-assets\/|\.md$)/)?.[1];
+    if (!id) return;
+    if (path.endsWith(`${id}.md`)) {
+      const contents = await readFile(join(ROOT, path), "utf8");
+      for (const [, date, title] of contents.matchAll(/^[-*]\s+\*\*(\d{4}-\d{2}-\d{2})\s*[—–-]\s*(.+?):?\*\*/gm)) entry(id).updates.push({ date, title: title.trim() });
+      return;
+    }
+    const { mtimeMs } = await stat(join(ROOT, path));
+    entry(id).files.push({ path, kind: WORLD_KINDS[extname(path).toLowerCase()] || "file", modified: mtimeMs });
+  }));
+  return { tasks };
 }
 
 export async function listDocuments() {
@@ -940,6 +962,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       response.end(await readFile(asset.absolute));
       return;
     }
+    if (request.method === "GET" && url.pathname === "/api/task-world") return json(response, 200, await listTaskWorld());
     if (request.method === "GET" && url.pathname === "/api/diagrams") return json(response, 200, { diagrams: await listDiagrams() });
     if (request.method === "GET" && url.pathname === "/api/diagram") {
       const svg = await renderDiagram(url.searchParams.get("path") || "", url.searchParams.get("panels") || "");

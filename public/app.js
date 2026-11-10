@@ -12,6 +12,7 @@ import { channelLabel, fresh as freshThread, lastActive, opener, permalink, refr
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
+import { connectWorld, openPortfolio, openTaskWorld } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./dates.js";
@@ -400,7 +401,7 @@ function renderTasksPage() {
   elements.chunks.classList.add("tasks-page");
   if (!tasks.some((doc) => doc.path === selectedTaskPath)) selectedTaskPath = taskPaneVisible() ? tasks[0]?.path || "" : "";
   elements.chunks.innerHTML = `<section class="task-browser" aria-label="Unfinished tasks">
-    <div class="task-index">${settled ? showDoneToggle(settled, `data-show-done-tasks${showDoneTasks ? " checked" : ""}`) : ""}${tasks.length ? `<table class="task-table">
+    <div class="task-index"><div class="task-index-tools">${settled ? showDoneToggle(settled, `data-show-done-tasks${showDoneTasks ? " checked" : ""}`) : ""}<button type="button" class="code-bar-button task-world-button" data-world-all title="Every listed task on one timeline (W)">World view</button></div>${tasks.length ? `<table class="task-table">
       <thead><tr>${taskSortHeader("id", "ID")}${taskSortHeader("title", "Task")}${taskSortHeader("status", "Status")}${taskSortHeader("project", "Project")}${taskSortHeader("refs", "Refs")}${taskSortHeader("updated", "Updated")}</tr></thead>
       <tbody>${tasks.map((doc) => `<tr data-select-task="${escapeHtml(doc.path)}" aria-selected="${doc.path === selectedTaskPath}"${isSettled(doc.task.status) ? ' class="is-done"' : ""}>
         <td class="task-col-id"><button class="task-list-id" type="button" data-task-path="${escapeHtml(doc.path)}" title="Open ${escapeHtml(doc.task.id)}">${escapeHtml(doc.task.id)}</button></td>
@@ -436,7 +437,7 @@ async function renderTaskDetail() {
   const docLink = (path, label, className = "") => `<a class="markdown-document-link ${className}" href="${escapeHtml(documentHref(path, ""))}" data-document-path="${escapeHtml(path)}" data-document-anchor="">${label}</a>`;
   const head = `<header class="task-detail-head">
       <div class="task-detail-badges"><span class="task-list-id">${escapeHtml(task.id)}</span>${statusPill(task, summary.path)}</div>
-      <button class="task-detail-open" type="button" data-task-path="${escapeHtml(summary.path)}">Open <span aria-hidden="true">→</span></button>
+      <span class="task-detail-buttons"><button class="code-bar-button" type="button" data-world-task-open="${escapeHtml(task.id)}" title="Everything filed for ${escapeHtml(task.id)} on one timeline">World</button><button class="task-detail-open" type="button" data-task-path="${escapeHtml(summary.path)}">Open <span aria-hidden="true">→</span></button></span>
     </header>
     <h3>${escapeHtml(task.title)}</h3>
     <p class="task-detail-summary">${escapeHtml(task.summary)}</p>
@@ -2514,6 +2515,12 @@ elements.chunks.addEventListener("click", (event) => {
     openDocumentComposer();
     return;
   }
+  const world = event.target.closest("[data-world-all], [data-world-task-open]");
+  if (world) {
+    if (world.dataset.worldTaskOpen) openTaskWorld(world.dataset.worldTaskOpen);
+    else openPortfolio(portfolioTasks());
+    return;
+  }
   const jump = event.target.closest("[data-dock-jump]");
   if (jump) {
     jump.closest("[popover]")?.hidePopover();
@@ -2937,6 +2944,7 @@ const shortcuts = [
   { group: "Go to", keys: ["V"], label: "Activity", hint: "tasks, plans, issues and PRs, newest first", run: () => showActivity() },
   { group: "Go to", keys: ["G"], label: "Code", hint: "worktrees, pull requests, cleanup", run: () => showCode() },
   { group: "Go to", keys: ["I"], label: "Issues", hint: "triage, epics, activity", run: () => issuesOn() && showIssues() },
+  { group: "Go to", keys: ["W"], label: "World view", hint: "the open task’s files, plans and updates by day; elsewhere every task", run: openWorld },
   { group: "Go to", keys: ["H"], label: "Recently viewed", hint: "type to filter, 1–9 to jump, even over an overview" },
   { group: "Read", row: "section", keys: ["J"], label: "Next / previous section", run: () => jumpSection(1) },
   { group: "Read", row: "section", keys: ["K"], run: () => jumpSection(-1) },
@@ -3650,6 +3658,26 @@ const OVERLAYS = [
     result: (params) => { const plan = params.get("plan"); return { icon: "initiative", title: escapeHtml(planTitle(plan) || plan.split("/").pop()), detail: escapeHtml(`${plan.split(":")[0].split("/").pop()} · ${params.get("doc")?.split("/").pop() || "initiative"}`), side: "Initiative" }; },
     closed: (params) => ["initiative reader", planTitle(params.get("plan")) || params.get("plan").split("/").pop()] },
 ];
+OVERLAYS.push({ param: "world", extra: ["world-day"],
+  open: (params) => params.get("world") === "all" ? openPortfolio(portfolioTasks()) : /^TASK-\d{4}$/.test(params.get("world")) && openTaskWorld(params.get("world"), params.get("world-day") || ""),
+  result: (params) => { const id = params.get("world"); const doc = state.documents.find((candidate) => candidate.path === `tasks/${id}.md`); return { icon: "file", title: escapeHtml(id === "all" ? "All tasks" : `${id} ${doc?.task?.title || ""}`), detail: "World view", side: "World" }; },
+  closed: (params) => ["world view", params.get("world") === "all" ? "All tasks" : params.get("world")] });
+const portfolioTasks = () => taskDocuments().tasks.map((doc) => ({ id: doc.task.id, title: doc.task.title, status: doc.task.status }));
+// W opens the world of the task in view (a task or one of its documents), else every task's.
+function openWorld() {
+  const id = state.view === "document" && state.selectedPath.match(/^tasks\/(TASK-\d{4})(\.md|-assets\/)/)?.[1];
+  if (id) openTaskWorld(id);
+  else openPortfolio(portfolioTasks());
+}
+connectWorld({
+  documents: () => state.documents,
+  peek: (path) => peekDocument(path),
+  images: (items, index, trigger) => openImageViewerAt(items.map((item) => ({ ...item, trigger })), index, trigger),
+  open: (path, anchor) => selectDocument(path, { historyMode: "push", anchor }),
+  copy: async (path, button) => {
+    try { await navigator.clipboard.writeText(path); button.classList.remove("is-copied"); void button.offsetWidth; button.classList.add("is-copied"); } catch { showNotice("Could not copy.", true); }
+  },
+});
 const overlayOf = (params) => OVERLAYS.find((overlay) => params.get(overlay.param));
 // Opens the overlays a URL names, bottom first, skipping any already open with the same subject.
 function openOverlays(params, open = new URLSearchParams()) {
