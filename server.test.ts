@@ -9,6 +9,7 @@ import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as c
 import { dateKey, parseDateKey, startOfWeek } from "./public/dates.js";
 import { config, setConfig } from "./public/config.js";
 import { comparePanels, isDiffDiagram, sourceHtml, statementId } from "./public/diagram.js";
+import { taskItems } from "./public/world.js";
 import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, buildDiagramPrompt, listDiagrams, listTaskWorld, renderDiagram, safeAssetPath, withPanels, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
@@ -339,6 +340,25 @@ test("the world view lists a task's asset files by kind and its dated updates", 
   assert.equal(flow?.kind, "diagram");
   assert.ok(flow.modified > 0);
   assert.ok(Object.values(tasks).every((task) => task.updates.every((update) => /^\d{4}-\d{2}-\d{2}$/.test(update.date))));
+});
+
+test("the world view dates completed work by its last naming update, lists ready work today, and drops PNG copies of diagrams", () => {
+  const work = [
+    { id: "W1", title: "Parent", status: "open", parent: "", deps: [], ready: true },
+    { id: "W1.1", title: "Done", status: "completed", parent: "W1", deps: [], ready: false },
+    { id: "W1.2", title: "Next", status: "open", parent: "W1", deps: ["W1.1"], ready: true },
+    { id: "W2", title: "Never named", status: "completed", parent: "", deps: [], ready: false },
+  ];
+  const documents = [{ path: "tasks/TASK-0009.md", task: { id: "TASK-0009", created: "2026-10-01", referencedBy: [], work } }];
+  const world = { tasks: { "TASK-0009": {
+    updates: [{ date: "2026-10-02", title: "Started (W1.1)" }, { date: "2026-10-05", title: "Finished (W1.1, W3)" }],
+    files: [{ path: "tasks/TASK-0009-assets/flow.draft", kind: "diagram", modified: 0 }, { path: "tasks/TASK-0009-assets/flow.png", kind: "image", modified: 0 }],
+  } } };
+  const items = taskItems("TASK-0009", world, documents);
+  const done = items.filter((item) => item.lane === "work" && !item.ready);
+  assert.deepEqual(done.map((item) => [item.node.id, item.day]), [["W1.1", "2026-10-05"]]);
+  assert.deepEqual(items.filter((item) => item.ready).map((item) => item.node.id), ["W1.2"]); // a leaf, not its parent
+  assert.equal(items.filter((item) => item.lane === "image").length, 0);
 });
 
 test("consecutive diagram embeds share one thumbnail strip; other images stay full figures", () => {

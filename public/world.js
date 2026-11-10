@@ -5,16 +5,20 @@
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { diagramHref, escapeHtml } from "./markdown.js";
 import { localTodayKey } from "./dates.js";
+import { workStatusIcon } from "./actions.js";
 
-// Pictures first, so the top of the canvas is what the task looks like; the narrative lanes follow.
+// Work first (what got done, and today what is ready), then the pictures, so the top of the canvas is where the task
+// stands and what it looks like; the narrative lanes follow.
 export const LANES = [
-  { key: "diagram", label: "Diagrams" },
-  { key: "image", label: "Images" },
-  { key: "document", label: "Documents" },
-  { key: "updates", label: "Updates" },
-  { key: "days", label: "Plans" },
-  { key: "file", label: "Files" },
+  { key: "work", label: "Work", noun: ["work item done", "work items done"] },
+  { key: "diagram", label: "Diagrams", noun: ["diagram", "diagrams"] },
+  { key: "image", label: "Images", noun: ["image", "images"] },
+  { key: "document", label: "Documents", noun: ["document", "documents"] },
+  { key: "updates", label: "Updates", noun: ["update", "updates"] },
+  { key: "days", label: "Plans", noun: ["plan", "plans"] },
+  { key: "file", label: "Files", noun: ["file", "files"] },
 ];
+const READY_SHOWN = 4;
 const RECENT_DAYS = 14;
 const DAY_MS = 86_400_000;
 
@@ -45,6 +49,17 @@ export function taskItems(id, world, documents) {
     const doc = documents.find((candidate) => candidate.path === path);
     if (doc?.date) items.push({ lane: "days", day: doc.date, path, title: doc.kind === "Plan" ? "Plan" : doc.title });
   }
+  // A completed work item sits on the day of the last update that names it (`… (W1.2)`); items no update names have no
+  // day to sit on and stay out. Today lists the first few ready items, leaves only, so the newest column says what's next.
+  // ponytail: ranges like "W9.3 to W9.5" date only their ends.
+  const work = task?.work || [];
+  const named = new Map();
+  for (const update of entry.updates) for (const [workId] of update.title.matchAll(/\bW\d+(?:\.\d+)*\b/g)) if (!named.has(workId) || named.get(workId) < update.date) named.set(workId, update.date);
+  for (const node of work) if (node.status === "completed" && named.has(node.id)) items.push({ lane: "work", day: named.get(node.id), node, title: node.title });
+  const ready = work.filter((node) => node.ready && !work.some((child) => child.parent === node.id));
+  const today = localTodayKey();
+  for (const node of ready.slice(0, READY_SHOWN)) items.push({ lane: "work", day: today, node, title: node.title, ready: true });
+  if (ready.length > READY_SHOWN) items.push({ lane: "work", day: today, more: ready.length - READY_SHOWN, ready: true });
   const folder = `tasks/${id}-assets/`;
   // A picture exported beside its `.draft` (flow.png next to flow.draft) is the same drawing; the diagram stands for it.
   const drafts = new Set(entry.files.filter((file) => file.kind === "diagram").map((file) => file.path.replace(/\.draft$/, "")));
@@ -70,7 +85,8 @@ export function taskCounts(world, documents) {
 function dayColumns(items) {
   const days = [...new Set(items.map((item) => item.day))].sort();
   const newest = days.at(-1);
-  return days.map((day, index) => ({ day, gap: index ? dayNumber(day) - dayNumber(days[index - 1]) - 1 : 0, old: newest && dayNumber(newest) - dayNumber(day) > RECENT_DAYS }));
+  const today = localTodayKey();
+  return days.map((day, index) => ({ day, today: day === today, gap: index ? dayNumber(day) - dayNumber(days[index - 1]) - 1 : 0, old: newest && dayNumber(newest) - dayNumber(day) > RECENT_DAYS }));
 }
 
 function shell(className) {
@@ -98,14 +114,21 @@ function shell(className) {
 
 export async function fetchWorld() {
   const response = await fetch("/api/task-world");
-  if (!response.ok) throw new Error("Could not load the task files.");
+  if (!response.ok) throw new Error("Could not load the task files. The viewer's server may have restarted.");
   return response.json();
 }
 
 // `lead` sits before the title: the way back (or up to All tasks).
-const head = (title, detail, tools, lead = "") => `${lead}<div class="issue-overview-title"><h3>${title}</h3><p class="code-muted">${detail}</p></div><span class="code-spacer"></span>${tools}<button type="button" class="code-bar-button" data-world-fit="recent" title="Newest two weeks at full size">Recent</button><button type="button" class="code-bar-button" data-world-fit="all" title="Zoom out to the whole history">All</button><span class="world-zoom" data-world-zoom>100%</span><button type="button" class="code-icon-button" data-world-close aria-label="Close (Esc)">×</button>`;
+// The frame controls stay disabled until there is a canvas to frame, so they never look live over an empty one.
+const head = (title, detail, tools, lead = "", ready = true) => `${lead}<div class="issue-overview-title"><h3>${title}</h3><p class="code-muted">${detail}</p></div><span class="code-spacer"></span>${tools}<span class="world-frame"><button type="button" class="code-bar-button" data-world-fit="recent" title="Newest two weeks at full size"${ready ? "" : " disabled"}>Recent</button><button type="button" class="code-bar-button" data-world-fit="all" title="Zoom out to the whole history"${ready ? "" : " disabled"}>All</button><button type="button" class="world-zoom" data-world-zoom title="Reset to 100%"${ready ? "" : " disabled"}>100%</button></span><button type="button" class="code-icon-button" data-world-close aria-label="Close (Esc)">×</button>`;
+// A failed load says so in the header (replacing "Loading…") and offers the retry beside the message.
+function failed(box, title, error) {
+  box.querySelector('[data-w="head"]').innerHTML = head(title, "Not loaded", "", backButton, false);
+  syncBack();
+  box.querySelector('[data-w="scroller"]').innerHTML = `<div class="world-empty"><p class="work-warning">${escapeHtml(error.message)}</p><button type="button" class="code-bar-button" data-world-retry>Try again</button></div>`;
+}
 
-const noun = (lane, count) => `${count} ${lane.label.toLowerCase().replace(count === 1 ? /s$/ : /$^/, "")}`;
+const noun = (lane, count) => `${count} ${lane.noun[count === 1 ? 0 : 1]}`;
 function legend(counts) {
   return `<span class="world-legend">${LANES.filter((lane) => counts[lane.key]).map((lane) => `<span><i class="world-dot" data-lane="${lane.key}"></i>${escapeHtml(noun(lane, counts[lane.key]))}</span>`).join("")}</span>`;
 }
@@ -169,34 +192,43 @@ export async function openTaskWorld(id, day = "") {
   setOverlayParams({ world: id, "world-day": day });
   const task = host.documents().find((doc) => doc.path === `tasks/${id}.md`)?.task;
   const scroller = box.querySelector('[data-w="scroller"]');
-  box.querySelector('[data-w="head"]').innerHTML = head(`<code>${escapeHtml(id)}</code>${escapeHtml(task?.title || "")}`, "Loading…", "", backButton);
+  const title = `<code>${escapeHtml(id)}</code>${escapeHtml(task?.title || "")}`;
+  box.querySelector('[data-w="head"]').innerHTML = head(title, "Loading files…", "", backButton, false);
   syncBack();
   scroller.innerHTML = "";
   if (!box.open) { box.showModal(); box.focus({ preventScroll: true }); }
   let world;
-  try { world = await fetchWorld(); } catch (error) { scroller.innerHTML = `<p class="work-warning world-empty">${escapeHtml(error.message)}</p>`; return; }
+  try { world = await fetchWorld(); } catch (error) { if (current.id === id) failed(box, title, error); return; }
   if (current.id !== id) return;
   const items = taskItems(id, world, host.documents());
   const columns = dayColumns(items);
   const lanes = LANES.filter((lane) => items.some((item) => item.lane === lane.key));
-  const counts = Object.fromEntries(lanes.map((lane) => [lane.key, items.filter((item) => item.lane === lane.key && !item.created).length]));
+  const counts = Object.fromEntries(lanes.map((lane) => [lane.key, items.filter((item) => item.lane === lane.key && !item.created && !item.ready).length]));
+  const readyCount = (task?.work || []).filter((node) => node.ready && !task.work.some((child) => child.parent === node.id)).length;
   const span = columns.length ? `${dayLabel(columns[0].day, false)} – ${dayLabel(columns.at(-1).day, false)} · ${columns.length} active ${columns.length === 1 ? "day" : "days"}` : "Nothing filed yet";
-  box.querySelector('[data-w="head"]').innerHTML = head(`<code>${escapeHtml(id)}</code>${escapeHtml(task?.title || "")}`, escapeHtml(span), legend(counts), backButton);
+  box.querySelector('[data-w="head"]').innerHTML = head(title, escapeHtml(span + (readyCount ? ` · ${readyCount} ready now` : "")), legend(counts), backButton);
   syncBack();
   // Images and diagrams open in the image viewer together, newest first, grouped by day, so its rail is the task's gallery.
   const visuals = items.filter((item) => item.lane === "image" || item.lane === "diagram").reverse();
   box.visuals = visuals.map((item) => ({ src: item.lane === "diagram" ? diagramHref(item.path) : assetHref(item.path), alt: item.title, ...(item.lane === "diagram" ? { diagram: item.path } : {}), group: dayLabel(item.day) }));
   const visualIndex = new Map(visuals.map((item, index) => [item, index]));
   const cell = (lane, items) => {
-    if (lane === "updates") return items.map((item) => `<button type="button" class="world-card world-update${item.created ? " is-created" : ""}" data-world-peek="tasks/${escapeHtml(id)}.md" data-world-anchor="${item.created ? "" : "updates"}">${codeSpans(item.title)}</button>`).join("");
+    if (lane === "updates") return items.map((item) => `<button type="button" class="world-card world-update${item.created ? " is-created" : ""}" data-world-peek="tasks/${escapeHtml(id)}.md" data-world-anchor="${item.created ? "" : "updates"}"><span>${codeSpans(item.title)}</span></button>`).join("");
+    if (lane === "work") return items.map((item) => item.more
+      ? `<button type="button" class="world-card world-more" data-world-peek="tasks/${escapeHtml(id)}.md" data-world-anchor="work-breakdown">+${item.more} more ready</button>`
+      : `<button type="button" class="world-card world-work${item.ready ? " is-ready" : ""}" data-world-peek="tasks/${escapeHtml(id)}.md" data-world-anchor="work-breakdown">${workStatusIcon(item.node, task.work)}<code>${escapeHtml(item.node.id)}</code><span>${codeSpans(item.title)}</span></button>`).join("");
     if (lane === "days") return `<span class="world-chips">${items.map((item) => `<button type="button" class="world-chip" data-world-peek="${escapeHtml(item.path)}">${escapeHtml(item.title)}</button>`).join("")}</span>`;
     if (lane === "document") return items.map((item) => `<button type="button" class="world-card" data-world-peek="${escapeHtml(item.path)}" title="${escapeHtml(item.path)}"><span>${escapeHtml(item.title)}</span>${item.folder ? `<small>${escapeHtml(item.folder)}</small>` : ""}</button>`).join("");
     if (lane === "file") return items.map((item) => `<button type="button" class="world-file" data-world-copy="${escapeHtml(item.path)}" title="Copy ${escapeHtml(item.path)}">${item.folder ? `<small>${escapeHtml(item.folder)}</small>` : ""}${escapeHtml(fileName(item.path))}</button>`).join("");
     return `<span class="world-thumbs">${items.map((item) => `<button type="button" class="world-thumb" data-world-visual="${visualIndex.get(item)}" title="${escapeHtml(item.path)}"><span class="world-thumb-frame"><img src="${escapeHtml(item.lane === "diagram" ? diagramHref(item.path) : assetHref(item.path))}" alt="" loading="lazy" decoding="async"></span><span class="world-thumb-title">${escapeHtml(item.title)}</span></button>`).join("")}</span>`;
   };
-  if (!columns.length) { scroller.innerHTML = `<p class="world-empty">${escapeHtml(id)} has no updates, plan mentions or files yet.</p>`; return; }
-  const columnClass = (column) => `${column.old ? " is-old" : ""}${column.gap ? " has-gap" : ""}${column.day === day ? " is-focus" : ""}`;
-  const header = columns.map((column) => `<div class="world-day${columnClass(column)}" data-world-day="${column.day}"${column.gap ? ` title="${column.gap} quiet ${column.gap === 1 ? "day" : "days"} before"` : ""}><strong>${escapeHtml(dayLabel(column.day))}</strong><span>${items.filter((item) => item.day === column.day && !item.created).length || ""}</span></div>`).join("");
+  if (!columns.length) { scroller.innerHTML = `<p class="world-empty">${escapeHtml(id)} has no updates, plan mentions, work or files yet.</p>`; return; }
+  const columnClass = (column) => `${column.old ? " is-old" : ""}${column.gap ? " has-gap" : ""}${column.day === day ? " is-focus" : ""}${column.today ? " is-today" : ""}`;
+  const header = columns.map((column) => {
+    const count = items.filter((item) => item.day === column.day && !item.created && !item.ready).length;
+    const note = [column.gap && `${column.gap} quiet ${column.gap === 1 ? "day" : "days"} before`, count && `${count} ${count === 1 ? "item" : "items"} this day`].filter(Boolean).join(" · ");
+    return `<div class="world-day${columnClass(column)}" data-world-day="${column.day}"${note ? ` title="${note}"` : ""}><strong>${column.today ? "Today" : escapeHtml(dayLabel(column.day))}</strong><span>${count || ""}</span></div>`;
+  }).join("");
   const rows = lanes.map((lane) => `<div class="world-lane-label"><i class="world-dot" data-lane="${lane.key}"></i>${escapeHtml(lane.label)}</div>${columns.map((column) => {
     const here = items.filter((item) => item.lane === lane.key && item.day === column.day);
     return `<div class="world-cell${columnClass(column)}" data-lane="${lane.key}">${here.length ? cell(lane.key, here) : ""}</div>`;
@@ -213,30 +245,33 @@ export async function openPortfolio(tasks) {
   current = { id: "all", day: "", tasks };
   setOverlayParams({ world: "all", "world-day": "" });
   const scroller = box.querySelector('[data-w="scroller"]');
-  box.querySelector('[data-w="head"]').innerHTML = head("All tasks", "Loading…", "", backButton);
+  box.querySelector('[data-w="head"]').innerHTML = head("All tasks", "Loading files…", "", backButton, false);
   syncBack();
   scroller.innerHTML = "";
   if (!box.open) { box.showModal(); box.focus({ preventScroll: true }); }
   let world;
-  try { world = await fetchWorld(); } catch (error) { scroller.innerHTML = `<p class="work-warning world-empty">${escapeHtml(error.message)}</p>`; return; }
+  try { world = await fetchWorld(); } catch (error) { if (current.id === "all") failed(box, "All tasks", error); return; }
   if (current.id !== "all") return;
   const documents = host.documents();
   const rowsData = tasks.map((task) => ({ ...task, items: taskItems(task.id, world, documents).filter((item) => !item.created) }));
   const columns = dayColumns(rowsData.flatMap((row) => row.items));
   const counts = {};
-  for (const item of rowsData.flatMap((row) => row.items)) counts[item.lane] = (counts[item.lane] || 0) + 1;
+  for (const item of rowsData.flatMap((row) => row.items)) if (!item.ready && !item.more) counts[item.lane] = (counts[item.lane] || 0) + 1;
   box.querySelector('[data-w="head"]').innerHTML = head("All tasks", escapeHtml(`${tasks.length} ${tasks.length === 1 ? "task" : "tasks"} · ${columns.length} active days · newest at the right`), legend(counts), backButton);
   syncBack();
   if (!columns.length) { scroller.innerHTML = `<p class="world-empty">No task has updates, plan mentions or files yet.</p>`; return; }
-  const columnClass = (column) => `${column.old ? " is-old" : ""}${column.gap ? " has-gap" : ""}`;
-  const header = columns.map((column) => `<div class="world-day${columnClass(column)}" data-world-day="${column.day}"><strong>${escapeHtml(dayLabel(column.day, false))}</strong></div>`).join("");
-  // A cell shows the day's newest picture, then one dot per kind with its count.
+  const columnClass = (column) => `${column.old ? " is-old" : ""}${column.gap ? " has-gap" : ""}${column.today ? " is-today" : ""}`;
+  const header = columns.map((column) => `<div class="world-day${columnClass(column)}" data-world-day="${column.day}" title="${escapeHtml(dayLabel(column.day))}"><strong>${column.today ? "Today" : escapeHtml(dayLabel(column.day, false))}</strong></div>`).join("");
+  // A cell shows the day's newest picture, then one dot per kind with its count. Plan mentions and loose files are left
+  // to the task's own view: they say little at this distance and crowded the cell. Today's work dot counts ready items.
   const cell = (row, column) => {
     const here = row.items.filter((item) => item.day === column.day);
     if (!here.length) return `<div class="world-cell${columnClass(column)}"></div>`;
     const pictures = here.filter((item) => item.lane === "image" || item.lane === "diagram").sort((a, b) => (b.modified || 0) - (a.modified || 0)).slice(0, 1);
-    const dots = LANES.map((lane) => [lane, here.filter((item) => item.lane === lane.key).length]).filter(([, count]) => count);
-    const summary = dots.map(([lane, count]) => noun(lane, count)).join(", ");
+    const dots = LANES.filter((lane) => lane.key !== "days" && lane.key !== "file").map((lane) => [lane, here.filter((item) => item.lane === lane.key).reduce((sum, item) => sum + (item.more || 1), 0)]).filter(([, count]) => count);
+    if (!dots.length && !pictures.length) return `<div class="world-cell${columnClass(column)}"></div>`;
+    const readyHere = here.filter((item) => item.ready).reduce((sum, item) => sum + (item.more || 1), 0);
+    const summary = dots.map(([lane, count]) => lane.key === "work" && readyHere ? [count - readyHere && `${count - readyHere} done`, `${readyHere} ready`].filter(Boolean).join(" and ") + " work" : noun(lane, count)).join(", ");
     return `<button type="button" class="world-cell world-mark${columnClass(column)}" data-world-task="${escapeHtml(row.id)}" data-world-at="${column.day}" title="${escapeHtml(`${row.id} · ${dayLabel(column.day)}: ${summary}`)}">${pictures.map((item) => `<span class="world-mini"><img src="${escapeHtml(item.lane === "diagram" ? diagramHref(item.path) : assetHref(item.path))}" alt="" loading="lazy" decoding="async"></span>`).join("")}<span class="world-dots">${dots.map(([lane, count]) => `<span><i class="world-dot" data-lane="${lane.key}"></i>${count > 1 ? count : ""}</span>`).join("")}</span></button>`;
   };
   const rows = rowsData.map((row) => `<button type="button" class="world-lane-label world-task-label" data-world-task="${escapeHtml(row.id)}"><code>${escapeHtml(row.id)}</code><span>${escapeHtml(row.title)}</span></button>${columns.map((column) => cell(row, column)).join("")}`).join("");
@@ -248,12 +283,14 @@ export async function openPortfolio(tasks) {
 
 function onClick(event) {
   if (event.target === dialog) return;
-  const target = event.target.closest("[data-world-close], [data-world-back], [data-world-fit], [data-world-peek], [data-world-visual], [data-world-copy], [data-world-task]");
+  const target = event.target.closest("[data-world-close], [data-world-back], [data-world-fit], [data-world-zoom], [data-world-retry], [data-world-peek], [data-world-visual], [data-world-copy], [data-world-task]");
   if (!target) return;
   const scroller = dialog.querySelector('[data-w="scroller"]');
   if (target.matches("[data-world-close]")) dialog.close();
   else if (target.matches("[data-world-fit]")) fit(scroller, target.dataset.worldFit);
   else if (target.matches("[data-world-back]")) back();
+  else if (target.matches("[data-world-zoom]")) setZoom(scroller, 1);
+  else if (target.matches("[data-world-retry]")) current.id === "all" ? openPortfolio(current.tasks) : openTaskWorld(current.id, current.day);
   else if (target.matches("[data-world-peek]")) host.peek(target.dataset.worldPeek, target.dataset.worldAnchor || "");
   else if (target.matches("[data-world-visual]")) host.images(dialog.visuals, Number(target.dataset.worldVisual), target);
   else if (target.matches("[data-world-copy]")) host.copy(target.dataset.worldCopy, target);

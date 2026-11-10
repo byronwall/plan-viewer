@@ -555,7 +555,7 @@ export async function listDocuments() {
     if (docs[index].kind !== "Task") continue;
     const breakdown = parseChunks(parseTaskDocument(path, contents).body).find((chunk) => /^work breakdown$/i.test(chunk.title));
     const nodes = breakdown ? parseWorkBreakdown(breakdown.markdown).nodes : [];
-    if (nodes.length) docs[index].task!.work = nodes.map(({ id, title, status }) => ({ id, title, status }));
+    if (nodes.length) docs[index].task!.work = nodes.map(({ id, title, status, parent, deps, ready }) => ({ id, title, status, parent, deps, ready }));
     if (docs[index].task!.status === "waiting") docs[index].task!.watch = watchedReferences(parseTaskDocument(path, contents).body, path);
   }
   for (const doc of docs) {
