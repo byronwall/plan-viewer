@@ -3,6 +3,7 @@ import { isSettled, renderActions, renderWorkBreakdown, showDoneToggle, workStat
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDocumentSort, selectDockSource, taskDocumentSequence } from "./dock.js";
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
+import "./table-fit.js";
 import { delimitedTable, diagramHref, documentHref, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, connectPlanning, setPeople, ago, copyPrompt, cachedPrIndex, commitLinkMatch, diffSize, hideTip, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, isMyIssue, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
@@ -3373,10 +3374,15 @@ function showTableViewer(wrapper) {
   const dialog = elements.tableViewer;
   const table = wrapper.querySelector("table");
   const tools = wrapper.querySelector(".table-tools").cloneNode(true);
+  // The overlay sizes its own columns, so drop the widths table-fit.js set on the page's copy.
+  const copy = table.cloneNode(true);
+  copy.querySelector(":scope > colgroup")?.remove();
+  copy.removeAttribute("style");
+  copy.removeAttribute("class");
   tools.querySelector("[data-table-expand]").remove();
   dialog.dataset.tableSource = wrapper.dataset.tableSource;
   dialog.dataset.tableName = tableName(wrapper);
-  dialog.innerHTML = `<header class="viewer-dialog-heading"><h2 id="table-viewer-title">Table <span>${table.tBodies[0].rows.length} rows × ${table.tHead.rows[0].cells.length} columns</span></h2>${tools.outerHTML}<button type="button" data-dialog-close aria-label="Close table">×</button></header><div class="table-viewer-body markdown" tabindex="0">${table.outerHTML}</div>`;
+  dialog.innerHTML = `<header class="viewer-dialog-heading"><h2 id="table-viewer-title">Table <span>${table.tBodies[0].rows.length} rows × ${table.tHead.rows[0].cells.length} columns</span></h2>${tools.outerHTML}<button type="button" data-dialog-close aria-label="Close table">×</button></header><div class="table-viewer-body markdown" tabindex="0">${copy.outerHTML}</div>`;
   if (!openViewerDialog(dialog, { stack: true })) return;
   enhanceTable(dialog, tableCellText);
   dialog.querySelector(".table-viewer-body").focus();

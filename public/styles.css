@@ -343,8 +343,30 @@ button { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .markdown-table > .table-tools, .markdown-code > .table-tools, .table-tools button { transition: none; } }
 .markdown-table-scroll { overflow-x: auto; overscroll-behavior-inline: contain; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); scrollbar-width: thin; }
 .markdown-table-scroll:focus-visible { outline: 3px solid rgba(49, 87, 213, .26); outline-offset: 2px; }
-.markdown table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: .84rem; line-height: 1.48; }
-.markdown th, .markdown td { min-width: 150px; padding: 7px 10px; vertical-align: top; overflow-wrap: break-word; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); text-align: left; }
+.markdown table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .84rem; line-height: 1.48; }
+.markdown th, .markdown td { padding: 7px 10px; vertical-align: top; overflow-wrap: break-word; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); text-align: left; }
+.markdown td { background: var(--paper); }
+/* table-fit.js measures each column on one line, then at its narrowest, and sets fixed widths that keep the table short. */
+.markdown-table-scroll table.is-fitted { table-layout: fixed; }
+.markdown-table-scroll table.is-measuring-max { width: max-content; table-layout: auto; }
+.markdown-table-scroll table.is-measuring-max :is(th, td, td *) { white-space: nowrap !important; }
+.markdown-table-scroll table.is-measuring-min { width: 0; table-layout: auto; }
+.markdown td code { white-space: nowrap; }
+.markdown td :is(a, code).is-wrap { white-space: normal; }
+.markdown td a.is-wrap .link-tail { white-space: nowrap; }
+/* Tall tables scroll inside their frame under a sticky header; wide ones pin the first column. */
+.markdown-table-scroll thead th { position: sticky; z-index: 2; top: 0; }
+.markdown-table.is-capped:not(.is-showing-all) > .markdown-table-scroll { max-height: clamp(360px, 70vh, 900px); overflow-y: auto; overscroll-behavior-block: auto; }
+.markdown-table.is-capped > .markdown-table-scroll { border-bottom-right-radius: 0; border-bottom-left-radius: 0; }
+.markdown-table-scroll.is-wide :is(th, td):first-child { position: sticky; z-index: 1; left: 0; box-shadow: inset -1px 0 var(--line); }
+.markdown-table-scroll.is-wide thead th:first-child { z-index: 3; }
+.table-foot { display: flex; align-items: center; gap: 2px; height: 28px; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 9px 9px; background: #f7f8fa; padding: 0 4px 0 10px; color: var(--muted); font-size: .72rem; }
+.table-foot-range { margin-right: auto; font-variant-numeric: tabular-nums; }
+.table-foot button { height: 22px; border: 0; border-radius: 5px; background: transparent; padding: 0 7px; color: var(--action-ink); font: inherit; font-weight: 600; transition: background-color 140ms ease-out, color 140ms ease-out; }
+.table-foot button:hover { background: var(--hover-field); color: var(--action-deep); }
+.table-foot button:active { background: var(--selected); }
+.table-foot button:focus-visible { outline: 2px solid var(--action); outline-offset: -2px; }
+@media (prefers-reduced-motion: reduce) { .table-foot button { transition: none; } }
 .markdown th:last-child, .markdown td:last-child { border-right: 0; }
 .markdown th { background: #f7f8fa; color: var(--ink); font-size: .78rem; font-weight: 700; }
 .markdown tbody tr:last-child td { border-bottom: 0; }
