@@ -3379,7 +3379,6 @@ function showTableViewer(wrapper) {
   copy.querySelector(":scope > colgroup")?.remove();
   copy.removeAttribute("style");
   copy.removeAttribute("class");
-  tools.querySelector("[data-table-expand]").remove();
   dialog.dataset.tableSource = wrapper.dataset.tableSource;
   dialog.dataset.tableName = tableName(wrapper);
   dialog.innerHTML = `<header class="viewer-dialog-heading"><h2 id="table-viewer-title">Table <span>${table.tBodies[0].rows.length} rows × ${table.tHead.rows[0].cells.length} columns</span></h2>${tools.outerHTML}<button type="button" data-dialog-close aria-label="Close table">×</button></header><div class="table-viewer-body markdown" tabindex="0">${copy.outerHTML}</div>`;

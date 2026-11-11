@@ -298,13 +298,21 @@ button { cursor: pointer; }
 .markdown-image-trigger:hover .markdown-image { border-color: #aeb8ca; }
 .markdown-unavailable-image { display: block; border: 1px dashed var(--line-strong); border-radius: 9px; background: var(--hover-field); padding: 14px 16px; color: var(--muted); font-size: .84rem; }
 /* The tools sit like a tab on the table's top edge, in space the top margin always reserves, so they never cover headers or shift content. */
-.markdown-table { position: relative; margin: 30px 0 22px; }
+.markdown-table { position: relative; display: flow-root; margin: 30px 0 22px; scroll-margin-top: 84px; }
 .markdown > .markdown-table:first-child { margin-top: 30px; }
 .table-tools { display: flex; align-items: center; gap: 2px; font-size: .7rem; }
 .markdown-code { position: relative; margin: 28px 0 12px; }
 .markdown-code > pre { margin: 0; }
-.markdown-table > .table-tools, .markdown-code > .table-tools { position: absolute; z-index: 1; bottom: calc(100% - 1px); right: 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 7px 7px 0 0; background: var(--paper); padding: 1px 2px 0; opacity: 0; pointer-events: none; transition: opacity 140ms ease-out; }
-.markdown-table:hover > .table-tools, .markdown-table:focus-within > .table-tools, .markdown-code:hover > .table-tools, .markdown-code:focus-within > .table-tools { opacity: 1; pointer-events: auto; }
+/* The table's bar holds two such tabs. It is sticky below the 44px document dock, so on a tall table the view
+   controls stay in reach while the table scrolls by; it adds no height (its negative top margin sits in the reserved space). */
+.markdown-table > .table-bar { position: sticky; z-index: 3; top: 50px; display: flex; justify-content: flex-end; align-items: flex-end; gap: 4px; height: 24px; margin: -23px 8px -1px; pointer-events: none; }
+.table-bar > .table-tools { height: 24px; border: 1px solid var(--line); border-bottom: 0; border-radius: 7px 7px 0 0; background: var(--paper); padding: 1px 2px 0; opacity: 0; transition: opacity 140ms ease-out, box-shadow 140ms ease-out; }
+.markdown-table:hover > .table-bar > .table-tools, .markdown-table:focus-within > .table-bar > .table-tools, .markdown-table.is-capped > .table-bar > .table-view-tools { opacity: 1; pointer-events: auto; }
+.table-bar.is-stuck > .table-tools { border-bottom: 1px solid var(--line); border-radius: 7px; box-shadow: 0 8px 18px -12px rgba(24, 33, 47, .4); }
+.table-bar > .table-view-tools [data-table-expand] { margin-left: 0; border-left: 0; border-radius: 5px; }
+.table-bar > .table-view-tools [data-table-all]:not([hidden]) + [data-table-expand] { margin-left: 3px; border-left: 1px solid var(--line); border-radius: 0 5px 5px 0; }
+.markdown-code > .table-tools { position: absolute; z-index: 1; bottom: calc(100% - 1px); right: 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 7px 7px 0 0; background: var(--paper); padding: 1px 2px 0; opacity: 0; pointer-events: none; transition: opacity 140ms ease-out; }
+.markdown-code:hover > .table-tools, .markdown-code:focus-within > .table-tools { opacity: 1; pointer-events: auto; }
 .table-tools > span { padding: 0 4px 0 5px; color: var(--muted); font-weight: 600; }
 .table-tools button { height: 22px; border: 0; border-radius: 5px; background: transparent; padding: 0 7px; color: var(--action-ink); font: inherit; font-weight: 600; transition: background-color 140ms ease-out, color 140ms ease-out; }
 .table-tools button:hover { background: var(--hover-field); color: var(--action-deep); }
@@ -340,7 +348,7 @@ button { cursor: pointer; }
 .table-viewer .viewer-dialog-heading .table-viewer-clear:hover { background: var(--hover-field); color: var(--action-deep); }
 .table-viewer .viewer-dialog-heading > [data-dialog-close] { flex: none; }
 .table-viewer.is-resizing, .table-viewer.is-resizing * { cursor: col-resize !important; user-select: none; }
-@media (prefers-reduced-motion: reduce) { .markdown-table > .table-tools, .markdown-code > .table-tools, .table-tools button { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .table-bar > .table-tools, .markdown-code > .table-tools, .table-tools button { transition: none; } }
 /* position: relative makes the frame the containing block of the links' absolute .sr-only text, so the frame clips it
    instead of letting it stretch the page to the uncapped table's height. */
 .markdown-table-scroll { position: relative; overflow-x: auto; overscroll-behavior-inline: contain; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); scrollbar-width: thin; }

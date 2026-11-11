@@ -139,13 +139,16 @@ function cap(frame, table) {
   const tall = table.offsetHeight > capHeight() * 1.3;
   wrapper.classList.toggle("is-capped", tall);
   let foot = wrapper.querySelector(":scope > .table-foot");
+  wrapper.querySelector(".table-view-tools [data-table-all]").hidden = !tall;
   if (!tall) return foot?.remove();
   if (!foot) {
-    wrapper.insertAdjacentHTML("beforeend", `<div class="table-foot"><span class="table-foot-range" aria-live="polite"></span><button type="button" data-table-all>Show all ${rows} rows</button><button type="button" data-table-expand aria-label="Open table in an overlay">Expand</button></div>`);
+    wrapper.insertAdjacentHTML("beforeend", `<div class="table-foot"><span class="table-foot-range" aria-live="polite"></span><button type="button" data-table-all></button><button type="button" data-table-expand aria-label="Open table in an overlay">Expand</button></div>`);
     foot = wrapper.lastElementChild;
     frame.addEventListener("scroll", () => requestAnimationFrame(() => showRange(frame, table)), { passive: true });
   }
+  for (const toggle of wrapper.querySelectorAll("[data-table-all]")) toggle.textContent = wrapper.classList.contains("is-showing-all") ? "Collapse" : `Show all ${rows} rows`;
   showRange(frame, table);
+  stick();
 }
 
 // "Rows 13–24 of 158": the first and last body rows that show under the sticky header.
@@ -178,7 +181,23 @@ document.addEventListener("click", (event) => {
   const wrapper = toggle.closest(".markdown-table");
   const frame = wrapper.querySelector(".markdown-table-scroll");
   const all = wrapper.classList.toggle("is-showing-all");
-  toggle.textContent = all ? "Collapse" : `Show all ${frame.querySelector("tbody").rows.length} rows`;
+  for (const button of wrapper.querySelectorAll("[data-table-all]")) button.textContent = all ? "Collapse" : `Show all ${frame.querySelector("tbody").rows.length} rows`;
   if (!all && wrapper.getBoundingClientRect().top < 0) wrapper.scrollIntoView({ block: "start", behavior: "instant" });
   showRange(frame, frame.querySelector("table"));
+  stick();
 });
+
+// A tall table's tab bar is sticky under the page's sticky dock. Once it leaves its resting place on the table's top
+// edge it floats over the rows, so it gets a full border and a shadow.
+function stick() {
+  for (const bar of document.querySelectorAll(".markdown-table.is-capped > .table-bar")) {
+    const rest = bar.parentElement.getBoundingClientRect().top - bar.offsetHeight + 1;
+    bar.classList.toggle("is-stuck", rest < bar.getBoundingClientRect().top - 0.5);
+  }
+}
+let stickQueued = false;
+document.addEventListener("scroll", () => {
+  if (stickQueued) return;
+  stickQueued = true;
+  requestAnimationFrame(() => { stickQueued = false; stick(); });
+}, { capture: true, passive: true });

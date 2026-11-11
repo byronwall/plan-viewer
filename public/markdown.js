@@ -424,7 +424,9 @@ function splitTableRow(line) {
 }
 
 // Every rendered table carries its Markdown source; app.js turns these buttons into copies and the table overlay.
-const TABLE_TOOLS = `<div class="table-tools" role="toolbar" aria-label="Table actions"><span>Copy</span>${["Markdown", "HTML", "CSV", "TSV"].map((label) => `<button type="button" data-table-copy="${label.toLowerCase()}">${label}</button>`).join("")}<button type="button" data-table-download aria-label="Download as CSV">Download CSV</button><button type="button" data-table-expand aria-label="Open table in an overlay">Expand</button></div>`;
+// Two tabs on the table's top edge: copy and download on hover, and the view controls (Show all, filled in by
+// table-fit.js for tall tables, and Expand), which a tall table always shows.
+const TABLE_TOOLS = `<div class="table-bar"><div class="table-tools" role="toolbar" aria-label="Table actions"><span>Copy</span>${["Markdown", "HTML", "CSV", "TSV"].map((label) => `<button type="button" data-table-copy="${label.toLowerCase()}">${label}</button>`).join("")}<button type="button" data-table-download aria-label="Download as CSV">Download CSV</button></div><div class="table-tools table-view-tools" role="toolbar" aria-label="Table view"><button type="button" data-table-all hidden></button><button type="button" data-table-expand aria-label="Open table in an overlay">Expand</button></div></div>`;
 
 // CSV quotes fields holding a comma, quote or line break; TSV flattens tabs and line breaks so each row stays one line.
 export function delimitedTable(rows, delimiter) {
