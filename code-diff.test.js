@@ -88,3 +88,13 @@ test('change map fills the area, keeps files apart and ghosts each rename at its
   const tiny = layoutMap(Array.from({ length: 60 }, (_, i) => ({ path: `d${i}/e/f${i}.md`, old: `d${i}/e/f${i}.md`, status: 'M', additions: 1, deletions: 0 })), null, 60, 40);
   assert.equal(tiny.tiles.length, 60);
 });
+
+test('a box-drawing text fence renders as a feature tree with sections, and other text stays code', async () => {
+  const { renderMarkdown } = await import('./public/markdown.js');
+  const html = renderMarkdown('```text\nLedger\n├── PLANNED ADDITIONS: first release\n│   ├── Sync: push on change\n│   │   └── retry `twice`\n│   └── Audit log\n└── LATER POSSIBILITIES\n    └── Bulk import\n```');
+  assert.match(html, /class="markdown-code markdown-tree"/);
+  assert.match(html, /<span class="tree-count is-planned">2 planned<\/span><span class="tree-count is-later">1 later<\/span>/);
+  assert.match(html, /<span class="tree-section-note">first release<\/span>/);
+  assert.match(html, /<strong>Sync:<\/strong> push on change<\/span><ul><li class="is-leaf"><span class="tree-node">retry <code>twice<\/code>/);
+  assert.doesNotMatch(renderMarkdown('```text\nfoo\n├── a\nplain line\n```'), /markdown-tree/);
+});

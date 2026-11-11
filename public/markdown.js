@@ -642,7 +642,68 @@ const htmlMentions = (markdown) => markdown.replace(/<(pull-request|issue|projec
 
 // Fenced blocks carry their source and language; app.js turns the tab's buttons into a copy and a download.
 const CODE_TOOLS = `<div class="table-tools" role="toolbar" aria-label="Code actions"><button type="button" data-code-copy>Copy</button><button type="button" data-code-download>Download</button></div>`;
-const fencedBlock = (lines, language) => `<div class="markdown-code" data-code-source="${escapeHtml(lines.join("\n"))}" data-code-language="${escapeHtml(language)}">${CODE_TOOLS}${codeBlock(lines, language)}</div>`;
+const fencedBlock = (lines, language, currentPath = "") => {
+  const tree = /^(text|tree|txt|plain)?$/i.test(language) ? parseFeatureTree(lines) : null;
+  const attrs = `data-code-source="${escapeHtml(lines.join("\n"))}" data-code-language="${escapeHtml(language)}"`;
+  if (!tree) return `<div class="markdown-code" ${attrs}>${CODE_TOOLS}${codeBlock(lines, language)}</div>`;
+  const tools = CODE_TOOLS.replace("</div>", `<button type="button" data-tree-source aria-pressed="false">Text</button></div>`);
+  return `<div class="markdown-code markdown-tree" ${attrs}>${tools}${renderFeatureTree(tree, currentPath)}${codeBlock(lines, language)}</div>`;
+};
+
+// A box-drawing tree (`Root`, then `├── `/`└── ` branches under `│   ` rails), the feature-scope format of shape briefs.
+// Returns the root and its nested nodes, or null when any line is not part of such a tree, so other text stays code.
+export function parseFeatureTree(lines) {
+  const rows = lines.filter((line) => line.trim());
+  if (rows.length < 3 || /[├└│]/.test(rows[0])) return null;
+  const root = { text: rows[0].trim(), children: [], depth: 0 };
+  const stack = [root];
+  for (const line of rows.slice(1)) {
+    const branch = line.match(/^((?:[│|] {3}| {4})*)(?:├──|└──|├─|└─) ?(.*)$/);
+    if (!branch) {
+      // A wrapped line continues the node above it.
+      const last = stack.at(-1);
+      if (last === root || !/^[│|\s]+\S/.test(line)) return null;
+      last.text += ` ${line.replace(/^[│|\s]+/, "")}`;
+      continue;
+    }
+    const depth = branch[1].length / 4 + 1;
+    if (depth > stack.length) return null;
+    stack.length = depth;
+    const node = { text: branch[2].trim(), children: [], depth };
+    stack.at(-1).children.push(node);
+    stack.push(node);
+  }
+  return root.children.length ? root : null;
+}
+
+// Top-level branches in capitals (`PLANNED ADDITIONS: first release`) are sections; their tone follows the words.
+const TREE_TONES = [[/PLAN|\bADD|\bNEW\b|BUILD|SCOPE|\bNOW\b/, "planned"], [/EVALUAT|CANDIDATE|OPEN|QUESTION|MAYBE|SPIKE/, "evaluate"], [/LATER|DEFER|FUTURE|OUT OF|NOT |PARK/, "later"], [/EXIST|CURRENT|KEEP|ALREADY|TODAY/, "existing"]];
+const treeSection = (text) => {
+  const match = text.match(/^([A-Z][A-Z0-9 &/'’-]*[A-Z0-9])(?::\s*(.*))?$/);
+  if (!match || !/[A-Z]{3}/.test(match[1])) return null;
+  return { title: match[1], note: match[2] || "", tone: TREE_TONES.find(([pattern]) => pattern.test(match[1]))?.[1] || "neutral" };
+};
+const treeLeaves = (node) => node.children.length ? node.children.reduce((sum, child) => sum + treeLeaves(child), 0) : 1;
+
+// `Label: detail` sets the label in bold, so the scan down a branch reads the names first.
+function treeText(text, currentPath) {
+  const label = text.match(/^([^:`[\]()]{2,48}):\s+(\S.*)$/);
+  return label ? `<strong>${inlineMarkdown(label[1], currentPath)}:</strong> ${inlineMarkdown(label[2], currentPath)}` : inlineMarkdown(text, currentPath);
+}
+function treeList(nodes, currentPath) {
+  return `<ul>${nodes.map((node) => `<li class="${node.children.length ? "has-children" : "is-leaf"}"><span class="tree-node">${treeText(node.text, currentPath)}</span>${node.children.length ? treeList(node.children, currentPath) : ""}</li>`).join("")}</ul>`;
+}
+export function renderFeatureTree(root, currentPath = "") {
+  const sections = root.children.map((node) => ({ node, section: treeSection(node.text) }));
+  const sectioned = sections.every(({ section }) => section);
+  const summary = sectioned ? sections.map(({ node, section }) => `<span class="tree-count is-${section.tone}">${treeLeaves(node)} ${escapeHtml(section.title.split(" ")[0].toLowerCase())}</span>`).join("") : "";
+  const body = sectioned
+    ? sections.map(({ node, section }) => `<section class="tree-section is-${section.tone}">
+      <div class="tree-section-head"><span class="tree-dot" aria-hidden="true"></span><span class="tree-section-title">${escapeHtml(section.title)}</span>${section.note ? `<span class="tree-section-note">${inlineMarkdown(section.note, currentPath)}</span>` : ""}<span class="tree-section-count">${treeLeaves(node)}</span></div>
+      <div class="tree-features${node.children.length > 3 ? " is-wide" : ""}">${treeList(node.children, currentPath)}</div></section>`).join("")
+    : `<div class="tree-features">${treeList(root.children, currentPath)}</div>`;
+  return `<div class="feature-tree"><div class="tree-root"><span class="tree-root-title">${inlineMarkdown(root.text, currentPath)}</span>${summary}</div>${body}</div>`;
+}
 
 const DIAGRAM_LINE = /^\s*(?:!\[[^\]]*\]\([^\s)]+\.draft\)\s*)+$/i;
 
@@ -662,7 +723,7 @@ export function renderMarkdown(markdown, currentPath = "") {
     const line = lines[index];
     if (line.startsWith("```")) {
       flushParagraph();
-      if (inCode) { html.push(fencedBlock(code, language)); code = []; }
+      if (inCode) { html.push(fencedBlock(code, language, currentPath)); code = []; }
       else language = line.slice(3).trim().split(/\s/)[0];
       inCode = !inCode;
       continue;
@@ -748,6 +809,6 @@ export function renderMarkdown(markdown, currentPath = "") {
     }
   }
   flushParagraph();
-  if (inCode) html.push(fencedBlock(code, language));
+  if (inCode) html.push(fencedBlock(code, language, currentPath));
   return html.join("");
 }

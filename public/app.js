@@ -3428,6 +3428,8 @@ document.addEventListener("click", (event) => {
   if (chunkCopy) return void copyChunk(chunkCopy);
   const codeCopy = event.target.closest("[data-code-copy]");
   if (codeCopy) return void copyCode(codeCopy);
+  const treeSource = event.target.closest("[data-tree-source]");
+  if (treeSource) return void treeSource.setAttribute("aria-pressed", treeSource.closest(".markdown-tree").classList.toggle("is-source"));
   const codeDownload = event.target.closest("[data-code-download]");
   if (codeDownload) return downloadCode(codeDownload);
   const copy = event.target.closest("[data-table-copy]");
