@@ -61,7 +61,7 @@ That turns `#1234`, commit SHAs, and `ATL-12` in your Markdown into links with l
 | `code.editor`, `code.terminal.command` | Commands for the worktree buttons (`E`, `X`); `{path}` is the worktree. |
 | `code.prSkills` | Review skills drafted against a PR (`1`…`N`). Each `id` is a skill under the repository's `.claude/skills/`, or a global one under `~/.agents/skills/` (or `~/.claude/skills/`); `icon` names a built-in icon. An open "Discuss" prompt always follows. |
 | `code.postNotesSkill` | Skill the "Post as review" notes prompt tells the agent to follow. |
-| `code.planSkill` | Skill the Plans tab's **Update** and **Retire** drafts tell the agent to use (`/<skill>` in Claude, "the <skill> skill" in Codex). Empty leaves the skill out of the prompt. |
+| `code.planSkill` | Skill the Plans page's **Update** and **Retire** drafts tell the agent to use (`/<skill>` in Claude, "the <skill> skill" in Codex). Empty leaves the skill out of the prompt. |
 | `code.prPreview` | Preview button for repositories containing every `requires` file; runs `command` with `{number}`. `null` hides it. |
 | `code.run` | Run button (`L`) for worktrees and PRs in repositories containing every `requires` file: runs `command` in the worktree as a background local server, shows the first `localhost` URL it prints and its output, and stops it on demand or when the viewer exits. A PR without a worktree is checked out first with `worktree` (run in the repository, `{branch}` filled); without `worktree` only checked-out PRs get the button. `null` hides it. |
 | `issues.jql` | Jira scope for the Issues page (`component = Atlas OR project = OPS`). The page hides when this, `issues.linear.teams` and `issues.github` are all empty. |

@@ -14,7 +14,7 @@ import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
-import { cachedPlans, loadPlans, openPlan, planTitle, searchPlans, setPlanNotice } from "./plans.js";
+import { cachedPlans, loadPlans, openPlan, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice, setPlansPageOpener } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./dates.js";
 
@@ -36,6 +36,7 @@ const elements = {
   diagramsButton: document.querySelector("#open-diagrams"),
   activityButton: document.querySelector("#open-activity"),
   codeButton: document.querySelector("#open-code"),
+  plansButton: document.querySelector("#open-plans"),
   issuesButton: document.querySelector("#open-issues"),
   slackButton: document.querySelector("#open-slack"),
   globalHandoff: document.querySelector("#global-handoff"),
@@ -153,10 +154,11 @@ function resetPageNavigation() {
   elements.referenceButton.setAttribute("aria-current", "false");
   elements.diagramsButton.setAttribute("aria-current", "false");
   elements.codeButton.setAttribute("aria-current", "false");
+  elements.plansButton.setAttribute("aria-current", "false");
   elements.issuesButton.setAttribute("aria-current", "false");
   elements.slackButton.setAttribute("aria-current", "false");
   elements.activityButton.setAttribute("aria-current", "false");
-  elements.chunks.classList.remove("tasks-page", "library-page", "diagrams-page", "code-page", "issues-page", "slack-page", "activity-page");
+  elements.chunks.classList.remove("tasks-page", "library-page", "diagrams-page", "code-page", "plans-page", "issues-page", "slack-page", "activity-page");
 }
 
 function documentButton(doc, dailyChild = false) {
@@ -288,6 +290,12 @@ function navSummary(view) {
   if (view in LIBRARY_VIEWS) {
     const group = docs.filter((doc) => doc.group === LIBRARY_VIEWS[view].group);
     return { count: group.length ? String(group.length) : "", card: tipHead(LIBRARY_VIEWS[view].title, group.length ? `${plural(group.length, "document")} · newest first` : "") + docRows(group) };
+  }
+  if (view === "plans") {
+    const summary = plansSummary();
+    if (!summary) return { count: "", card: tipHead("Plans") + tipEmpty("Loading initiatives…") };
+    const rows = summary.open.slice(0, 8).map((item) => tipRow(item.status === "active" ? "Active" : ago(item.edited), item.title, `${item.repo.split("/").pop()} · ${item.folder}`, item.status === "active" ? "active" : "", `plan:${item.id}`));
+    return { count: summary.open.length ? `${summary.open.length} open` : "", card: tipHead("Initiatives", [summary.active && `${summary.active} active`, `${summary.open.length} open`].filter(Boolean).join(" · ")) + (rows.join("") || tipEmpty("No open initiatives.")) };
   }
   if (view === "code") {
     const index = cachedPrIndex();
@@ -684,6 +692,36 @@ function renderCode(tab = new URLSearchParams(location.search).get("tab") || "")
   elements.chunks.classList.add("code-page");
   renderCodePage(elements.chunks, { tab, showNotice });
 }
+
+function showPlans({ historyMode = "push", initiative = "", doc = "" } = {}) {
+  if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
+  closeComposer();
+  if (historyMode !== "none") {
+    const url = new URL(location.href);
+    url.search = new URLSearchParams({ view: "plans", ...(initiative ? { initiative } : {}), ...(doc ? { doc } : {}) });
+    url.hash = "";
+    history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
+  }
+  renderPlans();
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+
+function renderPlans() {
+  const fresh = state.view !== "plans";
+  state.view = "plans";
+  resetPageNavigation();
+  elements.plansButton.setAttribute("aria-current", "page");
+  for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
+  elements.title.textContent = "Plans";
+  elements.meta.textContent = `Initiatives in tracked repositories  /  ${config().code.reposFile}`;
+  elements.count.textContent = "";
+  elements.chunkNav.hidden = true;
+  elements.chunkNav.replaceChildren();
+  elements.chunks.classList.add("plans-page");
+  if (fresh) elements.chunks.replaceChildren();
+  renderPlansPage(elements.chunks);
+}
+setPlansPageOpener((initiative, doc) => showPlans({ initiative, doc }));
 
 function showIssues({ historyMode = "push", tab = "" } = {}) {
   if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
@@ -1956,7 +1994,7 @@ async function refreshFromMarkdown(changedPaths) {
       return;
     }
 
-    if (state.view === "code" || state.view === "issues" || state.view === "slack") {
+    if (state.view === "code" || state.view === "plans" || state.view === "issues" || state.view === "slack") {
       renderLibrary();
       return;
     }
@@ -2210,6 +2248,7 @@ elements.referenceButton.addEventListener("click", () => showLibrary("reference"
 elements.diagramsButton.addEventListener("click", () => showDiagrams());
 elements.activityButton.addEventListener("click", () => showActivity());
 elements.codeButton.addEventListener("click", () => showCode());
+elements.plansButton.addEventListener("click", () => showPlans());
 elements.issuesButton.addEventListener("click", () => showIssues());
 elements.slackButton.addEventListener("click", () => showSlack());
 connectPlanning({ documents: () => state.documents, open: (path) => selectDocument(path, { historyMode: "push" }), peek: peekDocument });
@@ -2410,6 +2449,7 @@ function openRailItem(target) {
   else if (kind === "issue") openIssue(value);
   else if (kind === "slack") openSlackThread(value);
   else if (kind === "diagram") openDiagram(value);
+  else if (kind === "plan") showPlans({ initiative: value });
 }
 elements.library.addEventListener("pointerover", (event) => {
   const row = railTarget(event.target);
@@ -2969,6 +3009,7 @@ const shortcuts = [
   { group: "Go to", keys: ["A"], label: "Tasks", run: () => showTasks() },
   { group: "Go to", keys: ["V"], label: "Activity", hint: "tasks, plans, issues and PRs, newest first", run: () => showActivity() },
   { group: "Go to", keys: ["G"], label: "Code", hint: "worktrees, pull requests, cleanup", run: () => showCode() },
+  { group: "Go to", keys: ["M"], label: "Plans", hint: "initiatives in tracked repositories, by repo and status", run: () => showPlans() },
   { group: "Go to", keys: ["I"], label: "Issues", hint: "triage, epics, activity", run: () => issuesOn() && showIssues() },
   { group: "Go to", keys: ["W"], label: "World view", hint: "the open task’s files, plans and updates by day; elsewhere every task", run: openWorld },
   { group: "Go to", keys: ["H"], label: "Recently viewed", hint: "type to filter, 1–9 to jump, even over an overview" },
@@ -3187,6 +3228,7 @@ const PAGES = [
   { title: "Activity", detail: "Everything that changed, newest first", icon: "plan", run: () => showActivity() },
   ...Object.entries(LIBRARY_VIEWS).map(([view, { title, intro }]) => ({ title, detail: intro, icon: title === "Topics" ? "topic" : "reference", run: () => showLibrary(view) })),
   { title: "Diagrams", detail: "Every diagram in the workspace", icon: "plan", run: () => showDiagrams() },
+  { title: "Plans", detail: "Initiatives in tracked repositories", icon: "initiative", run: () => showPlans() },
   { title: "Local servers", detail: "Dev servers the viewer started: URLs, output, restart, stop", icon: "server", run: () => openServers(showNotice) },
   ...Object.entries(CODE_TABS).map(([tab, title]) => ({ title, detail: `Code · ${title}`, icon: tab === "prs" ? "pr" : tab === "commits" ? "branch" : "code", run: () => showCode({ tab: tab === "prs" ? "" : tab }) })),
   ...Object.entries(ISSUE_TABS).map(([tab, title]) => ({ title: tab === "all" ? "Issues" : `${title} issues`, detail: `Issues · ${title}`, icon: "issue", issues: true, run: () => showIssues({ tab: tab === "all" ? "" : tab }) })),
@@ -3534,6 +3576,10 @@ window.addEventListener("popstate", () => {
     showDiagrams({ historyMode: "none" });
     return;
   }
+  if (params.get("view") === "plans" || (params.get("view") === "code" && params.get("tab") === "plans")) {
+    showPlans({ historyMode: params.get("view") === "plans" ? "none" : "replace" });
+    return;
+  }
   if (params.get("view") === "code") {
     showCode({ historyMode: "none", tab: params.get("tab") || "" });
     return;
@@ -3812,6 +3858,7 @@ function visitResult(href) {
   const page = (icon, title, detail) => ({ icon, title: escapeHtml(title), detail: escapeHtml(detail), side: "Page" });
   if (view === "tasks") return doc(`tasks/${params.get("task")}.md`) ? docResult(doc(`tasks/${params.get("task")}.md`), []) : page("list", "Tasks", "Every task by status");
   if (view === "code") return page("code", "Code", CODE_TABS[params.get("tab") || "prs"] || "Pull requests");
+  if (view === "plans") return params.get("initiative") ? { icon: "initiative", title: escapeHtml(planTitle(params.get("initiative")) || params.get("initiative").split("/").pop()), detail: escapeHtml(`${params.get("initiative").split(":")[0].split("/").pop()} · ${params.get("doc")?.split("/").pop() || "initiative"}`), side: "Plans" } : page("initiative", "Plans", "Initiatives by repo and status");
   if (view === "issues") return page("issue", "Issues", ISSUE_TABS[params.get("tab") || "all"] || "All");
   if (view === "slack") return page("slack", "Slack", "Linked threads");
   if (view === "activity") return page("plan", "Activity", "Everything that changed");
@@ -3970,6 +4017,8 @@ async function boot() {
     updateNavCounts();
     loadWaiting();
     const requested = new URLSearchParams(location.search).get("path");
+    // The Plans tab moved out of Code into its own page; old links land there.
+    if (/[?&]view=code\b/.test(location.search) && new URLSearchParams(location.search).get("tab") === "plans") history.replaceState(null, "", "?view=plans");
     const requestedView = new URLSearchParams(location.search).get("view");
     const initial = state.documents.find((doc) => doc.path === requested)?.path
       || state.documents.find((doc) => doc.path === body.defaultPath)?.path
@@ -3982,12 +4031,14 @@ async function boot() {
     else if (requestedView in LIBRARY_VIEWS) renderLibraryPage(requestedView);
     else if (requestedView === "diagrams") renderDiagramsPage();
     else if (requestedView === "code") renderCode();
+    else if (requestedView === "plans") renderPlans();
     else if (requestedView === "issues") renderIssues();
     else if (requestedView === "slack") renderSlack();
     else if (requestedView === "activity") renderActivity();
     else if (initial) await selectDocument(initial, { historyMode: "none", anchor: locationAnchor() });
     else showNotice("No supported files were found under daily, tasks, plans, or reference.", true);
     connectLiveUpdates();
+    loadPlans().then(updateNavCounts, () => {});
     loadDiagrams();
     loadPrIndex().catch(() => {}); // so ⌘K lists PRs on its first paint instead of inserting them a moment later
     openOverlays(new URLSearchParams(location.search));

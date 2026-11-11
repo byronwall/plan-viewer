@@ -696,7 +696,14 @@ function treeList(nodes, currentPath) {
 export function renderFeatureTree(root, currentPath = "") {
   const sections = root.children.map((node) => ({ node, section: treeSection(node.text) }));
   const sectioned = sections.every(({ section }) => section);
-  const summary = sectioned ? sections.map(({ node, section }) => `<span class="tree-count is-${section.tone}">${treeLeaves(node)} ${escapeHtml(section.title.split(" ")[0].toLowerCase())}</span>`).join("") : "";
+  // One count per tone, so a brief with several PLANNED sections totals them once.
+  const tones = new Map();
+  for (const { node, section } of sectioned ? sections : []) {
+    const entry = tones.get(section.tone) || { count: 0, word: section.title.split(" ")[0].toLowerCase() };
+    entry.count += treeLeaves(node);
+    tones.set(section.tone, entry);
+  }
+  const summary = [...tones].map(([tone, { count, word }]) => `<span class="tree-count is-${tone}">${count} ${escapeHtml(word)}</span>`).join("");
   const body = sectioned
     ? sections.map(({ node, section }) => `<section class="tree-section is-${section.tone}">
       <div class="tree-section-head"><span class="tree-dot" aria-hidden="true"></span><span class="tree-section-title">${escapeHtml(section.title)}</span>${section.note ? `<span class="tree-section-note">${inlineMarkdown(section.note, currentPath)}</span>` : ""}<span class="tree-section-count">${treeLeaves(node)}</span></div>

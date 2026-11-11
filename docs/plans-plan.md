@@ -1,5 +1,7 @@
 # Plans tab: plan
 
+> Since 2026-11-11 the Plans tab is its own page (`?view=plans`): a rail by repo and status, an overview table, and the reader on the page. The modal stays as a quick peek from other pages. `docs/guide.md` describes the current behavior; this plan records why the surface works the way it does.
+
 A read-only view of the initiatives (`initiative-map.json` plus the briefs beside it) in every tracked repository, shown as a fourth tab of the Code view next to Worktrees, PRs and Commits. It brings over the reading half of `tk view`'s Initiatives tab (`~/Projects/ticket/plugins/ticket-view`) and follows the Code view's rules ([code-view.md](code-view.md)).
 
 Status: milestones 1–5 are built (Oct 22, 2026). [guide.md](guide.md#code-view) describes the behavior. Deviations from this plan are listed under "Built" at the end.

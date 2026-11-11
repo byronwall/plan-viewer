@@ -1,38 +1,22 @@
 import { escapeHtml, markdownOutline, renderMarkdown } from "./markdown.js";
 import { agentApp, agentName as appName } from "./config.js";
 import { termMatch } from "./search.js";
-import { ago, copied, fadeIn, hideTip, iconButton, isSummonKey, openPrOverlay, showTip, sideFacts, when, heat } from "./code.js";
+import { ago, copied, fadeIn, hideTip, iconButton, isSummonKey, openPrOverlay, repoBadge, showTip, sideFacts, when, heat } from "./code.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 
-// The Code view's Plans tab: initiatives on each tracked repo's origin/main (and proposed in open PRs, and changed in
-// the repo root or a worktree), as a list, an inspector, and a reader overview. Read-only; Update and Retire open agent drafts. docs/plans-plan.md has the why.
-const DAY = 24 * 3_600_000;
-const STATUSES = ["planned", "active", "paused", "completed", "cancelled"];
+// The Plans page and the initiative reader: initiatives on each tracked repo's origin/main (and proposed in open PRs,
+// and changed in the repo root), as a rail, an overview table, and a reader on the page or in a peek modal. Read-only; Update and Retire open agent drafts. docs/plans-plan.md has the why.
 const FINISHED = new Set(["completed", "cancelled"]);
-const SCOPES = { open: "Open", ...Object.fromEntries(STATUSES.map((status) => [status, status[0].toUpperCase() + status.slice(1)])), all: "All" };
-const ps = { data: null, error: "", loading: null, scope: "open", group: "edited", withPr: false, root: true, worktrees: false, maps: new Map(), docs: new Map() };
-// The grouping is a per-browser preference, like the diff layout.
-const storage = (key, value) => { try { if (value === undefined) return localStorage.getItem(key); localStorage.setItem(key, value); } catch {} return null; };
+// The repo root's uncommitted or unpushed copy of an initiative replaces main's; worktree copies stay out of the list.
+const ps = { data: null, error: "", loading: null, root: true, worktrees: false, maps: new Map(), docs: new Map() };
 let notify = (message) => console.warn(message);
 export const setPlanNotice = (show) => { notify = show; };
-let code = null; // helpers from code.js: render, select, notify, matches, repoFilter, repoCell, repoHead, tableHead, resetFilters, host
-
-export function initPlans(helpers) {
-  code = helpers;
-  notify = helpers.notify;
-  const params = new URLSearchParams(location.search);
-  if (params.get("plans") in SCOPES) ps.scope = params.get("plans");
-  if (storage("plans-group") in GROUPS) ps.group = storage("plans-group");
-  ps.root = storage("plans-root") !== "0";
-  ps.worktrees = storage("plans-worktrees") === "1";
-}
 
 // ---------- data ----------
 
 // `refresh` rescans (R); `poll` only re-reads while the server's open-PR scan is still running.
 export function loadPlans(refresh = false, poll = false) {
   if (ps.loading || ((ps.data || ps.error) && !refresh && !poll)) return ps.loading || Promise.resolve(ps.data);
-  if (code?.host()) code.host().dataset.plansState = "loading";
   ps.loading = (async () => {
     try {
       const params = [refresh && "refresh", ps.worktrees && "worktrees"].filter(Boolean).join("&");
@@ -50,9 +34,8 @@ export function loadPlans(refresh = false, poll = false) {
     }
     // Open PRs arrive from a background GraphQL scan; poll until it settles, as the Code page does.
     if (ps.data?.scanning) setTimeout(() => loadPlans(false, true), 2500);
-    else if (code?.host()) code.host().dataset.plansState = "ready";
-    code?.render();
-    if (dialog?.open) renderOverview();
+    if (readerOpen()) renderOverview();
+    if (onPage()) renderPlansPage();
     return ps.data;
   })();
   return ps.loading;
@@ -60,46 +43,21 @@ export function loadPlans(refresh = false, poll = false) {
 
 export const plansLoaded = () => Boolean(ps.data);
 const everything = () => ps.data?.initiatives || [];
-// The repo root's copy of an initiative replaces main's row; worktree copies are rows of their own.
 const rootCopy = (item) => ps.root && item.source === "main" && everything().some((other) => other.source === "root" && other.repo === item.repo && other.folder === item.folder);
 const shown = (item) => (item.source === "root" ? ps.root : item.source === "worktree" ? ps.worktrees && ps.data.worktrees : !rootCopy(item));
 const all = () => everything().filter(shown);
 const byId = (id) => everything().find((item) => item.id === id);
-export const planFor = (key) => byId(key.slice(5));
 const repoName = (path) => path.split("/").pop();
+let repoPaths = { data: null, list: [] };
+const badge = (repo) => { if (repoPaths.data !== ps.data) repoPaths = { data: ps.data, list: ps.data?.repos.map((entry) => entry.repo) || [] }; return repoBadge(repo, repoPaths.list); };
 const repoInfo = (repo) => ps.data?.repos.find((entry) => entry.repo === repo);
 const isOpen = (item) => !FINISHED.has(item.status);
 const proposal = (item) => (item.checkout ? null : item.prs.find((pr) => pr.change === "proposes"));
 const folderPath = (item) => `${item.checkout?.path || item.repo}/${item.folder}`;
 const changeWord = (item) => (item.checkout.uncommitted ? "uncommitted" : "unpushed");
-const shortPath = (path) => path.replace(/^\/Users\/[^/]+/, "~");
-// Where a checkout's copy lives: the root says whether its changes are committed; a worktree names its branch.
-function localTag(item) {
-  const local = item.checkout;
-  if (!local) return "";
-  const files = `${local.files.length} changed ${local.files.length === 1 ? "file" : "files"}`;
-  if (item.source === "root") return `<span class="code-tag ${local.uncommitted ? "code-tag-dirty" : ""}" data-tip="${escapeHtml(`Repo root on ${local.branch} · ${files}${local.onMain ? "" : " · not on main yet"}`)}">${changeWord(item)}</span>`;
-  return `<span class="code-tag plan-tag-tree ${local.uncommitted ? "code-tag-dirty" : ""}" data-tip="${escapeHtml(`Worktree at ${shortPath(local.path)} · ${changeWord(item)} · ${files}${local.onMain ? " · main has its own row" : " · not on main yet"}`)}">${escapeHtml(local.branch)}</span>`;
-}
 // Slugs resolve within the same repository: "depends_on" lists other initiatives there.
 const bySlug = (repo, slug) => all().find((item) => item.repo === repo && item.slug === slug && item.source === "main") || all().find((item) => item.repo === repo && item.slug === slug);
 const neededBy = (item) => all().filter((other) => other.repo === item.repo && other.dependsOn.includes(item.slug));
-
-export function planItems() {
-  return all();
-}
-
-export function plansCount() {
-  return ps.data ? all().filter(isOpen).length : "…";
-}
-
-function visible() {
-  return all().filter((item) => ps.scope === "all" || (ps.scope === "open" ? isOpen(item) : item.status === ps.scope))
-    .filter((item) => !ps.withPr || item.prs.length)
-    .filter(code.repoFilter)
-    .filter((item) => code.matches(`${item.title} ${item.slug} ${item.summary} ${item.nextAction} ${item.folder} ${item.phase} ${repoName(item.repo)} ${item.prs.map((pr) => `#${pr.number}`).join(" ")}`))
-    .sort((a, b) => b.edited - a.edited);
-}
 
 // ---------- lifecycle ----------
 
@@ -117,7 +75,7 @@ const DONE_STATES = new Set(["completed", "complete", "done", "closed", "proven"
 const ACTIVE_STATES = /progress|start|partial|active|gated/;
 const milestoneState = (status) => (DONE_STATES.has(status) ? "done" : ACTIVE_STATES.test(status) ? "active" : status === "deferred" || status === "cancelled" ? "skipped" : "todo");
 const milestoneCounts = (item) => ({ done: item.milestones.filter((m) => milestoneState(m.status) === "done").length, total: item.milestones.filter((m) => milestoneState(m.status) !== "skipped").length });
-export const stageIndex = (item) => (item.status === "completed" ? 4 : PHASE_STAGE[item.phase] ?? 0);
+const stageIndex = (item) => (item.status === "completed" ? 4 : PHASE_STAGE[item.phase] ?? 0);
 
 function stageStates(item) {
   const { done, total } = milestoneCounts(item);
@@ -156,12 +114,6 @@ function progress(item) {
   return `<span class="plan-progress" data-tip="${escapeHtml(tip)}"><span class="plan-progress-bar"><span style="width:${Math.round((done / total) * 100)}%"></span></span><span>${done}/${total}</span></span>`;
 }
 
-function links(item) {
-  const up = item.dependsOn.map((slug) => bySlug(item.repo, slug)?.title || slug);
-  const down = neededBy(item).map((other) => other.title);
-  return [up.length && `<span data-tip="${escapeHtml(`Depends on: ${up.join(" · ")}`)}">↑${up.length}</span>`, down.length && `<span data-tip="${escapeHtml(`Needed by: ${down.join(" · ")}`)}">↓${down.length}</span>`].filter(Boolean).join("");
-}
-
 // ---------- pieces ----------
 
 const STATUS_MARKS = {
@@ -185,72 +137,6 @@ function prMark(item, pr) {
   const slug = repoInfo(item.repo)?.slug || "";
   const tip = `#${pr.number} ${CHANGE_WORDS[pr.change]} this initiative${pr.draft ? " · draft" : ""} · ${pr.title}`;
   return `<button type="button" class="code-pr-chip code-pr-${pr.draft ? "draft" : "open"} plan-pr plan-pr-${pr.change}" data-plan-pr="${pr.number}" data-slug="${escapeHtml(slug)}" data-tip="${escapeHtml(tip)}">#${pr.number}</button>`;
-}
-
-// Two lines per initiative: the title with its facts in fixed columns, then the next action in one line.
-// The inspector holds the full next action and the summary; no hover here, so the list is safe to rest a mouse on.
-function planRow(item) {
-  const key = `plan:${item.id}`;
-  const proposed = proposal(item);
-  const sub = item.error ? `<div class="plan-next-line plan-error">${escapeHtml(item.error)}</div>`
-    : item.nextAction ? `<div class="plan-next-line"><span>Next</span>${escapeHtml(item.nextAction)}</div>` : "";
-  return `<tr class="code-row plan-row" data-code-row="${escapeHtml(key)}" aria-selected="${code.selected() === key}">
-    ${code.repoCell(item.repo)}<td class="plan-col-status">${statusMark(item)}</td>
-    <td class="code-col-main plan-col-title"><div class="plan-title"><span>${escapeHtml(item.title)}</span>${proposed ? `<span class="code-tag code-tag-open">proposed</span>` : ""}${localTag(item)}</div>${sub}</td>
-    <td class="plan-col-stage">${stageTrack(item)}</td>
-    <td class="plan-col-progress">${progress(item)}</td>
-    <td class="plan-col-links">${links(item)}</td>
-    <td class="plan-col-prs">${item.prs.map((pr) => prMark(item, pr)).join("")}</td>
-    <td class="code-col-when ${item.edited ? `code-heat-${heat(item.edited)}` : ""}">${item.edited ? when(item.edited) : ""}</td></tr>`;
-}
-
-const GROUPS = { edited: "Edited", repo: "Repo", stage: "Stage", status: "Status" };
-export function plansControls(segment, count) {
-  if (!ps.data) return "";
-  const counts = (status) => all().filter((item) => status === "all" || (status === "open" ? isOpen(item) : item.status === status)).length;
-  const trees = ps.data.worktrees ? everything().filter((item) => item.source === "worktree").length : 0;
-  const scopes = Object.fromEntries(Object.entries(SCOPES).map(([id, label]) => [id, `${label}${count(counts(id))}`]));
-  return segment("data-plan-scope", ps.scope, scopes)
-    + `<label class="code-check"><input type="checkbox" data-plan-with-pr ${ps.withPr ? "checked" : ""}> In open PRs${count(all().filter((item) => item.prs.length).length)}</label>`
-    + `<label class="code-check" data-tip="Initiatives the repo root changed since main, uncommitted or unpushed; they replace main's row"><input type="checkbox" data-plan-root ${ps.root ? "checked" : ""}> Repo root${count(everything().filter((item) => item.source === "root").length)}</label>`
-    + `<label class="code-check" data-tip="Initiatives each worktree changed since main, as rows of their own"><input type="checkbox" data-plan-worktrees ${ps.worktrees ? "checked" : ""}> Worktrees${ps.worktrees ? count(trees || (ps.data.scanning || !ps.data.worktrees ? "…" : 0)) : ""}</label>`
-    + `<span class="plan-group-label">Group</span>${segment("data-plan-group", ps.group, GROUPS)}`;
-}
-
-function emptyPlans() {
-  if (!all().length) return `<div class="code-empty"><p>No initiative maps on main in the tracked repositories.</p><p class="code-muted">Any <code>initiative-map.json</code> on a repo's origin/main shows up here, with the Markdown files beside it.</p></div>`;
-  const narrowed = ps.scope !== "all" || ps.withPr || code.filtered();
-  return `<div class="code-empty"><p>No initiatives match${code.filterText() ? ` <b>“${escapeHtml(code.filterText())}”</b>` : ""}${ps.scope === "all" ? "" : ` in ${SCOPES[ps.scope]}`}.</p>${narrowed ? `<button type="button" class="code-bar-button" data-plan-reset data-code-reset>Show all initiatives <kbd>Esc</kbd></button>` : ""}</div>`;
-}
-
-// Group headers name the bucket and count it; repo headers carry the repo's mark.
-function groups(items) {
-  if (ps.group === "repo") {
-    const repos = [...new Set(items.map((item) => item.repo))];
-    return repos.map((repo) => [`${code.repoBadge(repo)}${escapeHtml(repoName(repo))}`, items.filter((item) => item.repo === repo)]).sort((a, b) => b[1].length - a[1].length);
-  }
-  if (ps.group === "stage") return STAGES.map((stage, index) => [stage.label, items.filter((item) => stageIndex(item) === index)]);
-  if (ps.group === "status") return [...STATUSES, "invalid"].map((status) => [`${statusMark({ status, inferred: false, evidence: "" })}${status[0].toUpperCase()}${status.slice(1)}`, items.filter((item) => item.status === status)]);
-  const buckets = [["Last 24 hours", DAY], ["This week", 7 * DAY], ["This month", 30 * DAY], ["Older", Infinity]];
-  let start = 0;
-  return buckets.map(([label, age]) => {
-    let end = start;
-    while (end < items.length && Date.now() - items[end].edited < age) end++;
-    const rows = items.slice(start, end);
-    start = end;
-    return [label, rows];
-  });
-}
-
-export function plansBody() {
-  if (!ps.data && ps.error) return `<div class="code-empty"><p>Could not load initiatives: ${escapeHtml(ps.error)}</p><p class="code-muted">${/not found|ENOENT|404/i.test(ps.error) ? "This server predates the Plans tab; restart the viewer. " : ""}<kbd>R</kbd> tries again.</p></div>`;
-  if (!ps.data) return `<p class="code-empty">Loading initiatives from each repository's main…</p>`;
-  const items = visible();
-  if (!items.length) return emptyPlans();
-  const columns = [...code.repoHead(), ["plan-col-status", ""], ["code-col-main plan-col-title", "Initiative"], ["plan-col-stage", "Stage"], ["plan-col-progress", "Milestones"], ["plan-col-links", "Deps"], ["plan-col-prs", "PRs"], ["code-col-when", "Edited"]];
-  const sections = groups(items).filter(([, rows]) => rows.length)
-    .map(([label, rows]) => `<tbody><tr class="code-group-row plan-group-row"><th colspan="${columns.length}">${label} <span>${rows.length}</span></th></tr>${rows.map(planRow).join("")}</tbody>`).join("");
-  return `<table class="code-table plan-table">${code.tableHead(columns)}${sections}</table>`;
 }
 
 // ---------- inspector (and the reader's side column) ----------
@@ -369,17 +255,12 @@ function historySection(item, full = null) {
   return `<section><h4>Activity <span>${full ? entries.length : `${entries.length} of ${item.historyCount}`}</span></h4><ol class="plan-history">${entries.map((entry) => `<li><time>${escapeHtml(entry.date || "")}</time><b>${escapeHtml(/\s/.test(entry.event || "") ? entry.event : String(entry.event || "").replace(/[-_]/g, " "))}</b>${entry.reason ? `<span>${escapeHtml(entry.reason)}</span>` : ""}</li>`).join("")}</ol></section>`;
 }
 
-// Shared by the inspector and the reader: facts, then what's left to do, then what it connects to.
+
+// The modal's side column: facts, then what's left to do, then what it connects to.
 function planPanel(item, { reader = false } = {}) {
   return `${item.summary ? `<p class="plan-detail-summary">${escapeHtml(item.summary)}</p>` : ""}${item.error ? `<p class="work-warning">${escapeHtml(item.error)}</p>` : ""}
-    ${planFacts(item)}${reader ? docsSection(item, reader.doc, { reader: true }) : docsSection(item)}${milestonesSection(item)}${depsSection(item)}${prSection(item)}${historySection(item)}`;
+    ${planFacts(item)}${docsSection(item, reader.doc, { reader: true })}${milestonesSection(item)}${depsSection(item)}${prSection(item)}${historySection(item)}`;
 }
-
-export function planDetail(item) {
-  return `<header class="code-detail-head">${statusMark(item)}<h3>${escapeHtml(item.title)}</h3><span class="code-side-tools">${planActions(item)}${iconButton("expand", "Open the reader (Enter)", `data-plan-open="${escapeHtml(item.id)}"`)}</span></header>${planPanel(item)}`;
-}
-
-export const planEmptyHint = () => `<kbd>J</kbd><kbd>K</kbd> move · <kbd>Enter</kbd> read · <kbd>U</kbd> draft an update · <kbd>Y</kbd> copy folder · <kbd>F</kbd> filter · <kbd>G</kbd> repos · <kbd>R</kbd> rescan`;
 
 // ---------- agent drafts ----------
 
@@ -398,69 +279,35 @@ async function copyPrompt(button, kind, id, doc = "") {
   copied(button);
 }
 
-const openDoc = () => (dialog?.open && reader.doc !== "map" ? reader.doc : "");
+const openDoc = () => (readerOpen() && reader.doc !== "map" ? reader.doc : "");
 
 // Handles plan-only clicks from the Code page and the reader; returns true when it did.
 export function planClick(dataset, target) {
-  if (dataset.planScope) { ps.scope = dataset.planScope; syncScope(); code.render({ animate: true }); return true; }
-  if (dataset.planGroup) { ps.group = dataset.planGroup; storage("plans-group", ps.group); code.render({ animate: true }); return true; }
-  if ("planWithPr" in dataset) { ps.withPr = target.checked; code.render({ animate: true }); return true; }
-  if ("planRoot" in dataset) { ps.root = target.checked; storage("plans-root", ps.root ? "1" : "0"); code.render({ animate: true }); return true; }
-  if ("planWorktrees" in dataset) {
-    ps.worktrees = target.checked;
-    storage("plans-worktrees", ps.worktrees ? "1" : "0");
-    if (ps.worktrees && !ps.data?.worktrees) loadPlans(false, true);
-    code.render({ animate: true });
-    return true;
-  }
-  if ("planReset" in dataset) { resetPlans(); code.render({ animate: true }); return true; }
   if (dataset.planFolder) {
     const open = target.getAttribute("aria-expanded") === "true";
     if (open) openFolders.delete(dataset.planFolder); else openFolders.add(dataset.planFolder);
     // Closing an ancestor of the open file has to stick, so the open file's path stops forcing it open.
     if (open) forcedClosed.add(dataset.planFolder); else forcedClosed.delete(dataset.planFolder);
-    if (dialog?.open) renderTabs(byId(reader.id));
-    code?.render();
+    if (readerOpen()) renderTabs(byId(reader.id));
     return true;
   }
-  if (dataset.planOpen) { if (dialog?.open && dataset.planOpen === reader.id) showDoc(dataset.doc || "map"); else openPlan(dataset.planOpen, dataset.doc || ""); return true; }
-  if (dataset.planGoto) {
-    if (dialog?.open) openPlan(dataset.planGoto);
-    else { if (!code.host()?.querySelector(`[data-code-row="${CSS.escape(`plan:${dataset.planGoto}`)}"]`)) { resetPlans(); code.render(); } code.select(`plan:${dataset.planGoto}`, true); }
-    return true;
-  }
+  if (dataset.planOpen) { if (readerOpen() && dataset.planOpen === reader.id) showDoc(dataset.doc || "map"); else openPlan(dataset.planOpen, dataset.doc || ""); return true; }
+  if (dataset.planGoto) { openPlan(dataset.planGoto); return true; }
   if (dataset.planPr) { openPrOverlay(dataset.slug, Number(dataset.planPr)); return true; }
+  if ("planPage" in dataset) { const { id, doc } = reader; dialog?.close(); openPlanPage(id, doc); return true; }
   if (dataset.planAgent) { draft(dataset.planAgent, dataset.id, openDoc()).catch((error) => notify(error.message, true)); return true; }
   if (dataset.planCopyPrompt) { copyPrompt(target, dataset.planCopyPrompt, dataset.id, openDoc()).catch((error) => notify(error.message, true)); return true; }
   return false;
 }
 
-// Page keys for a selected initiative: Enter reads, U drafts an update (Shift+U retires), Y copies the folder.
-export function planKey(key, item, event) {
-  if (key === "enter") return openPlan(item.id), true;
-  if (key === "u") { draft(event.shiftKey && FINISHED.has(item.status) ? "retire" : "update", item.id).catch((error) => notify(error.message, true)); return true; }
-  if (key === "y") { const folder = folderPath(item); navigator.clipboard.writeText(folder).then(() => notify(`Copied ${folder}`)); return true; }
-  return false;
-}
-
-function resetPlans() {
-  ps.scope = "all";
-  ps.withPr = false;
-  code.resetFilters();
-  syncScope();
-}
-
-function syncScope() {
-  const url = new URL(location.href);
-  if (ps.scope === "open") url.searchParams.delete("plans"); else url.searchParams.set("plans", ps.scope);
-  if (url.href !== location.href) history.replaceState(history.state, "", url);
-}
-export const planScopeParam = () => (ps.scope === "open" ? {} : { plans: ps.scope });
 
 // ---------- reader overview ----------
 
 let dialog = null;
-const reader = { id: "", doc: "", list: [], back: [] };
+const reader = { id: "", doc: "", list: [], back: [], page: false };
+// The reader draws into the modal, or into the Plans page when that page shows an initiative.
+const box = () => (reader.page ? page.host : dialog);
+const readerOpen = () => (reader.page ? onPage() : Boolean(dialog?.open));
 
 async function fetchDoc(item, path) {
   const key = `${item.repo}\n${item.ref}\n${path}`;
@@ -625,7 +472,7 @@ function ensureDialog() {
     const key = event.key.toLowerCase();
     const item = byId(reader.id);
     const step = { j: 1, k: -1 }[key];
-    const tabs = item ? [...STAGES.map((stage) => item.docs.find((doc) => doc.role === stage.brief)?.path).filter(Boolean), ...[...dialog.querySelectorAll(".plan-tree-file")].map((button) => button.dataset.doc), "map"] : [];
+    const tabs = docTabs(item);
     if (step) stepOverview(step);
     else if ((key === "[" || key === "]") && item) showDoc(tabs[(tabs.indexOf(reader.doc) + (key === "]" ? 1 : -1) + tabs.length) % tabs.length]);
     else if (key === "m" && item) showDoc("map");
@@ -636,6 +483,9 @@ function ensureDialog() {
     event.preventDefault();
   });
 }
+
+// [ and ] step through the briefs, the files listed in the side column, then the map.
+const docTabs = (item) => (item ? [...STAGES.map((stage) => item.docs.find((doc) => doc.role === stage.brief)?.path).filter(Boolean), ...[...box().querySelectorAll(".plan-tree-file")].map((button) => button.dataset.doc), "map"] : []);
 
 function stepOverview(step) {
   const index = reader.list.indexOf(reader.id);
@@ -664,11 +514,12 @@ function goBack() {
 
 function renderOverview() {
   const item = byId(reader.id);
-  if (!item || !dialog) return;
+  if (!item || !box()) return;
+  if (reader.page) return renderPageHead(item);
   const position = reader.list.indexOf(item.id);
   const walk = position >= 0 && reader.list.length > 1 ? `<span class="code-muted">${position + 1} of ${reader.list.length} · <kbd>J</kbd><kbd>K</kbd> walk · <kbd>[</kbd><kbd>]</kbd> documents</span>` : `<span class="code-muted"><kbd>[</kbd><kbd>]</kbd> documents</span>`;
-  dialog.querySelector('[data-o="head"]').innerHTML = `${statusMark(item)}<div class="issue-overview-title"><h3>${escapeHtml(item.title)}</h3><p class="code-muted">${escapeHtml(repoName(item.repo))} · ${escapeHtml(item.folder || ".")} · ${escapeHtml(whereText(item))}</p></div><span class="code-spacer"></span>${walk}<span class="code-side-tools">${planActions(item)}</span>${iconButton("fail", "Close (Esc)", "data-plan-close")}`;
-  dialog.querySelector('[data-o="side"]').innerHTML = planPanel(item, { reader: { doc: reader.doc } });
+  box().querySelector('[data-o="head"]').innerHTML = `${statusMark(item)}<div class="issue-overview-title"><h3>${escapeHtml(item.title)}</h3><p class="code-muted">${escapeHtml(repoName(item.repo))} · ${escapeHtml(item.folder || ".")} · ${escapeHtml(whereText(item))}</p></div><span class="code-spacer"></span>${walk}<span class="code-side-tools">${planActions(item)}${iconButton("expand", "Open on the Plans page", "data-plan-page")}</span>${iconButton("fail", "Close (Esc)", "data-plan-close")}`;
+  box().querySelector('[data-o="side"]').innerHTML = planPanel(item, { reader: { doc: reader.doc } });
   renderTabs(item);
 }
 
@@ -678,8 +529,8 @@ function renderTabs(item) {
   const tabs = [...briefs.map(([stage, doc]) => [doc.path, stage.label, doc.name]), ["map", "Map", "initiative-map.json"]];
   const open = !tabs.some(([path]) => path === reader.doc) ? item.docs.find((doc) => doc.path === reader.doc)?.name || reader.doc : "";
   const crumb = open ? `<span class="plan-reader-crumb" aria-current="page">${open.split("/").map((part, index, parts) => index === parts.length - 1 ? `<b>${escapeHtml(part.replace(/\.md$/i, ""))}</b>` : `<span>${escapeHtml(part)}</span>`).join("<i>/</i>")}</span>` : "";
-  dialog.querySelector('[data-o="tabs"]').innerHTML = `${reader.back.length ? `<button type="button" class="plan-reader-back" data-plan-back data-tip="Back (B)">← Back</button>` : ""}${tabs.map(([path, name, tip]) => `<button type="button" data-reader-doc="${escapeHtml(path)}" aria-pressed="${reader.doc === path}" data-tip="${escapeHtml(tip)}">${escapeHtml(name)}</button>`).join("")}${crumb}`;
-  const files = dialog.querySelector("[data-plan-files]");
+  box().querySelector('[data-o="tabs"]').innerHTML = `${reader.back.length ? `<button type="button" class="plan-reader-back" data-plan-back data-tip="Back (B)">← Back</button>` : ""}${tabs.map(([path, name, tip]) => `<button type="button" data-reader-doc="${escapeHtml(path)}" aria-pressed="${reader.doc === path}" data-tip="${escapeHtml(tip)}">${escapeHtml(name)}</button>`).join("")}${crumb}`;
+  const files = box().querySelector("[data-plan-files]");
   if (files) files.outerHTML = docsSection(item, reader.doc, { reader: true });
 }
 
@@ -690,8 +541,8 @@ async function showDoc(path, { keepBack = false, anchor = "" } = {}) {
   reader.doc = path || item.docs[0]?.path || "map";
   syncReaderUrl();
   renderTabs(item);
-  const main = dialog.querySelector('[data-o="main"]');
-  const outline = dialog.querySelector('[data-o="outline"]');
+  const main = box().querySelector('[data-o="main"]');
+  const outline = box().querySelector('[data-o="outline"]');
   const doc = reader.doc;
   main.setAttribute("aria-busy", "true");
   let html;
@@ -716,17 +567,21 @@ async function showDoc(path, { keepBack = false, anchor = "" } = {}) {
     link.querySelectorAll(".external-mark, .sr-only").forEach((mark) => mark.remove());
   }
   outline.innerHTML = headings.length > 2 ? `<h4>On this page</h4>${headings.map((heading) => `<button type="button" class="plan-outline-${heading.level}" data-outline="${escapeHtml(heading.anchor)}">${escapeHtml(heading.title)}</button>`).join("")}` : "";
-  if (!anchor || !scrollToHeading(anchor)) dialog.querySelector(".plan-reader-body").scrollTop = 0;
+  if (!anchor || !scrollToHeading(anchor)) {
+    if (reader.page) { if (box().getBoundingClientRect().top < 0) window.scrollTo({ top: 0, behavior: "instant" }); }
+    else box().querySelector(".plan-reader-body").scrollTop = 0;
+  }
   spyOutline();
   fadeIn(main, 140);
 }
 
 // scrollIntoView would also scroll the dialog's own grid (sliding the header and side column out of view), so the
-// reader body is scrolled by hand.
+// reader body is scrolled by hand. On the Plans page the window scrolls.
 function scrollToHeading(id) {
-  const scroller = dialog.querySelector(".plan-reader-body");
-  const target = dialog.querySelector(`[data-o="main"] [id="${CSS.escape(id)}"]`);
+  const target = box().querySelector(`[data-o="main"] [id="${CSS.escape(id)}"]`);
   if (!target) return false;
+  if (reader.page) { window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - 16, behavior: "instant" }); spyOutline(); return true; }
+  const scroller = box().querySelector(".plan-reader-body");
   scroller.scrollTo({ top: target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 12, behavior: "instant" });
   spyOutline();
   return true;
@@ -734,13 +589,13 @@ function scrollToHeading(id) {
 
 // The outline marks the section the top of the reader is in.
 function spyOutline() {
-  const scroller = dialog?.querySelector(".plan-reader-body");
-  const buttons = [...(dialog?.querySelectorAll(".plan-outline [data-outline]") || [])];
-  if (!scroller || !buttons.length) return;
-  const top = scroller.getBoundingClientRect().top + 24;
+  const scroller = reader.page ? null : box()?.querySelector(".plan-reader-body");
+  const buttons = [...(box()?.querySelectorAll(".plan-outline [data-outline]") || [])];
+  if ((!scroller && !reader.page) || !buttons.length) return;
+  const top = scroller ? scroller.getBoundingClientRect().top + 24 : 40;
   let active = buttons[0];
   for (const button of buttons) {
-    const heading = dialog.querySelector(`[data-o="main"] [id="${CSS.escape(button.dataset.outline)}"]`);
+    const heading = box().querySelector(`[data-o="main"] [id="${CSS.escape(button.dataset.outline)}"]`);
     if (heading && heading.getBoundingClientRect().top <= top) active = button;
   }
   for (const button of buttons) button.classList.toggle("is-active", button === active);
@@ -748,25 +603,27 @@ function spyOutline() {
 
 const flatten = (nodes) => nodes.flatMap((node) => [node, ...flatten(node.children)]);
 
-const syncReaderUrl = () => setOverlayParams(dialog?.open && reader.id ? { plan: reader.id, doc: reader.doc } : { plan: "", doc: "" });
+const syncReaderUrl = () => (reader.page ? setOverlayParams({ initiative: reader.id, doc: reader.doc }) : setOverlayParams(dialog?.open && reader.id ? { plan: reader.id, doc: reader.doc } : { plan: "", doc: "" }));
 
 export const planTitle = (id) => byId(id)?.title || "";
 export const cachedPlans = () => ps.data;
 
-// Opens the reader from anywhere: the Plans tab, ⌘K, a ?plan= URL, or Recently viewed.
+// Opens the reader from anywhere: ⌘K, a ?plan= URL, a link, or Recently viewed. On the Plans page it opens in the page;
+// elsewhere it is a quick peek in the modal, whose Open page button moves it to the Plans page.
 export async function openPlan(id, doc = "", { keepBack = false, anchor = "" } = {}) {
+  if (onPage()) return showInPage(id, doc, { keepBack, anchor });
   if (!ps.data) await loadPlans();
   const item = byId(id);
   if (!item) return notify("That initiative isn't on main, in an open PR, or changed in a checkout any more.", true);
   ensureDialog();
+  reader.page = false;
   if (!keepBack) reader.back = [];
   reader.id = id;
-  const listed = code?.host()?.isConnected ? [...code.host().querySelectorAll(".plan-table [data-code-row]")].map((row) => row.dataset.codeRow.slice(5)) : [];
-  reader.list = listed.includes(id) ? listed : reader.list.includes(id) ? reader.list : [id];
+  const listed = railOrder(all().filter(isOpen)).map((entry) => entry.id);
+  reader.list = listed.includes(id) ? listed : [id];
   if (!dialog.open) { dialog.showModal(); dialog.focus({ preventScroll: true }); }
   renderOverview();
   await showDoc(doc || item.docs[0]?.path || "map", { keepBack: true, anchor });
-  if (code?.host()?.isConnected && code.selected() !== `plan:${id}` && code.host().querySelector(`[data-code-row="${CSS.escape(`plan:${id}`)}"]`)) code.select(`plan:${id}`, true);
 }
 
 // ⌘K: initiatives whose title, slug or summary hold every word.
@@ -777,3 +634,215 @@ export function searchPlans(query) {
     .sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)) || b.edited - a.edited).slice(0, 6);
 }
 export { statusMark as planStatusMark };
+
+// ---------- Plans page (?view=plans) ----------
+
+// The page: initiatives in a rail (by repo, then status, finished ones behind a toggle), and either an overview
+// table or one initiative's reader beside it. URL: ?view=plans[&initiative=id&doc=path][&finished=1][&q=words].
+const page = { host: null, query: "", finished: false, bound: null, keys: false };
+// The page's container is the viewer's shared content element, so "on the page" means the layout is in it now.
+const onPage = () => Boolean(page.host?.querySelector(":scope > .plans-layout"));
+let openPageHook = () => {};
+export const setPlansPageOpener = (open) => { openPageHook = open; };
+const openPlanPage = (id, doc) => openPageHook(id, doc);
+const RAIL_STATUSES = ["active", "paused", "planned", "invalid", "completed", "cancelled"];
+const statusLabel = (status) => status[0].toUpperCase() + status.slice(1);
+
+function pageItems() {
+  const terms = page.query.toLowerCase().split(/\s+/).filter(Boolean);
+  return all().filter((item) => page.finished || isOpen(item))
+    .filter((item) => terms.every((term) => termMatch(term, `${item.title} ${item.slug} ${item.summary} ${item.folder} ${repoName(item.repo)} ${item.prs.map((pr) => `#${pr.number}`).join(" ")}`.toLowerCase())));
+}
+
+// Repos with the most open initiatives first; inside each, active work first. Returns [repo, [[status, items]]].
+function railGroups(items) {
+  const repos = [...new Set(items.map((item) => item.repo))].sort((a, b) => items.filter((item) => item.repo === b).length - items.filter((item) => item.repo === a).length || repoName(a).localeCompare(repoName(b)));
+  return repos.map((repo) => [repo, RAIL_STATUSES.map((status) => [status, items.filter((item) => item.repo === repo && (item.error ? "invalid" : item.status) === status).sort((a, b) => b.edited - a.edited)]).filter(([, rows]) => rows.length)]);
+}
+const railOrder = (items) => railGroups(items).flatMap(([, statuses]) => statuses.flatMap(([, rows]) => rows));
+
+function railItem(item) {
+  const proposed = proposal(item);
+  return `<li><a class="plans-rail-item" href="?${new URLSearchParams({ view: "plans", initiative: item.id })}" data-plan-select="${escapeHtml(item.id)}" aria-current="${reader.page && reader.id === item.id ? "page" : "false"}">${statusMark(item)}<span class="plans-rail-title">${escapeHtml(item.title)}</span>${proposed ? `<span class="plans-rail-pr" data-tip="${escapeHtml(`Only in PR #${proposed.number} · ${proposed.title}`)}">#${proposed.number}</span>` : ""}${item.checkout ? `<span class="plans-rail-local" data-tip="${escapeHtml(whereText(item))}">${escapeHtml(changeWord(item))}</span>` : ""}</a></li>`;
+}
+
+function railHtml() {
+  const items = pageItems();
+  const finished = all().filter((item) => !isOpen(item)).length;
+  const groups = railGroups(items).map(([repo, statuses]) => `<section class="plans-rail-repo"><h3>${badge(repo)}<span>${escapeHtml(repoName(repo))}</span><em>${statuses.reduce((sum, [, rows]) => sum + rows.length, 0)}</em></h3>${statuses.map(([status, rows]) => `<h4>${escapeHtml(statusLabel(status))} <span>${rows.length}</span></h4><ul>${rows.map(railItem).join("")}</ul>`).join("")}</section>`).join("");
+  const empty = !ps.data ? `<p class="plans-rail-empty">${ps.error ? escapeHtml(ps.error) : "Loading initiatives…"}</p>` : !items.length ? `<p class="plans-rail-empty">${page.query ? `No initiatives match “${escapeHtml(page.query)}”.` : "No open initiatives."}</p>` : "";
+  return `<div class="plans-rail-tools"><input type="search" class="plans-filter" data-plans-filter placeholder="Filter initiatives  /" value="${escapeHtml(page.query)}" spellcheck="false" autocomplete="off" aria-label="Filter initiatives"><label class="code-check"><input type="checkbox" data-plans-finished ${page.finished ? "checked" : ""}> Finished <span class="code-muted">${finished}</span></label></div><a class="plans-rail-all" href="?view=plans" data-plan-select="" aria-current="${reader.page ? "false" : "page"}">All initiatives <span>${items.length}</span></a>${empty}${groups}`;
+}
+
+// With nothing selected: every initiative in view, newest change first.
+function overviewHtml() {
+  if (!ps.data) return `<p class="code-empty">${ps.error ? `Could not load initiatives: ${escapeHtml(ps.error)}` : "Loading initiatives from each repository's main…"}</p>`;
+  const items = pageItems().sort((a, b) => b.edited - a.edited);
+  if (!items.length) return `<div class="code-empty"><p>${all().length ? "No initiatives match." : "No initiative maps on main in the tracked repositories."}</p><p class="code-muted">Any <code>initiative-map.json</code> on a tracked repo's origin/main shows up here, with the Markdown files beside it.</p></div>`;
+  const rows = items.map((item) => `<tr class="plans-row" data-plan-select="${escapeHtml(item.id)}">
+    <td class="plans-col-title"><a href="?${new URLSearchParams({ view: "plans", initiative: item.id })}" data-plan-select="${escapeHtml(item.id)}">${escapeHtml(item.title)}</a>${item.error ? `<div class="plan-next-line plan-error">${escapeHtml(item.error)}</div>` : item.nextAction ? `<div class="plan-next-line"><span>Next</span>${escapeHtml(item.nextAction)}</div>` : ""}</td>
+    <td class="plans-col-repo" data-tip="${escapeHtml(repoName(item.repo))}">${badge(item.repo)}<span>${escapeHtml(repoName(item.repo))}</span></td>
+    <td class="plans-col-status">${statusMark(item, true)}</td>
+    <td class="plans-col-stage">${stageTrack(item)}</td>
+    <td class="plans-col-when ${item.edited ? `code-heat-${heat(item.edited)}` : ""}">${item.edited ? when(item.edited) : ""}</td>
+    <td class="plans-col-prs">${item.prs.map((pr) => prMark(item, pr)).join("")}</td></tr>`).join("");
+  return `<table class="plans-table"><thead><tr><th>Initiative</th><th>Repo</th><th>Status</th><th>Stage</th><th>Changed</th><th>PRs</th></tr></thead><tbody>${rows}</tbody></table><p class="plans-hint code-muted"><kbd>J</kbd><kbd>K</kbd> walk the rail · <kbd>/</kbd> filter · <kbd>R</kbd> rescan</p>`;
+}
+
+const READER_SHELL = `<div class="plans-reader"><header class="plans-reader-head" data-o="head"></header><nav class="plan-reader-tabs" data-o="tabs"></nav><div class="plans-reader-body"><article class="plan-reader-text markdown" data-o="main"></article><aside class="plans-side"><nav class="plan-outline" data-o="outline" aria-label="Outline"></nav><div data-o="side"></div></aside></div></div>`;
+
+// The reader's header: status, title and Update/Retire beside it, then where it lives and what's next.
+function renderPageHead(item) {
+  const host = box();
+  const edited = item.edited ? `<span data-tip="${escapeHtml(new Date(item.edited).toLocaleString())}">changed ${ago(item.edited)} ago</span>` : "";
+  host.querySelector('[data-o="head"]').innerHTML = `<div class="plans-reader-title"><h2>${escapeHtml(item.title)}</h2><span class="code-side-tools">${planActions(item)}</span></div>
+    <p class="plans-reader-meta">${statusMark(item, true)}${stageTrack(item)}<span>${escapeHtml(repoName(item.repo))}</span><button type="button" class="code-path" data-code-copy="${escapeHtml(folderPath(item))}" data-tip="${escapeHtml(folderPath(item))} · click to copy (Y)">${escapeHtml(item.folder || ".")}</button><span class="code-muted">${escapeHtml(whereText(item))}</span>${edited}</p>
+    ${item.summary ? `<p class="plans-reader-summary">${escapeHtml(item.summary)}</p>` : ""}${item.nextAction ? `<p class="plans-reader-next"><b>Next</b>${escapeHtml(item.nextAction)}</p>` : ""}${item.error ? `<p class="work-warning">${escapeHtml(item.error)}</p>` : ""}`;
+  host.querySelector('[data-o="side"]').innerHTML = `${prSection(item)}${milestonesSection(item)}${docsSection(item, reader.doc, { reader: true })}${depsSection(item)}${historySection(item)}`;
+  renderTabs(item);
+}
+
+async function showInPage(id, doc = "", { keepBack = false, anchor = "", push = true } = {}) {
+  if (!ps.data) await loadPlans();
+  const item = byId(id);
+  if (!item) { notify("That initiative isn't on main, in an open PR, or changed in a checkout any more.", true); return; }
+  if (push && (reader.id !== id || !reader.page)) {
+    const url = new URL(location.href);
+    url.search = new URLSearchParams({ view: "plans", initiative: id, ...(doc ? { doc } : {}), ...(page.finished ? { finished: "1" } : {}), ...(page.query ? { q: page.query } : {}) });
+    url.hash = "";
+    history.pushState(null, "", url);
+  }
+  if (!keepBack) reader.back = [];
+  const fresh = !reader.page || reader.id !== id || !page.host.querySelector(".plans-reader");
+  reader.page = true;
+  reader.id = id;
+  reader.list = railOrder(pageItems()).map((entry) => entry.id);
+  if (!reader.list.includes(id)) reader.list.push(id);
+  const main = page.host.querySelector("[data-plans-main]");
+  if (fresh) main.innerHTML = READER_SHELL;
+  page.host.querySelector("[data-plans-rail]").innerHTML = railHtml();
+  // Scroll only the rail, never the window, to keep the open initiative in view.
+  const rail = page.host.querySelector("[data-plans-rail]");
+  const current = rail.querySelector(`.plans-rail-item[aria-current="page"]`);
+  if (current) {
+    const row = current.getBoundingClientRect(), frame = rail.getBoundingClientRect();
+    if (row.top < frame.top + 70 || row.bottom > frame.bottom) rail.scrollTop += row.top - frame.top - frame.height / 3;
+  }
+  renderPageHead(item);
+  if (fresh || (doc || item.docs[0]?.path || "map") !== reader.doc || anchor) await showDoc(doc || item.docs[0]?.path || "map", { keepBack: true, anchor });
+}
+
+function showOverview({ push = true } = {}) {
+  if (push) {
+    const url = new URL(location.href);
+    url.search = new URLSearchParams({ view: "plans", ...(page.finished ? { finished: "1" } : {}), ...(page.query ? { q: page.query } : {}) });
+    history.pushState(null, "", url);
+  }
+  reader.page = false;
+  reader.id = "";
+  page.host.querySelector("[data-plans-rail]").innerHTML = railHtml();
+  page.host.querySelector("[data-plans-main]").innerHTML = overviewHtml();
+}
+
+// Called by app.js on every visit to ?view=plans (and again whenever the list reloads); reads the URL each time.
+export function renderPlansPage(container = page.host) {
+  if (!container) return;
+  const params = new URLSearchParams(location.search);
+  if (container !== page.host || !container.querySelector(".plans-layout")) {
+    page.host = container;
+    page.query = params.get("q") || "";
+    page.finished = params.get("finished") === "1";
+    container.innerHTML = `<div class="plans-layout" data-plans-state="${ps.data ? "ready" : "loading"}"><nav class="plans-rail" data-plans-rail aria-label="Initiatives"></nav><section class="plans-main" data-plans-main></section></div>`;
+    if (page.bound !== container) bindPage(container);
+    reader.page = false;
+  }
+  container.querySelector(".plans-layout").dataset.plansState = ps.data && !ps.data.scanning ? "ready" : "loading";
+  loadPlans();
+  const id = params.get("initiative");
+  if (id && ps.data) return void showInPage(id, params.get("doc") || "", { push: false, keepBack: reader.page && reader.id === id });
+  if (id) { container.querySelector("[data-plans-rail]").innerHTML = railHtml(); return; }
+  showOverview({ push: false });
+}
+
+function refreshList() {
+  setOverlayParams({ q: page.query.trim(), finished: page.finished ? "1" : "" });
+  const rail = page.host.querySelector("[data-plans-rail]");
+  const focused = document.activeElement?.matches("[data-plans-filter]");
+  const caret = focused ? document.activeElement.selectionStart : 0;
+  rail.innerHTML = railHtml();
+  if (focused) { const input = rail.querySelector("[data-plans-filter]"); input.focus(); input.setSelectionRange(caret, caret); }
+  if (!reader.page) page.host.querySelector("[data-plans-main]").innerHTML = overviewHtml();
+}
+
+function bindPage(container) {
+  page.bound = container;
+  container.addEventListener("click", (event) => {
+    if (!onPage()) return;
+    const link = event.target.closest("a[href]");
+    if (link?.href.startsWith(READER_LINK)) { event.preventDefault(); return followLink(link.href); }
+    const select = event.target.closest("[data-plan-select]");
+    const target = event.target.closest("button, input[type=checkbox]");
+    if (select && !target) {
+      if (event.metaKey || event.ctrlKey || event.shiftKey) return; // a new tab
+      event.preventDefault();
+      return select.dataset.planSelect ? showInPage(select.dataset.planSelect) : showOverview();
+    }
+    const outline = event.target.closest("[data-outline]");
+    if (outline) return scrollToHeading(outline.dataset.outline);
+    if (!target) return;
+    if ("plansFinished" in target.dataset) { page.finished = target.checked; return refreshList(); }
+    if ("planBack" in target.dataset) return goBack();
+    if (target.dataset.readerDoc !== undefined) return showDoc(target.dataset.readerDoc);
+    if (target.dataset.codeCopy !== undefined) return navigator.clipboard.writeText(target.dataset.codeCopy).then(() => copied(target));
+    planClick(target.dataset, target);
+  });
+  container.addEventListener("input", (event) => {
+    if (!onPage() || !event.target.matches("[data-plans-filter]")) return;
+    page.query = event.target.value;
+    refreshList();
+  });
+  container.addEventListener("pointerover", (event) => { if (!onPage()) return; const target = event.target.closest("[data-tip]"); if (target) showTip(target); else hideTip(); });
+  container.addEventListener("pointerleave", () => { if (onPage()) hideTip(); });
+  if (page.keys) return;
+  page.keys = true;
+  let spying = 0;
+  window.addEventListener("scroll", () => { if (!reader.page || !onPage()) return; cancelAnimationFrame(spying); spying = requestAnimationFrame(spyOutline); }, { passive: true });
+  // Page keys run in the capture phase, ahead of the viewer's global ones (J/K/[/] mean other things elsewhere).
+  document.addEventListener("keydown", (event) => {
+    if (!onPage() || document.querySelector("dialog[open]") || event.metaKey || event.ctrlKey || event.altKey) return;
+    const key = event.key.toLowerCase();
+    const filter = event.target.closest?.("[data-plans-filter]");
+    if (filter) {
+      if (key === "escape") { event.stopPropagation(); if (filter.value) { filter.value = ""; page.query = ""; refreshList(); } else filter.blur(); }
+      else if (key === "enter") { event.preventDefault(); const first = railOrder(pageItems())[0]; if (first) showInPage(first.id); }
+      return;
+    }
+    if (event.target.closest?.("input, textarea, select, [contenteditable]")) return;
+    const item = reader.page ? byId(reader.id) : null;
+    const order = railOrder(pageItems()).map((entry) => entry.id);
+    const step = { j: 1, k: -1 }[key];
+    if (step) {
+      const at = order.indexOf(reader.id);
+      const next = order[at < 0 ? (step > 0 ? 0 : order.length - 1) : at + step];
+      if (next) showInPage(next);
+    } else if (key === "/" || key === "f") { const input = page.host.querySelector("[data-plans-filter]"); input.focus(); input.select(); }
+    else if (key === "escape" && reader.page) showOverview();
+    else if (key === "r" && !event.shiftKey) loadPlans(true);
+    else if (!item) return;
+    else if (key === "[" || key === "]") { const tabs = docTabs(item); showDoc(tabs[(tabs.indexOf(reader.doc) + (key === "]" ? 1 : -1) + tabs.length) % tabs.length]); }
+    else if (key === "m") showDoc("map");
+    else if (key === "b" && reader.back.length) goBack();
+    else if (key === "u") draft(event.shiftKey && FINISHED.has(item.status) ? "retire" : "update", item.id, openDoc()).catch((error) => notify(error.message, true));
+    else if (key === "y") { const folder = folderPath(item); navigator.clipboard.writeText(folder).then(() => notify(`Copied ${folder}`)); }
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
+}
+
+// The rail link's count and hover card in the viewer's sidebar.
+export function plansSummary() {
+  if (!ps.data) return null;
+  const open = all().filter(isOpen).sort((a, b) => b.edited - a.edited);
+  return { open, active: open.filter((item) => item.status === "active").length };
+}
