@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { execFile } from "node:child_process";
-import { cp, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -63,8 +63,8 @@ test("plans come from origin/main, with invalid maps as error rows and briefs re
   const plans = createPlans(root, { repos: async () => [repo], slug: async () => "" });
   const { initiatives, repos } = await plans.load();
   assert.equal(repos[0].base, "origin/main");
-  assert.deepEqual(initiatives.map((item) => item.slug).sort(), ["broken", "ledger-sync", "offline-mode"]);
-  const ledger = initiatives.find((item) => item.slug === "ledger-sync")!;
+  assert.deepEqual(initiatives.map((item) => `${item.slug}:${item.source}`).sort(), ["broken:main", "ledger-sync:main", "ledger-sync:root", "offline-mode:main"]);
+  const ledger = initiatives.find((item) => item.slug === "ledger-sync" && item.source === "main")!;
   assert.equal(ledger.status, "active");
   assert.deepEqual(ledger.dependsOn, ["offline-mode"]);
   assert.deepEqual(ledger.docs.map((doc) => doc.label), ["Intent", "Shape"]);
@@ -90,4 +90,30 @@ test("plans come from origin/main, with invalid maps as error rows and briefs re
   assert.match(draft, /\n---\n\n$/);
   assert.match((await plans.prompt("codex", offline.id, "retire", "")).draft, /^Use the plan-skill skill to retire .* I approve retiring it/);
   setConfig({});
+});
+
+test("the repo root and worktrees add the initiatives they changed since main", async () => {
+  const repo = await fixtureRepo();
+  const plans = createPlans(await mkdtemp(join(tmpdir(), "plans-root-")), { repos: async () => [repo], slug: async () => "" });
+  const local = (await plans.load()).initiatives.find((item) => item.source === "root")!;
+  assert.equal(local.id, `${repo}:docs/intent/ledger-sync@root`);
+  assert.deepEqual(local.checkout, { path: repo, branch: "main", uncommitted: false, files: ["docs/intent/ledger-sync/intent-brief.md"], onMain: true });
+  assert.match((await plans.doc(repo, repo, "docs/intent/ledger-sync/intent-brief.md")).body, /^# Local only/);
+
+  const tree = join(await mkdtemp(join(tmpdir(), "plans-tree-")), "wt");
+  await git(repo, "worktree", "add", "-q", "-b", "feature", tree, "origin/main");
+  await mkdir(join(tree, "docs/intent/new-thing"), { recursive: true });
+  await writeFile(join(tree, "docs/intent/new-thing/initiative-map.json"), JSON.stringify({ initiative: { title: "New thing", status: "planned" } }));
+  await writeFile(join(tree, "docs/intent/new-thing/notes.md"), "# Notes\n");
+  assert.equal((await plans.load()).initiatives.some((item) => item.source === "worktree"), false); // only on request
+  let body = await plans.load(false, true);
+  while (body.scanning) body = await new Promise((done) => setTimeout(done, 50)).then(() => plans.load(false, true));
+  const found = body.initiatives.find((item) => item.source === "worktree")!;
+  assert.equal(found.title, "New thing");
+  assert.equal(found.checkout!.uncommitted, true);
+  assert.equal(found.checkout!.onMain, false);
+  assert.deepEqual(found.docs.map((doc) => doc.name), ["notes.md"]);
+  assert.match((await plans.doc(repo, found.ref, "docs/intent/new-thing/notes.md")).body, /^# Notes/);
+  await assert.rejects(plans.doc(repo, "/elsewhere", "docs/intent/new-thing/notes.md"), /Unknown checkout/);
+  assert.match((await plans.prompt("claude", found.id, "update", "")).draft, /uncommitted changes in a worktree at .*wt \(branch feature\); work there/);
 });

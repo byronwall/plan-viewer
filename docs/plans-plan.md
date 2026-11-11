@@ -64,7 +64,6 @@ The same shape as the rest of the Code view: list, inspector, overview.
 
 - `.tickets/`, linked-ticket evidence, the dependency graph, and "Check status".
 - The board view and all editing (status, phase, next action, depends_on).
-- Initiatives that exist only in a worktree, with no PR yet.
 
 ## Built
 
@@ -73,3 +72,4 @@ The same shape as the rest of the Code view: list, inspector, overview.
 - The full map is fetched only for the reader's Map tab (`/api/code/plan-map`); explorEDA's maps alone total about 600 KB.
 - The reader shows the documents as tabs rather than a file tree; an initiative folder rarely holds more than a handful. Front matter renders as facts, and the first `#` heading becomes the document title.
 - History entries name their headline `event`, `action` or `change` across the maps on main, so the scan accepts all three.
+- Local checkouts (Byron, Nov 11, 2026): the repo root and, on request, every worktree add the initiatives they changed since `git merge-base HEAD <main>`. That covers uncommitted edits, untracked files and unpushed commits, so a stale worktree that only lags main shows nothing. The root's copy replaces main's row; worktree copies are their own rows. The root is scanned on every load; worktrees are scanned eight at a time in the background, at most once a minute, held in memory, and the reader reads their files from disk (the ref is the checkout's folder).

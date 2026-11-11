@@ -1,13 +1,14 @@
 import { execFile, spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { claudeNewSessionUrl as claudeUrl, codexNewTaskUrl } from "./codex-desktop.ts";
 import { config } from "./public/config.js";
 
 // Plans: the initiatives (`initiative-map.json` plus the briefs beside it) on each tracked repo's origin/main, read
-// straight from git so the hundreds of worktree copies never matter, plus the open PRs that touch or propose them.
+// straight from git so the hundreds of worktree copies never matter, plus the open PRs that touch or propose them,
+// plus the initiatives a checkout (the repo root, or a worktree on request) changed since it split from main.
 // Read-only; changes go through agent drafts. docs/plans-plan.md has the reasoning.
 
 const exec = promisify(execFile);
@@ -16,6 +17,8 @@ const SKIPPED = new Set(["node_modules", "dist", "build", "vendor"]);
 const PR_TTL_MS = 2 * 60_000;
 const CACHE_VERSION = 3; // bump when what a scan extracts from a map changes, so cached scans are redone
 const MAX_DOC_BYTES = 2_000_000;
+const LOCAL_TTL_MS = 60_000;
+const PATHSPECS = [`:(glob)**/${MAP_FILE}`, ":(glob)**/*.md"];
 const DONE = new Set(["closed", "done", "complete", "completed"]);
 const STARTED = new Set(["in_progress", "in-progress", "started", "partially_implemented", "partial", "active"]);
 export const LIFECYCLE = ["planned", "active", "paused", "completed", "cancelled"];
@@ -23,9 +26,11 @@ export const PHASES = ["intent", "brainstorm", "shape", "plan", "execution", "re
 const ARTIFACT_LABELS: Record<string, string> = { intent_brief: "Intent", brainstorm: "Brainstorm", shape_brief: "Shape", implementation_plan: "Plan" };
 
 type Doc = { path: string; name: string; label: string; role: string; status: string };
+type Checkout = { repo: string; path: string; branch: string; head: string; root: boolean };
+type Local = { path: string; branch: string; uncommitted: boolean; files: string[]; onMain: boolean };
 type PrTouch = { number: number; title: string; url: string; draft: boolean; author: string; branch: string; updatedAt: string; change: "edits" | "retires" | "proposes"; files: string[] };
 export type Initiative = {
-  id: string; repo: string; folder: string; ref: string; source: "main" | "pr";
+  id: string; repo: string; folder: string; ref: string; source: "main" | "pr" | "root" | "worktree"; checkout?: Local;
   slug: string; title: string; summary: string; status: string; inferred: boolean; evidence: string; phase: string; scale: string;
   nextAction: string; lastUpdated: string; dependsOn: string[]; related: string[]; history: { date: string; event: string; reason: string }[]; historyCount: number;
   docs: Doc[]; edited: number; error?: string; prs: PrTouch[];
@@ -212,6 +217,83 @@ export function createPlans(root: string, deps: { repos: () => Promise<string[]>
     return common ? await stat(join(common, "FETCH_HEAD")).then((info) => info.mtimeMs, () => 0) : 0;
   }
 
+  // Every checkout of a repo; the first is the root (the repo's own folder).
+  async function listCheckouts(repo: string): Promise<Checkout[]> {
+    const blocks = (await git(repo, ["worktree", "list", "--porcelain"])).trim().split("\n\n");
+    return blocks.map((block, index) => {
+      const field = (name: string) => block.match(new RegExp(`^${name} (.+)$`, "m"))?.[1] || "";
+      return { repo, path: index === 0 ? repo : field("worktree"), branch: field("branch").replace(/^refs\/heads\//, "") || "(detached)", head: field("HEAD"), root: index === 0, skip: /^(bare|prunable)/m.test(block) };
+    }).filter((tree) => tree.path && !tree.skip && existsSync(tree.path)).map(({ skip, ...tree }) => tree);
+  }
+
+  // The initiatives one checkout changed since it split from main: commits on its branch, uncommitted edits, and
+  // new files. GIT_OPTIONAL_LOCKS=0 and no fsmonitor, as the Code view's status scan does, so nothing is rewritten.
+  const checkouts = new Map<string, Checkout>();
+  const localScans = new Map<string, Initiative[]>();
+  async function scanCheckout(tree: Checkout, main: { sha: string; files: string[]; initiatives: Initiative[] }) {
+    checkouts.set(tree.path, tree);
+    const run = async (args: string[]) => (await exec("git", ["-C", tree.path, "-c", "core.fsmonitor=false", ...args], { maxBuffer: 64 << 20, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } })).stdout;
+    const split = await run(["merge-base", "HEAD", main.sha]).then((out) => out.trim(), () => "");
+    if (!split) return [];
+    const [diff, dirty, untracked] = await Promise.all([
+      run(["diff", "--name-status", "-z", "--no-renames", split, "--", ...PATHSPECS]),
+      run(["diff", "--name-only", "-z", "HEAD", "--", ...PATHSPECS]),
+      run(["ls-files", "-z", "--others", "--exclude-standard", "--", ...PATHSPECS]),
+    ]);
+    const changes = new Map<string, string>();
+    const parts = diff.split("\0");
+    for (let index = 0; index + 1 < parts.length; index += 2) if (parts[index]) changes.set(parts[index + 1], parts[index][0]);
+    const added = untracked.split("\0").filter(Boolean);
+    for (const path of added) changes.set(path, "A");
+    const uncommitted = new Set([...dirty.split("\0").filter(Boolean), ...added]);
+    const candidates = [...changes.keys()].filter((path) => !hidden(path));
+    if (!candidates.length) return [];
+    // A file that already reads the same on main (a squash-merged branch, a change main also made) isn't local work.
+    const present = candidates.filter((path) => changes.get(path) !== "D");
+    const [listing, hashed] = await Promise.all([run(["ls-tree", "-z", main.sha, "--", ...candidates]), present.length ? run(["hash-object", "--", ...present]) : ""]);
+    const mainBlobs = new Map(listing.split("\0").filter(Boolean).map((line) => [line.slice(line.indexOf("\t") + 1), line.split(" ")[2].split("\t")[0]]));
+    const hashes = new Map(hashed.trim().split("\n").map((hash, index) => [present[index], hash]));
+    const changed = candidates.filter((path) => (changes.get(path) === "D" ? mainBlobs.has(path) : mainBlobs.get(path) !== hashes.get(path)));
+    if (!changed.length) return [];
+    const files = new Set(main.files);
+    for (const [path, status] of changes) if (status === "D") files.delete(path); else files.add(path);
+    const listed = [...files];
+    const folders = mapPaths(listed).map(folderOf);
+    const owner = (path: string) => folders.filter((folder) => inFolder(folder, path)).sort((a, b) => b.length - a.length)[0];
+    const touched = new Map<string, string[]>();
+    for (const path of changed) {
+      const folder = owner(path);
+      if (folder !== undefined) (touched.get(folder) || touched.set(folder, []).get(folder)!).push(path);
+    }
+    const onMain = new Set(main.initiatives.map((item) => item.folder));
+    const items: Initiative[] = [];
+    for (const [folder, paths] of touched) {
+      const mapPath = folder ? `${folder}/${MAP_FILE}` : MAP_FILE;
+      const source = await readFile(join(tree.path, mapPath), "utf8").catch(() => null);
+      if (source === null) continue; // the checkout removes this initiative
+      const inside = listed.filter((path) => inFolder(folder, path) && existsSync(join(tree.path, path)));
+      const item = initiativeFrom(tree.repo, mapPath, source, tree.path, inside, folders);
+      const edited = Math.max(0, ...await Promise.all(paths.map((path) => stat(join(tree.path, path)).then((info) => info.mtimeMs, () => 0))));
+      items.push({ ...item, id: `${item.id}@${tree.root ? "root" : tree.path}`, source: tree.root ? "root" : "worktree", edited, checkout: { path: tree.path, branch: tree.branch, uncommitted: paths.some((path) => uncommitted.has(path)), files: paths, onMain: onMain.has(folder) } });
+    }
+    return items;
+  }
+
+  // Worktree scans run in the background, a few at a time, and the page polls while they do.
+  let treesLoading: Promise<void> | null = null;
+  let treesAt = 0;
+  function refreshWorktrees(scans: { repo: string; scan: { sha: string; files: string[]; initiatives: Initiative[] } }[], force: boolean) {
+    if (treesLoading || (!force && Date.now() - treesAt < LOCAL_TTL_MS)) return;
+    treesLoading = (async () => {
+      const every = (await Promise.all(scans.map(async ({ repo, scan }) => (await listCheckouts(repo).catch(() => [])).filter((tree) => !tree.root).map((tree) => ({ tree, scan }))))).flat();
+      const live = new Set(every.map(({ tree }) => tree.path));
+      for (const path of localScans.keys()) if (!live.has(path)) localScans.delete(path);
+      for (let index = 0; index < every.length; index += 8) {
+        await Promise.all(every.slice(index, index + 8).map(async ({ tree, scan }) => localScans.set(tree.path, await scanCheckout(tree, scan).catch(() => []))));
+      }
+    })().finally(() => { treesLoading = null; treesAt = Date.now(); });
+  }
+
   async function scanRepo(repo: string) {
     const { sha, base } = await baseRef(repo);
     const hit = cache.repos[repo];
@@ -264,25 +346,29 @@ export function createPlans(root: string, deps: { repos: () => Promise<string[]>
     return cache.proposed[key];
   }
 
-  async function load(force = false) {
+  // `worktrees` also scans every worktree (in the background); the repo root is always scanned, it's one checkout.
+  async function load(force = false, worktrees = false) {
     const repos = await deps.repos();
     const errors: string[] = [];
     const results = await Promise.all(repos.map(async (repo) => {
       try {
         const slug = await deps.slug(repo);
-        const [scan, fetched] = await Promise.all([scanRepo(repo), fetchedAt(repo)]);
+        const [scan, fetched, trees] = await Promise.all([scanRepo(repo), fetchedAt(repo), listCheckouts(repo).catch(() => [])]);
         refreshPrs(slug, force);
-        return { repo, slug, scan, fetched };
+        const root = trees.find((tree) => tree.root);
+        const local = root ? await scanCheckout(root, scan).catch(() => []) : [];
+        return { repo, slug, scan, fetched, local, heads: new Map(trees.map((tree) => [tree.path, tree.head])) };
       } catch (error) {
         errors.push(`${repo}: ${(error as Error).message.split("\n")[0]}`);
         return null;
       }
     }));
+    if (worktrees) refreshWorktrees(results.filter((result) => result !== null), force);
     const initiatives: Initiative[] = [];
     const repoInfo = [];
     for (const result of results) {
       if (!result) continue;
-      const { repo, slug, scan, fetched } = result;
+      const { repo, slug, scan, fetched, local, heads } = result;
       repoInfo.push({ repo, slug, sha: scan.sha, base: scan.base, fetchedAt: fetched, count: scan.initiatives.length });
       const own = scan.initiatives.map((item) => ({ ...item, prs: [] as PrTouch[] }));
       const byFolder = new Map(own.map((item) => [item.folder, item]));
@@ -297,10 +383,18 @@ export function createPlans(root: string, deps: { repos: () => Promise<string[]>
           own.push({ ...item, id: `${repo}:${item.folder || "."}#${pr.number}`, source: "pr", edited: Date.parse(pr.updatedAt) || 0, prs: [touch("proposes", files.filter((file: string) => inFolder(item.folder, file)))] });
         }
       }
+      // A checkout's copy carries main's PR chips. A worktree with nothing uncommitted at an open PR's head is that
+      // PR, already shown, so it's left out.
+      const prHeads = new Set((cache.prs[slug]?.prs || []).map((pr) => pr.head));
+      const trees = worktrees ? [...heads.keys()].map((path) => localScans.get(path) || []).flat() : [];
+      for (const item of [...local, ...trees]) {
+        if (item.source === "worktree" && !item.checkout!.uncommitted && prHeads.has(heads.get(item.checkout!.path))) continue;
+        own.push({ ...item, prs: item.source === "root" ? byFolder.get(item.folder)?.prs || [] : [] });
+      }
       initiatives.push(...own);
     }
     initiatives.sort((a, b) => b.edited - a.edited);
-    return { repos: repoInfo, initiatives, skill: config().code.planSkill, errors, scanning: loading.size > 0 };
+    return { repos: repoInfo, initiatives, skill: config().code.planSkill, errors, scanning: loading.size > 0 || (worktrees && treesLoading !== null), worktrees };
   }
 
   const tracked = async (repo: string) => {
@@ -308,11 +402,19 @@ export function createPlans(root: string, deps: { repos: () => Promise<string[]>
     return repo;
   };
 
-  // A Markdown file at a commit the view has seen: the repo's scanned main, or an open PR's head.
+  // A Markdown file at a commit the view has seen (the repo's scanned main, or an open PR's head), or in a checkout
+  // the view has scanned (the ref is its folder).
   async function doc(repo: string, ref: string, path: string) {
     await tracked(repo);
     cleanPath(path);
     if (!path.toLowerCase().endsWith(".md") && !mapPaths([path]).length) throw new Error("Only Markdown files and initiative maps can be read.");
+    if (ref.startsWith("/")) {
+      if (checkouts.get(ref)?.repo !== repo) throw new Error("Unknown checkout.");
+      const body = await readFile(join(ref, path), "utf8").catch(() => null);
+      if (body === null) throw new Error(`${path} isn't in that checkout.`);
+      if (body.length > MAX_DOC_BYTES) throw new Error(`${path} is too large to show.`);
+      return { repo, ref, path, body };
+    }
     const slug = await deps.slug(repo);
     const pr = (cache.prs[slug]?.prs || []).find((candidate) => candidate.head === ref);
     if (cache.repos[repo]?.sha !== ref && !pr) throw new Error("Unknown commit.");
@@ -325,15 +427,19 @@ export function createPlans(root: string, deps: { repos: () => Promise<string[]>
   // The prompt names the skill (`code.planSkill`), the initiative's files, and where it lives, and ends with a "---"
   // line for the user's own words. The draft opens in the repo's main checkout, which may sit on another branch.
   async function prompt(app: string, id: string, kind: string, open: string) {
-    const item = (await load()).initiatives.find((candidate) => candidate.id === id);
+    const item = (await load(false, id.includes("@/"))).initiatives.find((candidate) => candidate.id === id);
     if (!item) throw new Error("Unknown initiative.");
     const skill = config().code.planSkill;
     const use = skill ? (app === "claude" ? `Use /${skill} to ` : `Use the ${skill} skill to `) : "";
     const proposal = item.prs.find((pr) => pr.change === "proposes");
-    const where = proposal
+    const local = item.checkout;
+    const where = local
+      ? `It has ${local.uncommitted ? "uncommitted changes" : "unpushed commits"} in ${item.source === "root" ? "the repo root" : "a worktree"} at ${local.path} (branch ${local.branch}); work there.`
+      : proposal
       ? `It is proposed in ${proposal.url} (branch ${proposal.branch}) and isn't on main yet; work on that branch.`
       : `It is on ${cache.repos[item.repo]?.base || "origin/main"}; the checkout at ${item.repo} may be on another branch, so start from origin/main and open a PR.`;
-    const files = [`- Folder: ${join(item.repo, item.folder)}`, `- Map: ${join(item.repo, item.folder, MAP_FILE)}`, ...(open ? [`- Open document: ${join(item.repo, open)}`] : []), ...item.prs.filter((pr) => pr !== proposal).map((pr) => `- Open PR touching it: ${pr.url} (${pr.branch})`)];
+    const base = local?.path || item.repo;
+    const files = [`- Folder: ${join(base, item.folder)}`, `- Map: ${join(base, item.folder, MAP_FILE)}`, ...(open ? [`- Open document: ${join(base, open)}`] : []), ...item.prs.filter((pr) => pr !== proposal).map((pr) => `- Open PR touching it: ${pr.url} (${pr.branch})`)];
     const ask = kind === "retire"
       ? `${use ? use : "Please "}retire the initiative "${item.title}" in ${item.repo}. It is ${item.status}, and I approve retiring it: reconcile the code with its intent, move anything durable into the repository's docs, and remove the planning artifacts.`
       : `${use ? use : "Please "}update the initiative "${item.title}" in ${item.repo}.`;
@@ -350,7 +456,7 @@ export function createPlans(root: string, deps: { repos: () => Promise<string[]>
 
   // The full map for the reader's Map tab; maps are large (60 KB is common), so the list leaves them out.
   async function map(id: string) {
-    const item = (await load()).initiatives.find((candidate) => candidate.id === id);
+    const item = (await load(false, id.includes("@/"))).initiatives.find((candidate) => candidate.id === id);
     if (!item) throw new Error("Unknown initiative.");
     const { body } = await doc(item.repo, item.ref, item.folder ? `${item.folder}/${MAP_FILE}` : MAP_FILE);
     return { id, map: JSON.parse(body) };

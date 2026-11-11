@@ -2315,6 +2315,7 @@ button.issue-parent:hover { background: var(--hover-field); color: var(--action-
 .plan-status.is-inferred { font-style: italic; }
 .plan-table .plan-col-status { width: 22px; padding-right: 0; text-align: center; }
 .plan-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; color: var(--ink); font-weight: 600; line-height: 1.3; }
+.plan-tag-tree { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
 button.plan-pr { border: 0; font: inherit; font-size: .74rem; font-weight: 650; cursor: pointer; }
 .plan-pr-retires { background: #fdecea; color: #b4372f; }
 .plan-pr-retires:hover { background: #fadad6; }

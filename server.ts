@@ -1019,7 +1019,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (request.method === "POST" && url.pathname === "/api/version/update") return json(response, 200, await updateViewer());
     if (request.method === "GET" && url.pathname === "/api/config") return json(response, 200, config());
     if (request.method === "GET" && url.pathname === "/api/code") return json(response, 200, await codeDashboard.load(url.searchParams.has("refresh")));
-    if (request.method === "GET" && url.pathname === "/api/code/plans") return json(response, 200, await plans.load(url.searchParams.has("refresh")));
+    if (request.method === "GET" && url.pathname === "/api/code/plans") return json(response, 200, await plans.load(url.searchParams.has("refresh"), url.searchParams.has("worktrees")));
     if (request.method === "GET" && url.pathname === "/api/code/plan-map") return json(response, 200, await plans.map(url.searchParams.get("id") || ""));
     if (request.method === "GET" && url.pathname === "/api/code/plan-doc") return json(response, 200, await plans.doc(url.searchParams.get("repo") || "", url.searchParams.get("ref") || "", url.searchParams.get("path") || ""));
     if (request.method === "GET" && url.pathname === "/api/code/pr-index") return json(response, 200, await codeDashboard.prIndex());

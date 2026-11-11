@@ -4,13 +4,13 @@ import { termMatch } from "./search.js";
 import { ago, copied, fadeIn, hideTip, iconButton, isSummonKey, openPrOverlay, showTip, sideFacts, when, heat } from "./code.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 
-// The Code view's Plans tab: initiatives on each tracked repo's origin/main (and proposed in open PRs), as a list, an
-// inspector, and a reader overview. Read-only; Update and Retire open agent drafts. docs/plans-plan.md has the why.
+// The Code view's Plans tab: initiatives on each tracked repo's origin/main (and proposed in open PRs, and changed in
+// the repo root or a worktree), as a list, an inspector, and a reader overview. Read-only; Update and Retire open agent drafts. docs/plans-plan.md has the why.
 const DAY = 24 * 3_600_000;
 const STATUSES = ["planned", "active", "paused", "completed", "cancelled"];
 const FINISHED = new Set(["completed", "cancelled"]);
 const SCOPES = { open: "Open", ...Object.fromEntries(STATUSES.map((status) => [status, status[0].toUpperCase() + status.slice(1)])), all: "All" };
-const ps = { data: null, error: "", loading: null, scope: "open", group: "edited", withPr: false, maps: new Map(), docs: new Map() };
+const ps = { data: null, error: "", loading: null, scope: "open", group: "edited", withPr: false, root: true, worktrees: false, maps: new Map(), docs: new Map() };
 // The grouping is a per-browser preference, like the diff layout.
 const storage = (key, value) => { try { if (value === undefined) return localStorage.getItem(key); localStorage.setItem(key, value); } catch {} return null; };
 let notify = (message) => console.warn(message);
@@ -23,6 +23,8 @@ export function initPlans(helpers) {
   const params = new URLSearchParams(location.search);
   if (params.get("plans") in SCOPES) ps.scope = params.get("plans");
   if (storage("plans-group") in GROUPS) ps.group = storage("plans-group");
+  ps.root = storage("plans-root") !== "0";
+  ps.worktrees = storage("plans-worktrees") === "1";
 }
 
 // ---------- data ----------
@@ -33,7 +35,8 @@ export function loadPlans(refresh = false, poll = false) {
   if (code?.host()) code.host().dataset.plansState = "loading";
   ps.loading = (async () => {
     try {
-      const response = await fetch(refresh ? "/api/code/plans?refresh" : "/api/code/plans");
+      const params = [refresh && "refresh", ps.worktrees && "worktrees"].filter(Boolean).join("&");
+      const response = await fetch(`/api/code/plans${params ? `?${params}` : ""}`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Could not load plans.");
       ps.data = body;
@@ -56,13 +59,28 @@ export function loadPlans(refresh = false, poll = false) {
 }
 
 export const plansLoaded = () => Boolean(ps.data);
-const all = () => ps.data?.initiatives || [];
-const byId = (id) => all().find((item) => item.id === id);
+const everything = () => ps.data?.initiatives || [];
+// The repo root's copy of an initiative replaces main's row; worktree copies are rows of their own.
+const rootCopy = (item) => ps.root && item.source === "main" && everything().some((other) => other.source === "root" && other.repo === item.repo && other.folder === item.folder);
+const shown = (item) => (item.source === "root" ? ps.root : item.source === "worktree" ? ps.worktrees && ps.data.worktrees : !rootCopy(item));
+const all = () => everything().filter(shown);
+const byId = (id) => everything().find((item) => item.id === id);
 export const planFor = (key) => byId(key.slice(5));
 const repoName = (path) => path.split("/").pop();
 const repoInfo = (repo) => ps.data?.repos.find((entry) => entry.repo === repo);
 const isOpen = (item) => !FINISHED.has(item.status);
-const proposal = (item) => item.prs.find((pr) => pr.change === "proposes");
+const proposal = (item) => (item.checkout ? null : item.prs.find((pr) => pr.change === "proposes"));
+const folderPath = (item) => `${item.checkout?.path || item.repo}/${item.folder}`;
+const changeWord = (item) => (item.checkout.uncommitted ? "uncommitted" : "unpushed");
+const shortPath = (path) => path.replace(/^\/Users\/[^/]+/, "~");
+// Where a checkout's copy lives: the root says whether its changes are committed; a worktree names its branch.
+function localTag(item) {
+  const local = item.checkout;
+  if (!local) return "";
+  const files = `${local.files.length} changed ${local.files.length === 1 ? "file" : "files"}`;
+  if (item.source === "root") return `<span class="code-tag ${local.uncommitted ? "code-tag-dirty" : ""}" data-tip="${escapeHtml(`Repo root on ${local.branch} · ${files}${local.onMain ? "" : " · not on main yet"}`)}">${changeWord(item)}</span>`;
+  return `<span class="code-tag plan-tag-tree ${local.uncommitted ? "code-tag-dirty" : ""}" data-tip="${escapeHtml(`Worktree at ${shortPath(local.path)} · ${changeWord(item)} · ${files}${local.onMain ? " · main has its own row" : " · not on main yet"}`)}">${escapeHtml(local.branch)}</span>`;
+}
 // Slugs resolve within the same repository: "depends_on" lists other initiatives there.
 const bySlug = (repo, slug) => all().find((item) => item.repo === repo && item.slug === slug && item.source === "main") || all().find((item) => item.repo === repo && item.slug === slug);
 const neededBy = (item) => all().filter((other) => other.repo === item.repo && other.dependsOn.includes(item.slug));
@@ -178,7 +196,7 @@ function planRow(item) {
     : item.nextAction ? `<div class="plan-next-line"><span>Next</span>${escapeHtml(item.nextAction)}</div>` : "";
   return `<tr class="code-row plan-row" data-code-row="${escapeHtml(key)}" aria-selected="${code.selected() === key}">
     ${code.repoCell(item.repo)}<td class="plan-col-status">${statusMark(item)}</td>
-    <td class="code-col-main plan-col-title"><div class="plan-title"><span>${escapeHtml(item.title)}</span>${proposed ? `<span class="code-tag code-tag-open">proposed</span>` : ""}</div>${sub}</td>
+    <td class="code-col-main plan-col-title"><div class="plan-title"><span>${escapeHtml(item.title)}</span>${proposed ? `<span class="code-tag code-tag-open">proposed</span>` : ""}${localTag(item)}</div>${sub}</td>
     <td class="plan-col-stage">${stageTrack(item)}</td>
     <td class="plan-col-progress">${progress(item)}</td>
     <td class="plan-col-links">${links(item)}</td>
@@ -190,9 +208,12 @@ const GROUPS = { edited: "Edited", repo: "Repo", stage: "Stage", status: "Status
 export function plansControls(segment, count) {
   if (!ps.data) return "";
   const counts = (status) => all().filter((item) => status === "all" || (status === "open" ? isOpen(item) : item.status === status)).length;
+  const trees = ps.data.worktrees ? everything().filter((item) => item.source === "worktree").length : 0;
   const scopes = Object.fromEntries(Object.entries(SCOPES).map(([id, label]) => [id, `${label}${count(counts(id))}`]));
   return segment("data-plan-scope", ps.scope, scopes)
     + `<label class="code-check"><input type="checkbox" data-plan-with-pr ${ps.withPr ? "checked" : ""}> In open PRs${count(all().filter((item) => item.prs.length).length)}</label>`
+    + `<label class="code-check" data-tip="Initiatives the repo root changed since main, uncommitted or unpushed; they replace main's row"><input type="checkbox" data-plan-root ${ps.root ? "checked" : ""}> Repo root${count(everything().filter((item) => item.source === "root").length)}</label>`
+    + `<label class="code-check" data-tip="Initiatives each worktree changed since main, as rows of their own"><input type="checkbox" data-plan-worktrees ${ps.worktrees ? "checked" : ""}> Worktrees${ps.worktrees ? count(trees || (ps.data.scanning || !ps.data.worktrees ? "…" : 0)) : ""}</label>`
     + `<span class="plan-group-label">Group</span>${segment("data-plan-group", ps.group, GROUPS)}`;
 }
 
@@ -236,6 +257,7 @@ export function plansBody() {
 
 const shortSha = (sha) => sha.slice(0, 7);
 function whereText(item) {
+  if (item.checkout) return `${item.source === "root" ? "repo root" : "worktree"} · ${item.checkout.branch} · ${changeWord(item)}`;
   const proposed = proposal(item);
   const info = repoInfo(item.repo);
   return proposed ? `PR #${proposed.number} · ${proposed.branch}` : `${info?.base || "origin/main"} @ ${shortSha(item.ref)}`;
@@ -255,14 +277,15 @@ export function planActions(item) {
 
 function planFacts(item) {
   const fetched = repoInfo(item.repo)?.fetchedAt;
-  const folder = `${item.repo}/${item.folder}`;
+  const folder = folderPath(item);
+  const changed = item.checkout ? `${item.checkout.files.length} ${item.checkout.files.length === 1 ? "file" : "files"} changed here` : proposal(item) ? "PR updated" : "committed";
   return sideFacts([
     ["Status", `${statusMark(item, true)}${item.scale ? `<span class="code-muted">${escapeHtml(item.scale)}</span>` : ""}${item.inferred ? `<span class="code-muted">${escapeHtml(item.evidence)}</span>` : ""}`],
     ["Stage", `${stageTrack(item)}${item.phase && !(item.phase in PHASE_STAGE) ? `<span class="code-muted">${escapeHtml(item.phase)}</span>` : ""}`],
     ["Next", item.nextAction ? `<span class="plan-next">${escapeHtml(item.nextAction)}</span>` : ""],
     ["Repo", `<span>${escapeHtml(repoName(item.repo))}</span><span class="code-muted" data-tip="${fetched ? `Last fetched ${escapeHtml(new Date(fetched).toLocaleString())}` : "Never fetched"}">${escapeHtml(whereText(item))}</span>`],
     ["Folder", `<button type="button" class="code-path code-side-path" data-code-copy="${escapeHtml(folder)}" data-tip="${escapeHtml(folder)} · click to copy (Y)">${escapeHtml(item.folder || ".")}</button>`],
-    ["Edited", [item.edited && `<span data-tip="${escapeHtml(new Date(item.edited).toLocaleString())}">${proposal(item) ? "PR updated" : "committed"} ${ago(item.edited)} ago</span>`, item.lastUpdated && `<span class="code-muted">map says ${escapeHtml(item.lastUpdated)}</span>`].filter(Boolean).join("")],
+    ["Edited", [item.edited && `<span data-tip="${escapeHtml(new Date(item.edited).toLocaleString())}">${changed} ${ago(item.edited)} ago</span>`, item.lastUpdated && `<span class="code-muted">map says ${escapeHtml(item.lastUpdated)}</span>`].filter(Boolean).join("")],
   ]);
 }
 
@@ -382,6 +405,14 @@ export function planClick(dataset, target) {
   if (dataset.planScope) { ps.scope = dataset.planScope; syncScope(); code.render({ animate: true }); return true; }
   if (dataset.planGroup) { ps.group = dataset.planGroup; storage("plans-group", ps.group); code.render({ animate: true }); return true; }
   if ("planWithPr" in dataset) { ps.withPr = target.checked; code.render({ animate: true }); return true; }
+  if ("planRoot" in dataset) { ps.root = target.checked; storage("plans-root", ps.root ? "1" : "0"); code.render({ animate: true }); return true; }
+  if ("planWorktrees" in dataset) {
+    ps.worktrees = target.checked;
+    storage("plans-worktrees", ps.worktrees ? "1" : "0");
+    if (ps.worktrees && !ps.data?.worktrees) loadPlans(false, true);
+    code.render({ animate: true });
+    return true;
+  }
   if ("planReset" in dataset) { resetPlans(); code.render({ animate: true }); return true; }
   if (dataset.planFolder) {
     const open = target.getAttribute("aria-expanded") === "true";
@@ -408,7 +439,7 @@ export function planClick(dataset, target) {
 export function planKey(key, item, event) {
   if (key === "enter") return openPlan(item.id), true;
   if (key === "u") { draft(event.shiftKey && FINISHED.has(item.status) ? "retire" : "update", item.id).catch((error) => notify(error.message, true)); return true; }
-  if (key === "y") { const folder = `${item.repo}/${item.folder}`; navigator.clipboard.writeText(folder).then(() => notify(`Copied ${folder}`)); return true; }
+  if (key === "y") { const folder = folderPath(item); navigator.clipboard.writeText(folder).then(() => notify(`Copied ${folder}`)); return true; }
   return false;
 }
 
@@ -600,7 +631,7 @@ function ensureDialog() {
     else if (key === "m" && item) showDoc("map");
     else if (key === "b" && reader.back.length) goBack();
     else if (key === "u" && item) draft(event.shiftKey && FINISHED.has(item.status) ? "retire" : "update", item.id, openDoc()).catch((error) => notify(error.message, true));
-    else if (key === "y" && item) { const folder = `${item.repo}/${item.folder}`; navigator.clipboard.writeText(folder).then(() => notify(`Copied ${folder}`)); }
+    else if (key === "y" && item) { const folder = folderPath(item); navigator.clipboard.writeText(folder).then(() => notify(`Copied ${folder}`)); }
     else return;
     event.preventDefault();
   });
@@ -726,7 +757,7 @@ export const cachedPlans = () => ps.data;
 export async function openPlan(id, doc = "", { keepBack = false, anchor = "" } = {}) {
   if (!ps.data) await loadPlans();
   const item = byId(id);
-  if (!item) return notify("That initiative isn't on main or in an open PR any more.", true);
+  if (!item) return notify("That initiative isn't on main, in an open PR, or changed in a checkout any more.", true);
   ensureDialog();
   if (!keepBack) reader.back = [];
   reader.id = id;
