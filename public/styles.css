@@ -341,7 +341,9 @@ button { cursor: pointer; }
 .table-viewer .viewer-dialog-heading > [data-dialog-close] { flex: none; }
 .table-viewer.is-resizing, .table-viewer.is-resizing * { cursor: col-resize !important; user-select: none; }
 @media (prefers-reduced-motion: reduce) { .markdown-table > .table-tools, .markdown-code > .table-tools, .table-tools button { transition: none; } }
-.markdown-table-scroll { overflow-x: auto; overscroll-behavior-inline: contain; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); scrollbar-width: thin; }
+/* position: relative makes the frame the containing block of the links' absolute .sr-only text, so the frame clips it
+   instead of letting it stretch the page to the uncapped table's height. */
+.markdown-table-scroll { position: relative; overflow-x: auto; overscroll-behavior-inline: contain; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); scrollbar-width: thin; }
 .markdown-table-scroll:focus-visible { outline: 3px solid rgba(49, 87, 213, .26); outline-offset: 2px; }
 .markdown table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .84rem; line-height: 1.48; }
 .markdown th, .markdown td { padding: 7px 10px; vertical-align: top; overflow-wrap: break-word; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); text-align: left; }
