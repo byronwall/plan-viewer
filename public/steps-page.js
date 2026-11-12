@@ -98,6 +98,7 @@ const button = (action, label, primary = false, disabled = "") => `<button type=
 // What the inspector lets you do now: start an agent, run or copy a statement, apply a rule, or mark it done.
 export function stepActionsHtml(step, { startConfigured = false, runConfigured = false, freeSlots = 0 } = {}) {
   const f = step.machinery?.fields || {};
+  if (step.draft) return ""; // an outbound step's panel has its own Approve, Mark sent and Drop
   if (step.move === "agent" && !step.draft && !step.running) {
     const why = !startConfigured ? "Set steps.start in viewer.config.json" : freeSlots < 1 ? "All agent slots are in use" : "";
     return `<div class="outbound-actions step-actions">${button("start", "Start", true, why)}<span class="step-choice-note">${step.prompt ? "Runs its prompt as a local agent session." : "No prompt: the agent gets the step title and the task."}</span></div>`;
