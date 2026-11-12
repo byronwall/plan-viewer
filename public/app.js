@@ -76,7 +76,11 @@ const DIFF_LAYOUTS = [["inline", "Inline", "as one drawing with change marks"], 
 function storedPanels() {
   try { const value = localStorage.getItem("plan-viewer:diagram-panels"); return DIFF_LAYOUTS.some(([layout]) => layout === value) ? value : ""; } catch { return ""; }
 }
-const imageViewerState = { showSource: storedFlag("plan-viewer:diagram-source", true), panels: storedPanels(), items: [], index: 0, scale: 1, fitScale: 1, isFitView: true, offset: { x: 0, y: 0 }, pan: null, trigger: null };
+// Below this width the drawing needs the room, so the diagram source starts hidden. Above it, the remembered choice
+// applies. A toggle holds until the width crosses the breakpoint again, and only a wide one is remembered.
+const narrowDiagramViewer = matchMedia("(max-width: 1599px)");
+const defaultShowSource = () => !narrowDiagramViewer.matches && storedFlag("plan-viewer:diagram-source", true);
+const imageViewerState = { showSource: defaultShowSource(), panels: storedPanels(), items: [], index: 0, scale: 1, fitScale: 1, isFitView: true, offset: { x: 0, y: 0 }, pan: null, trigger: null };
 
 // Sonner-style toasts: stacked bottom-right above the history button, newest in front. Hovering fans the stack out
 // and pauses every timer; a fourth toast pushes the oldest out.
@@ -2766,10 +2770,17 @@ function currentDiagram() {
 function toggleDiagramSource() {
   if (!currentDiagram()) return;
   imageViewerState.showSource = !imageViewerState.showSource;
-  storeFlag("plan-viewer:diagram-source", imageViewerState.showSource);
+  if (!narrowDiagramViewer.matches) storeFlag("plan-viewer:diagram-source", imageViewerState.showSource);
   renderImageViewer();
   if (imageViewerState.isFitView) fitImageViewer();
 }
+narrowDiagramViewer.addEventListener("change", () => {
+  if (imageViewerState.showSource === defaultShowSource()) return;
+  imageViewerState.showSource = defaultShowSource();
+  if (!elements.imageViewer.open || !currentDiagram()) return;
+  renderImageViewer();
+  if (imageViewerState.isFitView) fitImageViewer();
+});
 
 // What's typed for each diagram stays until it is sent, across closing and reopening the viewer.
 const diagramDrafts = new Map();
