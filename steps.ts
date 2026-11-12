@@ -1,8 +1,10 @@
 // Steps: every open work-breakdown line across the workspace's tasks, with who makes the next move. A step stores its
 // status, prerequisites and an optional `{kind, size}`; everything else here is derived. Outbound drafts and other
 // machinery files (task assets whose front matter names a `step:`) supply the kind when the line doesn't.
-import { readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { execFile, spawn } from "node:child_process";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { dirname, join, resolve, sep } from "node:path";
+import { promisify } from "node:util";
 import { parseActions, parseWorkBreakdown } from "./public/actions.js";
 import { config } from "./public/config.js";
 import { draftFromText, outboundFields, type OutboundDraft } from "./outbound.ts";
@@ -57,7 +59,7 @@ export function deriveSteps(tasks: TaskInput[], machinery: { path: string; field
       if (choice) step.options = children.map((child: { id: string; title: string; flags: string[]; status: string }) => ({ id: child.id, ...splitOption(child.title), recommended: child.flags.includes("recommended"), status: child.status }));
       const [move, reason, fix] = nextMove(step, blockedBy);
       if (move === null) continue;
-      Object.assign(step, { move, reason, ...(fix ? { fix } : {}), running: move === "agent" && node.status === "active" });
+      Object.assign(step, { move, reason, ...(fix ? { fix } : {}), running: false });
       steps.push(step);
     }
   }
@@ -80,12 +82,13 @@ function nextMove(step: Step, blockedBy: string[]): [Move, string, string?] | [n
     if (status === "draft" && draft.fields.waits) return ["others", `waits: ${draft.fields.waits}`];
     return ["agent", status === "revise" ? "revising" : status === "approved" ? "sending" : "drafting"];
   }
+  if (step.machinery?.fields.apply) return ["you-decide", "apply a rule"];
   if (kind === "byron") {
     const fields = step.machinery?.fields || {};
     return ["you-act", fields.why || "only you can do this", fields.fix || "Say what would remove this step"];
   }
   if (step.status === "waiting" || kind === "check-in") return ["others", step.prompt ? "watching" : "waiting"];
-  if (kind === "agent" || step.prompt) return ["agent", step.status === "active" ? "running" : "ready"];
+  if (kind === "agent" || step.prompt) return ["agent", step.status === "active" ? "in progress" : "ready"];
   return ["unclassified", "no kind or prompt"];
 }
 
@@ -111,10 +114,13 @@ export async function listMachinery(root: string) {
 
 export async function loadSteps(root: string, tasks: TaskInput[], planOrder: string[]) {
   const machinery = await listMachinery(root);
+  const steps = deriveSteps(tasks, machinery, planOrder);
+  for (const step of steps) if (runs.has(step.key)) Object.assign(step, { move: "agent", running: true, reason: "running" });
   return {
-    steps: deriveSteps(tasks, machinery, planOrder),
+    steps,
     drafts: machinery.flatMap((m) => m.draft ? [m.draft] : []),
     slots: config().steps.slots,
+    runs: activeRuns(),
   };
 }
 
@@ -147,4 +153,112 @@ export async function pickChoice(root: string, path: string, choiceId: string, p
   markdown = markdown.replace(/^updated: .*$/m, `updated: ${today}`);
   await writeFile(absolute, markdown);
   return { picked, choice: choiceId };
+}
+
+// --- Removing friction: completing a step, Approve and run, Apply, and Start with agent slots. ---
+
+const READ_ONLY = /^\s*\(*\s*(select|with|show|describe|desc)\b/i;
+export const isReadOnlyStatement = (sql: string) => READ_ONLY.test(sql) && !sql.trim().replace(/;\s*$/, "").includes(";");
+
+function taskFile(root: string, path: string) {
+  if (!/^tasks\/TASK-\d{4}\.md$/.test(path)) throw new Error("Not a task file.");
+  const absolute = resolve(root, path);
+  if (!absolute.startsWith(resolve(root) + sep)) throw new Error("Invalid task path.");
+  return absolute;
+}
+
+function assetFile(root: string, path: string) {
+  if (!/^tasks\/TASK-\d{4}-assets\/.+\.md$/.test(path) || path.includes("..")) throw new Error("Not a task asset.");
+  return resolve(root, path);
+}
+
+// Rewrites one work item's status and adds a dated update, newest first, the way agents write them.
+export function withStepStatus(markdown: string, id: string, status: string, update = "", today = "") {
+  const next = markdown.replace(new RegExp(`^(\\s*-\\s+${id.replace(/\./g, "\\.")}:\\s.*?)\\[(open|active|waiting|deferred|completed)\\]`, "m"), `$1[${status}]`);
+  if (next === markdown && !new RegExp(`^\\s*-\\s+${id.replace(/\./g, "\\.")}:.*\\[${status}\\]`, "m").test(markdown)) throw new Error(`${id} isn't in the work breakdown.`);
+  if (!update) return next;
+  const line = `- **${today} — ${update}**\n`;
+  const dated = /^## Updates\s*\n\n/m.test(next) ? next.replace(/^## Updates\s*\n\n/m, (head) => head + line) : `${next.trimEnd()}\n\n## Updates\n\n${line}`;
+  return today ? dated.replace(/^updated: .*$/m, `updated: ${today}`) : dated;
+}
+
+async function completeStep(root: string, step: string, update: string, today: string) {
+  const [, task, id] = step.trim().match(/^(TASK-\d{4})\s+(\S+)$/) || [];
+  if (!task) return;
+  const absolute = taskFile(root, `tasks/${task}.md`);
+  await writeFile(absolute, withStepStatus(await readFile(absolute, "utf8"), id, "completed", update, today));
+}
+
+export async function markStepDone(root: string, path: string, id: string, user: string, today: string) {
+  const absolute = taskFile(root, path);
+  await writeFile(absolute, withStepStatus(await readFile(absolute, "utf8"), id, "completed", `${id} done (${user}, in the viewer).`, today));
+}
+
+// Approve and run: a `kind: byron` step's read-only statement, run by the workspace's configured runner on the user's
+// click. Writes are refused here; their page shows the statement to copy instead.
+export async function runStatement(root: string, path: string, user: string, today: string) {
+  const absolute = assetFile(root, path);
+  const text = await readFile(absolute, "utf8");
+  const fields = outboundFields(text);
+  if (!fields.run) throw new Error("This step has no statement to run.");
+  if (!isReadOnlyStatement(fields.run)) throw new Error("Only a single read-only statement runs from the viewer; copy this one and run it yourself.");
+  const command = config().steps.run || [];
+  if (!command.length) throw new Error("No runner is configured: set steps.run in viewer.config.json.");
+  const [file, ...args] = command.map((part: string) => part.replace(/\{(\w+)\}/g, (all, key) => ({ statement: fields.run, target: fields.target || "" } as Record<string, string>)[key] ?? all));
+  let output = "", ok = true;
+  try { output = (await promisify(execFile)(file, args, { cwd: root, timeout: 120_000, maxBuffer: 4_000_000 })).stdout; }
+  catch (error) { ok = false; output = String((error as { stdout?: string }).stdout || "") + String((error as { stderr?: string }).stderr || (error as Error).message); }
+  const shown = output.trim().slice(0, 4000);
+  await writeFile(absolute, `${text.trimEnd()}\n\n## Run, ${new Date().toLocaleString("sv-SE").slice(0, 16)} (${user}, in the viewer)\n\n\`\`\`text\n${shown}\n\`\`\`\n`);
+  if (ok && fields.step) await completeStep(root, fields.step, `Ran \`${fields.run}\` as ${fields.target || "the configured runner"} (${user}, in the viewer); output in [${path.split("/").pop()}](${path.replace(/^tasks\//, "")}).`, today);
+  return { ok, output: shown };
+}
+
+// Apply: adds a drafted allow rule (`apply:`) to the workspace's Claude settings file, on the user's click.
+export async function applyRule(root: string, path: string, user: string, today: string) {
+  const absolute = assetFile(root, path);
+  const fields = outboundFields(await readFile(absolute, "utf8"));
+  const rule = fields.apply?.trim();
+  if (!rule) throw new Error("This step has no rule to apply.");
+  const target = config().steps.settingsFile;
+  if (!target) throw new Error("No settings file is configured: set steps.settingsFile in viewer.config.json.");
+  const settingsPath = resolve(root, target);
+  if (!settingsPath.startsWith(resolve(root) + sep)) throw new Error("steps.settingsFile must be inside the workspace.");
+  const settings = JSON.parse(await readFile(settingsPath, "utf8").catch(() => "{}"));
+  settings.permissions ??= {};
+  settings.permissions.allow ??= [];
+  const added = !settings.permissions.allow.includes(rule);
+  if (added) settings.permissions.allow.push(rule);
+  await mkdir(dirname(settingsPath), { recursive: true });
+  await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+  if (fields.step) await completeStep(root, fields.step, `Applied the allow rule \`${rule}\` to ${target} (${user}, in the viewer).`, today);
+  return { added, rule, file: target };
+}
+
+// Start: one local agent run per step, at most `steps.slots` at once. A run's end frees its slot and, with
+// `steps.refill`, starts the next ready agent step that has a prompt.
+const runs = new Map<string, { started: number; pid: number }>();
+export const activeRuns = () => [...runs].map(([key, run]) => ({ key, ...run }));
+
+export async function startStep(root: string, step: Step, today: string, next?: () => Promise<Step | undefined>): Promise<{ started: boolean; key: string; pid?: number }> {
+  const command = config().steps.start || [];
+  if (!command.length) throw new Error("No agent command is configured: set steps.start in viewer.config.json.");
+  if (step.move !== "agent" || step.running) throw new Error(`${step.task} ${step.id} isn't ready for an agent.`);
+  if (runs.has(step.key)) throw new Error(`${step.key} is already running.`);
+  if (runs.size >= config().steps.slots) throw new Error(`All ${config().steps.slots} agent slots are in use.`);
+  const prompt = step.prompt || `In ${root}, work on ${step.task} ${step.id}: ${step.title}. Read the task first, do only this step, record a dated update, and commit only the files you changed with git commit --only. Send, post or file nothing.`;
+  const values: Record<string, string> = { prompt, task: step.task, step: step.id, title: step.title };
+  const [file, ...args] = command.map((part: string) => part.replace(/\{(\w+)\}/g, (all, key) => values[key] ?? all));
+  const absolute = taskFile(root, step.path);
+  await writeFile(absolute, withStepStatus(await readFile(absolute, "utf8"), step.id, "active", "", today));
+  const child = spawn(file, args, { cwd: root, detached: true, stdio: "ignore" });
+  runs.set(step.key, { started: Date.now(), pid: child.pid ?? 0 });
+  child.on("exit", async () => {
+    runs.delete(step.key);
+    if (!config().steps.refill || !next) return;
+    const following = await next().catch(() => undefined);
+    if (following) await startStep(root, following, today, next).catch(() => {});
+  });
+  child.unref();
+  return { started: true, key: step.key, pid: child.pid };
 }

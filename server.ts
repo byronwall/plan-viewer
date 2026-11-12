@@ -19,7 +19,7 @@ import { createPlans } from "./plans.ts";
 import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig } from "./public/config.js";
-import { loadSteps, pickChoice } from "./steps.ts";
+import { applyRule, loadSteps, markStepDone, pickChoice, runStatement, startStep } from "./steps.ts";
 import { approveOutbound, draftFromText, dropOutbound, listOutbound, markOutboundSent, sendBackOutbound, stripFrontMatter } from "./outbound.ts";
 
 // The planning workspace is the current directory (npm scripts run from the content repository); PLANNING_ROOT
@@ -1104,6 +1104,29 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request);
       viewerWrites.add(String(body.path || ""));
       return json(response, 200, await pickChoice(ROOT, String(body.path || ""), String(body.id || ""), Array.isArray(body.picked) ? body.picked.map(String) : [], config().user, todayDate()));
+    }
+    if (request.method === "POST" && url.pathname === "/api/steps/start") {
+      const body = await readJson(request);
+      const find = async () => (await stepsIndex()).steps;
+      const step = (await find()).find((candidate) => candidate.key === String(body.key || ""));
+      if (!step) throw new Error("That step isn't open any more.");
+      viewerWrites.add(step.path);
+      const next = async () => (await find()).find((candidate) => candidate.move === "agent" && !candidate.running && candidate.prompt);
+      return json(response, 200, await startStep(ROOT, step, todayDate(), next));
+    }
+    if (request.method === "POST" && url.pathname === "/api/steps/run") {
+      const body = await readJson(request);
+      return json(response, 200, await runStatement(ROOT, String(body.path || ""), config().user, todayDate()));
+    }
+    if (request.method === "POST" && url.pathname === "/api/steps/apply") {
+      const body = await readJson(request);
+      return json(response, 200, await applyRule(ROOT, String(body.path || ""), config().user, todayDate()));
+    }
+    if (request.method === "POST" && url.pathname === "/api/steps/done") {
+      const body = await readJson(request);
+      viewerWrites.add(String(body.path || ""));
+      await markStepDone(ROOT, String(body.path || ""), String(body.id || ""), config().user, todayDate());
+      return json(response, 200, { done: true });
     }
     if (request.method === "GET" && url.pathname === "/api/outbound") return json(response, 200, { drafts: await listOutbound(ROOT), sendConfigured: Boolean(config().outbound.send.length) });
     if (request.method === "POST" && url.pathname.startsWith("/api/outbound/")) {

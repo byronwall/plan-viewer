@@ -3134,7 +3134,7 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .step-table .step-group th { padding: 14px 10px 4px; background: transparent; color: var(--label-text); font: 650 .66rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .035em; text-align: left; text-transform: uppercase; border-bottom: 1px solid var(--line); }
 .step-table .step-group th span { margin-left: 4px; color: var(--quiet-text); }
 .step-table .step-group:hover th { background: transparent; }
-.step-col-title { min-width: 280px; }
+.step-col-title { min-width: 280px; max-width: 460px; }
 .step-col-title .task-row-select { display: inline; }
 .step-friction-mark { margin-right: 6px; color: #b07a12; font-size: .7em; vertical-align: .12em; }
 .step-friction-line { display: block; margin-top: 2px; color: var(--status-waiting-ink); font-size: .74rem; }

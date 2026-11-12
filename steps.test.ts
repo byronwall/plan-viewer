@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { draftFromText } from "./outbound.ts";
-import { deriveSteps, pickChoice } from "./steps.ts";
+import { activeRuns, applyRule, deriveSteps, pickChoice, runStatement, startStep } from "./steps.ts";
+import { setConfig } from "./public/config.js";
 
 const TASK = `---
 id: TASK-0001
@@ -68,7 +69,7 @@ test("each open step gets one next move from its kind, status, prerequisites and
   const move = Object.fromEntries(steps.map((s) => [s.id, `${s.move}:${s.reason}`]));
   assert.deepEqual(move, {
     W2: "you-decide:approve", W3: "you-decide:pick one", W4: "you-act:the classifier refuses DROP", W5: "others:waiting",
-    W6: "agent:running", W7: "blocked:after W6", W8: "unclassified:no kind or prompt", "W9.1": "agent:ready",
+    W6: "agent:in progress", W7: "blocked:after W6", W8: "unclassified:no kind or prompt", "W9.1": "agent:ready",
     W10: "you-act:send by hand", W11: "agent:ready",
   });
   const choice = steps.find((s) => s.id === "W3")!;
@@ -97,4 +98,57 @@ test("Pick completes the choice, defers the options not picked, and records the 
   assert.match(md, /^## Updates\n\n- \*\*2026-11-12 — Picked W3\.1 \(Fast\) for W3 \(Pat, in the viewer\):\*\* Pick a path\.\n/m);
   assert.match(md, /^updated: 2026-11-12$/m);
   await assert.rejects(pickChoice(root, "tasks/TASK-0001.md", "W3", ["W3.1"], "Pat", "2026-11-12"), /already decided/);
+});
+
+test("Approve and run runs only a single read-only statement, records the output and completes the step", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "steps-run-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "tasks/TASK-0001-assets"), { recursive: true });
+  await writeFile(join(root, "tasks/TASK-0001.md"), TASK);
+  const machinery = (run: string) => `---\nkind: byron\nstep: TASK-0001 W4\ntarget: dev\nrun: ${run}\n---\n\n# Check\n`;
+  setConfig({ user: "Pat", steps: { run: [process.execPath, "-e", "console.log(JSON.stringify(process.argv.slice(1)))", "{target}", "{statement}"] } });
+  t.after(() => setConfig({}));
+  await writeFile(join(root, "tasks/TASK-0001-assets/write.md"), machinery("drop schema X.Y"));
+  await assert.rejects(runStatement(root, "tasks/TASK-0001-assets/write.md", "Pat", "2026-11-12"), /Only a single read-only statement/);
+  await writeFile(join(root, "tasks/TASK-0001-assets/two.md"), machinery("select 1; drop schema X.Y"));
+  await assert.rejects(runStatement(root, "tasks/TASK-0001-assets/two.md", "Pat", "2026-11-12"), /Only a single read-only statement/);
+  await writeFile(join(root, "tasks/TASK-0001-assets/read.md"), machinery("select current_user()"));
+  const result = await runStatement(root, "tasks/TASK-0001-assets/read.md", "Pat", "2026-11-12");
+  assert.equal(result.ok, true);
+  assert.equal(result.output, '["dev","select current_user()"]');
+  assert.match(await readFile(join(root, "tasks/TASK-0001-assets/read.md"), "utf8"), /## Run, .* \(Pat, in the viewer\)\n\n```text\n\["dev","select current_user\(\)"\]\n```\n$/);
+  assert.match(await readFile(join(root, "tasks/TASK-0001.md"), "utf8"), /^- W4: Run the DROP in the console \[completed\] \{byron, S\}$/m);
+});
+
+test("Apply adds a drafted allow rule once to the workspace settings file", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "steps-apply-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "tasks/TASK-0001-assets"), { recursive: true });
+  await writeFile(join(root, "tasks/TASK-0001.md"), TASK);
+  await writeFile(join(root, "tasks/TASK-0001-assets/rule.md"), "---\nkind: decision\nstep: TASK-0001 W8\napply: Bash(python3 scripts/probe.py:*)\n---\n\n# Rule\n");
+  setConfig({ steps: { settingsFile: ".claude/settings.json" } });
+  t.after(() => setConfig({}));
+  assert.equal((await applyRule(root, "tasks/TASK-0001-assets/rule.md", "Pat", "2026-11-12")).added, true);
+  assert.equal((await applyRule(root, "tasks/TASK-0001-assets/rule.md", "Pat", "2026-11-12")).added, false);
+  assert.deepEqual(JSON.parse(await readFile(join(root, ".claude/settings.json"), "utf8")), { permissions: { allow: ["Bash(python3 scripts/probe.py:*)"] } });
+  setConfig({ steps: { settingsFile: "../outside.json" } });
+  await assert.rejects(applyRule(root, "tasks/TASK-0001-assets/rule.md", "Pat", "2026-11-12"), /inside the workspace/);
+});
+
+test("Start marks the step active, holds a slot until the run ends, and refuses past the slots", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "steps-start-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "tasks"), { recursive: true });
+  await writeFile(join(root, "tasks/TASK-0001.md"), TASK);
+  setConfig({ steps: { start: [process.execPath, "-e", "setTimeout(() => {}, 300)", "{prompt}"], slots: 1 } });
+  t.after(() => setConfig({}));
+  const task = { path: "tasks/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: TASK };
+  const [w11, w91] = ["W11", "W9.1"].map((id) => deriveSteps([task], []).find((s) => s.id === id)!);
+  const started = await startStep(root, w11, "2026-11-12");
+  assert.equal(started.started, true);
+  assert.deepEqual(activeRuns().map((run) => run.key), ["TASK-0001 W11"]);
+  assert.match(await readFile(join(root, "tasks/TASK-0001.md"), "utf8"), /^- W11: Post the review \[active\]$/m);
+  await assert.rejects(startStep(root, w91, "2026-11-12"), /All 1 agent slots are in use/);
+  await new Promise((done) => setTimeout(done, 700));
+  assert.deepEqual(activeRuns(), []);
 });

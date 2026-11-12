@@ -90,13 +90,34 @@ function optionsHtml(step) {
   </form>`;
 }
 
+const READ_ONLY = /^\s*\(*\s*(select|with|show|describe|desc)\b/i;
+const readOnly = (sql) => READ_ONLY.test(sql) && !sql.trim().replace(/;\s*$/, "").includes(";");
+const button = (action, label, primary = false, disabled = "") => `<button type="button" class="${primary ? "outbound-primary" : "outbound-secondary"}" data-step-action="${action}"${disabled ? ` disabled title="${escapeHtml(disabled)}"` : ""}>${label}</button>`;
+
+// What the inspector lets you do now: start an agent, run or copy a statement, apply a rule, or mark it done.
+export function stepActionsHtml(step, { startConfigured = false, runConfigured = false, freeSlots = 0 } = {}) {
+  const f = step.machinery?.fields || {};
+  if (step.move === "agent" && !step.draft && !step.running) {
+    const why = !startConfigured ? "Set steps.start in viewer.config.json" : freeSlots < 1 ? "All agent slots are in use" : "";
+    return `<div class="outbound-actions step-actions">${button("start", "Start", true, why)}<span class="step-choice-note">${step.prompt ? "Runs its prompt as a local agent session." : "No prompt: the agent gets the step title and the task."}</span></div>`;
+  }
+  if (step.running) return `<p class="outbound-note">An agent is running this step.</p>`;
+  if (f.apply) return `<div class="step-run"><h5>Allow rule</h5><pre><code>${escapeHtml(f.apply)}</code></pre></div><div class="outbound-actions step-actions">${button("apply", "Apply", true)}<span class="step-choice-note">Adds it to the workspace's Claude settings.</span></div>`;
+  if (step.move === "you-act") {
+    if (f.run && readOnly(f.run)) return `<div class="outbound-actions step-actions">${button("run", "Approve and run", true, runConfigured ? "" : "Set steps.run in viewer.config.json")}${button("done", "Mark done")}</div>`;
+    return `<div class="outbound-actions step-actions">${f.run ? button("copy-statement", "Copy statement", true) : ""}${button("done", "Mark done", !f.run)}</div>`;
+  }
+  if (step.move === "you-decide" && step.kind === "decision") return `<div class="outbound-actions step-actions">${button("done", "Mark decided")}<span class="step-choice-note">Record the decision in the task, then mark it.</span></div>`;
+  return "";
+}
+
 function machineryHtml(step) {
   const f = step.machinery?.fields || {};
-  return `${f.run ? `<div class="step-run"><h5>Statement</h5><pre><code>${escapeHtml(f.run)}</code></pre>${f.target ? `<p class="outbound-note">Runs as ${escapeHtml(f.target)}</p>` : ""}</div>` : ""}
+  return `${f.run ? `<div class="step-run"><h5>Statement${readOnly(f.run) ? " · read-only" : " · changes data"}</h5><pre><code>${escapeHtml(f.run)}</code></pre>${f.target ? `<p class="outbound-note">Runs as ${escapeHtml(f.target)}${f.undo ? ` · undo: <code>${escapeHtml(f.undo)}</code>` : ""}</p>` : ""}</div>` : ""}
     ${step.machinery ? `<p class="outbound-note"><a class="markdown-document-link" href="?path=${encodeURIComponent(step.machinery.path)}" data-document-path="${escapeHtml(step.machinery.path)}" data-document-anchor="">Open ${escapeHtml(step.machinery.path.split("/").pop())}</a></p>` : ""}`;
 }
 
-export function stepInspectorHtml(step, extra = "") {
+export function stepInspectorHtml(step, extra = "", context = {}) {
   if (!step) return `<p class="task-detail-empty">Select a step to see its draft, prompt or options.</p>`;
   const head = `<header class="task-detail-head"><div class="task-detail-badges"><button class="task-list-id" type="button" data-task-path="${escapeHtml(step.path)}">${escapeHtml(step.task)}</button><span class="step-id">${escapeHtml(step.id)}</span>${pill(step)}</div>
       <span class="task-detail-buttons"><button class="task-detail-open" type="button" data-task-path="${escapeHtml(step.path)}">Workstream <span aria-hidden="true">→</span></button></span></header>
@@ -110,6 +131,6 @@ export function stepInspectorHtml(step, extra = "") {
     : "";
   const prompt = step.prompt ? `<section class="task-detail-section"><h4>Prompt${step.actionTitle ? ` <span class="step-action-title">${escapeHtml(step.actionTitle)}</span>` : ""}</h4><pre class="step-prompt">${escapeHtml(step.prompt)}</pre></section>` : "";
   const untyped = step.move === "unclassified" ? `<p class="outbound-note">No kind and no prompt: add <code>{kind, size}</code> to its line, or a prompt under Next actions with <code>Work item: ${escapeHtml(step.id)}</code>.</p>` : "";
-  return `${head}${friction}${blocked}${untyped}${extra}${body}${prompt}`;
+  return `${head}${friction}${blocked}${untyped}${extra}${body}${stepActionsHtml(step, context)}${prompt}`;
 }
 

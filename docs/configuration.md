@@ -78,6 +78,11 @@ That turns `#1234`, commit SHAs, and `ATL-12` in your Markdown into links with l
 | `outbound.send` | Command that sends an approved outbound draft and records the result, with `{file}` (workspace-relative) and `{sha}` (the hash of the text approved) filled. It must refuse a draft whose hash no longer matches. Empty (the default) disables **Approve and send**. |
 | `outbound.revise` | Command started detached after **Send back**, with `{file}` and `{feedback}` filled: an agent that revises the draft and sets it back to `ready`. Empty starts nothing. Skipped for `dry_run: true` drafts. |
 | `outbound.mark` | Command that records a draft you sent by hand (**Mark sent**), with `{file}` and `{result}` filled. Empty only rewrites its front matter. |
+| `steps.start` | Command that starts a local agent run for a step from the Steps page (**Start**), with `{prompt}`, `{task}`, `{step}` and `{title}` filled. Empty hides Start. |
+| `steps.slots` | Agent runs started from the viewer at once (default 4). |
+| `steps.refill` | `true` starts the next ready agent step that has a prompt when a viewer-started run ends (default `false`). |
+| `steps.run` | Command that runs a `byron` step's single read-only statement on **Approve and run**, with `{statement}` and `{target}` filled. Empty hides it; statements that change data are never run. |
+| `steps.settingsFile` | Workspace-relative Claude settings file that **Apply** adds a drafted allow rule to (`permissions.allow`). Empty hides Apply. |
 | `slack.codex` | Command for Codex's app server, such as `["codex", "app-server"]`. With it, a plain click on a Slack link opens the thread in the viewer, read through the Slack connector signed in to Codex: the server calls the connector's `read_thread` tool directly over the app server's JSON-RPC (`mcpServer/tool/call`), so no model runs and no tokens are spent. Threads are cached in `tmp/slack-threads.json`. Empty (the default) sends Slack links to the desktop app. |
 | `slack.people` | Without a Slack token, a directory search through that same connector for avatars, such as the company's email domain (`"acme.test"`), which pages through everyone's Slack profile photo (about 20 people a call, no model). It joins the daily people index in `tmp/people-cache.json`. Empty skips it. |
 

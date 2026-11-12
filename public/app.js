@@ -1993,6 +1993,8 @@ function readStepsUrl() {
   selectedStep = params.get("step") || "";
 }
 
+const stepContext = () => ({ startConfigured: Boolean(stepsData?.startConfigured), runConfigured: Boolean(config().steps.run?.length), freeSlots: (stepsData?.slots || 0) - (stepsData?.runs?.length || 0) });
+
 function renderStepsPage() {
   state.view = "steps";
   resetPageNavigation();
@@ -2018,7 +2020,7 @@ function renderStepsPage() {
   const step = steps.find((candidate) => stepKey(candidate) === selectedStep);
   elements.chunks.innerHTML = `<section class="task-browser" aria-label="Open steps">
     <div class="task-index">${stepsToolbarHtml(steps, stepsFilters, stepsData.slots, stepsData.runs?.length || 0)}${stepsTableHtml(steps, stepsFilters, selectedStep)}</div>
-    <aside class="task-detail step-detail" id="task-detail" aria-live="polite">${stepInspectorHtml(step)}</aside>
+    <aside class="task-detail step-detail" id="task-detail" aria-live="polite">${stepInspectorHtml(step, "", stepContext())}</aside>
   </section>`;
 }
 
@@ -2044,7 +2046,29 @@ elements.chunks.addEventListener("click", (event) => {
   updateStepsUrl("replace");
   for (const tr of elements.chunks.querySelectorAll("tr[data-select-step]")) tr.setAttribute("aria-selected", tr.dataset.selectStep === selectedStep);
   const step = stepsData.steps.find((candidate) => stepKey(candidate) === selectedStep);
-  document.getElementById("task-detail").innerHTML = stepInspectorHtml(step);
+  document.getElementById("task-detail").innerHTML = stepInspectorHtml(step, "", stepContext());
+});
+elements.chunks.addEventListener("click", async (event) => {
+  const action = state.view === "steps" && event.target.closest("[data-step-action]");
+  if (!action || action.disabled) return;
+  const step = stepsData.steps.find((candidate) => stepKey(candidate) === selectedStep);
+  if (!step) return;
+  const post = async (route, body) => {
+    const response = await fetch(`/api/steps/${route}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "The viewer couldn't do that.");
+    return data;
+  };
+  try {
+    const kind = action.dataset.stepAction;
+    if (kind === "copy-statement") { await navigator.clipboard.writeText(step.machinery.fields.run); action.classList.add("is-copied"); setTimeout(() => action.classList.remove("is-copied"), 900); return; }
+    action.disabled = true;
+    if (kind === "start") { await post("start", { key: step.key }); showNotice(`Started an agent on ${step.task} ${step.id}.`); }
+    if (kind === "run") { const result = await post("run", { path: step.machinery.path }); showNotice(result.ok ? "Ran it; the output is in its file." : "The statement failed; the error is in its file.", !result.ok); }
+    if (kind === "apply") { const result = await post("apply", { path: step.machinery.path }); showNotice(result.added ? `Added ${result.rule} to ${result.file}.` : `${result.file} already allows it.`); }
+    if (kind === "done") { await post("done", { path: step.path, id: step.id }); showNotice(`Marked ${step.task} ${step.id} done.`); }
+  } catch (error) { showNotice(error.message, true); }
+  refreshSteps();
 });
 elements.chunks.addEventListener("change", (event) => {
   if (state.view !== "steps") return;
