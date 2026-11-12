@@ -1047,7 +1047,7 @@ function renderImageViewer() {
       </div>
       ${source ? `<aside class="diagram-source" aria-label="Diagram source">
         <header><span title="${escapeHtml(item.diagram)}">${escapeHtml(item.diagram.split("/").pop())}</span><button type="button" data-image-action="copy-source" title="Copy the source">${glyph("copy")}<span>Copy</span></button></header>
-        <pre>${item.source === undefined ? `<span class="draft-loading">Loading…</span>` : sourceHtml(item.source)}</pre>
+        <pre>${item.source === undefined ? `<span class="draft-loading">Loading…</span>` : item.source === null ? `<span class="draft-loading">Could not load the diagram. <button type="button" data-image-action="retry-diagram">Retry</button></span>` : sourceHtml(item.source)}</pre>
         <form class="diagram-ask" data-diagram-ask>
           <textarea rows="1" aria-label="Ask ${escapeHtml(agentName())} about this diagram" placeholder="Ask ${escapeHtml(agentName())} to change this diagram (D)…">${escapeHtml(diagramDrafts.get(item.diagram) || "")}</textarea>
           <footer><span class="code-spacer"></span><button type="button" data-image-action="copy-prompt">Copy prompt</button><button class="is-primary" type="submit">Open in ${escapeHtml(agentName())}</button></footer>
@@ -2146,22 +2146,34 @@ function announceChange(change) {
 
 let diagramListTimer = 0;
 let pendingDiagram = "";
-function connectLiveUpdates() {
-  const events = new EventSource("/api/events");
-  events.addEventListener("diagram", (event) => {
-    try { refreshDiagram(JSON.parse(event.data).path); } catch { /* malformed event */ }
+const LIVE_HANDLERS = {
+  diagram: (update) => {
+    refreshDiagram(update.path);
     clearTimeout(diagramListTimer);
     diagramListTimer = setTimeout(loadDiagrams, 300);
-  });
-  events.addEventListener("markdown", (event) => {
-    try {
-      const update = JSON.parse(event.data);
-      if (update.change) announceChange(update.change);
-      if (update.path) scheduleMarkdownRefresh(update.path);
-    } catch {
-      // Ignore malformed live events; EventSource will keep the connection alive.
-    }
-  });
+  },
+  markdown: (update) => {
+    if (update.change) announceChange(update.change);
+    if (update.path) scheduleMarkdownRefresh(update.path);
+  },
+};
+// One `/api/events` stream serves every viewer tab of this origin. A browser allows six connections per host, and
+// a stream holds one for as long as the tab is open, so a stream per tab left the sixth tab and every request after
+// it queued forever. The tab holding the lock opens the stream and relays each event to the others; when it closes,
+// the lock (and the stream) passes to another tab.
+function connectLiveUpdates() {
+  const handle = (type, data) => {
+    try { LIVE_HANDLERS[type](JSON.parse(data)); } catch { /* malformed event; the stream stays open */ }
+  };
+  const open = (relay) => {
+    const events = new EventSource("/api/events");
+    for (const type of Object.keys(LIVE_HANDLERS)) events.addEventListener(type, (event) => { handle(type, event.data); relay?.postMessage({ type, data: event.data }); });
+  };
+  if (!navigator.locks || !window.BroadcastChannel) return open(); // not a secure context (a LAN address): a stream per tab
+  const channel = new BroadcastChannel("plan-viewer:events");
+  channel.addEventListener("message", (event) => handle(event.data.type, event.data.data));
+  // Never settles, so the lock is held until the tab goes away.
+  navigator.locks.request("plan-viewer:events", () => new Promise(() => open(channel)));
 }
 
 // `copy` asks for the prompt instead of an opened draft (Copy prompt).
@@ -2713,6 +2725,7 @@ elements.imageViewer.addEventListener("click", (event) => {
   else if (action === "edit-diagram") openDiagramEditor(imageViewerState.items[imageViewerState.index]?.diagram);
   else if (action === "toggle-source") toggleDiagramSource();
   else if (action === "copy-source") copyDiagramSource(event.target.closest("button"));
+  else if (action === "retry-diagram") { const item = currentDiagram(); if (item) { item.source = undefined; item.loaded = false; renderImageViewer(); } }
   else if (action === "copy-prompt") askAboutDiagram(true);
   else if (action === "copy-png") copyDiagramPng();
   else if (action === "panels") setDiagramPanels(event.target.closest("[data-panels]").dataset.panels);
@@ -2846,7 +2859,7 @@ async function copyDiagramPng() {
 
 async function copyDiagramSource(button) {
   const item = currentDiagram();
-  if (item?.source === undefined) return;
+  if (typeof item?.source !== "string") return;
   await navigator.clipboard.writeText(item.source);
   button.classList.remove("is-copied");
   void button.offsetWidth;
@@ -2854,11 +2867,13 @@ async function copyDiagramSource(button) {
 }
 
 // Draws the item inline from the server's SVG and reads its source; re-renders the viewer if it is still showing it.
+// A request that fails or takes over 15 seconds leaves `source` null, which the source pane shows with a Retry.
 async function loadDiagram(item) {
   item.loaded = true;
+  const signal = AbortSignal.timeout(15_000);
   const [svg, source] = await Promise.all([
-    fetch(`${diagramHref(item.diagram)}&panels=${imageViewerState.panels}&v=${Date.now()}`).then((response) => response.text()).catch(() => ""),
-    fetch(`/api/asset?${new URLSearchParams({ path: item.diagram })}`).then((response) => response.ok ? response.text() : "").catch(() => ""),
+    fetch(`${diagramHref(item.diagram)}&panels=${imageViewerState.panels}&v=${Date.now()}`, { signal }).then((response) => response.text()).catch(() => ""),
+    fetch(`/api/asset?${new URLSearchParams({ path: item.diagram })}`, { signal }).then((response) => response.ok ? response.text() : null).catch(() => null),
   ]);
   const drawn = inlineSvg(svg);
   if (drawn) Object.assign(item, { svg: drawn.html, width: drawn.width, height: drawn.height });
@@ -2868,7 +2883,7 @@ async function loadDiagram(item) {
     // A redraw swaps the drawing and source in place, so zoom, pan, scroll and a half-typed request stay put.
     const drawing = elements.imageViewer.querySelector(".image-viewer-diagram");
     const pre = elements.imageViewer.querySelector(".diagram-source pre");
-    if (drawing && item.svg && wasDiff === isDiffDiagram(source)) {
+    if (drawing && item.svg && typeof source === "string" && wasDiff === isDiffDiagram(source)) {
       drawing.innerHTML = item.svg;
       if (pre) { const scroll = pre.scrollTop; pre.innerHTML = sourceHtml(item.source); pre.scrollTop = scroll; }
     } else {

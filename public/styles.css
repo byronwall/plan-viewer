@@ -2765,6 +2765,8 @@ body:has(.activity-page), body:has(.activity-page) .reading-pane { background: v
 .draft-mark { color: #b0431f; font-weight: 700; }
 .draft-comment { color: var(--muted); font-style: italic; }
 .draft-loading { padding-left: 14px; color: var(--muted); }
+.draft-loading button { border: 0; background: none; padding: 0; color: var(--action); font: inherit; cursor: pointer; transition: color 140ms; }
+.draft-loading button:hover { color: var(--action-deep); }
 @media (max-width: 760px) {
   .image-viewer-body.has-source, .image-viewer-body.has-source:not(.is-single) { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 40%; }
   .diagram-source { grid-row: 2; border-left: 0; border-top: 1px solid var(--line); }
