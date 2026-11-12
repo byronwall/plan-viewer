@@ -74,6 +74,29 @@ export const DEFAULT_CONFIG = {
     // and the image viewer's Edit button runs `<command> open <file>`.
     command: ["draftably"],
   },
+  // Outbound drafts (task assets with `outbound:` front matter): Approve and send, Send back and Mark sent on the
+  // draft's page and the Steps page. `{file}` is the workspace-relative draft, `{sha}` the hash of the text approved.
+  outbound: {
+    // Sends an approved draft and records the result; empty disables Approve and send. It must check `{sha}` itself.
+    send: [],
+    // Started detached after Send back, `{file}` and `{feedback}` filled: an agent that revises the draft.
+    revise: [],
+    // Records a draft the user sent by hand, `{file}` and `{result}` filled; empty only rewrites its front matter.
+    mark: [],
+  },
+  // The Steps page: every open work-breakdown line, grouped by who makes the next move.
+  steps: {
+    // Starts a local agent run for a step, `{prompt}`, `{task}`, `{step}` and `{title}` filled; empty hides Start.
+    start: [],
+    // Agent runs started from the viewer at once; a finished run frees its slot.
+    slots: 4,
+    // When a viewer-started run ends, start the next ready agent step in its place.
+    refill: false,
+    // Runs a `byron` step's read-only statement after the user's click, `{statement}` and `{target}` filled; empty hides Run.
+    run: [],
+    // Settings file a drafted allow rule is added to on Apply (workspace-relative); empty hides Apply.
+    settingsFile: "",
+  },
   slack: {
     // Command for Codex's app server, e.g. ["codex", "app-server"]: Slack links then open a local thread preview, read
     // through the Slack connector signed in to Codex (a direct tool call; no model runs). Empty sends them to Slack.
@@ -89,6 +112,8 @@ const merge = (overrides = {}) => ({
   ...overrides,
   github: { ...DEFAULT_CONFIG.github, ...overrides.github },
   code: { ...DEFAULT_CONFIG.code, ...overrides.code },
+  outbound: { ...DEFAULT_CONFIG.outbound, ...overrides.outbound },
+  steps: { ...DEFAULT_CONFIG.steps, ...overrides.steps },
   issues: { ...DEFAULT_CONFIG.issues, ...overrides.issues, triage: { ...DEFAULT_CONFIG.issues.triage, ...overrides.issues?.triage }, linear: { ...DEFAULT_CONFIG.issues.linear, ...overrides.issues?.linear } },
 });
 

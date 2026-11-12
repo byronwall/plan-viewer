@@ -19,6 +19,7 @@ import { createPlans } from "./plans.ts";
 import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig } from "./public/config.js";
+import { approveOutbound, draftFromText, dropOutbound, listOutbound, markOutboundSent, sendBackOutbound, stripFrontMatter } from "./outbound.ts";
 
 // The planning workspace is the current directory (npm scripts run from the content repository); PLANNING_ROOT
 // overrides it, and points tests at fixtures/planning so they never read live planning files.
@@ -640,7 +641,8 @@ export async function loadDocument(requested: string) {
   const path = safeDocumentPath(requested);
   const contents = await readFile(path.absolute, "utf8");
   const summary = summarize(path.relative, contents);
-  const renderedContents = summary.kind === "Task" ? parseTaskDocument(path.relative, contents).body : contents;
+  const outbound = summary.kind === "Task" ? null : draftFromText(path.relative, contents);
+  const renderedContents = summary.kind === "Task" ? parseTaskDocument(path.relative, contents).body : stripFrontMatter(contents);
   const chunks = summary.format === "markdown"
     ? parseChunks(renderedContents)
     : [{ id: "document", anchor: "document", title: summary.title, markdown: contents, level: 1, kind: "overview" as const }];
@@ -678,7 +680,7 @@ export async function loadDocument(requested: string) {
       chunks.splice(chunks.findIndex(chunk => chunk === scheduled) + 1, 0, { id: "scheduled-next-steps", anchor: "next-steps", title: "Next steps", markdown: "", level: 2, kind: "section" });
     }
   }
-  return { ...summary, absolutePath: path.absolute, markdown: contents, chatLinks: extractChatLinks(renderedContents), chunks, nextActions, scheduledActions, actionWarnings, work };
+  return { ...summary, outbound, absolutePath: path.absolute, markdown: contents, chatLinks: extractChatLinks(renderedContents), chunks, nextActions, scheduledActions, actionWarnings, work };
 }
 
 // Names the open file, and its task ID for a task file, so the receiving agent never has to guess what was on screen.
@@ -1078,6 +1080,18 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request);
       viewerWrites.add(String(body.path || ""));
       return json(response, 200, { task: await setTaskStatus(String(body.path || ""), String(body.status || ""), ROOT, todayDate(), body.days === undefined ? config().checkInDays : Number(body.days)) });
+    }
+    if (request.method === "GET" && url.pathname === "/api/outbound") return json(response, 200, { drafts: await listOutbound(ROOT), sendConfigured: Boolean(config().outbound.send.length) });
+    if (request.method === "POST" && url.pathname.startsWith("/api/outbound/")) {
+      const body = await readJson(request);
+      const path = String(body.path || "");
+      viewerWrites.add(path);
+      const action = url.pathname.slice("/api/outbound/".length);
+      if (action === "approve") return json(response, 200, await approveOutbound(ROOT, path, String(body.sha || "")));
+      if (action === "send-back") return json(response, 200, await sendBackOutbound(ROOT, path, String(body.feedback || "")));
+      if (action === "drop") return json(response, 200, await dropOutbound(ROOT, path));
+      if (action === "mark-sent") return json(response, 200, await markOutboundSent(ROOT, path, String(body.result || "")));
+      return json(response, 404, { error: "Unknown outbound action." });
     }
     if (request.method === "GET" && url.pathname === "/api/waiting") {
       const tasks = (await listDocuments()).filter((doc) => doc.task?.watch?.length);

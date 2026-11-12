@@ -75,6 +75,32 @@ Diagrams are [draftably](https://github.com/byronwall/draftably) `.draft` files 
 
 A plain link to an image in the workspace (`[Proposal gallery](TASK-0101-assets/gallery.png)`) also gets a thumbnail like a diagram's. A list whose every item starts with an image link becomes a row of thumbnails: the link text is the caption, and the rest of the item (after an optional `:` or `—`) sits under it. Anywhere else, such as in a paragraph or a mixed list, the link stays in the text and the images it links to follow as a row of thumbnails. A thumbnail or the link opens the image viewer, with the document's other images and diagrams in its rail.
 
+## Outbound drafts
+
+A task asset that opens with `outbound:` front matter is a message, comment or issue waiting to go out:
+
+```markdown
+---
+outbound: jira-comment
+target: ABC-123
+status: ready
+step: TASK-0101 W2.1
+send: comment
+---
+
+# Comment on ABC-123
+
+Notes for the reader.
+
+<!-- jira:start -->
+The text that goes out.
+<!-- jira:end -->
+```
+
+`outbound` is the kind (`jira-issue`, `jira-comment`, `jira-edit`, `jira-transition`, `slack`, `pr-comment`, `review-request`, `email`), `target` where it goes, `step` the work item it completes, and `send` the kind's flags for the workspace's sender (`manual` when you send it yourself). The text that goes out sits between `<!-- jira:start -->` and `<!-- jira:end -->`, or `<!-- send:start -->` and `<!-- send:end -->`; everything else is notes. `dry_run: true` makes every send of that file a dry run.
+
+The draft's page opens with an approval panel: the kind, target, step, the hash of the text, a status, and the exact text under **Will go out** (the page below shows the notes). **Approve and send** records your click and that hash in the front matter (`status: approved`, `approved: <time> sha=<hash> by=viewer`) and runs `outbound.send`, which checks the hash again before sending; if the text changed since the page showed it, nothing is sent and the draft goes back to **Ready for you** with "Changed since you read it". A sender error leaves it **Didn't send** with the error and a **Retry**. **Send back** opens a box for your feedback, appends it under the notes as a dated section, sets `status: revise`, and starts `outbound.revise` (an agent that revises the draft and sets it back to `ready`, which needs your approval again). **Drop** sets `status: dropped`. A `send: manual` draft offers **Copy text** (as rich text) and **Mark sent** instead, with a note that it is friction. The viewer never sends anything itself; with no `outbound.send`, Approve and send is disabled.
+
 ## Tasks, next actions, and links
 
 The Tasks page (`A`) lists unfinished tasks, with a **Contents** column counting the documents, diagrams and images in each task's assets folder (sortable by their total); clicking a row reads it in the detail pane, and a double-click opens the task file. **Show N completed or deferred** adds the rest below them, in the same sort, and `&done=1` keeps that on the URL. It is the same control, wording, and rule as a task's work breakdown. **Waiting** is for work that sits with someone else: it stays tracked but drops below open tasks until it needs a look, then leads the list as **Check in** and counts on the rail's **Tasks** link. Two things bring it back, both computed, so nothing needs re-editing: its check-in date arriving, or something it watches moving. Pick **Waiting** in the status menu (click a status, or right-click a row) for a check-in a week out, or **3d**, **1w**, **2w** or **4w** under it; on a waiting task the same buttons push the date out. The viewer writes `check_in: YYYY-MM-DD` to the front matter (leaving waiting removes it); a waiting task without one checks in `checkInDays` after its `updated` date. It watches the PRs, GitHub issues and Linear or Jira issues its `## Next actions` name, and one counts as moved when its dated state (merged, closed, opened, or the tracker's last update, from the same cache as link titles) falls after the task's `updated` day, so recording a check-in or setting the status again resets it. The detail pane's **Waiting on** lists the check-in date and each watched item with its state, moved ones first and dated; the status's hover says why a task is due.

@@ -3079,3 +3079,43 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .tab-brief-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab-brief-chip:focus-visible, .tab-brief-hide:focus-visible { outline: 2px solid var(--action); outline-offset: -2px; }
 @media (prefers-reduced-motion: reduce) { .tab-brief-hide, .tab-brief-chip { transition: none; } }
+
+/* Outbound drafts: the approval panel on a draft's page and in the Steps inspector. Flat, one hairline, actions first. */
+.outbound-panel { min-width: 0; display: grid; gap: 8px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px clamp(14px, 2vw, 22px); }
+.outbound-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: .82rem; color: var(--body-ink); }
+.outbound-kind { display: inline-flex; align-items: center; gap: 2px; font-weight: 700; color: var(--ink); }
+.outbound-target a { white-space: nowrap; }
+.outbound-meta { color: var(--muted); font-size: .76rem; }
+.outbound-step-id { font: 650 .72rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+.outbound-status { margin-left: auto; }
+.outbound-status-due { background: var(--status-waiting-field); color: var(--status-waiting-ink); }
+.outbound-status-open { background: #e3e7ed; color: #465268; }
+.outbound-status-active { background: var(--selected); color: var(--action-ink); }
+.outbound-status-completed { background: var(--success-field); color: var(--success-ink); }
+.outbound-status-deferred { background: #ece7f5; color: #5d477b; }
+.outbound-status-failed { background: #f7e8e7; color: var(--danger); }
+.outbound-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.outbound-primary, .outbound-secondary, .outbound-quiet { height: 28px; border-radius: 7px; padding: 0 11px; font: inherit; font-size: .78rem; font-weight: 650; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease; }
+.outbound-primary { border: 1px solid var(--action); background: var(--action); color: var(--paper); }
+.outbound-primary:hover:not(:disabled) { border-color: var(--action-deep); background: var(--action-deep); }
+.outbound-primary:active:not(:disabled) { transform: translateY(1px); }
+.outbound-primary:disabled { opacity: .55; cursor: default; }
+.outbound-primary.is-copied { background: var(--success); border-color: var(--success); }
+.outbound-secondary { border: 1px solid var(--line-strong); background: var(--paper); color: var(--control-ink, #344057); }
+.outbound-secondary:hover { border-color: #aeb8ca; background: var(--hover-field); }
+.outbound-quiet { border: 1px solid transparent; background: transparent; color: var(--muted); }
+.outbound-quiet:hover { background: var(--quiet-field); color: var(--ink); }
+.outbound-note { margin: 0; color: var(--muted); font-size: .78rem; }
+.outbound-note.is-error { color: var(--danger); }
+.outbound-note.is-friction { color: var(--status-waiting-ink); }
+.outbound-form { display: grid; gap: 6px; }
+.outbound-form[hidden] { display: none; }
+.outbound-form textarea, .outbound-form input { width: 100%; box-sizing: border-box; border: 1px solid var(--line-strong); border-radius: 7px; padding: 6px 8px; font: inherit; font-size: .82rem; color: var(--ink); field-sizing: content; min-height: 2.2em; }
+.outbound-form textarea:focus, .outbound-form input:focus { outline: none; border-color: var(--action); box-shadow: 0 0 0 3px rgba(49, 87, 213, .14); }
+.outbound-body { border-top: 1px solid var(--line); padding-top: 8px; }
+.outbound-body h5 { margin: 0 0 4px; color: var(--label-text); font: 650 .66rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .035em; text-transform: uppercase; }
+@media (prefers-reduced-motion: reduce) { .outbound-primary, .outbound-secondary, .outbound-quiet { transition: none; } }
+.outbound-panel a { color: var(--action-ink); text-decoration: none; }
+.outbound-panel a:hover { color: var(--action-deep); }
+.outbound-body .markdown { margin: 0; padding: 0; }
+.outbound-body .markdown > :first-child { margin-top: 0; }

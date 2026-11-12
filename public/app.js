@@ -14,6 +14,7 @@ import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { installBrief } from "./brief.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
+import { bindOutbound, outboundPanel } from "./outbound.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice, setPlansPageOpener } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
@@ -1787,7 +1788,7 @@ function renderDocument() {
       actionGroups.set(chunk.id, /^next steps$/i.test(chunk.title) ? [...doc.nextActions, ...doc.scheduledActions] : doc.nextActions);
     }
   }
-  elements.chunks.innerHTML = doc.chunks.map((chunk, index) => `<article class="chunk-card" id="${chunk.id}" data-source-anchor="${escapeHtml(chunk.anchor)}">
+  elements.chunks.innerHTML = (doc.outbound ? outboundPanel(doc.outbound, { showBody: true }) : "") + doc.chunks.map((chunk, index) => `<article class="chunk-card" id="${chunk.id}" data-source-anchor="${escapeHtml(chunk.anchor)}">
     <div class="chunk-heading">
       <span class="chunk-index">${String(index + 1).padStart(2, "0")}</span>
       <h2>${escapeHtml(chunk.title)}</h2>
@@ -1938,6 +1939,18 @@ function scrollToDocumentAnchor(anchor, behavior = "instant") {
   target.scrollIntoView({ block: "start", behavior });
   setActiveChunk(card.id);
 }
+
+// The Steps page's data (`/api/steps`), kept so the Outbox panel can copy a manual draft's text.
+let stepsData = null;
+const stepsOutboundBody = (path) => stepsData?.outbound?.find((draft) => draft.path === path)?.body || "";
+async function refreshSteps() {}
+
+// Approve and send, Send back and Drop on outbound drafts, on a draft's page and in the Steps inspector.
+bindOutbound(elements.chunks, {
+  notice: (message, error = false) => showNotice(message, error),
+  refresh: () => state.view === "steps" ? refreshSteps() : state.selectedPath && refreshFromMarkdown(new Set([state.selectedPath])),
+  bodyOf: (path) => state.view === "steps" ? stepsOutboundBody(path) : state.document?.outbound?.path === path ? state.document.outbound.body : "",
+});
 
 async function selectDocument(path, { historyMode = "push", anchor = "" } = {}) {
   if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;

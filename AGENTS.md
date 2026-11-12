@@ -40,6 +40,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 | Diagrams: `.draft` files drawn on request by the draftably CLI (`renderDiagram`, `/api/diagram`, `/api/diagram/open` in `server.ts`, live redraw through the `diagram` event), and the image viewer's diagram mode (inline SVG beside the hover-linked source, `?diagram=`) | `public/diagram.js`, image viewer in `public/app.js` |
 | World views (`?world=TASK-NNNN`, `?world=all`): a task's assets, plan mentions and updates as day columns and kind lanes, and every task as a row on the same axis (`listTaskWorld`, `/api/task-world` in `server.ts`) | `public/world.js` |
 | Diagrams page (`?view=diagrams`): every `.draft` as thumbnails grouped by task, with a filter (`listDiagrams`, `/api/diagrams` in `server.ts`) | `public/diagrams-page.js` |
+| Outbound drafts (task assets with `outbound:` front matter): fields, the hash of the outgoing text, Approve and send through `outbound.send`, Send back, Drop, Mark sent (`/api/outbound/*`); the approval panel on a draft's page | `outbound.ts` (server), `public/outbound.js` (panel and its delegated handlers) |
 | Codex Desktop deep links | `codex-desktop.ts` |
 | Tab brief (`?brief=`): why an agent opened this tab, pinned at the top and above overlays, hidden to a chip, kept in sessionStorage | `public/brief.js` |
 | Expanded table: sort, column filters, resize | `public/table-viewer.js` (opened by `showTableViewer` in `app.js`) |
