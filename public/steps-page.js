@@ -41,7 +41,8 @@ export function moveCounts(steps, kind = "any") {
 
 const pill = (step) => {
   const tone = step.move === "you-act" ? "friction" : step.move === "you-decide" ? "you" : step.move;
-  const text = step.move === "agent" ? `Agent · ${step.running ? "running" : step.reason}` : step.move.startsWith("you") ? `You · ${step.reason}` : MOVES[step.move].label;
+  const short = step.move === "you-act" ? (step.draft ? "send by hand" : "act") : step.reason.length > 16 ? "decide" : step.reason;
+  const text = step.move === "agent" ? `Agent · ${step.running ? "running" : step.reason}` : step.move.startsWith("you") ? `You · ${short}` : MOVES[step.move].label;
   return `<span class="step-move step-move-${tone}" title="${escapeHtml(step.reason)}">${escapeHtml(text)}</span>`;
 };
 

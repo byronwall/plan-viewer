@@ -3165,3 +3165,7 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .step-run pre { margin: 4px 0; white-space: pre-wrap; background: #f6f7fa; border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; font-size: .78rem; }
 .step-run h5 { margin: 10px 0 0; color: var(--label-text); font: 650 .66rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .035em; text-transform: uppercase; }
 .outbound-body, .step-detail { min-width: 0; overflow-wrap: anywhere; }
+.step-detail .task-detail-badges { flex-wrap: wrap; }
+.step-detail .task-list-id, .step-detail .step-id { white-space: nowrap; }
+.step-detail a { color: var(--action-ink); text-decoration: none; }
+.step-detail a:hover { color: var(--action-deep); }
