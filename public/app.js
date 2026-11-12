@@ -1801,7 +1801,7 @@ function renderDocument() {
       actionGroups.set(chunk.id, /^next steps$/i.test(chunk.title) ? [...doc.nextActions, ...doc.scheduledActions] : doc.nextActions);
     }
   }
-  elements.chunks.innerHTML = (doc.outbound ? outboundPanel(doc.outbound, { showBody: true }) : "") + doc.chunks.map((chunk, index) => `<article class="chunk-card" id="${chunk.id}" data-source-anchor="${escapeHtml(chunk.anchor)}">
+  elements.chunks.innerHTML = (doc.outbound ? outboundPanel(doc.outbound, { showBody: true }) : "") + (doc.path === state.defaultPath ? todayLeadHtml() : "") + doc.chunks.map((chunk, index) => `<article class="chunk-card" id="${chunk.id}" data-source-anchor="${escapeHtml(chunk.anchor)}">
     <div class="chunk-heading">
       <span class="chunk-index">${String(index + 1).padStart(2, "0")}</span>
       <h2>${escapeHtml(chunk.title)}</h2>
@@ -1993,6 +1993,22 @@ function readStepsUrl() {
   selectedStep = params.get("step") || "";
 }
 
+// Today's plan opens with what waits on you, from the Steps page: decisions first, then friction, each a link to its step.
+function todayLeadHtml() {
+  if (!stepsData) {
+    loadSteps().then(() => { if (state.view === "document" && state.document?.path === state.defaultPath) renderDocument(); });
+    return "";
+  }
+  const mine = visibleSteps(stepsData.steps, { move: "you" });
+  if (!mine.length) return `<section class="today-lead"><h2>Next move is yours</h2><p class="outbound-note">Nothing waits on you.</p></section>`;
+  const decide = mine.filter((step) => step.move === "you-decide").length;
+  const link = (step) => `<a class="today-lead-row" href="?view=steps&step=${encodeURIComponent(stepKey(step))}" data-open-step="${escapeHtml(stepKey(step))}"><span class="step-move step-move-${step.move === "you-act" ? "friction" : "you"}">${step.move === "you-act" ? "Friction" : "Decide"}</span><span class="today-lead-title">${escapeHtml(step.title.split(" — ")[0])}</span><span class="today-lead-meta">${escapeHtml(step.task)} ${escapeHtml(step.id)} · ${escapeHtml(step.reason)}</span></a>`;
+  const shown = mine.slice(0, 8);
+  return `<section class="today-lead" aria-label="Next move is yours"><h2>Next move is yours <span>${decide} to decide${mine.length - decide ? ` · ${mine.length - decide} friction` : ""}</span></h2>
+    <div class="today-lead-rows">${shown.map(link).join("")}</div>
+    ${mine.length > shown.length ? `<a class="today-lead-more" href="?view=steps" data-open-step="">All ${mine.length} on Steps →</a>` : ""}</section>`;
+}
+
 const stepContext = () => ({ startConfigured: Boolean(stepsData?.startConfigured), runConfigured: Boolean(config().steps.run?.length), freeSlots: (stepsData?.slots || 0) - (stepsData?.runs?.length || 0) });
 
 function renderStepsPage() {
@@ -2035,6 +2051,15 @@ function showSteps({ historyMode = "push", kind } = {}) {
 }
 
 elements.stepsButton.addEventListener("click", () => showSteps({ kind: "any" }));
+elements.chunks.addEventListener("click", (event) => {
+  const open = event.target.closest("[data-open-step]");
+  if (!open || event.metaKey || event.ctrlKey) return;
+  event.preventDefault();
+  stepsFilters.kind = "any";
+  stepsFilters.move = "you";
+  selectedStep = open.dataset.openStep;
+  showSteps();
+});
 elements.outboxButton.addEventListener("click", () => showSteps({ kind: "outbound" }));
 elements.chunks.addEventListener("click", (event) => {
   if (state.view !== "steps") return;

@@ -83,6 +83,8 @@ That turns `#1234`, commit SHAs, and `ATL-12` in your Markdown into links with l
 | `steps.refill` | `true` starts the next ready agent step that has a prompt when a viewer-started run ends (default `false`). |
 | `steps.run` | Command that runs a `byron` step's single read-only statement on **Approve and run**, with `{statement}` and `{target}` filled. Empty hides it; statements that change data are never run. |
 | `steps.settingsFile` | Workspace-relative Claude settings file that **Apply** adds a drafted allow rule to (`permissions.allow`). Empty hides Apply. |
+| `steps.requireSizeFrom` | Date (`YYYY-MM-DD`): `lint` requires a size on open steps of tasks created on or after it. Empty (the default) never requires one. |
+| `steps.forbiddenInPrompts` | Words `lint` rejects in Next action prompts, such as a sign-in flow agents can't complete. Default none. |
 | `slack.codex` | Command for Codex's app server, such as `["codex", "app-server"]`. With it, a plain click on a Slack link opens the thread in the viewer, read through the Slack connector signed in to Codex: the server calls the connector's `read_thread` tool directly over the app server's JSON-RPC (`mcpServer/tool/call`), so no model runs and no tokens are spent. Threads are cached in `tmp/slack-threads.json`. Empty (the default) sends Slack links to the desktop app. |
 | `slack.people` | Without a Slack token, a directory search through that same connector for avatars, such as the company's email domain (`"acme.test"`), which pages through everyone's Slack profile photo (about 20 people a call, no model). It joins the daily people index in `tmp/people-cache.json`. Empty skips it. |
 

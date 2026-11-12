@@ -96,6 +96,10 @@ export const DEFAULT_CONFIG = {
     run: [],
     // Settings file a drafted allow rule is added to on Apply (workspace-relative); empty hides Apply.
     settingsFile: "",
+    // Lint: open steps in tasks created on or after this date (YYYY-MM-DD) need a size; empty never requires one.
+    requireSizeFrom: "",
+    // Lint: words no Next action prompt may contain, such as a sign-in flow agents can't complete.
+    forbiddenInPrompts: [],
   },
   slack: {
     // Command for Codex's app server, e.g. ["codex", "app-server"]: Slack links then open a local thread preview, read

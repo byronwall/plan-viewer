@@ -3169,3 +3169,15 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .step-detail .task-list-id, .step-detail .step-id { white-space: nowrap; }
 .step-detail a { color: var(--action-ink); text-decoration: none; }
 .step-detail a:hover { color: var(--action-deep); }
+
+/* Today's plan opens with what waits on you. */
+.today-lead { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px clamp(14px, 2vw, 22px); }
+.today-lead h2 { margin: 0 0 6px; font-size: 1rem; }
+.today-lead h2 span { margin-left: 8px; color: var(--muted); font-size: .78rem; font-weight: 550; }
+.today-lead-rows { display: grid; }
+.today-lead-row { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 5px 4px; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none; transition: background-color 140ms ease; }
+.today-lead-row:hover { background: var(--hover-field); }
+.today-lead-row .step-move { justify-self: start; }
+.today-lead-title { font-size: .86rem; font-weight: 600; }
+.today-lead-meta { color: var(--muted); font-size: .74rem; white-space: nowrap; }
+.today-lead-more { display: inline-block; margin-top: 6px; color: var(--action-ink); font-size: .78rem; font-weight: 650; text-decoration: none; }

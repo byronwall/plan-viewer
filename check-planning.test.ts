@@ -107,3 +107,26 @@ test("planning lint and the commit hook check the index rather than the correcte
   await rm(join(root, taskPath));
   assert.deepEqual((await checkPlanning([], root)).errors, [], "an unstaged move must not fail the full lint");
 });
+
+test("step lint: known kinds, waiting only on others, choices with one default, sizes on new tasks, banned prompt words", async (t) => {
+  const { stepErrors, draftErrors } = await import("./check-planning.ts");
+  const { setConfig } = await import("./public/config.js");
+  const { parseWorkBreakdown } = await import("./public/actions.js");
+  setConfig({ steps: { requireSizeFrom: "2026-11-13", forbiddenInPrompts: ["externalbrowser"] } });
+  t.after(() => setConfig({}));
+  const nodes = parseWorkBreakdown(`- W1: A [waiting] {decision, S}
+- W2: B [open] {mystery, S}
+- W3: Pick [open] {pick-one, S}
+  - W3.1: X — x [open] {option}
+  - W3.2: Y — y [open]
+- W4: No size [open] {agent}`).nodes;
+  const errors = stepErrors({ created: "2026-11-13" }, nodes, [{ title: "Read", prompt: "snow sql --authenticator externalbrowser" }]);
+  assert.deepEqual(errors.map((e) => e.split(":")[0].split(" ")[0]), ["W1", "W2", "W3", "W3", "W4", "Action"]);
+  assert.deepEqual(stepErrors({ created: "2026-11-12" }, parseWorkBreakdown("- W4: No size [open] {agent}").nodes, []), []);
+  const draft = (status: string) => `---\noutbound: slack\ntarget: x\nstatus: ${status}\nstep: TASK-0001 W1\n---\n\n# D\n`;
+  const task = (status: string) => `## Work breakdown\n\n- W1: Reply [${status}] {slack, S}\n`;
+  assert.deepEqual(draftErrors("tasks/TASK-0001-assets/d.md", draft("ready"), task("open")), []);
+  assert.match(draftErrors("tasks/TASK-0001-assets/d.md", draft("ready"), task("completed"))[0], /completed but its draft is ready/);
+  assert.match(draftErrors("tasks/TASK-0001-assets/d.md", draft("sent"), task("open"))[0], /sent but TASK-0001 W1 is open/);
+  assert.match(draftErrors("tasks/TASK-0002-assets/d.md", draft("ready"), task("open"))[0], /another task's assets/);
+});
