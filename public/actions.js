@@ -28,17 +28,23 @@ export function parseActions(markdown, sourcePath) {
   return actions;
 }
 
+// A work item's optional `{kind, size}` suffix: one kind (`agent`, `decision`, `byron`, `check-in`, an outbound kind, or a
+// choice mode: `pick-one`, `pick-any`, `do-all`), a size, and the flags an option of a choice carries.
+export const STEP_SIZES = new Set(['S', 'M', 'L']);
+export const STEP_FLAGS = new Set(['option', 'recommended', 'not picked']);
+
 export function parseWorkBreakdown(markdown) {
   const nodes = [], stack = [], warnings = [];
   const invalidIds = new Set();
   const allowedStatuses = 'open, active, waiting, deferred, completed';
   for (const line of markdown.split(/\r?\n/)) {
-    const match = line.match(/^(\s*)-\s+([\w.-]+):\s+(.+?)\s+\[(open|active|waiting|deferred|completed)\](?:\s+\(after:\s*([^)]*)\))?\s*$/);
+    // `- W1.2: Title [status] (after: W1.1) {kind, size}`; the step suffix is optional, and so is `(after:)` before the status.
+    const match = line.match(/^(\s*)-\s+([\w.-]+):\s+(.+?)(?:\s+\(after:\s*([^)]*)\))?\s+\[(open|active|waiting|deferred|completed)\](?:\s+\(after:\s*([^)]*)\))?(?:\s+\{([^}]*)\})?\s*$/);
     if (!match) {
       const id = line.match(/^\s*-\s+([\w.-]+):/)?.[1];
       if (id) {
         invalidIds.add(id);
-        const status = line.match(/\[([^\]]*)\](?:\s+\(after:.*\))?\s*$/)?.[1];
+        const status = line.match(/\[([^\]]*)\](?:\s+\(after:.*\))?(?:\s+\{[^}]*\})?\s*$/)?.[1];
         const reason = status != null && !allowedStatuses.split(', ').includes(status)
           ? `Unsupported status [${status}]. ${status === 'done' ? 'Replace [done] with [completed].' : `Use one of: ${allowedStatuses}.`}`
           : 'Expected "- ID: Title [status]" with an optional "(after: ID, ID)" suffix. Include a title and a supported status.';
@@ -46,11 +52,14 @@ export function parseWorkBreakdown(markdown) {
       }
       continue;
     }
-    const [, space, id, title, status, after = ''] = match;
+    const [, space, id, title, afterFirst = '', status, afterLast = '', step = ''] = match;
+    const after = afterLast || afterFirst;
+    const parts = step.split(',').map(s => s.trim()).filter(Boolean);
     if (nodes.some(node => node.id === id)) { warnings.push(`Duplicate work item ${id}. Give each item a unique ID and update any references to the renamed item.`); continue; }
     const indent = space.length;
     while (stack.length && stack.at(-1).indent >= indent) stack.pop();
-    const node = { id, title, status, deps: after.split(',').map(s => s.trim()).filter(Boolean), parent: stack.at(-1)?.id || '', indent };
+    const node = { id, title, status, deps: after.split(',').map(s => s.trim()).filter(Boolean), parent: stack.at(-1)?.id || '', indent,
+      kind: parts.find(part => !STEP_SIZES.has(part) && !STEP_FLAGS.has(part)) || '', size: parts.find(part => STEP_SIZES.has(part)) || '', flags: parts.filter(part => STEP_FLAGS.has(part)) };
     nodes.push(node); stack.push(node);
   }
   const byId = new Map(nodes.map(node => [node.id, node]));

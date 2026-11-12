@@ -75,6 +75,21 @@ Diagrams are [draftably](https://github.com/byronwall/draftably) `.draft` files 
 
 A plain link to an image in the workspace (`[Proposal gallery](TASK-0101-assets/gallery.png)`) also gets a thumbnail like a diagram's. A list whose every item starts with an image link becomes a row of thumbnails: the link text is the caption, and the rest of the item (after an optional `:` or `—`) sits under it. Anywhere else, such as in a paragraph or a mixed list, the link stays in the text and the images it links to follow as a row of thumbnails. A thumbnail or the link opens the image viewer, with the document's other images and diagrams in its rail.
 
+## Steps and the Outbox
+
+The Steps page (sidebar, `?view=steps`) lists every open step of every unfinished task, grouped by **Next move**: **You decide** (approvals, decisions and choices), **You act · friction** (something only you can do, each with why and the fix that would remove it), **Agent**, and **Others**, with **Blocked** (prerequisites not done) and **Needs a kind** behind a toggle in the All view. A step is a work-breakdown line; a leaf step, or a choice. It may end in `{kind, size}`:
+
+```markdown
+- W2.1: Comment on ABC-123 [open] (after: W1) {jira-comment, S}
+- W3: How the fix lands [open] {pick-one, S}
+  - W3.1: On main first — ships now [open] {option, recommended}
+  - W3.2: Stacked on the other PR — one review, but waits [open] {option}
+```
+
+Kinds are `agent`, `check-in`, `decision`, `byron` (only you can do it), an outbound kind, or a choice: `pick-one`, `pick-any` (options as children, each `{option}` with a ` — trade-off`, one `recommended`) and `do-all` (an ordinary group). Sizes are `S`, `M` and `L`. Without a kind, a step takes its outbound draft's kind (a task asset whose front matter has `step: TASK-0101 W2.1`), else `agent` when a Next action names it, else `check-in` when it is waiting with a prompt. `waiting` means waiting on someone else. An outbound step is **You decide** while its draft is ready, **You act** when it is `send: manual`, and leaves the list once sent or dropped.
+
+The segmented control filters by next move with counts, the menu by kind (**Outbound** is the Outbox, also in the sidebar), and the selection stays in the URL (`&step=TASK-0101:W2.1`). The inspector shows a choice's options with **Pick** (which completes the choice, defers the options not picked, and adds a dated update to the task), an outbound draft's approval panel, a step's prompt, or what a blocked step waits on. The sidebar counts the steps waiting on you.
+
 ## Outbound drafts
 
 A task asset that opens with `outbound:` front matter is a message, comment or issue waiting to go out:

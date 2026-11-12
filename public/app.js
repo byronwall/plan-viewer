@@ -15,6 +15,7 @@ import { installBrief } from "./brief.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { bindOutbound, outboundPanel } from "./outbound.js";
+import { MOVE_FILTERS, KIND_FILTERS, moveCounts, stepInspectorHtml, stepKey, stepsTableHtml, stepsToolbarHtml, visibleSteps } from "./steps-page.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice, setPlansPageOpener } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
@@ -33,6 +34,8 @@ const elements = {
   shortcutsDialog: document.querySelector("#shortcuts-dialog"),
   tableViewer: document.querySelector("#table-viewer"),
   tasksButton: document.querySelector("#open-tasks"),
+  stepsButton: document.querySelector("#open-steps"),
+  outboxButton: document.querySelector("#open-outbox"),
   topicsButton: document.querySelector("#open-topics"),
   referenceButton: document.querySelector("#open-reference"),
   diagramsButton: document.querySelector("#open-diagrams"),
@@ -156,6 +159,8 @@ function resetPageNavigation() {
   elements.copyTaskPath.classList.remove("is-copied", "copy-error");
   elements.copyTaskPath.title = "Click to copy path";
   elements.tasksButton.setAttribute("aria-current", "false");
+  elements.stepsButton.setAttribute("aria-current", "false");
+  elements.outboxButton.setAttribute("aria-current", "false");
   elements.topicsButton.setAttribute("aria-current", "false");
   elements.referenceButton.setAttribute("aria-current", "false");
   elements.diagramsButton.setAttribute("aria-current", "false");
@@ -164,7 +169,7 @@ function resetPageNavigation() {
   elements.issuesButton.setAttribute("aria-current", "false");
   elements.slackButton.setAttribute("aria-current", "false");
   elements.activityButton.setAttribute("aria-current", "false");
-  elements.chunks.classList.remove("tasks-page", "library-page", "diagrams-page", "code-page", "plans-page", "issues-page", "slack-page", "activity-page");
+  elements.chunks.classList.remove("tasks-page", "steps-page", "library-page", "diagrams-page", "code-page", "plans-page", "issues-page", "slack-page", "activity-page");
 }
 
 function documentButton(doc, dailyChild = false) {
@@ -287,6 +292,14 @@ function navSummary(view) {
       ...live.sort((a, b) => b.task.updated.localeCompare(a.task.updated)).map((doc) => tipRow(TASK_STATUS_LABELS[doc.task.status], doc.task.title, `${doc.task.id} · ${doc.task.project}`, doc.task.status, `doc:${doc.path}`))];
     const counts = [["active", by("active").length], ["open", by("open").length], ["waiting", by("waiting").length]].filter(([, count]) => count).map(([status, count]) => `${count} ${status}`).join(" · ");
     return { count: due.length ? plural(due.length, "check-in") : live.length ? `${live.length} open` : "", attention: due.length > 0, card: tipHead("Tasks", counts) + (rows.slice(0, 8).join("") || tipEmpty("No open tasks.")) + (rows.length > 8 ? tipEmpty(`+${rows.length - 8} more on the Tasks page`) : "") };
+  }
+  if (view === "steps" || view === "outbox") {
+    if (!stepsData) return { count: "", card: tipHead(view === "steps" ? "Steps" : "Outbox") + tipEmpty("Loading steps…") };
+    const kind = view === "outbox" ? "outbound" : "any";
+    const mine = visibleSteps(stepsData.steps, { move: "you", kind });
+    const friction = mine.filter((step) => step.move === "you-act").length;
+    const rows = mine.slice(0, 8).map((step) => tipRow(step.move === "you-act" ? "Friction" : "You", step.title.split(" — ")[0], `${step.task} ${step.id} · ${step.reason}`, step.move === "you-act" ? "attention" : "", `doc:${step.machinery?.path || step.draft?.path || step.path}`));
+    return { count: mine.length ? `${mine.length} for you` : "", attention: mine.length > 0, card: tipHead(view === "steps" ? "Next move is yours" : "Ready to go out", [mine.length - friction && `${mine.length - friction} to decide`, friction && `${friction} friction`].filter(Boolean).join(" · ")) + (rows.join("") || tipEmpty("Nothing waits on you.")) };
   }
   if (view === "diagrams") {
     const diagrams = state.diagrams || [];
@@ -1942,8 +1955,119 @@ function scrollToDocumentAnchor(anchor, behavior = "instant") {
 
 // The Steps page's data (`/api/steps`), kept so the Outbox panel can copy a manual draft's text.
 let stepsData = null;
-const stepsOutboundBody = (path) => stepsData?.outbound?.find((draft) => draft.path === path)?.body || "";
-async function refreshSteps() {}
+const stepsOutboundBody = (path) => stepsData?.drafts?.find((draft) => draft.path === path)?.body || "";
+const stepsParams = () => new URLSearchParams(location.search);
+const stepsFilters = { move: "you", kind: "any", hidden: false };
+let selectedStep = "";
+
+async function loadSteps() {
+  try {
+    const response = await fetch("/api/steps");
+    if (response.ok) stepsData = await response.json();
+  } catch {}
+  updateNavCounts();
+  return stepsData;
+}
+
+async function refreshSteps() {
+  await loadSteps();
+  if (state.view !== "steps") return;
+  const y = window.scrollY;
+  renderStepsPage();
+  window.scrollTo({ top: y, behavior: "instant" });
+}
+
+function updateStepsUrl(historyMode) {
+  if (historyMode === "none") return;
+  const url = new URL(location.href);
+  url.search = new URLSearchParams({ view: "steps", ...(stepsFilters.move !== "you" ? { move: stepsFilters.move } : {}), ...(stepsFilters.kind !== "any" ? { kind: stepsFilters.kind } : {}), ...(stepsFilters.hidden ? { hidden: "1" } : {}), ...(selectedStep ? { step: selectedStep } : {}) });
+  url.hash = "";
+  history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
+}
+
+function readStepsUrl() {
+  const params = stepsParams();
+  stepsFilters.move = params.get("move") in MOVE_FILTERS ? params.get("move") : "you";
+  stepsFilters.kind = params.get("kind") in KIND_FILTERS ? params.get("kind") : "any";
+  stepsFilters.hidden = params.get("hidden") === "1";
+  selectedStep = params.get("step") || "";
+}
+
+function renderStepsPage() {
+  state.view = "steps";
+  resetPageNavigation();
+  const outbox = stepsFilters.kind === "outbound";
+  (outbox ? elements.outboxButton : elements.stepsButton).setAttribute("aria-current", "page");
+  for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
+  elements.title.textContent = outbox ? "Outbox" : "Steps";
+  elements.meta.textContent = outbox ? "Steps  /  outbound, waiting on your approval" : "Every open step  /  by next move";
+  elements.chunkNav.hidden = true;
+  elements.chunkNav.replaceChildren();
+  elements.chunks.classList.add("tasks-page", "steps-page");
+  if (!stepsData) {
+    elements.count.textContent = "";
+    elements.chunks.innerHTML = `<section class="task-browser"><p class="task-empty">Loading steps…</p></section>`;
+    loadSteps().then(() => state.view === "steps" && renderStepsPage());
+    return;
+  }
+  const { steps } = stepsData;
+  const shown = visibleSteps(steps, stepsFilters);
+  const counts = moveCounts(steps, stepsFilters.kind);
+  elements.count.textContent = `${counts.you} for you · ${plural(steps.length, "open step")}`;
+  if (!shown.some((step) => stepKey(step) === selectedStep)) selectedStep = taskPaneVisible() ? (shown[0] ? stepKey(shown[0]) : "") : "";
+  const step = steps.find((candidate) => stepKey(candidate) === selectedStep);
+  elements.chunks.innerHTML = `<section class="task-browser" aria-label="Open steps">
+    <div class="task-index">${stepsToolbarHtml(steps, stepsFilters, stepsData.slots, stepsData.runs?.length || 0)}${stepsTableHtml(steps, stepsFilters, selectedStep)}</div>
+    <aside class="task-detail step-detail" id="task-detail" aria-live="polite">${stepInspectorHtml(step)}</aside>
+  </section>`;
+}
+
+function showSteps({ historyMode = "push", kind } = {}) {
+  if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
+  closeComposer();
+  if (kind) { stepsFilters.kind = kind; stepsFilters.move = kind === "outbound" ? "all" : "you"; selectedStep = ""; }
+  updateStepsUrl(historyMode);
+  renderStepsPage();
+  window.scrollTo({ top: 0, behavior: "instant" });
+  loadSteps().then(() => state.view === "steps" && renderStepsPage());
+}
+
+elements.stepsButton.addEventListener("click", () => showSteps({ kind: "any" }));
+elements.outboxButton.addEventListener("click", () => showSteps({ kind: "outbound" }));
+elements.chunks.addEventListener("click", (event) => {
+  if (state.view !== "steps") return;
+  const move = event.target.closest("[data-step-move]");
+  if (move) { stepsFilters.move = move.dataset.stepMove; updateStepsUrl("replace"); renderStepsPage(); return; }
+  const row = !event.target.closest("[data-task-path], a, input, label, .outbound-panel, form") && event.target.closest("[data-select-step]");
+  if (!row) return;
+  selectedStep = row.dataset.selectStep;
+  updateStepsUrl("replace");
+  for (const tr of elements.chunks.querySelectorAll("tr[data-select-step]")) tr.setAttribute("aria-selected", tr.dataset.selectStep === selectedStep);
+  const step = stepsData.steps.find((candidate) => stepKey(candidate) === selectedStep);
+  document.getElementById("task-detail").innerHTML = stepInspectorHtml(step);
+});
+elements.chunks.addEventListener("change", (event) => {
+  if (state.view !== "steps") return;
+  if (event.target.matches("[data-step-kind]")) stepsFilters.kind = event.target.value;
+  else if (event.target.matches("[data-step-hidden]")) stepsFilters.hidden = event.target.checked;
+  else return;
+  updateStepsUrl("replace");
+  renderStepsPage();
+});
+elements.chunks.addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-step-pick]");
+  if (!form) return;
+  event.preventDefault();
+  const step = stepsData.steps.find((candidate) => stepKey(candidate) === form.dataset.stepPick);
+  const picked = [...form.querySelectorAll('input[name="pick"]:checked')].map((input) => input.value);
+  try {
+    const response = await fetch("/api/steps/pick", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: step.path, id: step.id, picked }) });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || "Couldn't record the pick.");
+    showNotice(`Picked ${picked.join(", ") || "none"} for ${step.task} ${step.id}.`);
+  } catch (error) { showNotice(error.message, true); }
+  refreshSteps();
+});
 
 // Approve and send, Send back and Drop on outbound drafts, on a draft's page and in the Steps inspector.
 bindOutbound(elements.chunks, {
@@ -2020,6 +2144,12 @@ async function refreshFromMarkdown(changedPaths) {
     if (state.view === "activity") {
       renderLibrary();
       renderActivity();
+      return;
+    }
+
+    if (state.view === "steps") {
+      renderLibrary();
+      refreshSteps();
       return;
     }
 
@@ -3608,6 +3738,11 @@ window.addEventListener("popstate", () => {
     showTasks({ historyMode: "none" });
     return;
   }
+  if (params.get("view") === "steps") {
+    readStepsUrl();
+    showSteps({ historyMode: "none" });
+    return;
+  }
   if (params.get("view") in LIBRARY_VIEWS) {
     showLibrary(params.get("view"), { historyMode: "none" });
     return;
@@ -4069,6 +4204,7 @@ async function boot() {
       renderTasksPage();
     }
     else if (requestedView in LIBRARY_VIEWS) renderLibraryPage(requestedView);
+    else if (requestedView === "steps") { readStepsUrl(); renderStepsPage(); }
     else if (requestedView === "diagrams") renderDiagramsPage();
     else if (requestedView === "code") renderCode();
     else if (requestedView === "plans") renderPlans();
@@ -4080,6 +4216,7 @@ async function boot() {
     connectLiveUpdates();
     loadPlans().then(updateNavCounts, () => {});
     loadDiagrams();
+    loadSteps();
     loadPrIndex().catch(() => {}); // so ⌘K lists PRs on its first paint instead of inserting them a moment later
     openOverlays(new URLSearchParams(location.search));
     if (issuesOn()) loadIssues().then(() => { renderFavorites(); updateNavCounts(); }).catch(() => {}); // ⌘K finds issues by key and title

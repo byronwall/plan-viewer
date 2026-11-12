@@ -19,6 +19,7 @@ import { createPlans } from "./plans.ts";
 import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig } from "./public/config.js";
+import { loadSteps, pickChoice } from "./steps.ts";
 import { approveOutbound, draftFromText, dropOutbound, listOutbound, markOutboundSent, sendBackOutbound, stripFrontMatter } from "./outbound.ts";
 
 // The planning workspace is the current directory (npm scripts run from the content repository); PLANNING_ROOT
@@ -939,6 +940,23 @@ export async function renderDiagram(requested: string, panels = "") {
 
 const escapeXml = (value: string) => value.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]!);
 
+// Every open step of every unfinished task, ordered by today's plan, then age (the Steps page and the Today lead).
+async function stepsIndex() {
+  const files = (await readdir(join(ROOT, "tasks"))).filter((name) => /^TASK-\d{4}\.md$/.test(name));
+  const tasks = (await Promise.all(files.map(async (name) => {
+    const path = `tasks/${name}`;
+    const markdown = await readFile(join(ROOT, path), "utf8");
+    try {
+      const { task } = parseTaskDocument(path, markdown);
+      return { path, id: task.id, title: task.title, status: task.status, updated: task.updated, markdown };
+    } catch { return null; }
+  }))).filter((task) => task !== null);
+  const plan = await readFile(join(ROOT, todayPath()), "utf8").catch(() => "");
+  const scheduled = plan.match(/^## Scheduled tasks\s*$([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] || "";
+  const order = [...new Set([...scheduled.matchAll(/TASK-\d{4}/g)].map((match) => match[0]))];
+  return { ...await loadSteps(ROOT, tasks, order), today: order, startConfigured: Boolean(config().steps.start.length) };
+}
+
 export async function handleRequest(request: IncomingMessage, response: ServerResponse) {
   try {
     const url = new URL(request.url || "/", "http://localhost");
@@ -1080,6 +1098,12 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request);
       viewerWrites.add(String(body.path || ""));
       return json(response, 200, { task: await setTaskStatus(String(body.path || ""), String(body.status || ""), ROOT, todayDate(), body.days === undefined ? config().checkInDays : Number(body.days)) });
+    }
+    if (request.method === "GET" && url.pathname === "/api/steps") return json(response, 200, await stepsIndex());
+    if (request.method === "POST" && url.pathname === "/api/steps/pick") {
+      const body = await readJson(request);
+      viewerWrites.add(String(body.path || ""));
+      return json(response, 200, await pickChoice(ROOT, String(body.path || ""), String(body.id || ""), Array.isArray(body.picked) ? body.picked.map(String) : [], config().user, todayDate()));
     }
     if (request.method === "GET" && url.pathname === "/api/outbound") return json(response, 200, { drafts: await listOutbound(ROOT), sendConfigured: Boolean(config().outbound.send.length) });
     if (request.method === "POST" && url.pathname.startsWith("/api/outbound/")) {

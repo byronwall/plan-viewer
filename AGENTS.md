@@ -41,6 +41,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 | World views (`?world=TASK-NNNN`, `?world=all`): a task's assets, plan mentions and updates as day columns and kind lanes, and every task as a row on the same axis (`listTaskWorld`, `/api/task-world` in `server.ts`) | `public/world.js` |
 | Diagrams page (`?view=diagrams`): every `.draft` as thumbnails grouped by task, with a filter (`listDiagrams`, `/api/diagrams` in `server.ts`) | `public/diagrams-page.js` |
 | Outbound drafts (task assets with `outbound:` front matter): fields, the hash of the outgoing text, Approve and send through `outbound.send`, Send back, Drop, Mark sent (`/api/outbound/*`); the approval panel on a draft's page | `outbound.ts` (server), `public/outbound.js` (panel and its delegated handlers) |
+| Steps page (`?view=steps`, Outbox at `&kind=outbound`): open steps from every task's work breakdown with their next move (`deriveSteps`), machinery files by `step:`, Pick on choices (`/api/steps`, `/api/steps/pick`); the `{kind, size}` suffix is parsed in `parseWorkBreakdown` | `steps.ts` (server), `public/steps-page.js` (table, toolbar, inspector), `stepsIndex` and routes in `server.ts`, page wiring in `public/app.js` |
 | Codex Desktop deep links | `codex-desktop.ts` |
 | Tab brief (`?brief=`): why an agent opened this tab, pinned at the top and above overlays, hidden to a chip, kept in sessionStorage | `public/brief.js` |
 | Expanded table: sort, column filters, resize | `public/table-viewer.js` (opened by `showTableViewer` in `app.js`) |
