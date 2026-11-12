@@ -41,6 +41,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 | World views (`?world=TASK-NNNN`, `?world=all`): a task's assets, plan mentions and updates as day columns and kind lanes, and every task as a row on the same axis (`listTaskWorld`, `/api/task-world` in `server.ts`) | `public/world.js` |
 | Diagrams page (`?view=diagrams`): every `.draft` as thumbnails grouped by task, with a filter (`listDiagrams`, `/api/diagrams` in `server.ts`) | `public/diagrams-page.js` |
 | Codex Desktop deep links | `codex-desktop.ts` |
+| Tab brief (`?brief=`): why an agent opened this tab, pinned at the top and above overlays, hidden to a chip, kept in sessionStorage | `public/brief.js` |
 | Expanded table: sort, column filters, resize | `public/table-viewer.js` (opened by `showTableViewer` in `app.js`) |
 | Document tables: fitted column widths, tall-table scroll frame, its footer (row range, Show all, Expand) and sticky top tab bar (`TABLE_TOOLS` in `markdown.js`) | `public/table-fit.js` (finds every `.markdown-table-scroll` itself through a MutationObserver) |
 | Activity page: documents, issues, open PRs and Slack threads (row helpers and `threadDetail` from `slack-page.js`) in one list with a day strip and an inspector (reuses the Issues sidebar through `issueInspector`) | `public/activity.js` |

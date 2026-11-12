@@ -11,6 +11,7 @@ import { renderActivityPage } from "./activity.js";
 import { openSlackThread, refreshSlackStars, setSlackFavorites, setSlackNotice, slackThreadTitle } from "./slack.js";
 import { channelLabel, fresh as freshThread, lastActive, opener, permalink, refreshSlackPage, renderSlackPage } from "./slack-page.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
+import { installBrief } from "./brief.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
@@ -4061,4 +4062,15 @@ try {
 // Before the first render, so every avatar starts with the reconciled picture; answers from the server's cache.
 await fetch("/api/people").then((response) => response.json()).then((body) => setPeople(body.people)).catch(() => {});
 installCommitCards({ showNotice });
+// Before boot, which records the visit: the brief leaves the URL for this tab's storage.
+// A brief's link closes any overlay; a section of the open document scrolls into view, any other document opens.
+installBrief({ follow: (path, anchor) => {
+  closeOverview();
+  if (elements.imageViewer.open) closeImageViewer(false);
+  if (state.view !== "document" || path !== state.selectedPath) return selectDocument(path, { historyMode: "push", anchor });
+  const url = new URL(location.href);
+  url.hash = anchor;
+  history.replaceState(history.state, "", url);
+  scrollToDocumentAnchor(anchor, "smooth");
+} });
 boot();

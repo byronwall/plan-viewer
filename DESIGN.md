@@ -135,6 +135,10 @@ The contents rail is navigation, not a second content layer: its first column co
 
 Rendered Markdown images open fit-to-stage in a nearly full-window inspection surface so the complete source is visible before closer review. A document-wide thumbnail rail keeps comparison fast, while arrow controls and keyboard navigation move through the carousel. The dark image stage separates source material from the white review interface and supports wheel zoom, drag panning, and an explicit reset to the fitted view without adding editing or asset-management controls.
 
+### Tab brief
+
+A tab an agent opened carries a short brief: a floating card at the top centre, the one place besides menus and dialogs that takes a shadow, because it floats over the page instead of pushing it down. It holds a title, the ask and the decision, with links into the page. Hidden, it shrinks to a one-line chip in the bottom-left corner, clear of the document's sticky tabs and of overlay actions, and one click brings it back.
+
 ### Next actions and task maps
 
 Next actions read as a list of bounded work: an action title, optional task attribution, a disclosed prompt, and a Prepare action button. The dialog shows the full source prompt above optional context and opens the existing desktop draft. It protects typed context and preserves it on handoff errors. Daily Next steps uses the scheduled tasks' authoritative actions.

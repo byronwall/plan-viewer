@@ -3054,3 +3054,26 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .plans-side .plan-outline + div > section:first-child { margin-top: 18px; }
 @media (max-width: 1180px) { .plans-reader-body { grid-template-columns: minmax(0, 1fr); } .plans-side { position: static; max-height: none; } .plans-side .plan-outline { display: none; } }
 @media (max-width: 860px) { .plans-layout { grid-template-columns: minmax(0, 1fr); } .plans-rail { position: static; max-height: 40vh; } }
+
+/* Tab brief (brief.js): a floating card pinned to the top centre, above any overlay, so it never moves the page.
+   Hidden, it becomes a chip in the bottom-left corner, clear of the document's sticky tabs and of overlay actions. */
+.tab-brief { position: fixed; inset: 0 auto auto 50%; translate: -50% 0; margin: 0; width: min(680px, calc(100vw - 32px)); max-height: min(50dvh, 420px); overflow: auto; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 10px 10px; background: var(--paper); color: var(--ink); padding: 8px 12px 10px; box-shadow: 0 12px 32px rgba(24, 33, 47, .16); font-size: .86rem; line-height: 1.5; }
+.tab-brief .glyph { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tab-brief-head { display: grid; grid-template-columns: 16px minmax(0, 1fr) 24px; align-items: center; gap: 8px; }
+.tab-brief-head > .glyph, .tab-brief-chip > .glyph { color: var(--action); }
+.tab-brief-head strong { font-weight: 680; }
+.tab-brief-hide { display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; transition: background-color 140ms, color 140ms; }
+.tab-brief-hide:hover { background: var(--hover-field); color: var(--ink); }
+.tab-brief-hide:active, .tab-brief-chip:active { scale: .96; }
+.tab-brief-hide .glyph { width: 14px; height: 14px; }
+.tab-brief-body { margin: 4px 0 0 24px; font-size: .86rem; }
+.tab-brief-body > :first-child { margin-top: 0; }
+.tab-brief-body > :last-child { margin-bottom: 0; }
+.tab-brief-body p, .tab-brief-body ul, .tab-brief-body ol { margin: 4px 0; }
+.tab-brief-body li + li { margin-top: 2px; }
+.tab-brief.is-collapsed { inset: auto auto 16px 16px; translate: none; width: auto; max-width: min(280px, calc(100vw - 88px)); padding: 0; overflow: visible; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 2px 8px rgba(24, 33, 47, .08); }
+.tab-brief-chip { display: flex; align-items: center; gap: 6px; max-width: 100%; height: 30px; border: 0; border-radius: 7px; background: transparent; color: var(--control-ink); padding: 0 10px; font: inherit; font-size: .78rem; font-weight: 650; cursor: pointer; transition: background-color 140ms; }
+.tab-brief-chip:hover { background: var(--hover-field); }
+.tab-brief-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-brief-chip:focus-visible, .tab-brief-hide:focus-visible { outline: 2px solid var(--action); outline-offset: -2px; }
+@media (prefers-reduced-motion: reduce) { .tab-brief-hide, .tab-brief-chip { transition: none; } }
