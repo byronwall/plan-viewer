@@ -44,10 +44,40 @@ export function loadPlans(refresh = false, poll = false) {
 
 export const plansLoaded = () => Boolean(ps.data);
 const everything = () => ps.data?.initiatives || [];
-const rootCopy = (item) => ps.root && item.source === "main" && everything().some((other) => other.source === "root" && other.repo === item.repo && other.folder === item.folder);
-const shown = (item) => (item.source === "root" ? ps.root : item.source === "worktree" ? ps.worktrees && ps.data.worktrees : !rootCopy(item));
-const all = () => everything().filter(shown);
-const byId = (id) => everything().find((item) => item.id === id);
+// One row per initiative folder: the repo root's copy leads (it's where work happens), then main's, then a PR's
+// proposal. The others ride along as `copies`, and the row lists every copy's PRs. Worktree copies stay their own rows.
+const LEAD = { root: 0, main: 1, pr: 2 };
+let merged = { data: null, list: [] };
+function all() {
+  if (merged.data === ps.data) return merged.list;
+  const folders = new Map();
+  const rows = [];
+  for (const item of everything()) {
+    if (item.source === "worktree") { if (ps.worktrees && ps.data.worktrees) rows.push(item); continue; }
+    const key = `${item.repo}\n${item.folder}`;
+    if (!folders.has(key)) { folders.set(key, []); rows.push(key); }
+    folders.get(key).push(item);
+  }
+  const list = rows.map((row) => {
+    if (typeof row !== "string") return row;
+    const [lead, ...copies] = folders.get(row).sort((a, b) => LEAD[a.source] - LEAD[b.source]);
+    if (!copies.length) return lead;
+    const prs = [...new Map([lead, ...copies].flatMap((copy) => copy.prs).map((pr) => [pr.number, pr])).values()];
+    return { ...lead, prs, copies, edited: Math.max(lead.edited, ...copies.map((copy) => copy.edited)) };
+  });
+  merged = { data: ps.data, list };
+  return list;
+}
+const byId = (id) => all().find((item) => item.id === id) || everything().find((item) => item.id === id);
+// Where each copy of a row comes from, as quiet tags after its title: proposed in a PR, or uncommitted or unpushed here.
+function sourceTags(item) {
+  return [item, ...(item.copies || [])].map((copy) => {
+    const pr = copy.source === "pr" && copy.prs.find((touch) => touch.change === "proposes");
+    if (pr) return `<span class="plans-where" data-tip="${escapeHtml(`Proposed in PR #${pr.number} · ${pr.title}`)}">proposed</span>`;
+    if (copy.checkout) return `<span class="plans-where is-local" data-tip="${escapeHtml(whereText(copy))}">${escapeHtml(changeWord(copy))}</span>`;
+    return "";
+  }).join("");
+}
 const repoName = (path) => path.split("/").pop();
 let repoPaths = { data: null, list: [] };
 const badge = (repo) => { if (repoPaths.data !== ps.data) repoPaths = { data: ps.data, list: ps.data?.repos.map((entry) => entry.repo) || [] }; return repoBadge(repo, repoPaths.list); };
@@ -170,7 +200,7 @@ function planFacts(item) {
     ["Status", `${statusMark(item, true)}${item.scale ? `<span class="code-muted">${escapeHtml(item.scale)}</span>` : ""}${item.inferred ? `<span class="code-muted">${escapeHtml(item.evidence)}</span>` : ""}`],
     ["Stage", `${stageTrack(item)}${item.phase && !(item.phase in PHASE_STAGE) ? `<span class="code-muted">${escapeHtml(item.phase)}</span>` : ""}`],
     ["Next", item.nextAction ? `<span class="plan-next">${escapeHtml(item.nextAction)}</span>` : ""],
-    ["Repo", `<span>${escapeHtml(repoName(item.repo))}</span><span class="code-muted" data-tip="${fetched ? `Last fetched ${escapeHtml(new Date(fetched).toLocaleString())}` : "Never fetched"}">${escapeHtml(whereText(item))}</span>`],
+    ["Repo", `<span>${escapeHtml(repoName(item.repo))}</span><span class="code-muted" data-tip="${fetched ? `Last fetched ${escapeHtml(new Date(fetched).toLocaleString())}` : "Never fetched"}">${escapeHtml(whereText(item))}</span>${(byId(item.id).copies || []).map((copy) => `<span class="code-muted">also ${escapeHtml(whereText(copy))}</span>`).join("")}`],
     ["Folder", `<button type="button" class="code-path code-side-path" data-code-copy="${escapeHtml(folder)}" data-tip="${escapeHtml(folder)} · click to copy (Y)">${escapeHtml(item.folder || ".")}</button>`],
     ["Edited", [item.edited && `<span data-tip="${escapeHtml(new Date(item.edited).toLocaleString())}">${changed} ${ago(item.edited)} ago</span>`, item.lastUpdated && `<span class="code-muted">map says ${escapeHtml(item.lastUpdated)}</span>`].filter(Boolean).join("")],
   ]);
@@ -682,12 +712,10 @@ function toolbarHtml() {
 }
 
 function rowHtml(item) {
-  const proposed = proposal(item);
-  const where = proposed ? `<span class="plans-where" data-tip="${escapeHtml(`Only in PR #${proposed.number} · ${proposed.title}`)}">proposed</span>` : item.checkout ? `<span class="plans-where is-local" data-tip="${escapeHtml(whereText(item))}">${escapeHtml(changeWord(item))}</span>` : "";
   const next = item.error ? `<div class="plans-next plan-error">${escapeHtml(item.error)}</div>` : item.nextAction ? `<div class="plans-next">${escapeHtml(item.nextAction)}</div>` : "";
   return `<tr class="code-row plans-row" data-plan-row="${escapeHtml(item.id)}" aria-selected="${page.sel === item.id}">
     <td class="plans-col-mark">${statusMark(item)}</td>
-    <td class="plans-col-title"><a href="?${new URLSearchParams({ view: "plans", plan: item.id })}" data-plan-title="${escapeHtml(item.id)}">${escapeHtml(item.title)}</a>${where}${next}</td>
+    <td class="plans-col-title"><a href="?${new URLSearchParams({ view: "plans", plan: item.id })}" data-plan-title="${escapeHtml(item.id)}">${escapeHtml(item.title)}</a>${sourceTags(item)}${next}</td>
     <td class="plans-col-repo">${badge(item.repo)}<span>${escapeHtml(repoName(item.repo))}</span></td>
     <td class="plans-col-stage">${stageTrack(item)}</td>
     <td class="plans-col-ms">${progress(item)}</td>
