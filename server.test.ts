@@ -677,22 +677,21 @@ test("separates scope nesting from dependencies and blocks invalid graphs", asyn
 });
 
 test("work breakdown diagnostics explain unsupported statuses and how to repair dependent items", async () => {
-  const { parseWorkBreakdown, renderWorkBreakdown } = await import('./public/actions.js');
+  const { parseWorkBreakdown, workDiagnostics } = await import('./public/actions.js');
   const source = '- W1: Prepare [done]\n- W2: Verify [open] (after: W1)';
   const work = parseWorkBreakdown(source);
   assert.match(work.warnings[0], /W1: Unsupported status \[done\]. Replace \[done\] with \[completed\]/);
   assert.match(work.warnings[1], /W2 depends on W1, which could not be parsed/);
   assert.equal(work.nodes[0].ready, false);
-  const html = renderWorkBreakdown(work, [], 'actions', 'work-breakdown');
+  const html = workDiagnostics(work, 'work-breakdown');
   assert.match(html, /Readiness may be wrong/);
   assert.match(html, /data-chunk-id="work-breakdown" data-repair-work/);
   const repaired = parseWorkBreakdown(source.replace('[done]', '[completed]'));
   assert.deepEqual(repaired.warnings, []);
   assert.equal(repaired.nodes[1].ready, true);
-  const entirelyInvalid = renderWorkBreakdown(parseWorkBreakdown('- W1: Prepare [unknown]'), [], 'actions', 'work-breakdown');
+  const entirelyInvalid = workDiagnostics(parseWorkBreakdown('- W1: Prepare [unknown]'), 'work-breakdown');
   assert.match(entirelyInvalid, /Use one of: open, active, waiting, deferred, completed/);
   assert.match(entirelyInvalid, /Draft fix/);
-  assert.doesNotMatch(entirelyInvalid, /Add nested work items/);
 });
 
 test("a daily plan lists its scheduled tasks without deriving Next steps from them", async () => {
@@ -715,11 +714,11 @@ test("action handoff needs no extra typing and includes source, bounded prompt a
 });
 
 test("action rendering escapes titles, prompts and graph labels", async () => {
-  const { renderActions, renderWorkBreakdown, parseWorkBreakdown } = await import('./public/actions.js');
+  const { renderActions, renderWorkGraph, parseWorkBreakdown } = await import('./public/actions.js');
   const html = renderActions([{ title: '<script>bad</script>', prompt: '<img src=x onerror=bad>', sourcePath: 'tasks/TASK-0001.md' }], 'next');
   assert.doesNotMatch(html, /<script>|<img/);
   assert.match(html, /Draft action/);
-  const graph = renderWorkBreakdown(parseWorkBreakdown('- W1: <script>bad</script> [open]'), [], 'work');
+  const graph = renderWorkGraph(parseWorkBreakdown('- W1: <script>bad</script> [open]'), [], 'work');
   assert.doesNotMatch(graph, /<script>/);
 });
 
@@ -738,24 +737,26 @@ test("milestone documents retain actionable and scope sections", () => {
   assert.deepEqual(chunks.map(c => c.title), ['Milestone 1: Establish evidence', 'Next actions', 'Work breakdown']);
 });
 
-test("renders readable prerequisites alongside the graph arrows", async () => {
-  const { renderWorkBreakdown, parseWorkBreakdown } = await import('./public/actions.js');
-  const html = renderWorkBreakdown(parseWorkBreakdown('- W1: Evidence [open]\n- W2: Fix [open] (after: W1)'), [], 'work');
-  assert.match(html, /After W1/);
+test("a task's steps say what they wait on beside the graph arrows", async () => {
+  const { parseWorkBreakdown } = await import('./public/actions.js');
+  const { taskStepsHtml } = await import('./public/steps-page.js');
+  const html = taskStepsHtml({ taskId: 'TASK-0001', work: parseWorkBreakdown('- W1: Evidence [open]\n- W2: Fix [open] (after: W1)') });
+  assert.match(html, /after W1/);
   assert.match(html, /Blocked/);
+  assert.match(html, /<path d="M /);
 });
 
 test("a waiting action stays openable and says what it waits on", async () => {
-  const { renderActions, renderWorkBreakdown, parseWorkBreakdown } = await import('./public/actions.js');
+  const { renderActions, parseWorkBreakdown } = await import('./public/actions.js');
+  const { taskStepsHtml } = await import('./public/steps-page.js');
   const action = { title: 'Fix it', prompt: 'Apply the fix.', sourcePath: 'tasks/TASK-0001.md', workItem: 'W2', blocked: true, blockedReason: 'After W1' };
   const list = renderActions([action], 'next');
   assert.doesNotMatch(list, /disabled/);
   assert.match(list, /class="action-card is-waiting"[^>]*data-action-index="0"/);
   assert.match(list, /After W1<\/span> · Apply the fix\./);
-  const tree = renderWorkBreakdown(parseWorkBreakdown('- W1: Evidence [open]\n- W2: Fix [open] (after: W1)'), [action], 'next');
-  assert.match(tree, /class="action-go work-row-draft is-waiting"[^>]*data-action-index="0"/);
-  assert.match(tree, /class="work-row has-action"[^>]*data-work-item="W2"/);
-  assert.match(tree, /class="work-node is-actionable"[^>]*data-work-item="W2"/);
+  const steps = taskStepsHtml({ taskId: 'TASK-0001', work: parseWorkBreakdown('- W1: Evidence [open]\n- W2: Fix [open] (after: W1)'), actions: [action] });
+  assert.match(steps, /class="step-row" data-open-step="TASK-0001:W2"/);
+  assert.match(steps, /class="work-node is-actionable"[^>]*data-work-item="W2"/);
 });
 
 test("work item handoffs run or update any item and say when it is not ready", async () => {

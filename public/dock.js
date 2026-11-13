@@ -275,7 +275,7 @@ function progressRing(done, total) {
 // `body(chunk)` renders a chunk exactly as the page does; the panels reuse it so actions stay launchable.
 // `diagrams` ({ path, title }) are the ones the page embeds, then the rest of the task's; the Diagrams panel shows them as
 // thumbnails that open the viewer.
-export function renderDock({ doc, documents, links, body, diagrams = [] }) {
+export function renderDock({ doc, documents, links, body, steps = "", diagrams = [] }) {
   const chunk = (pattern) => doc.chunks.find((candidate) => pattern.test(candidate.title));
   const actions = chunk(/^(next actions|next steps)$/i);
   const work = chunk(/^work breakdown$/i);
@@ -298,8 +298,8 @@ export function renderDock({ doc, documents, links, body, diagrams = [] }) {
 
   const items = [];
   const add = (key, label, icon, badge, title, meta, content, jump, bare = false, workItem = "") => items.push({ key, label, icon, badge, title, meta, content, jump, bare, workItem });
-  // Next actions and the work breakdown share one button: the panel lists the actions, and its header opens the work
-  // item dialog (which carries the whole breakdown) at the first ready item, else the first live one.
+  // Next actions and the work breakdown share one button: the panel lists the task's steps, and its header opens the step
+  // dialog at the first ready item, else the first live one.
   const start = leaves.find((node) => node.ready) || leaves.find((node) => ["open", "active", "waiting"].includes(node.status)) || leaves[0];
   const hasWork = work && leaves.length;
   const actionMeta = listed.length ? (readyActions ? `${readyActions} ready of ${listed.length} actions` : `${listed.length} ${listed.length === 1 ? "action" : "actions"}`) : "";
@@ -307,8 +307,9 @@ export function renderDock({ doc, documents, links, body, diagrams = [] }) {
   if (actions || hasWork) {
     const label = hasWork ? "Work" : actions.title.replace(/^next/i, "Next");
     const meta = [actionMeta, workMeta].filter(Boolean).join(" · ");
-    const content = actions ? body(actions) : '<p class="dock-empty">No next actions recorded; the work items say what is ready.</p>';
-    add("work", label, hasWork ? progressRing(doneLeaves, leaves.length) : ICONS.actions, hasWork ? `${doneLeaves}/${leaves.length}` : `${readyActions || listed.length}`, actions ? (hasWork ? "Next actions and work" : actions.title) : "Work", meta, content, actions?.id || work.id);
+    // With a work breakdown the panel is the task's Steps list; without one, its next actions.
+    const content = hasWork && steps ? steps : actions ? body(actions) : '<p class="dock-empty">No next actions recorded.</p>';
+    add("work", label, hasWork ? progressRing(doneLeaves, leaves.length) : ICONS.actions, hasWork ? `${doneLeaves}/${leaves.length}` : `${readyActions || listed.length}`, hasWork ? "Steps" : actions.title, meta, content, hasWork ? work.id : actions.id);
     if (hasWork) items.at(-1).tools = `<button type="button" class="doc-dock-jump" data-work-item="${escapeHtml(start.id)}" title="Open the work items at ${escapeHtml(start.id)}">Work items <span aria-hidden="true">→</span></button>`;
   }
   const entries = updates && parseUpdates(updates.markdown);

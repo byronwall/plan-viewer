@@ -1,5 +1,5 @@
 import { contextScore, fuzzyChunks, searchDocuments, searchPrs, termMatch, textScore } from "./search.js";
-import { isSettled, renderActions, renderWorkBreakdown, showDoneToggle, workStatusIcon, workStatusLabel } from "./actions.js";
+import { isSettled, renderActions, renderWorkGraph, showDoneToggle, workDiagnostics, workStatusIcon, workStatusLabel } from "./actions.js";
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDocumentSort, selectDockSource, taskDocumentSequence } from "./dock.js";
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
@@ -15,7 +15,7 @@ import { installBrief } from "./brief.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { bindOutbound, outboundPanel } from "./outbound.js";
-import { MOVE_FILTERS, KIND_FILTERS, moveCounts, movePill, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, stepRowHtml, stepStackHtml, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, visibleSteps } from "./steps-page.js";
+import { MOVE_FILTERS, KIND_FILTERS, moveCounts, movePill, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, stepRowHtml, stepStackHtml, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, taskStepsHtml, visibleSteps } from "./steps-page.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planForLink, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
@@ -1129,7 +1129,7 @@ function openImageViewerAt(items, index, trigger) {
 
 // The dependency graph reuses the image viewer's fit, zoom and pan; the item carries a copy of the visible graph instead of an image.
 function showGraphViewer(trigger) {
-  const graph = [...trigger.closest(".work-graph-disclosure").querySelectorAll(".work-graph")].find(g => getComputedStyle(g).display !== "none");
+  const graph = [...trigger.closest(".step-graph").querySelectorAll(".work-graph")].find(g => getComputedStyle(g).display !== "none");
   if (!graph) return;
   imageViewerState.items = [{ trigger, alt: "Dependency graph", width: parseFloat(graph.style.width) + 24, height: parseFloat(graph.style.height) + 24, html: graph.outerHTML }];
   imageViewerState.index = 0;
@@ -1264,7 +1264,7 @@ function renderChunkNavigation() {
   if (!doc) return;
   const activeChunk = doc.chunks.find((chunk) => chunk.id === state.activeChunkId) || doc.chunks[0];
   const outline = chunkOutlines.get(activeChunk?.id);
-  const hasNavigation = doc.chunks.length > 1 || outline?.roots.length;
+  const hasNavigation = pageChunks(doc).length > 1 || outline?.roots.length;
   elements.chunkNav.hidden = !hasNavigation;
   if (!hasNavigation) {
     elements.chunkNav.replaceChildren();
@@ -1273,10 +1273,10 @@ function renderChunkNavigation() {
 
   const focusedKey = elements.chunkNav.contains(document.activeElement) ? document.activeElement.dataset.outlineKey : null;
   const selectedKeys = new Set(state.activeOutlinePath || []);
-  const chunkLinks = doc.chunks.map((chunk, index) => `
-    <a class="chunk-jump" href="#${chunk.id}" data-chunk-id="${chunk.id}" ${chunk.id === activeChunk.id ? 'aria-current="location"' : ""} aria-label="Jump to ${escapeHtml(chunk.title)}">
+  const chunkLinks = pageChunks(doc).map((chunk, index) => `
+    <a class="chunk-jump" href="#${chunk.id}" data-chunk-id="${chunk.id}" ${chunk.id === activeChunk.id ? 'aria-current="location"' : ""} aria-label="Jump to ${escapeHtml(chunkTitle(doc, chunk))}">
       <span class="chunk-jump-index">${String(index + 1).padStart(2, "0")}</span>
-      <strong>${escapeHtml(chunk.title)}</strong>
+      <strong>${escapeHtml(chunkTitle(doc, chunk))}</strong>
       ${chunkOutlines.get(chunk.id)?.roots.length ? '<span class="chunk-jump-more" aria-hidden="true">›</span>' : ""}
     </a>`).join("");
   const columns = [navigationColumn(doc.kind === "Plan" ? "Milestones" : "Contents", "", chunkLinks, "chunk-nav-root")];
@@ -1413,11 +1413,11 @@ function workMentions(doc, id, own) {
 
 const markId = (html, id) => html.replace(new RegExp(`(?<![\\w.])(${id.replace(/\./g, "\\.")})(?![\\w]|\\.\\w)(?![^<]*>)`, "g"), "<mark>$1</mark>");
 
-// The same dependency graph as the task's Work breakdown section (honoring its completed toggle unless the item itself is
-// hidden there), with the open item outlined.
+// The same dependency graph as the task's Steps panel (honoring its completed toggle unless the item itself is hidden
+// there), with the open item outlined.
 function workItemGraph(doc, id, noteCount) {
   const template = document.createElement("template");
-  template.innerHTML = renderWorkBreakdown(doc.work, doc.nextActions, "dialog", "", noteCount);
+  template.innerHTML = renderWorkGraph(doc.work, doc.nextActions, "dialog", noteCount);
   const graphs = template.content.querySelectorAll(".work-graph");
   const live = template.content.querySelector(".work-graph.is-live");
   const showDone = new URLSearchParams(location.search).get("done") === "1";
@@ -1446,6 +1446,7 @@ async function fetchTaskDocument(path, fresh = false) {
 // `TASK-0101:W2.1`, or just `TASK-0101` to land on its first step waiting on you, else its first ready one.
 async function openStep(key) {
   const [task, id = ""] = key.split(":");
+  if (!task && id) return openWorkItem(id, state.document); // a work breakdown in a document that is not a task
   if (!/^TASK-\d{4}$/.test(task)) return;
   try {
     const [doc] = await Promise.all([fetchTaskDocument(`tasks/${task}.md`), stepsData || loadSteps()]);
@@ -1794,12 +1795,25 @@ function chunkBody(doc, chunk) {
     : doc.kind === "Plan" && /^scheduled tasks$/i.test(chunk.title)
     ? scheduledTasksHtml(doc, chunk)
     : /^work breakdown$/i.test(chunk.title)
-    ? renderWorkBreakdown(doc.work, doc.nextActions, doc.chunks.find(c => /^next actions$/i.test(c.title))?.id || "work", chunk.id, (id) => workUpdates(doc).get(id)?.length || 0, new URLSearchParams(location.search).get("done") === "1")
+    ? workDiagnostics(doc.work, chunk.id) + (doc.work.nodes.length ? taskStepsPanel(doc) : doc.work.warnings.length ? "" : '<p class="action-empty">Add nested work items to this task to see its steps.</p>')
     : doc.format === "text"
     ? `<pre class="plain-text">${escapeHtml(chunk.markdown)}</pre>`
     : (/^updates$/i.test(chunk.title) && renderUpdates(chunk.markdown, state.selectedPath))
       || `<div class="markdown">${renderMarkdownSource(chunk.markdown, state.selectedPath)}</div>`;
 }
+
+// The task's Steps panel, on its page (with Graph and World) or in its dock's Work panel. All is the default on a task.
+function taskStepsPanel(doc, tools = true) {
+  const updates = workUpdates(doc);
+  const params = new URLSearchParams(location.search);
+  return taskStepsHtml({ taskId: doc.task?.id || "", work: doc.work, steps: stepsData?.steps.filter((step) => step.task === doc.task?.id) || [], actions: doc.nextActions,
+    noteCount: (id) => updates.get(id)?.length || 0, showDone: params.get("done") === "1", move: tools && params.get("move") in MOVE_FILTERS ? params.get("move") : "all", tools });
+}
+// On a page with Steps, its Next actions section is not shown: the prompts live in the step dialog, and the Steps panel
+// takes the Work breakdown's place under that name.
+const showsSteps = (doc) => Boolean(doc.work?.nodes.length);
+const pageChunks = (doc) => doc.chunks.filter((chunk) => !(showsSteps(doc) && /^next actions$/i.test(chunk.title)));
+const chunkTitle = (doc, chunk) => showsSteps(doc) && /^work breakdown$/i.test(chunk.title) ? "Steps" : chunk.title;
 
 // A plan's Scheduled tasks as one panel: per task its short ID, title and the plan's note for it (muted, in full), with its
 // open steps counted by who moves next. A row opens the step dialog on that task at its first step waiting on you.
@@ -1840,7 +1854,7 @@ function dockDiagrams(doc) {
 function renderDocumentDock(doc) {
   if (doc.format === "text") return;
   const links = collectLinks(elements.chunks, state.documents, doc.path);
-  elements.chunks.insertAdjacentHTML("afterbegin", renderDock({ doc, documents: state.documents, links, body: chunk => chunkBody(doc, chunk), diagrams: dockDiagrams(doc) }));
+  elements.chunks.insertAdjacentHTML("afterbegin", renderDock({ doc, documents: state.documents, links, body: chunk => chunkBody(doc, chunk), steps: showsSteps(doc) ? taskStepsPanel(doc, false) : "", diagrams: dockDiagrams(doc) }));
   for (const node of elements.chunks.querySelectorAll(".doc-dock-panel-body [id]")) if (node.localName !== "marker") node.removeAttribute("id");
   syncDockStuck();
   loadLinkMetadata(doc);
@@ -1952,10 +1966,10 @@ function renderDocument() {
       actionGroups.set(chunk.id, doc.nextActions);
     }
   }
-  elements.chunks.innerHTML = (doc.outbound ? outboundPanel(doc.outbound, { showBody: true }) : "") + (doc.path === state.defaultPath ? todayLeadHtml() : "") + doc.chunks.map((chunk, index) => `<article class="chunk-card" id="${chunk.id}" data-source-anchor="${escapeHtml(chunk.anchor)}">
+  elements.chunks.innerHTML = (doc.outbound ? outboundPanel(doc.outbound, { showBody: true }) : "") + (doc.path === state.defaultPath ? todayLeadHtml() : "") + pageChunks(doc).map((chunk, index) => `<article class="chunk-card" id="${chunk.id}" data-source-anchor="${escapeHtml(chunk.anchor)}">
     <div class="chunk-heading">
       <span class="chunk-index">${String(index + 1).padStart(2, "0")}</span>
-      <h2>${escapeHtml(chunk.title)}</h2>
+      <h2>${escapeHtml(chunkTitle(doc, chunk))}</h2>
       <span class="chunk-actions"><button class="handoff-button" type="button" data-chunk-copy="${chunk.id}" aria-label="Copy section as Markdown">Copy</button><button class="handoff-button" type="button" data-chunk-copy="${chunk.id}" data-copy-as="prompt" aria-label="Copy the ${escapeHtml(agentName())} prompt for this section">Copy prompt</button><button class="handoff-button" type="button" data-chunk-id="${chunk.id}" aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="${state.openComposer === `chunk:${chunk.id}`}">Open in ${agentName()}</button></span>
     </div>
     ${chunkBody(doc, chunk)}
@@ -2213,6 +2227,7 @@ elements.chunks.addEventListener("click", (event) => {
   if (!move) return;
   const panel = move.closest(".step-panel");
   showStepLayer(panel, move.dataset.stepListMove);
+  if (!panel.dataset.moveDefault) return; // the dock's copy doesn't own the URL
   const url = new URL(location.href);
   if (move.dataset.stepListMove === panel.dataset.moveDefault) url.searchParams.delete("move"); else url.searchParams.set("move", move.dataset.stepListMove);
   history.replaceState(history.state, "", url);
@@ -2271,7 +2286,8 @@ async function selectDocument(path, { historyMode = "push", anchor = "" } = {}) 
   if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
   try {
     elements.chunks.setAttribute("aria-busy", "true");
-    const response = await fetch(`/api/document?path=${encodeURIComponent(path)}`);
+    // Task pages and plans list steps, so they wait for them rather than gaining pills a moment after they paint.
+    const [response] = await Promise.all([fetch(`/api/document?path=${encodeURIComponent(path)}`), !stepsData && /^(tasks|daily)\//.test(path) && loadSteps()]);
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || "Could not open that document.");
     if (state.selectedPath !== path) changeMarks.delete(state.selectedPath); // you've seen what changed there
@@ -3013,6 +3029,7 @@ elements.chunks.addEventListener("click", (event) => {
   }
   const workItem = event.target.closest("[data-work-item]");
   if (workItem) {
+    workItem.closest("[popover]")?.hidePopover(); // a node in the Graph popover opens the dialog in its place
     openWorkItem(workItem.dataset.workItem);
     return;
   }
@@ -3424,9 +3441,16 @@ function openCursorComposer() {
   if (selected) return openSelectionComposer(selected);
   const hovered = cursorPosition && document.elementFromPoint(cursorPosition.x, cursorPosition.y);
   const action = hovered?.closest("[data-action-key]")
-    || hovered?.closest(".action-row, .work-line")?.querySelector("[data-action-key]");
+    || hovered?.closest(".action-row")?.querySelector("[data-action-key]");
   if (action) {
     action.click();
+    return;
+  }
+  // Over a step of the open task, C drafts that step for an agent (with its stored prompt when it has one).
+  const [task, id] = hovered?.closest(".step-row[data-open-step]")?.dataset.openStep.split(":") || [];
+  if (id && state.document?.work?.nodes.some((n) => n.id === id) && (task || "") === (state.document.task?.id || "")) {
+    dialogDoc = state.document;
+    openWorkComposer(id, "run");
     return;
   }
   // The section's Copy button shares the class for its look; C always drafts, never copies.

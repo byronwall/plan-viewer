@@ -828,39 +828,15 @@ button.task-list-id:hover { text-decoration: underline; }
 .action-empty { color: var(--muted); font-size: .9rem; }
 .chunk-heading + .action-list { margin-top: 8px; }
 .composer[data-scope="action"] .composer-heading h3 { white-space: normal; overflow-wrap: anywhere; }
-.work-row code, .work-node code, .work-group code { flex: none; color: var(--muted); font: 600 .74rem/1.2 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; }
-.work-tree { --work-indent: 14px; }
-.work-tree ul { margin: 0; padding: 0; list-style: none; }
-.work-tree > ul > li + li { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 6px; }
-.work-row { width: 100%; display: grid; grid-template-columns: var(--work-id-col) 18px minmax(0, 1fr) minmax(0, auto); align-items: start; column-gap: 10px; margin: 0; border: 0; border-radius: 6px; background: transparent; padding: 5px 8px; color: var(--ink); font: inherit; text-align: left; }
-.work-row > code { line-height: 20px; white-space: nowrap; padding-left: calc(var(--work-depth, 0) * var(--work-indent)); }
-.work-row.is-parent > code { color: var(--ink); }
-.work-row.is-completed .work-title { color: var(--muted); }
 .work-status-icon { display: grid; place-items: center; width: 18px; height: 20px; color: var(--muted); }
 .work-status-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .work-status-icon.is-ready, .work-status-icon.is-active { color: var(--action-ink); }
 .work-status-icon.is-blocked, .work-status-icon.is-waiting { color: var(--status-waiting-ink); }
 .work-status-icon.is-completed { color: var(--success); }
-.work-row.is-parent { font-weight: 650; }
-/* On rows with an action, Draft takes the dependencies' cell on hover, so nothing reserves an empty column. */
-.work-row .work-dependencies { grid-column: 4; grid-row: 1; transition: opacity 140ms ease-out; }
-.work-dependencies s { color: var(--quiet-text); text-decoration: none; }
-button.work-row { cursor: pointer; transition: background-color 140ms ease-out; }
-button.work-row:hover, .work-line:has(.work-row-draft:hover) .work-row { background: var(--quiet-field); }
-/* A row with an action shows Draft over its After list while hovered or focused; the row itself opens the dialog. */
-.work-line { position: relative; }
-.work-row-draft { position: absolute; top: 3px; right: 6px; display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 5px; background: var(--paper); padding: 2px 7px; color: var(--action-ink); font: inherit; font-size: .74rem; font-weight: 650; cursor: pointer; opacity: 0; transition: opacity 140ms ease-out, background-color 140ms ease-out; }
-.work-row-draft.is-waiting { color: var(--status-waiting-ink); }
-.work-line:is(:hover, :focus-within) .work-row-draft { opacity: 1; }
-.work-row-draft:hover { background: var(--selected); }
-.work-row-draft.is-waiting:hover { background: var(--status-waiting-field); }
-.work-line:is(:hover, :focus-within) .work-row.has-action .work-dependencies { opacity: 0; }
 .work-notes-mark { display: inline-flex; align-items: center; gap: 3px; vertical-align: -1px; margin: -2px 0 -2px 6px; border-radius: 5px; padding: 2px 6px; color: var(--action-ink); font-size: .72rem; font-weight: 600; line-height: 16px; font-variant-numeric: tabular-nums; cursor: pointer; transition: background-color 140ms ease-out; }
-.work-notes-mark:hover, button.work-row:hover .work-notes-mark { background: var(--selected); }
+.work-notes-mark:hover { background: var(--selected); }
 .work-notes-mark svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .work-node .work-notes-mark { margin: 0 auto 0 4px; padding: 0 4px; }
-.work-title { min-width: 0; font-size: .86rem; line-height: 20px; overflow-wrap: anywhere; }
-.work-dependencies { max-width: 180px; justify-self: end; color: var(--muted); font-size: .72rem; font-weight: 400; line-height: 20px; text-align: right; overflow-wrap: anywhere; }
 .work-status { justify-self: end; border-radius: 999px; background: var(--quiet-field); padding: 2px 8px; color: var(--muted); font-size: .68rem; font-weight: 650; white-space: nowrap; }
 .work-status.is-ready, .work-status.is-active { background: var(--selected); color: var(--action-ink); }
 .work-status.is-blocked, .work-status.is-waiting { background: var(--status-waiting-field); color: var(--status-waiting-ink); }
@@ -871,9 +847,6 @@ button.work-row:hover, .work-line:has(.work-row-draft:hover) .work-row { backgro
 .work-validation > ul { margin: 0 0 10px; padding-left: 20px; }
 .work-validation li + li { margin-top: 6px; }
 .work-validation .handoff-button { border-color: var(--line-strong); color: var(--action-ink); }
-.work-graph-disclosure { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 16px; }
-.work-graph-disclosure > summary { width: fit-content; cursor: pointer; font-size: .86rem; font-weight: 650; }
-.work-graph-disclosure > summary span { margin-left: 12px; color: var(--muted); font-size: .72rem; font-weight: 400; }
 .work-graph-scroll { max-width: 100%; margin-top: 12px; overflow: auto; max-height: 580px; background: var(--hover-field); border-radius: 8px; }
 .work-graph { position: relative; overflow: hidden; }
 .work-graph-expand { display: inline-grid; place-items: center; width: 26px; height: 26px; margin-left: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); padding: 0; color: var(--muted); vertical-align: middle; cursor: pointer; }
@@ -881,8 +854,31 @@ button.work-row:hover, .work-line:has(.work-row-draft:hover) .work-row { backgro
 .work-graph-expand:hover { color: var(--ink); }
 .image-viewer-graph { border-radius: 8px; background: var(--paper); padding: 12px; }
 .image-viewer-graph .work-node { cursor: inherit; }
+/* A task's Steps panel: toggle and Graph/World on one line, rows grouped under light workstream lines, settled steps behind
+   the bottom toggle, and the dependency graph in a popover under its button. */
+.task-steps-tools { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.task-steps-spacer { flex: 1; }
+.task-steps { --step-lead: 72px; }
+.task-steps .step-row { align-items: start; }
+.step-row-lead { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.step-row-lead .work-status-icon { height: 19px; }
+.step-row-id { flex: none; min-width: 46px; }
+.step-row-title > .step-move { margin-right: 8px; vertical-align: 1px; }
+.step-row-notes { display: inline-flex; align-items: center; gap: 2px; margin-right: 8px; color: var(--action-ink); font-weight: 600; }
+.step-row-notes svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.step-group-head { display: flex; align-items: baseline; gap: 10px; width: 100%; margin-top: 8px; border: 0; border-top: 1px solid var(--line); background: transparent; padding: 6px 4px 3px; color: var(--ink); font: inherit; font-size: .84rem; font-weight: 650; text-align: left; cursor: pointer; transition: background-color 140ms ease-out; }
+.step-layer > .step-rows > .step-group-head:first-child { margin-top: 0; }
+.step-group-head code { flex: none; width: var(--step-lead); color: var(--muted); font: 650 .74rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+@media (hover: hover) { .step-group-head:hover { background: var(--hover-field); } }
+.step-row.is-settled .step-row-title { color: var(--muted); font-weight: 500; }
+.task-steps:not(:has(.show-done input:checked)) :is(.is-settled, .work-graph.is-full), .task-steps:has(.show-done input:checked) .work-graph.is-live { display: none; }
+.task-steps > .show-done { margin: 8px 0 0 4px; }
+.step-graph { position: fixed; inset: auto; top: anchor(bottom); right: anchor(right); position-try-fallbacks: flip-inline; width: min(760px, calc(100vw - 24px)); max-height: min(70vh, 640px); margin: 6px 0 0; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 10px 12px 12px; color: var(--ink); box-shadow: 0 18px 44px -12px rgba(24, 33, 47, .26), 0 2px 6px rgba(24, 33, 47, .06); }
+@supports not (anchor-name: --a) { .step-graph { top: 72px; right: 24px; } }
+.step-graph > header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: .86rem; }
+.step-graph > header span { flex: 1; color: var(--muted); font-size: .72rem; }
+.step-graph .work-graph-scroll { margin: 0; max-height: none; }
 .show-done { display: flex; align-items: center; gap: 6px; margin: 0 0 6px 8px; width: fit-content; color: var(--muted); font-size: .76rem; cursor: pointer; }
-.work-breakdown:not(:has(.show-done input:checked)) :is(.work-graph.is-full, .work-tree li.is-done), .work-breakdown:has(.show-done input:checked) .work-graph.is-live { display: none; }
 .work-graph > svg { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
 .work-graph > svg > path { fill: none; stroke: var(--muted); stroke-width: 1.3; }
 .work-graph marker path { fill: var(--muted); }
@@ -898,12 +894,9 @@ button.work-row:hover, .work-line:has(.work-row-draft:hover) .work-row { backgro
 .work-node.is-ready { background: var(--selected); border-color: var(--action-muted); }
 .work-node.is-actionable:hover { border-color: var(--action); }
 .work-node.is-completed { background: var(--quiet-field); color: var(--muted); }
-.action-card:focus-visible, .work-row:focus-visible, .work-node:focus-visible, .work-graph-scroll:focus-visible, .work-graph-disclosure > summary:focus-visible { outline: 2px solid rgba(49, 87, 213, .4); outline-offset: 1px; }
+.action-card:focus-visible, .work-node:focus-visible, .work-graph-scroll:focus-visible { outline: 2px solid rgba(49, 87, 213, .4); outline-offset: 1px; }
 @media (max-width: 600px) {
   .action-go { display: none; }
-  .work-tree { --work-indent: 10px; }
-  .work-dependencies { max-width: 76px; }
-  .work-graph-disclosure > summary span { display: none; }
 }
 @media (max-width: 760px) {
   .task-col-project, .task-col-refs, .task-col-contents { display: none; }
@@ -983,11 +976,11 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
   }
   :where(button, summary, [role="option"]):active:not(:disabled) { scale: .97; }
   /* Full-width rows would visibly lurch at .97, so they press more gently. */
-  :where(.action-card, .work-row, .chunk-jump, .outline-jump, .search-result, .dock-link, .document-link, .view-navigation-link, .task-detail .ref-row, .status-menu button):active:not(:disabled) { scale: .99; opacity: 1; }
+  :where(.action-card, .step-row, .chunk-jump, .outline-jump, .search-result, .dock-link, .document-link, .view-navigation-link, .task-detail .ref-row, .status-menu button):active:not(:disabled) { scale: .99; opacity: 1; }
   /* Inline links cannot scale, so they dim instead. */
   :where(a[href]):active { opacity: .72; }
   .task-detail-more:hover { text-decoration: underline; }
-  .task-row-select:hover, .work-graph-disclosure > summary:hover { color: var(--action-ink); }
+  .task-row-select:hover { color: var(--action-ink); }
   .show-done:hover { color: var(--ink); }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1034,7 +1027,6 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .doc-dock-jump { flex: none; height: 28px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 0 10px; color: var(--body-ink); font-size: .72rem; font-weight: 600; }
 .doc-dock-jump:hover { border-color: var(--line-strong); background: var(--hover-field); color: var(--ink); }
 .doc-dock-panel-body { padding: 10px 16px 16px; }
-.doc-dock-panel-body .work-graph-disclosure { margin-top: 14px; }
 .dock-empty { margin: 6px 0; color: var(--muted); font-size: .82rem; }
 .doc-dock-panel { overflow-x: hidden; }
 /* The panel is as tall as its All list (capped); switching tabs holds that height (app.js) so it never jumps. */
@@ -3157,7 +3149,6 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .step-layer[inert] { visibility: hidden; }
 .step-rows-empty { margin: 0; border-top: 1px solid var(--line); padding: 6px 4px; color: var(--muted); font-size: .84rem; }
 .step-row { display: grid; grid-template-columns: var(--step-lead, 70px) minmax(0, 1fr) auto; gap: 10px; align-items: baseline; width: 100%; border: 0; border-top: 1px solid var(--line); background: transparent; padding: 5px 4px; color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease-out; }
-.step-row > .step-move { justify-self: start; }
 .step-row-title { font-size: .86rem; font-weight: 600; line-height: 1.4; }
 .step-row-note { display: block; color: var(--muted); font-size: .78rem; font-weight: 450; }
 .step-row-id { color: var(--muted); font: 600 .74rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }

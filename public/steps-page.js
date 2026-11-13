@@ -1,5 +1,7 @@
 // The Steps page (`?view=steps`): every open step of every unfinished task, grouped by who makes the next move, with an
 // inspector for the selected step. The Outbox is the same page filtered to outbound kinds (`&kind=outbound`).
+import { isSettled, renderWorkGraph, settledWork, showDoneToggle, workStatusIcon } from "./actions.js";
+import { GLYPHS } from "./icons.js";
 import { escapeHtml } from "./markdown.js";
 import { outboundIcon, outboundKindLabel, outboundPanel } from "./outbound.js";
 
@@ -100,7 +102,57 @@ export function showStepLayer(panel, move) {
   for (const button of panel.querySelectorAll("[data-step-list-move]")) button.setAttribute("aria-pressed", String(button.dataset.stepListMove === move));
   for (const layer of panel.querySelectorAll("[data-step-layer]")) layer.inert = layer.dataset.stepLayer !== move;
 }
-export const stepRowHtml = ({ key, lead = "", title, note = "", meta = "", className = "" }) => `<button type="button" class="step-row${className}" data-open-step="${escapeHtml(key)}">${lead}<span class="step-row-title">${escapeHtml(title)}${note ? `<span class="step-row-note">${escapeHtml(note)}</span>` : ""}</span><span class="step-row-meta">${meta}</span></button>`;
+export const stepRowHtml = ({ key, lead = "", pill = "", title, note = "", meta = "", className = "" }) => `<button type="button" class="step-row${className}" data-open-step="${escapeHtml(key)}"><span class="step-row-lead">${lead}</span><span class="step-row-title">${pill}${escapeHtml(title)}${note ? `<span class="step-row-note">${escapeHtml(note)}</span>` : ""}</span><span class="step-row-meta">${meta}</span></button>`;
+
+// A task's Steps panel (its page and its dock's Work panel): the toggle with this task's counts, then every step under a
+// light header line per workstream (top-level item), each row with its ID, status icon, a pill only when it waits on you,
+// the full title, and gray meta (`ready`, `after W1.2`, `running`, its note count). Completed and deferred steps sit behind
+// one quiet toggle at the bottom. `tools` (the page, not the dock) adds Graph, a popover with the dependency graph, and World.
+const CHOICE_KINDS = new Set(["pick-one", "pick-any"]);
+export function taskStepsHtml({ taskId = "", work, steps = [], actions = [], noteCount = () => 0, showDone = false, move = "all", tools = true }) {
+  const { nodes } = work;
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const kids = (id) => nodes.filter((n) => n.parent === id);
+  const settled = settledWork(nodes);
+  // A step is a leaf, a choice (its options show inside it), or a live item whose children are all settled.
+  const isRow = (n) => !CHOICE_KINDS.has(byId.get(n.parent)?.kind) && (CHOICE_KINDS.has(n.kind) || !kids(n.id).length || (!settled.has(n.id) && kids(n.id).every((c) => settled.has(c.id))));
+  const topOf = (n) => { while (byId.get(n.parent)) n = byId.get(n.parent); return n; };
+  const stepOf = (id) => steps.find((step) => step.id === id);
+  const rows = nodes.filter(isRow);
+  const inLayer = (n, layer) => layer === "all" || (!settled.has(n.id) && MOVE_FILTERS[layer].includes(stepOf(n.id)?.move));
+  const key = (n) => `${taskId}:${n.id}`;
+  const meta = (n) => {
+    const step = stepOf(n.id);
+    const waiting = n.deps.filter((dep) => byId.get(dep)?.status !== "completed");
+    const state = step?.running ? "running" : isSettled(n.status) || n.status === "waiting" ? n.status : waiting.length ? `after ${waiting.join(", ")}` : n.status === "active" ? "active" : n.ready ? "ready" : n.status;
+    const notes = noteCount(n.id);
+    return `${notes ? `<span class="step-row-notes" title="${notes} ${notes === 1 ? "update" : "updates"}"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS["message-square"]}</svg>${notes}</span>` : ""}${escapeHtml(state)}`;
+  };
+  const row = (n) => {
+    const step = stepOf(n.id);
+    return stepRowHtml({ key: key(n), lead: `<code class="step-row-id">${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}`, pill: step?.move.startsWith("you") ? movePill(step) : "", title: n.title, meta: meta(n), className: settled.has(n.id) ? " is-settled" : "" });
+  };
+  const layer = (name) => {
+    const html = nodes.filter((n) => !n.parent).map((top) => {
+      const list = rows.filter((n) => topOf(n) === top && inLayer(n, name));
+      if (!list.length) return "";
+      const head = isRow(top) ? "" : `<button type="button" class="step-group-head${settled.has(top.id) ? " is-settled" : ""}" data-open-step="${escapeHtml(key(top))}"><code>${escapeHtml(top.id)}</code><span>${escapeHtml(top.title)}</span></button>`;
+      return head + list.map(row).join("");
+    }).join("");
+    return `<div class="step-rows">${html || `<p class="step-rows-empty">No steps wait on ${name === "you" ? "you" : name === "agent" ? "an agent" : "others"}.</p>`}</div>`;
+  };
+  const count = (name) => rows.filter((n) => !settled.has(n.id) && inLayer(n, name)).length;
+  const counts = { you: count("you"), agent: count("agent"), others: count("others") };
+  const settledRows = rows.filter((n) => settled.has(n.id)).length;
+  const graph = tools ? `<button type="button" class="code-bar-button" popovertarget="task-steps-graph" style="anchor-name: --task-steps-graph" aria-expanded="false">Graph</button>
+    <div class="step-graph" id="task-steps-graph" popover style="position-anchor: --task-steps-graph" role="dialog" aria-label="Dependency graph"><header><strong>Dependency graph</strong><span>Prerequisite → dependent</span><button type="button" class="work-graph-expand" data-graph-expand aria-label="Expand dependency graph" title="Expand"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9"/></svg></button></header>${renderWorkGraph(work, actions, "steps", noteCount)}</div>
+    ${taskId ? `<button type="button" class="code-bar-button" data-world-task-open="${escapeHtml(taskId)}" title="Everything filed for ${escapeHtml(taskId)} on one timeline (W)">World</button>` : ""}` : "";
+  return `<div class="task-steps step-panel"${tools ? ' data-move-default="all"' : ""}>
+    <div class="task-steps-tools">${stepToggleHtml(move, counts)}<span class="task-steps-spacer"></span>${graph}</div>
+    ${stepStackHtml(move, Object.fromEntries(Object.keys(MOVE_FILTERS).map((name) => [name, layer(name)])))}
+    ${settledRows ? showDoneToggle(settledRows, `data-show-done-work${showDone ? " checked" : ""}`) : ""}
+  </div>`;
+}
 
 function optionsHtml(step) {
   const type = step.kind === "pick-one" ? "radio" : "checkbox";

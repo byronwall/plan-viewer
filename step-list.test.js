@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { movePill, stepActionsHtml, stepBodyHtml, stepRowHtml, stepToggleHtml } from './public/steps-page.js';
+import { parseWorkBreakdown } from './public/actions.js';
+import { movePill, taskStepsHtml, stepActionsHtml, stepBodyHtml, stepRowHtml, stepToggleHtml } from './public/steps-page.js';
 
 const step = (fields) => ({ key: 'TASK-0101 W1', task: 'TASK-0101', id: 'W1', title: 'Decide the rollout', reason: 'decide', move: 'you-decide', kind: 'decision', ...fields });
 
 test('step rows open the step dialog and never link away', () => {
   const html = stepRowHtml({ key: 'TASK-0101:W1', lead: movePill(step()), title: 'Decide the rollout', meta: 'TASK-0101 W1' });
-  assert.match(html, /^<button type="button" class="step-row" data-open-step="TASK-0101:W1">/);
+  assert.match(html, /^<button type="button" class="step-row" data-open-step="TASK-0101:W1"><span class="step-row-lead">/);
   assert.match(html, /step-move-you" title="decide">Decide</);
   assert.doesNotMatch(html, /href=/);
 });
@@ -29,4 +30,29 @@ test("the dialog's compact actions drop the notes beside the buttons", () => {
 test('an allow rule shows once, in the body, not again beside Apply', () => {
   const rule = step({ move: 'you-decide', kind: '', machinery: { path: 'tasks/TASK-0101-assets/allow.md', fields: { apply: 'Bash(git status)' } } });
   assert.equal((stepBodyHtml(rule) + stepActionsHtml(rule)).split('Bash(git status)').length - 1, 1);
+});
+
+test("a task's Steps group rows under workstreams, pill only what waits on you, and hide settled steps", () => {
+  const work = parseWorkBreakdown([
+    '- W1: Invites [open]',
+    '  - W1.1: Table [completed]',
+    '  - W1.2: Decide the expiry [open] (after: W1.1) {decision}',
+    '  - W1.3: Send the mail [open] (after: W1.2)',
+    '- W2: Ship it [open]',
+  ].join('\n'));
+  const steps = [step({ id: 'W1.2' }), { ...step({ id: 'W2' }), move: 'agent', reason: 'ready' }];
+  const html = taskStepsHtml({ taskId: 'TASK-0101', work, steps, noteCount: (id) => id === 'W1.3' ? 2 : 0 });
+  const all = html.slice(html.indexOf('data-step-layer="all"'));
+  assert.match(all, /class="step-group-head" data-open-step="TASK-0101:W1"><code>W1<\/code><span>Invites/);
+  assert.match(all, /class="step-row is-settled" data-open-step="TASK-0101:W1.1"/);
+  assert.match(all, /data-open-step="TASK-0101:W1.2".*step-move-you[^<]*>Decide<\/span>Decide the expiry/);
+  assert.match(all, /data-open-step="TASK-0101:W1.3".*2<\/span>after W1.2/);
+  assert.doesNotMatch(all.slice(all.indexOf('TASK-0101:W2"')), /step-move/, 'no pill on an agent step');
+  assert.match(html, /data-step-list-move="you" aria-pressed="false">You <span>1<\/span>/);
+  assert.match(html, /Show 1 completed or deferred/);
+  const you = html.slice(html.indexOf('data-step-layer="you"'), html.indexOf('data-step-layer="agent"'));
+  assert.match(you, /TASK-0101:W1.2/);
+  assert.doesNotMatch(you, /TASK-0101:W1.3/);
+  assert.match(html, /data-step-layer="all">/, 'All is shown by default');
+  assert.doesNotMatch(taskStepsHtml({ taskId: 'TASK-0101', work, tools: false }), /popover|data-move-default/);
 });

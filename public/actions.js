@@ -150,37 +150,34 @@ const notesMark = (id, count) => `<span class="work-notes-mark" data-work-item="
 export const isSettled = status => ['completed', 'deferred'].includes(status);
 export const showDoneToggle = (count, attrs = '') => `<label class="show-done"><input type="checkbox" ${attrs}> Show ${count} completed or deferred</label>`;
 
-// noteCount(id) is how many task updates name a work item; those items open the work item dialog.
-export function renderWorkBreakdown(work, actions, key, repairChunkId = '', noteCount = () => 0, showDone = false) {
-  const { nodes, warnings } = work;
-  const diagnostics = warnings.length ? `<section class="work-validation" aria-label="Work breakdown needs repair"><strong>Work breakdown needs repair</strong><p>Readiness may be wrong until these issues are fixed in the task Markdown.</p><ul>${warnings.map(w => `<li class="work-warning">${escapeHtml(w)}</li>`).join('')}</ul>${repairChunkId ? `<button type="button" class="handoff-button" data-chunk-id="${escapeHtml(repairChunkId)}" data-repair-work aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false">${icon('pen-line')}Draft fix</button>` : ''}</section>` : '';
-  if (!nodes.length) return `${diagnostics}${warnings.length ? '' : '<p class="action-empty">Add nested work items to this task to see its tree and dependencies.</p>'}`;
-  const hasChildren = n => nodes.some(child => child.parent === n.id);
-  const statusLabel = n => workStatusLabel(n, nodes);
-  const actionIndex = n => actions.findIndex(a => a.workItem === n.id);
-  const actionAttrs = i => `data-action-key="${escapeHtml(key)}" data-action-index="${i}" aria-haspopup="dialog" aria-controls="handoff-popover"`;
-  const itemAttrs = n => `data-work-item="${escapeHtml(n.id)}" aria-haspopup="dialog" aria-controls="work-item-dialog"`;
-  const statusClass = n => `is-${statusLabel(n).toLowerCase()}`;
-  const depthOf = n => { let d = 0; for (let p = n.parent; p; p = nodes.find(x => x.id === p)?.parent) d++; return d; };
-  function tree(parent, depth = 0) {
-    return `<ul style="--work-depth:${depth}">${nodes.filter(n => n.parent === parent).map(n => {
-      const i = actionIndex(n);
-      const notes = noteCount(n.id);
-      const body = `<code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span class="work-title">${escapeHtml(n.title)}${notes ? notesMark(n.id, notes) : ''}</span><small class="work-dependencies">${n.deps.length ? `After ${n.deps.map(id => byId.get(id)?.status === 'completed' ? `<s>${escapeHtml(id)}</s>` : escapeHtml(id)).join(', ')}` : ''}</small>`;
-      const rowClass = `work-row${hasChildren(n) ? ' is-parent' : ''}${n.status === 'completed' ? ' is-completed' : ''}${i >= 0 ? ' has-action' : ''}`;
-      // Every row opens the work item dialog; a row with an action also offers Draft over its After list on hover.
-      const draft = i >= 0 ? `<button type="button" class="action-go work-row-draft${n.ready ? '' : ' is-waiting'}" ${actionAttrs(i)} aria-label="Draft action: ${escapeHtml(actions[i].title)}">${icon('pen-line')}Draft</button>` : '';
-      const row = `<div class="work-line"><button type="button" class="${rowClass}" style="--work-depth:${depth}" ${itemAttrs(n)}>${body}</button>${draft}</div>`;
-      return `<li${isDone(n) ? ' class="is-done"' : ''}>${row}${hasChildren(n) ? tree(n.id, depth + 1) : ''}</li>`;
-    }).join('')}</ul>`;
-  }
-  // An item that is completed or deferred, with everything under it, is clutter: the list and graph hide it by default and the "show completed or deferred" toggle brings it back.
+// Parser warnings (missing dependencies, duplicate IDs, cycles) above a task's Steps, with a draft to fix them.
+export function workDiagnostics(work, repairChunkId = '') {
+  const { warnings } = work;
+  if (!warnings.length) return '';
+  return `<section class="work-validation" aria-label="Work breakdown needs repair"><strong>Work breakdown needs repair</strong><p>Readiness may be wrong until these issues are fixed in the task Markdown.</p><ul>${warnings.map(w => `<li class="work-warning">${escapeHtml(w)}</li>`).join('')}</ul>${repairChunkId ? `<button type="button" class="handoff-button" data-chunk-id="${escapeHtml(repairChunkId)}" data-repair-work aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false">${icon('pen-line')}Draft fix</button>` : ''}</section>`;
+}
+
+// An item that is completed or deferred, with everything under it, is clutter: lists and the graph hide it by default and
+// the "show completed or deferred" toggle brings it back.
+export function settledWork(nodes) {
   const byId = new Map(nodes.map(n => [n.id, n]));
   const isUnder = (n, id) => { for (let p = n; p; p = byId.get(p.parent)) if (p.id === id) return true; return false; };
-  const isDone = n => nodes.every(m => !isUnder(m, n.id) || isSettled(m.status));
-  const liveNodes = nodes.filter(n => !isDone(n));
-  const doneCount = nodes.length - liveNodes.length;
+  return new Set(nodes.filter(n => nodes.every(m => !isUnder(m, n.id) || isSettled(m.status))).map(n => n.id));
+}
 
+// The task's dependency graph, prerequisite → dependent: the live work, and (when anything is settled) the whole of it,
+// for the show-completed toggle to pick between. noteCount(id) is how many task updates name a work item.
+export function renderWorkGraph(work, actions, key, noteCount = () => 0) {
+  const { nodes } = work;
+  if (!nodes.length) return '';
+  const statusLabel = n => workStatusLabel(n, nodes);
+  const actionIndex = n => actions.findIndex(a => a.workItem === n.id);
+  const itemAttrs = n => `data-work-item="${escapeHtml(n.id)}" aria-haspopup="dialog" aria-controls="work-item-dialog"`;
+  const statusClass = n => `is-${statusLabel(n).toLowerCase()}`;
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const isUnder = (n, id) => { for (let p = n; p; p = byId.get(p.parent)) if (p.id === id) return true; return false; };
+  const settled = settledWork(nodes);
+  const liveNodes = nodes.filter(n => !settled.has(n.id));
   // Parents are containers around their children. Siblings sit in columns by dependency depth, where a dependency anywhere
   // inside a sibling's subtree counts as a dependency on that sibling, so containers order left to right like their contents.
   const LEAF_W = 220, LEAF_H = 84, GAP_X = 32, GAP_Y = 20, PAD = 12, HEAD = 34, EDGE = 16;
@@ -234,5 +231,5 @@ export function renderWorkBreakdown(work, actions, key, repairChunkId = '', note
     }).join('');
     return `<div class="work-graph is-${variant}" style="width:${width}px;height:${height}px"><svg width="${width}" height="${height}" aria-hidden="true"><defs><marker id="${marker}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8"/></marker></defs>${edges}</svg>${boxes}</div>`;
   }
-  return `${diagnostics}<div class="work-breakdown">${doneCount ? showDoneToggle(doneCount, `data-show-done-work${showDone ? ' checked' : ''}`) : ''}<div class="work-tree" style="--work-id-col:max(calc(3 * var(--label-char)), ${[...new Set(nodes.map(n => `${depthOf(n)}, ${n.id.length}`))].map(pair => { const [d, c] = pair.split(', '); return `calc(${d} * var(--work-indent) + ${c} * var(--label-char))`; }).join(', ')})">${tree('')}</div><details class="work-graph-disclosure" open><summary>Dependency graph <span>Prerequisite → dependent</span><button type="button" class="work-graph-expand" data-graph-expand aria-label="Expand dependency graph" title="Expand"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9"/></svg></button></summary><div class="work-graph-scroll" tabindex="0" aria-label="Scrollable work dependency graph">${graph(liveNodes, 'live')}${doneCount ? graph(nodes, 'full') : ''}</div></details></div>`;
+  return `<div class="work-graph-scroll" tabindex="0" aria-label="Scrollable work dependency graph">${graph(liveNodes, 'live')}${settled.size ? graph(nodes, 'full') : ''}</div>`;
 }
