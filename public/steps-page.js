@@ -206,12 +206,14 @@ const button = (action, label, primary = false, disabled = "") => `<button type=
 
 // What the inspector lets you do now: start an agent, run or copy a statement, apply a rule, or mark it done.
 // `compact` (the step dialog's header) drops the explanatory notes beside the buttons.
-// Up next rides along with every step's own actions: it queues the step for an orchestrating agent thread.
+// Note… and Up next ride along with every step's own actions: a note (an approval, decision or direction) waits for an
+// agent thread under Up next, standing in for the step; Up next queues the step itself.
 export function stepActionsHtml(step, context = {}) {
   if (step.kind === "note") return `<div class="outbound-actions step-actions">${button("done", "Mark done", true)}${context.compact ? "" : '<span class="step-choice-note">An agent works it into its source; mark it done when that\'s handled.</span>'}</div>`;
   const own = ownActionsHtml(step, context);
   const next = `<button type="button" class="outbound-secondary step-next-toggle" data-step-action="next" aria-pressed="${Boolean(step.next)}" title="${step.next ? "Take it off the Up next queue" : "Queue it for an agent thread: plan-viewer next lists it"}">${step.next ? "● Up next" : "Up next"}</button>`;
-  return own.includes('class="outbound-actions') ? own.replace(/<\/div>$/, `${next}</div>`) : `${own}<div class="outbound-actions step-actions">${next}</div>`;
+  const note = step.kind === "decision" ? "" : `<button type="button" class="outbound-secondary" data-step-action="note" title="Approve, decide or direct it in your own words; an agent carries it through from Up next">Note…</button>`;
+  return own.includes('class="outbound-actions') ? own.replace(/<\/div>$/, `${note}${next}</div>`) : `${own}<div class="outbound-actions step-actions">${note}${next}</div>`;
 }
 function ownActionsHtml(step, { startConfigured = false, runConfigured = false, freeSlots = 0, compact = false } = {}) {
   const f = step.machinery?.fields || {};
@@ -227,7 +229,7 @@ function ownActionsHtml(step, { startConfigured = false, runConfigured = false, 
     if (f.run && readOnly(f.run)) return `<div class="outbound-actions step-actions">${button("run", "Approve and run", true, runConfigured ? "" : "Set steps.run in viewer.config.json")}${button("done", "Mark done")}</div>`;
     return `<div class="outbound-actions step-actions">${f.run ? button("copy-statement", "Copy statement", true) : ""}${button("done", "Mark done", !f.run)}</div>`;
   }
-  if (step.move === "you-decide" && step.kind === "decision") return `<div class="outbound-actions step-actions">${button("decide", "Decide…", true)}${button("done", "Mark decided")}${note("Say what you decided; an agent records it and carries it out.")}</div>`;
+  if (step.move === "you-decide" && step.kind === "decision") return `<div class="outbound-actions step-actions">${button("note", "Decide…", true)}${button("done", "Mark decided")}${note("Say what you decided; an agent records it and carries it out.")}</div>`;
   return "";
 }
 

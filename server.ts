@@ -710,7 +710,7 @@ type WorkNode = { id: string; title: string; status: string; deps: string[]; par
 
 // One work breakdown item, either carried out ("run") or rewritten in the task file ("update"). Items that are not ready
 // can be sent too; the prompt says what they still wait on so the agent confirms before acting.
-export function buildWorkItemPrompt(document: Awaited<ReturnType<typeof loadDocument>>, node: WorkNode, mode: "run" | "update" | "decide", commentary: string) {
+export function buildWorkItemPrompt(document: Awaited<ReturnType<typeof loadDocument>>, node: WorkNode, mode: "run" | "update" | "note", commentary: string) {
   const nodes = document.work.nodes as WorkNode[];
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const line = (n: WorkNode) => `${n.id}: ${n.title} [${n.status}]`;
@@ -719,8 +719,10 @@ export function buildWorkItemPrompt(document: Awaited<ReturnType<typeof loadDocu
   const action = document.nextActions.find((a) => a.workItem === node.id);
   const direction = commentary.trim() ? `${config().user}'s direction${mode === "run" ? " for this run (takes precedence over the stored prompt where they differ)" : ""}:\n${commentary.trim()}\n\n` : "";
   const facts = `Planning workspace: ${ROOT}\nSource file: ${document.absolutePath}\nTask: ${document.task?.id || document.title} · ${document.task?.title || document.title}\nWork item: ${line(node)}${parent ? `\nPart of: ${line(parent)}` : ""}${node.deps.length ? `\nAfter: ${node.deps.map((id) => byId.get(id) ? line(byId.get(id)!) : id).join("; ")}` : ""}${action ? `\nLinked next action: ${action.title}` : ""}`;
-  if (mode === "decide") {
-    return `Resolve decision ${node.id}: ${node.title}\n\n${facts}\n\nRead the source file and the workspace AGENTS.md first.\n\n${config().user}'s decision, in their own words:\n${commentary.trim()}\n\nRecord the decision in the task file: a dated update whose bold title names (${node.id}), and the reasoning wherever the task keeps findings. Then carry out what it implies within this task: reword, add or drop the steps it changes, and do any small follow-through it asks for. Mark ${node.id} completed once the decision is recorded. If the words leave the decision genuinely open, record what was said and ask instead of guessing. Run the workspace lint on the task and fix what it reports. Do not treat drafting a message as authorization to send it.\n\n${CHAT_LINK_INSTRUCTION}`;
+  // A note on a step: a decision, an approval, or direction, in the user's own words, for an agent to act on later.
+  if (mode === "note") {
+    const user = config().user;
+    return `Act on ${user}'s note on ${node.id}: ${node.title}\n\n${facts}\n\nRead the source file and the workspace AGENTS.md first, then any task asset whose front matter names \`step: ${document.task?.id} ${node.id}\` (an outbound draft or other machinery for this step).\n\n${user}'s note, in their own words:\n${commentary.trim()}\n\nThe note is a decision, an approval or direction for this step. Record it in the task file as a dated update whose bold title names (${node.id}). Then carry it through: a decision gets the steps it changes reworded, added or dropped; an approval of an outbound draft is ${user}'s approval to send that draft as written, or with the edits the note asks for, so send it the workspace's way and do the follow-through around it (links, labels, parent issues, references back in the task); direction gets the work it describes. Mark ${node.id} completed once that is done, and only then. If the note leaves something genuinely open, record what was said and ask instead of guessing. Run the workspace lint on the task and fix what it reports.\n\n${CHAT_LINK_INSTRUCTION}`;
   }
   if (mode === "update") {
     return `Update work item ${node.id} in its task file. Do not carry out the work itself.\n\n${facts}\n\nRead the source file and the workspace AGENTS.md first.\n\n${direction}Revise ${node.id} so the work breakdown matches current understanding: its title, status, nesting, (after: ...) prerequisites, and its linked next action and prompt where one exists. Use the task's Findings and Updates as evidence. Keep IDs stable unless a rename is asked for, and update every reference when one changes. Add a dated update whose bold title names (${node.id}) saying what changed and why. Run the workspace lint on the task and fix what it reports.\n\n${CHAT_LINK_INSTRUCTION}`;
@@ -778,12 +780,12 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
     const document = await loadDocument(path);
     const node = (document.work.nodes as WorkNode[]).find((n) => n.id === workItem);
     if (!node) throw new Error(`Work item ${workItem} is no longer in this task. Reload it and try again.`);
-    if (mode !== "run" && mode !== "update" && mode !== "decide") throw new Error("Choose to run, update or decide the work item.");
-    if (mode === "decide" && !commentary.trim()) throw new Error("Say what you decided before saving it.");
+    if (mode !== "run" && mode !== "update" && mode !== "note") throw new Error("Choose to run, update or note the work item.");
+    if (mode === "note" && !commentary.trim()) throw new Error("Write the note before saving it.");
     if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Additional context is too long.");
     const prompt = buildWorkItemPrompt(document, node, mode, commentary);
     dispatchLog(requestId, "validated", { scope, path, workItem, mode });
-    return openDraft(`${mode === "update" ? "Update" : mode === "decide" ? "Decide" : "Advance"} ${node.id}: ${node.title}`, prompt, `${document.task?.id} ${node.id}`);
+    return openDraft(`${mode === "update" ? "Update" : mode === "note" ? "Note on" : "Advance"} ${node.id}: ${node.title}`, prompt, `${document.task?.id} ${node.id}`);
   }
   if (!commentary.trim() && !copy) throw new Error(note ? "Add a note before saving it." : "Add a request before opening a draft.");
   if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Commentary is too long for this first version.");

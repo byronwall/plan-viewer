@@ -839,11 +839,13 @@ function composerTemplate(target) {
     const path = target.path || state.selectedPath;
     const meta = `<span title="${escapeHtml(path)}">${escapeHtml(path.split("/").pop())}</span> · ${escapeHtml(node.id)} · ${node.ready ? escapeHtml(label) : `<span class="action-waiting">${escapeHtml(label)}${waiting.length ? ` · after ${escapeHtml(waiting.join(", "))}` : ""}</span>`}`;
     const preview = mode === "run" && action ? `<div class="action-prompt-preview" aria-label="Stored action prompt"><div class="markdown">${renderMarkdownSource(action.prompt, path)}</div></div>` : "";
-    if (mode === "decide") {
-      return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="work" data-source-path="${escapeHtml(path)}" data-work-item="${escapeHtml(node.id)}" data-work-mode="decide">
+    // A note on the step for an agent to act on later: a decision (worded as one on a decision step), an approval, direction.
+    if (mode === "note") {
+      const decision = node.kind === "decision";
+      return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="work" data-source-path="${escapeHtml(path)}" data-work-item="${escapeHtml(node.id)}" data-work-mode="note">
       ${heading(meta)}
-      <div class="composer-body"><div class="composer-field"><label for="work-context">What did you decide?</label><textarea id="work-context" name="commentary" required placeholder="Talk it through: what you chose, why, and anything it changes. An agent records it in the task and carries it out."></textarea><div class="composer-images" hidden></div></div></div>
-      <footer class="composer-actions"><p class="composer-hint"><kbd>Enter</kbd> save · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</p><button class="copy-prompt-button" type="button">Copy prompt</button><button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Save decision</button></footer>
+      <div class="composer-body"><div class="composer-field"><label for="work-context">${decision ? "What did you decide?" : "Your note for the agent"}</label><textarea id="work-context" name="commentary" required placeholder="${decision ? "Talk it through: what you chose, why, and anything it changes." : "Approve it, decide it, or say what to change. The agent records it in the task, carries it through (sending, linking, cleanup) and completes the step."}"></textarea><div class="composer-images" hidden></div></div></div>
+      <footer class="composer-actions"><p class="composer-hint"><kbd>Enter</kbd> save · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</p><button class="copy-prompt-button" type="button">Copy prompt</button><button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">${decision ? "Save decision" : "Save note"}</button></footer>
     </form>`;
     }
     const field = mode === "update"
@@ -931,7 +933,7 @@ function syncComposerDraftState() {
   const hint = elements.handoffPopover.querySelector(".composer-hint");
   if (hint) {
     hint.classList.remove("draft-warning");
-    hint.innerHTML = elements.handoffPopover.querySelector('[data-work-mode="decide"]') ? "<kbd>Enter</kbd> save · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line" : "<kbd>Enter</kbd> open · <kbd>⌘</kbd><kbd>Enter</kbd> note";
+    hint.innerHTML = elements.handoffPopover.querySelector('[data-work-mode="note"]') ? "<kbd>Enter</kbd> save · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line" : "<kbd>Enter</kbd> open · <kbd>⌘</kbd><kbd>Enter</kbd> note";
   }
 }
 
@@ -1696,12 +1698,12 @@ async function runStepAction(step, kind, action) {
     return data;
   };
   try {
-    if (kind === "decide") {
+    if (kind === "note") {
       const doc = await fetchTaskDocument(step.path, true);
       const node = doc.work.nodes.find((n) => n.id === step.id);
       if (!node) throw new Error(`${step.id} isn't in ${step.task} any more.`);
       closeQuietly();
-      openComposer({ key: `work:decide:${step.id}`, scope: "work", mode: "decide", node, nodes: doc.work.nodes, path: step.path, title: `Decide ${step.id}: ${node.title}` }, action);
+      openComposer({ key: `work:note:${step.id}`, scope: "work", mode: "note", node, nodes: doc.work.nodes, path: step.path, title: `${node.kind === "decision" ? "Decide" : "Note on"} ${step.id}: ${node.title}` }, action);
       return false;
     }
     if (kind === "copy-statement") { await navigator.clipboard.writeText(step.machinery.fields.run); action.classList.add("is-copied"); setTimeout(() => action.classList.remove("is-copied"), 900); return false; }
@@ -2596,7 +2598,7 @@ async function saveComposerNote(form) {
   try {
     const { note } = await requestDispatch({ ...composerRequest(form), note: true });
     closeComposer();
-    showNotice(form.dataset.workMode === "decide" ? `Saved your decision on ${form.dataset.workItem}; an agent picks it up from Up next.` : `Saved a note for ${agentName()}; it waits under Up next.`, false, { action: { label: "Open", run: () => selectDocument(note, { historyMode: "push" }) } });
+    showNotice(form.dataset.workMode === "note" ? `Saved your note on ${form.dataset.workItem}; an agent picks it up from Up next.` : `Saved a note for ${agentName()}; it waits under Up next.`, false, { action: { label: "Open", run: () => selectDocument(note, { historyMode: "push" }) } });
   } catch (error) {
     button.disabled = false;
     showNotice(error.message, true);
@@ -2604,7 +2606,7 @@ async function saveComposerNote(form) {
 }
 
 async function dispatch(form) {
-  if (form.dataset.workMode === "decide") return saveComposerNote(form); // a decision waits under Up next for an agent
+  if (form.dataset.workMode === "note") return saveComposerNote(form); // a step's note waits under Up next for an agent
   const button = form.querySelector(".send-button");
   if (button.disabled) return;
   button.disabled = true;

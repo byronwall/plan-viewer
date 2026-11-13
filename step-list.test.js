@@ -23,7 +23,7 @@ test('the toggle marks one segment and counts all but All', () => {
 test("the dialog's compact actions drop the notes beside the buttons", () => {
   assert.match(stepActionsHtml(step()), /Say what you decided/);
   const compact = stepActionsHtml(step(), { compact: true });
-  assert.match(compact, /data-step-action="decide"[^>]*>Decide…/);
+  assert.match(compact, /data-step-action="note"[^>]*>Decide…/);
   assert.match(compact, /data-step-action="done"[^>]*>Mark decided/);
   assert.doesNotMatch(compact, /step-choice-note/);
 });
@@ -95,4 +95,11 @@ test('a short step list opens on the first mover with anything waiting and caps 
   const only = stepListHtml(steps, { only: true, cap: 5 });
   assert.equal(only.toggle, '');
   assert.doesNotMatch(only.stack, /step-stack|inert/);
+});
+
+test('every step but a note offers Note…, a decision words it as Decide…', () => {
+  const draft = step({ kind: 'jira-issue', draft: { path: 'tasks/TASK-0101-assets/issue.md', fields: {} } });
+  assert.match(stepActionsHtml(draft), /data-step-action="note"[^>]*>Note…/);
+  assert.equal(stepActionsHtml(step()).match(/data-step-action="note"/g).length, 1);
+  assert.doesNotMatch(stepActionsHtml(step({ kind: 'note', move: 'agent' })), /data-step-action="note"/);
 });
