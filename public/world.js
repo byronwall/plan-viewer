@@ -6,6 +6,7 @@ import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { diagramHref, documentHref, escapeHtml } from "./markdown.js";
 import { localTodayKey } from "./dates.js";
 import { workStatusIcon } from "./actions.js";
+import { moveCounts, movePill, showStepLayer, stepKey, stepRowHtml, stepStackHtml, stepToggleHtml, visibleSteps } from "./steps-page.js";
 
 // Work first (what got done, and today what is ready), then the pictures, so the top of the canvas is where the task
 // stands and what it looks like; the narrative lanes follow.
@@ -19,10 +20,11 @@ export const LANES = [
   { key: "file", label: "Files", noun: ["file", "files"] },
 ];
 const READY_SHOWN = 4;
+const TODAY_ROWS = 8;
 const RECENT_DAYS = 14;
 const DAY_MS = 86_400_000;
 
-// app.js supplies what the world opens into: { documents(), tasks(), peek(path, anchor), images(items, index, trigger), copy(path, button), open(path) }.
+// app.js supplies what the world opens into: { documents(), tasks(), steps(id), step(key), peek(path, anchor), images(items, index, trigger), copy(path, button), open(path) }.
 let host = null;
 export const connectWorld = (value) => { host = value; };
 
@@ -195,6 +197,20 @@ function openTask() {
 }
 const openTaskButton = (id) => `<a class="code-bar-button is-primary world-open" href="${escapeHtml(documentHref(`tasks/${id}.md`, ""))}" data-world-open-task title="Open ${escapeHtml(id)} as the page (Enter)">Open task <kbd>↵</kbd></a>`;
 
+// A task's Today column: its open steps as the shared step list (You first when anything waits on you), eight a segment,
+// each opening the step dialog over the world; "+N more" opens the dialog on the task, whose rail lists them all.
+function todaySteps(id) {
+  const steps = host.steps(id);
+  const counts = moveCounts(steps);
+  const move = counts.you ? "you" : "all";
+  const layer = (name) => {
+    const shown = visibleSteps(steps, { move: name });
+    const rows = shown.slice(0, TODAY_ROWS).map((step) => stepRowHtml({ key: stepKey(step), lead: movePill(step), title: step.title.split(" — ")[0], meta: escapeHtml(step.id) })).join("");
+    return `<div class="step-rows">${rows || `<p class="step-rows-empty">No steps here.</p>`}${shown.length > TODAY_ROWS ? `<button type="button" class="world-more" data-open-step="${escapeHtml(id)}">+${shown.length - TODAY_ROWS} more</button>` : ""}</div>`;
+  };
+  return `<div class="world-steps step-panel">${stepToggleHtml(move, counts)}${stepStackHtml(move, { you: layer("you"), agent: layer("agent"), others: layer("others"), all: layer("all") })}</div>`;
+}
+
 // ---------- one task ----------
 
 export async function openTaskWorld(id, day = "") {
@@ -212,6 +228,9 @@ export async function openTaskWorld(id, day = "") {
   try { world = await fetchWorld(); } catch (error) { if (current.id === id) failed(box, title, error); return; }
   if (current.id !== id) return;
   const items = taskItems(id, world, host.documents());
+  // Today's column is the task's step list, so it exists whenever the task has open steps, ready or not.
+  const hasSteps = host.steps(id).length > 0;
+  if (hasSteps && !items.some((item) => item.lane === "work" && item.ready)) items.push({ lane: "work", day: localTodayKey(), ready: true, more: 0 });
   const columns = dayColumns(items);
   const lanes = LANES.filter((lane) => items.some((item) => item.lane === lane.key));
   const counts = Object.fromEntries(lanes.map((lane) => [lane.key, items.filter((item) => item.lane === lane.key && !item.created && !item.ready).length]));
@@ -225,9 +244,9 @@ export async function openTaskWorld(id, day = "") {
   const visualIndex = new Map(visuals.map((item, index) => [item, index]));
   const cell = (lane, items) => {
     if (lane === "updates") return items.map((item) => `<button type="button" class="world-card world-update${item.created ? " is-created" : ""}" data-world-peek="tasks/${escapeHtml(id)}.md" data-world-anchor="${item.created ? "" : "updates"}"><span>${codeSpans(item.title)}</span></button>`).join("");
-    if (lane === "work") return items.map((item) => item.more
-      ? `<button type="button" class="world-card world-more" data-world-peek="tasks/${escapeHtml(id)}.md" data-world-anchor="work-breakdown">+${item.more} more ready</button>`
-      : `<button type="button" class="world-card world-work${item.ready ? " is-ready" : ""}" data-world-peek="tasks/${escapeHtml(id)}.md" data-world-anchor="work-breakdown">${workStatusIcon(item.node, task.work)}<code>${escapeHtml(item.node.id)}</code><span>${codeSpans(item.title)}</span></button>`).join("");
+    // Done items keep their check rows; today's ready items give way to the step list. Every row opens the step dialog.
+    if (lane === "work") return items.filter((item) => !item.ready).map((item) => `<button type="button" class="world-card world-work" data-open-step="${escapeHtml(`${id}:${item.node.id}`)}">${workStatusIcon(item.node, task.work)}<code>${escapeHtml(item.node.id)}</code><span>${codeSpans(item.title)}</span></button>`).join("")
+      + (hasSteps && items.some((item) => item.ready) ? todaySteps(id) : "");
     if (lane === "days") return `<span class="world-chips">${items.map((item) => `<button type="button" class="world-chip" data-world-peek="${escapeHtml(item.path)}">${escapeHtml(item.title)}</button>`).join("")}</span>`;
     if (lane === "document") return items.map((item) => `<button type="button" class="world-card" data-world-peek="${escapeHtml(item.path)}" title="${escapeHtml(item.path)}"><span>${escapeHtml(item.title)}</span>${item.folder ? `<small>${escapeHtml(item.folder)}</small>` : ""}</button>`).join("");
     if (lane === "file") return items.map((item) => `<button type="button" class="world-file" data-world-copy="${escapeHtml(item.path)}" title="Copy ${escapeHtml(item.path)}">${item.folder ? `<small>${escapeHtml(item.folder)}</small>` : ""}${escapeHtml(fileName(item.path))}</button>`).join("");
@@ -244,7 +263,11 @@ export async function openTaskWorld(id, day = "") {
     const here = items.filter((item) => item.lane === lane.key && item.day === column.day);
     return `<div class="world-cell${columnClass(column)}" data-lane="${lane.key}">${here.length ? cell(lane.key, here) : ""}</div>`;
   }).join("")}`).join("");
-  scroller.innerHTML = `<div class="world-grid world-task-grid" style="--columns:${columns.length}"><div class="world-corner"></div>${header}${rows}</div>`;
+  // The Today column holds a step list, so it gets room for a pill and a full title.
+  const wide = hasSteps && columns.some((column) => column.today);
+  const template = columns.map((column) => column.today && hasSteps ? "minmax(var(--today-col), 1.6fr)" : "minmax(var(--col), 1fr)").join(" ");
+  const size = wide ? `;grid-template-columns:var(--label) ${template};width:max(100%, calc(var(--label) + ${columns.length - 1} * var(--col) + var(--today-col)))` : "";
+  scroller.innerHTML = `<div class="world-grid world-task-grid" style="--columns:${columns.length}${size}"><div class="world-corner"></div>${header}${rows}</div>`;
   fit(scroller, "recent", day);
 }
 
@@ -296,6 +319,10 @@ function onClick(event) {
   if (event.target === dialog) return;
   const openLink = event.target.closest("[data-world-open-task]");
   if (openLink && !(event.metaKey || event.ctrlKey || event.shiftKey)) { event.preventDefault(); return openTask(); }
+  const move = event.target.closest(".step-panel [data-step-list-move]");
+  if (move) return showStepLayer(move.closest(".step-panel"), move.dataset.stepListMove);
+  const step = event.target.closest("[data-open-step]");
+  if (step) return host.step(step.dataset.openStep);
   const target = event.target.closest("[data-world-close], [data-world-back], [data-world-fit], [data-world-zoom], [data-world-retry], [data-world-peek], [data-world-visual], [data-world-copy], [data-world-task]");
   if (!target) return;
   const scroller = dialog.querySelector('[data-w="scroller"]');

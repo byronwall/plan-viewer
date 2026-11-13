@@ -1514,7 +1514,7 @@ function openWorkItem(id, doc = state.document) {
       <span class="work-item-progress" title="${doneLeaves} of ${leaves.length} work items completed"><span style="--done:${leaves.length ? doneLeaves / leaves.length : 0}"></span>${doneLeaves}/${leaves.length} done</span>
       <span class="work-item-views" role="tablist" aria-label="View">${[["item", "Item"], ["graph", "Graph"]].map(([view, label]) => `<button type="button" role="tab" data-work-view="${view}" aria-selected="${workItemView === view}" title="${label} (G)">${label}</button>`).join("")}</span>
       <span class="work-item-step"><span class="work-item-step-count">${at >= 0 ? `${at + 1} of ${stepper.length} with updates` : stepper.length ? `${stepper.length} with updates` : ""}</span>${["prev", "next"].map(dir => { const n = neighbors[dir]; return `<button type="button" class="work-item-icon-button" ${n ? `data-work-item="${escapeHtml(n.id)}" data-work-step="${dir}" title="${escapeHtml(`${n.id} · ${n.title}`)}"` : "disabled"} aria-label="${dir === "prev" ? "Previous" : "Next"} item with updates${n ? `: ${escapeHtml(n.id)}` : ""}" aria-keyshortcuts="${dir === "prev" ? "ArrowLeft" : "ArrowRight"}">${glyph("arrow-right")}</button>`; }).join("")}</span>
-      ${task ? `<span class="work-item-goto">${path === state.selectedPath && state.view === "document" ? "" : `<button type="button" class="code-bar-button" data-step-open-task title="Open ${escapeHtml(task.id)} as the page">Open task</button>`}<button type="button" class="code-bar-button" data-step-world="${escapeHtml(task.id)}" title="Everything filed for ${escapeHtml(task.id)} on one timeline">World</button></span>` : ""}
+      ${task ? `<span class="work-item-goto">${path === state.selectedPath && state.view === "document" && !document.querySelector("dialog.code-diff[open]") ? "" : `<button type="button" class="code-bar-button" data-step-open-task title="Open ${escapeHtml(task.id)} as the page">Open task</button>`}<button type="button" class="code-bar-button" data-step-world="${escapeHtml(task.id)}" title="Everything filed for ${escapeHtml(task.id)} on one timeline">World</button></span>` : ""}
       <button type="button" class="work-item-icon-button" data-dialog-close aria-label="Close">${glyph("x")}</button>
     </header>
     <nav class="work-item-rail" aria-label="Steps">${task ? `<div class="work-item-rail-head">${stepToggleHtml(railMove, null, ["you", "agent", "all"])}</div>` : ""}<ol>${rail}</ol><p><span><kbd>J</kbd><kbd>K</kbd> steps</span><span><kbd>←</kbd><kbd>→</kbd> updates</span><span><kbd>G</kbd> graph</span></p></nav>
@@ -4150,6 +4150,9 @@ function openWorld() {
 connectWorld({
   documents: () => state.documents,
   tasks: portfolioTasks,
+  steps: (id) => stepsData?.steps.filter((step) => step.task === id) || [],
+  // A step row opens the step dialog above the world, which stays underneath.
+  step: (key) => openStep(key),
   // Open task: every overlay closes and the task becomes the page, with its own history entry so Back returns here.
   open: (path) => { closeOverview(); selectDocument(path, { historyMode: "push" }); },
   // An update opens the task in the peek at its Updates section, so the world stays underneath.
