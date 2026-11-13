@@ -6,7 +6,7 @@ import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { diagramHref, documentHref, escapeHtml } from "./markdown.js";
 import { localTodayKey } from "./dates.js";
 import { workStatusIcon } from "./actions.js";
-import { moveCounts, movePill, showStepLayer, stepKey, stepRowHtml, stepStackHtml, stepToggleHtml, visibleSteps } from "./steps-page.js";
+import { showStepLayer, stepListHtml } from "./steps-page.js";
 
 // Work first (what got done, and today what is ready), then the pictures, so the top of the canvas is where the task
 // stands and what it looks like; the narrative lanes follow.
@@ -200,15 +200,8 @@ const openTaskButton = (id) => `<a class="code-bar-button is-primary world-open"
 // A task's Today column: its open steps as the shared step list (You first when anything waits on you), eight a segment,
 // each opening the step dialog over the world; "+N more" opens the dialog on the task, whose rail lists them all.
 function todaySteps(id) {
-  const steps = host.steps(id);
-  const counts = moveCounts(steps);
-  const move = counts.you ? "you" : "all";
-  const layer = (name) => {
-    const shown = visibleSteps(steps, { move: name });
-    const rows = shown.slice(0, TODAY_ROWS).map((step) => stepRowHtml({ key: stepKey(step), lead: movePill(step), title: step.title.split(" — ")[0], meta: escapeHtml(step.id) })).join("");
-    return `<div class="step-rows">${rows || `<p class="step-rows-empty">No steps here.</p>`}${shown.length > TODAY_ROWS ? `<button type="button" class="world-more" data-open-step="${escapeHtml(id)}">+${shown.length - TODAY_ROWS} more</button>` : ""}</div>`;
-  };
-  return `<div class="world-steps step-panel">${stepToggleHtml(move, counts)}${stepStackHtml(move, { you: layer("you"), agent: layer("agent"), others: layer("others"), all: layer("all") })}</div>`;
+  const { toggle, stack } = stepListHtml(host.steps(id), { cap: TODAY_ROWS, more: (move, count) => `<button type="button" class="world-more" data-open-step="${escapeHtml(id)}">+${count - TODAY_ROWS} more</button>` });
+  return `<div class="world-steps step-panel">${toggle}${stack}</div>`;
 }
 
 // ---------- one task ----------

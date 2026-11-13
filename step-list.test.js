@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseWorkBreakdown } from './public/actions.js';
-import { movePill, scheduledTasks, taskStepsHtml, stepActionsHtml, stepBodyHtml, stepRowHtml, stepToggleHtml } from './public/steps-page.js';
+import { firstMove, movePill, scheduledTasks, stepListHtml, taskStepsHtml, stepActionsHtml, stepBodyHtml, stepRowHtml, stepToggleHtml } from './public/steps-page.js';
 
 const step = (fields) => ({ key: 'TASK-0101 W1', task: 'TASK-0101', id: 'W1', title: 'Decide the rollout', reason: 'decide', move: 'you-decide', kind: 'decision', ...fields });
 
@@ -72,4 +72,17 @@ test("a plan's scheduled tasks keep each task's note, whichever separator the pl
     { id: 'TASK-0103', note: '' },
   ]);
   assert.match(rest, /Carry-over goes to Monday/);
+});
+
+test('a short step list opens on the first mover with anything waiting and caps each segment', () => {
+  const steps = [1, 2, 3].map((n) => ({ ...step({ id: `W${n}` }), move: 'agent', reason: 'ready' }));
+  assert.equal(firstMove({ you: 0, agent: 3, others: 1 }), 'agent');
+  assert.equal(firstMove({ you: 0, agent: 0, others: 0 }), 'all');
+  const { toggle, stack } = stepListHtml(steps, { cap: 2, more: (move, count) => `<i>${move} ${count}</i>` });
+  assert.match(toggle, /data-step-list-move="agent" aria-pressed="true"/);
+  assert.match(stack, /data-step-layer="agent">.*TASK-0101:W2.*<i>agent 3<\/i>/s);
+  assert.doesNotMatch(stack, /TASK-0101:W3/);
+  const only = stepListHtml(steps, { only: true, cap: 5 });
+  assert.equal(only.toggle, '');
+  assert.doesNotMatch(only.stack, /step-stack|inert/);
 });

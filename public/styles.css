@@ -610,9 +610,11 @@ button.tip-row:focus-visible { outline: 2px solid rgba(49, 87, 213, .35); outlin
 .task-table tbody tr:hover td { background: var(--hover-field); }
 .task-table tr[aria-selected="true"] td { background: var(--selected); }
 .task-table tr[aria-selected="true"] td:first-child { box-shadow: inset 2px 0 var(--action); }
-.task-col-id, .task-col-status, .task-col-refs, .task-col-updated, .task-col-contents { width: 1%; white-space: nowrap; }
-.task-col-refs { text-align: right; font-variant-numeric: tabular-nums; }
-.task-table th.task-col-refs button { flex-direction: row-reverse; }
+.task-col-id, .task-col-status, .task-col-updated, .task-col-contents { width: 1%; white-space: nowrap; }
+/* One count per line, so the column stays narrow. */
+.task-col-steps { width: 1%; color: var(--muted); font-size: .76rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.task-col-steps span { display: block; line-height: 1.35; }
+.step-count-you { color: var(--status-waiting-ink); font-weight: 650; }
 .task-contents { display: grid; grid-template-columns: repeat(3, 3.4em); color: var(--body-ink); font-size: .78rem; font-variant-numeric: tabular-nums; }
 .task-contents > span { display: inline-flex; align-items: center; gap: 3px; }
 .task-contents svg { width: 13px; height: 13px; fill: none; stroke: var(--quiet-text); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -640,7 +642,7 @@ button.task-list-id:hover { text-decoration: underline; }
 .task-detail h4 { display: flex; justify-content: space-between; margin: 0 0 8px; color: var(--ink); font-size: .78rem; font-weight: 650; }
 .task-detail h4 span { color: var(--quiet-text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .task-detail-progress { display: grid; gap: 6px; margin: 0 0 6px; color: var(--muted); font-size: .72rem; }
-.task-detail-progress span { height: 4px; border-radius: 999px; background: linear-gradient(90deg, var(--success) calc(var(--done) * 100%), var(--quiet-field) 0); }
+.task-detail-progress > span[style] { height: 4px; border-radius: 999px; background: linear-gradient(90deg, var(--success) calc(var(--done) * 100%), var(--quiet-field) 0); }
 .ref-group + .ref-group { margin-top: 10px; }
 .ref-group h5 { margin: 0 0 3px; color: var(--quiet-text); font-size: .68rem; font-weight: 600; }
 .ref-group ul { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; font-size: .8rem; }
@@ -669,8 +671,10 @@ button.task-list-id:hover { text-decoration: underline; }
 .task-detail .action-note { display: none; }
 .task-detail .ref-row code { color: var(--quiet-text); font-weight: 600; }
 .task-detail-progress { color: var(--quiet-text); }
-.task-detail-progress span { height: 3px; }
-.task-detail .task-detail-more { margin-top: 6px; color: var(--muted); font-size: .74rem; font-weight: 600; text-decoration: none; }
+.task-detail-progress > span[style] { height: 3px; }
+.task-detail .task-detail-more { margin-top: 6px; border: 0; background: transparent; padding: 0; color: var(--muted); font: inherit; font-size: .74rem; font-weight: 600; text-decoration: none; cursor: pointer; }
+.task-detail-steps .step-row { --step-lead: 64px; }
+.task-detail-steps .step-row-title { font-size: .8rem; }
 .task-detail .task-detail-more:hover { color: var(--action-ink); }
 .task-detail .task-detail-more::after { content: none; }
 .task-detail-chats { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); font-size: .78rem; }
@@ -899,7 +903,7 @@ button.task-list-id:hover { text-decoration: underline; }
   .action-go { display: none; }
 }
 @media (max-width: 760px) {
-  .task-col-project, .task-col-refs, .task-col-contents { display: none; }
+  .task-col-project, .task-col-contents { display: none; }
 }
 /* Structured chunk bodies line up with the indented prose column. */
 .chunk-card > :not(.chunk-heading):not(.markdown):not(.plain-text) { margin-left: 24px; }
@@ -2518,7 +2522,6 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 .work-item-task-link { flex: 0 1 auto; display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 3px 0; color: var(--ink); font-weight: 650; }
 .work-item-task-link code { flex: none; color: var(--muted); font: 600 .74rem/1.2 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; }
 .work-item-task-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.work-item-task-status { flex: none; color: var(--muted); }
 .work-item-progress { display: flex; flex: none; align-items: center; gap: 8px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .work-item-progress > span { position: relative; width: 72px; height: 4px; overflow: hidden; border-radius: 2px; background: var(--quiet-field); }
 .work-item-progress > span::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--done) * 100%); background: var(--success); }
@@ -2526,13 +2529,9 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 .work-item-views button { height: 24px; border: 0; border-radius: 5px; background: transparent; padding: 0 10px; color: var(--muted); font: inherit; font-size: .76rem; font-weight: 600; cursor: pointer; transition: background-color 140ms ease-out, color 140ms ease-out; }
 .work-item-views button:hover { color: var(--ink); }
 .work-item-views button[aria-selected="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgba(24, 33, 47, .12); }
-.work-item-views + .work-item-step { margin-left: 8px; }
-.work-item-step { display: flex; align-items: center; gap: 2px; margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.work-item-step-count { min-width: 16ch; margin-right: 6px; text-align: right; } /* reserved so the toggle never shifts while stepping */
 .work-item-icon-button { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; transition: background-color 140ms ease-out, color 140ms ease-out; }
 .work-item-icon-button:hover:not(:disabled) { background: var(--quiet-field); color: var(--ink); }
 .work-item-icon-button:disabled { opacity: .35; cursor: default; }
-.work-item-icon-button[data-work-step="prev"] svg { rotate: 180deg; }
 .work-item-rail { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; border-right: 1px solid var(--line); background: var(--hover-field); }
 .work-item-rail ol { margin: 0; overflow-y: auto; overscroll-behavior: contain; padding: 6px; list-style: none; scrollbar-width: thin; }
 .work-item-rail > p { display: flex; justify-content: space-between; gap: 8px; margin: 0; border-top: 1px solid var(--line); padding: 7px 12px; color: var(--muted); font-size: .7rem; white-space: nowrap; }
@@ -2584,6 +2583,9 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 .work-item-agent-button.is-off-frontier:hover { background: color-mix(in srgb, var(--status-waiting-field) 70%, var(--status-waiting-ink)); border-color: var(--status-waiting-ink); }
 .work-item-agent-button.is-off-frontier.is-secondary { background: var(--paper); }
 .work-item-agent-button.is-off-frontier.is-secondary:hover { background: var(--status-waiting-field); }
+/* Update revises the item rather than doing it, so it sits back as a plain text button. */
+.work-item-agent-button.is-quiet { border-color: transparent; background: transparent; padding-inline: 8px; color: var(--muted); }
+@media (hover: hover) { .work-item-agent-button.is-quiet:hover { border-color: transparent; background: var(--quiet-field); color: var(--ink); } }
 .work-item-agent-button:focus-visible { outline: 3px solid rgba(49, 87, 213, .26); outline-offset: 2px; }
 .work-item-relations { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; margin: 16px 0 0; }
 .work-item-relations dt { padding-top: 3px; color: var(--muted); font-size: .7rem; font-weight: 650; letter-spacing: .04em; line-height: 18px; text-transform: uppercase; }
@@ -2610,7 +2612,7 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 @media (max-width: 860px) {
   .work-item-dialog[open] { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
   .work-item-rail { max-height: 132px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .work-item-rail > p, .work-item-progress, .work-item-step-count, .work-item-task-status { display: none; }
+  .work-item-rail > p, .work-item-progress { display: none; }
   .work-item-task { gap: 6px; padding-left: 12px; }
   .work-item-main { padding: 14px 16px 20px; }
 }

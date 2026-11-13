@@ -15,7 +15,7 @@ import { installBrief } from "./brief.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { bindOutbound, outboundPanel } from "./outbound.js";
-import { MOVE_FILTERS, KIND_FILTERS, moveCounts, movePill, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, scheduledTasks, stepRowHtml, stepStackHtml, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, taskStepsHtml, visibleSteps } from "./steps-page.js";
+import { MOVE_FILTERS, KIND_FILTERS, moveCounts, movePill, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, scheduledTasks, stepListHtml, stepRowHtml, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, taskStepsHtml, visibleSteps } from "./steps-page.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planForLink, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
@@ -370,11 +370,13 @@ const TASK_SORTS = {
   title: (a, b) => a.task.title.localeCompare(b.task.title),
   status: (a, b) => statusRank(a) - statusRank(b) || b.task.updated.localeCompare(a.task.updated),
   project: (a, b) => a.task.project.localeCompare(b.task.project),
-  refs: (a, b) => (a.task.referencedBy?.length || 0) - (b.task.referencedBy?.length || 0),
+  // Most waiting on you first (the default direction is descending), then most waiting on anyone.
+  steps: (a, b) => stepTally(a.task.id).you - stepTally(b.task.id).you || stepTally(a.task.id).open - stepTally(b.task.id).open,
   contents: (a, b) => CONTENT_KINDS.reduce((sum, [kind]) => sum + contentCount(a, kind) - contentCount(b, kind), 0),
   updated: (a, b) => a.task.updated.localeCompare(b.task.updated),
 };
 const taskSort = { key: "status", dir: 1 };
+const stepTally = (id) => { const steps = stepsData?.steps.filter((step) => step.task === id && step.move !== "blocked") || []; return { you: steps.filter((step) => MOVE_FILTERS.you.includes(step.move)).length, open: steps.length }; };
 // What each task's assets folder holds (documents, diagrams, images), from the world view's file list; filled after the
 // first Tasks render so the table never waits on it, and refreshed on each visit.
 let contentCounts = {};
@@ -452,14 +454,14 @@ function renderTasksPage() {
   if (!tasks.some((doc) => doc.path === selectedTaskPath)) selectedTaskPath = taskPaneVisible() ? tasks[0]?.path || "" : "";
   elements.chunks.innerHTML = `<section class="task-browser" aria-label="Unfinished tasks">
     <div class="task-index"><div class="task-index-tools">${settled ? showDoneToggle(settled, `data-show-done-tasks${showDoneTasks ? " checked" : ""}`) : ""}<button type="button" class="code-bar-button task-world-button" data-world-all title="Every listed task on one timeline (W)">World view</button></div>${tasks.length ? `<table class="task-table">
-      <thead><tr>${taskSortHeader("id", "ID")}${taskSortHeader("title", "Task")}${taskSortHeader("status", "Status")}${taskSortHeader("project", "Project")}${taskSortHeader("contents", "Contents")}${taskSortHeader("refs", "Refs")}${taskSortHeader("updated", "Updated")}</tr></thead>
+      <thead><tr>${taskSortHeader("id", "ID")}${taskSortHeader("title", "Task")}${taskSortHeader("status", "Status")}${taskSortHeader("project", "Project")}${taskSortHeader("steps", "Steps")}${taskSortHeader("contents", "Contents")}${taskSortHeader("updated", "Updated")}</tr></thead>
       <tbody>${tasks.map((doc) => `<tr data-select-task="${escapeHtml(doc.path)}" aria-selected="${doc.path === selectedTaskPath}"${isSettled(doc.task.status) ? ' class="is-done"' : ""}>
         <td class="task-col-id"><button class="task-list-id" type="button" data-task-path="${escapeHtml(doc.path)}" title="Open ${escapeHtml(doc.task.id)}">${escapeHtml(doc.task.id)}</button></td>
         <td class="task-col-title"><button class="task-row-select" type="button" data-select-task="${escapeHtml(doc.path)}">${escapeHtml(doc.task.title)}</button></td>
         <td class="task-col-status">${statusPill(doc.task, doc.path)}</td>
         <td class="task-col-project">${escapeHtml(doc.task.project)}</td>
+        <td class="task-col-steps">${isSettled(doc.task.status) ? "" : stepCountsHtml(doc.task.id, "")}</td>
         <td class="task-col-contents">${contentCell(doc)}</td>
-        <td class="task-col-refs">${doc.task.referencedBy?.length || "—"}</td>
         <td class="task-col-updated"><time datetime="${escapeHtml(doc.task.updated)}" title="${escapeHtml(formatDate(doc.task.updated, true))}">${escapeHtml(shortDate(doc.task.updated))}</time></td>
       </tr>`).join("")}</tbody>
     </table>` : `<p class="task-empty">No unfinished tasks found.</p>`}</div>
@@ -467,6 +469,7 @@ function renderTasksPage() {
   </section>`;
   renderTaskDetail();
   if (!contentCountsAsked) loadContentCounts();
+  if (!stepsData) loadSteps().then(() => state.view === "tasks" && renderTasksPage());
 }
 
 // What a waiting task is waiting for: its check-in date and the items its Next actions name, moved ones first.
@@ -507,20 +510,22 @@ async function renderTaskDetail() {
   const refs = `<section class="task-detail-section"><h4>Referenced in <span>${references.length}</span></h4>${references.length
     ? `${refGroup("Days", dayRows)}${refGroup("Tasks", taskRows)}${refGroup("Documents", otherRows)}`
     : `<p class="task-detail-empty">Not referenced from any plan or note yet.</p>`}</section>`;
-  pane.innerHTML = `${head}${waitingSection(task, summary.path)}<section class="task-detail-section task-detail-actions"><h4>Next actions</h4><p class="task-detail-empty">Loading…</p></section>${refs}${chats}`;
-  try {
-    const response = await fetch(`/api/document?path=${encodeURIComponent(summary.path)}`);
-    const doc = await response.json();
-    if (!response.ok) throw new Error(doc.error || "Could not load the task.");
-    if (selectedTaskPath !== summary.path) return;
-    actionGroups.set("task-detail", doc.nextActions);
-    const nodes = doc.work?.nodes || [];
-    const leaves = nodes.filter((node) => !nodes.some((child) => child.parent === node.id));
-    const progress = leaves.length ? `<p class="task-detail-progress"><span style="--done:${leaves.filter((n) => n.status === "completed").length / leaves.length}"></span>${leaves.filter((n) => n.status === "completed").length} of ${leaves.length} work items done · ${leaves.filter((n) => n.ready).length} ready</p>` : "";
-    pane.querySelector(".task-detail-actions").innerHTML = `<h4>Next actions <span>${doc.nextActions.length}</span></h4>${progress}${doc.nextActions.length ? "" : '<p class="task-detail-empty">No next actions.</p>'}${renderActions(doc.nextActions.slice(0, 3), "task-detail")}${doc.nextActions.length > 3 ? `<a class="markdown-document-link task-detail-more" href="${escapeHtml(documentHref(summary.path, "next-actions"))}" data-document-path="${escapeHtml(summary.path)}" data-document-anchor="next-actions">All ${doc.nextActions.length} actions</a>` : ""}`;
-  } catch (error) {
-    pane.querySelector(".task-detail-actions").innerHTML = `<h4>Next actions</h4><p class="work-warning">${escapeHtml(error.message)}</p>`;
-  }
+  pane.innerHTML = `${head}${waitingSection(task, summary.path)}${taskDetailSteps(task)}${refs}${chats}`;
+}
+
+// The inspector's Steps: progress and who holds the open steps, then the steps of the first mover with anything waiting
+// (You first). The full list is one click away in the step dialog, so the inspector carries no toggle.
+function taskDetailSteps(task) {
+  const nodes = task.work || [];
+  const leaves = nodes.filter((node) => !nodes.some((child) => child.parent === node.id));
+  if (!leaves.length) return "";
+  const done = leaves.filter((node) => node.status === "completed").length;
+  const steps = stepsData?.steps.filter((step) => step.task === task.id) || [];
+  const open = visibleSteps(steps, { move: "all" }).length;
+  const { stack } = stepListHtml(steps, { only: true, cap: 5 });
+  return `<section class="task-detail-section task-detail-steps"><h4>Steps <span>${done} of ${leaves.length} done</span></h4>
+    <p class="task-detail-progress"><span style="--done:${done / leaves.length}"></span><span>${stepCountsHtml(task.id) || "Nothing open"}</span></p>${stack}
+    ${open ? `<button type="button" class="task-detail-more" data-open-step="${escapeHtml(task.id)}">All ${open} open steps →</button>` : ""}</section>`;
 }
 
 elements.chunks.addEventListener("change", (event) => {
@@ -1486,7 +1491,7 @@ function openWorkItem(id, doc = state.document) {
   const depthOf = (n) => { let d = 0; for (let p = byId.get(n.parent); p; p = byId.get(p.parent)) d++; return d; };
   const leaves = nodes.filter(n => !kids(n.id).length);
   const doneLeaves = leaves.filter(n => n.status === "completed").length;
-  const stepper = nodes.filter(n => updates.has(n.id)), at = stepper.indexOf(node), position = nodes.indexOf(node);
+  const stepper = nodes.filter(n => updates.has(n.id)), position = nodes.indexOf(node);
   // From an item without updates, ← → still go to the nearest items that have them.
   const neighbors = { prev: [...stepper].reverse().find(n => nodes.indexOf(n) < position), next: stepper.find(n => nodes.indexOf(n) > position) };
   const noteCount = (n) => updates.get(n.id)?.length ? `<span class="work-item-notes-count">${glyph("message-square")}${updates.get(n.id).length}</span>` : "";
@@ -1498,7 +1503,7 @@ function openWorkItem(id, doc = state.document) {
   const chip = (n, current = false) => `<button type="button" class="work-item-chip${current ? " is-current" : ""}" data-work-item="${escapeHtml(n.id)}" title="${escapeHtml(`${n.id} · ${n.title}`)}">${workStatusIcon(n, nodes)}<code>${escapeHtml(n.id)}</code></button>`;
   const waitsOn = node.deps.map(dep => byId.get(dep)).filter(Boolean), unblocks = nodes.filter(n => n.deps.includes(id));
   const arrow = `<span class="work-item-strip-arrow" aria-hidden="true">→</span>`;
-  const strip = waitsOn.length || unblocks.length ? `<p class="work-item-strip" aria-label="Dependencies">${waitsOn.length ? `<span class="work-item-strip-label">Waits on</span>${waitsOn.map(n => chip(n)).join("")}${arrow}` : ""}${chip(node, true)}${unblocks.length ? `${arrow}${unblocks.map(n => chip(n)).join("")}<span class="work-item-strip-label">unblocks</span>` : ""}</p>` : "";
+  const strip = waitsOn.length || unblocks.length ? `<p class="work-item-strip" aria-label="Dependencies">${waitsOn.length ? `<span class="work-item-strip-label">Waits on</span>${waitsOn.map(n => chip(n)).join("")}${arrow}` : ""}${chip(node, true)}${unblocks.length ? `${arrow}<span class="work-item-strip-label">Unblocks</span>${unblocks.map(n => chip(n)).join("")}` : ""}</p>` : "";
   const contained = kids(id);
   const action = doc.nextActions.find(a => a.workItem === id);
   const task = doc.task;
@@ -1506,14 +1511,19 @@ function openWorkItem(id, doc = state.document) {
   const frontier = node.ready ? "" : " is-off-frontier";
   const offFrontier = node.ready ? "" : ` title="${escapeHtml(`${id} is ${label.toLowerCase()}, not ready: the draft says what it still waits on`)}"`;
   const parent = byId.get(node.parent);
-  const why = !step ? "" : step.move.startsWith("you") ? `${step.move === "you-act" ? "Friction" : "Why it's yours"}: ${step.reason}${step.fix ? `. Fix: ${step.fix}` : ""}` : step.move === "agent" ? `Agent: ${step.running ? "running" : step.reason}` : step.move === "others" ? `With others: ${step.reason}` : step.move === "blocked" ? `Blocked: ${step.reason}` : "";
+  // The step's own action (Mark decided, Start, Approve and run, Apply) leads; Send to agent follows; Update is quiet.
+  const own = step ? stepActionsHtml(step, { ...stepContext(), compact: true }) : "";
+  // A reason that only restates the pill ("decide", "ready") says nothing; friction and longer reasons do.
+  const why = !step || (step.move !== "you-act" && step.reason.split(" ").length < 3) ? "" : step.move.startsWith("you") ? `${step.move === "you-act" ? "Friction" : "Why it's yours"}: ${step.reason}${step.fix ? `. Fix: ${step.fix}` : ""}` : step.move === "agent" ? `Agent: ${step.running ? "running" : step.reason}` : step.move === "others" ? `With others: ${step.reason}` : step.move === "blocked" ? `Blocked: ${step.reason}` : "";
   const mentionHtml = mentions.map(m => `<li><button type="button" class="work-item-mention-source" data-work-jump="${escapeHtml(m.chunkId)}">${escapeHtml(m.source)}</button>${m.date ? `<time datetime="${m.date}">${escapeHtml(formatDate(m.date))}</time>` : ""}${m.lines.map(line => `<p>${markId(inlineMarkdown(line, path), id)}</p>`).join("")}</li>`).join("");
   workItemDialog.dataset.item = id;
+  // ← → step through the items with updates from the keyboard; the rail's footer names the keys.
+  workItemDialog.dataset.prev = neighbors.prev?.id || "";
+  workItemDialog.dataset.next = neighbors.next?.id || "";
   workItemDialog.innerHTML = `<header class="work-item-task">
-      ${task ? `<span class="work-item-task-link"><code>${escapeHtml(task.id)}</code><span>${escapeHtml(task.title)}</span></span><span class="work-item-task-status">${escapeHtml(TASK_STATUS_LABELS[task.status] || task.status)}</span>` : `<span class="work-item-task-link"><span>${escapeHtml(doc.title)}</span></span>`}
+      ${task ? `<span class="work-item-task-link" title="${escapeHtml(`${task.id} · ${task.title} · ${TASK_STATUS_LABELS[task.status] || task.status}`)}"><code>${escapeHtml(task.id)}</code><span>${escapeHtml(task.title)}</span></span>` : `<span class="work-item-task-link"><span>${escapeHtml(doc.title)}</span></span>`}
       <span class="work-item-progress" title="${doneLeaves} of ${leaves.length} work items completed"><span style="--done:${leaves.length ? doneLeaves / leaves.length : 0}"></span>${doneLeaves}/${leaves.length} done</span>
       <span class="work-item-views" role="tablist" aria-label="View">${[["item", "Item"], ["graph", "Graph"]].map(([view, label]) => `<button type="button" role="tab" data-work-view="${view}" aria-selected="${workItemView === view}" title="${label} (G)">${label}</button>`).join("")}</span>
-      <span class="work-item-step"><span class="work-item-step-count">${at >= 0 ? `${at + 1} of ${stepper.length} with updates` : stepper.length ? `${stepper.length} with updates` : ""}</span>${["prev", "next"].map(dir => { const n = neighbors[dir]; return `<button type="button" class="work-item-icon-button" ${n ? `data-work-item="${escapeHtml(n.id)}" data-work-step="${dir}" title="${escapeHtml(`${n.id} · ${n.title}`)}"` : "disabled"} aria-label="${dir === "prev" ? "Previous" : "Next"} item with updates${n ? `: ${escapeHtml(n.id)}` : ""}" aria-keyshortcuts="${dir === "prev" ? "ArrowLeft" : "ArrowRight"}">${glyph("arrow-right")}</button>`; }).join("")}</span>
       ${task ? `<span class="work-item-goto">${path === state.selectedPath && state.view === "document" && !document.querySelector("dialog.code-diff[open]") ? "" : `<button type="button" class="code-bar-button" data-step-open-task title="Open ${escapeHtml(task.id)} as the page">Open task</button>`}<button type="button" class="code-bar-button" data-step-world="${escapeHtml(task.id)}" title="Everything filed for ${escapeHtml(task.id)} on one timeline">World</button></span>` : ""}
       <button type="button" class="work-item-icon-button" data-dialog-close aria-label="Close">${glyph("x")}</button>
     </header>
@@ -1521,11 +1531,11 @@ function openWorkItem(id, doc = state.document) {
     ${workItemView === "graph" ? `<div class="work-item-main is-graph" tabindex="-1"><div class="work-item-graph" tabindex="0" aria-label="Work stream graph">${workItemGraph(doc, id, (key) => updates.get(key)?.length || 0)}</div>${workGraphTools}</div>` : `<div class="work-item-main" tabindex="-1">
       <header class="work-item-heading">
         <div class="work-item-headline">
-          <p class="work-item-kicker"><code>${escapeHtml(node.id)}</code>${workStatusIcon(node, nodes)}<span>${escapeHtml(label)}</span>${step ? movePill(step) : ""}${parent ? `<span class="work-item-in">in</span><button type="button" class="work-item-parent" data-work-item="${escapeHtml(parent.id)}" title="${escapeHtml(`${parent.id} · ${parent.title}`)}">${escapeHtml(parent.id)} ${escapeHtml(parent.title)}</button>` : ""}</p>
+          <p class="work-item-kicker"><code>${escapeHtml(node.id)}</code>${workStatusIcon(node, nodes)}${step ? movePill(step) : `<span>${escapeHtml(label)}</span>`}${parent ? `<span class="work-item-in">in</span><button type="button" class="work-item-parent" data-work-item="${escapeHtml(parent.id)}" title="${escapeHtml(`${parent.id} · ${parent.title}`)}">${escapeHtml(parent.id)} ${escapeHtml(parent.title)}</button>` : ""}</p>
           <div class="work-item-agent">
-            ${step ? stepActionsHtml(step, { ...stepContext(), compact: true }) : ""}
-            <button type="button" class="work-item-agent-button${step && stepActionsHtml(step, stepContext()) ? " is-secondary" : ""}${frontier}" data-work-agent="run"${offFrontier}>${glyph("play")}Send to agent</button>
-            <button type="button" class="work-item-agent-button is-secondary${frontier}" data-work-agent="update"${offFrontier}>${glyph("pen-line")}Update with agent</button>
+            ${own}
+            <button type="button" class="work-item-agent-button${own ? " is-secondary" : ""}${frontier}" data-work-agent="run"${offFrontier}>${glyph("play")}Send to agent</button>
+            <button type="button" class="work-item-agent-button is-quiet" data-work-agent="update" title="Draft a revision of this item in the task file, without doing the work">${glyph("pen-line")}Update</button>
           </div>
         </div>
         <h2 id="work-item-title">${escapeHtml(node.title)}</h2>
@@ -1541,7 +1551,8 @@ function openWorkItem(id, doc = state.document) {
   const main = workItemDialog.querySelector(".work-item-main");
   main.scrollTop = 0;
   // Keys (J/K, ← →, G, space to scroll) need focus inside; after the composer closes it would otherwise sit on the page.
-  if (!workItemDialog.contains(document.activeElement)) main.focus({ preventScroll: true });
+  // showModal leaves focus on the dialog itself (drawn as a ring around it), which contains() counts as inside.
+  if (document.activeElement === workItemDialog || !workItemDialog.contains(document.activeElement)) main.focus({ preventScroll: true });
   // Scroll only the rail and graph panes; scrollIntoView would also nudge the page under the modal.
   const centerIn = (pane, target) => { if (!pane || !target) return; const p = pane.getBoundingClientRect(), t = target.getBoundingClientRect(); pane.scrollTop += t.top - p.top - (p.height - t.height) / 2; pane.scrollLeft += t.left - p.left - (p.width - t.width) / 2; };
   centerIn(workItemDialog.querySelector(".work-item-rail ol"), workItemDialog.querySelector(".work-item-rail-row.is-current"));
@@ -1757,7 +1768,8 @@ workItemDialog.addEventListener("keydown", (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey || event.target.closest("input, textarea, select")) return;
   if (["ArrowLeft", "ArrowRight"].includes(event.key)) {
     event.preventDefault();
-    workItemDialog.querySelector(`[data-work-step="${event.key === "ArrowLeft" ? "prev" : "next"}"]`)?.click();
+    const target = workItemDialog.dataset[event.key === "ArrowLeft" ? "prev" : "next"];
+    if (target) openWorkItem(target, dialogDoc);
   }
   if (event.key.toLowerCase() === "g") {
     event.preventDefault();
@@ -1823,11 +1835,8 @@ function scheduledTasksHtml(doc, chunk) {
   if (!stepsData) loadSteps().then(() => { if (state.view === "document" && state.document === doc) renderDocument(); });
   const html = rows.map(({ id, note }) => {
     const task = state.documents.find((candidate) => candidate.task?.id === id)?.task;
-    const steps = stepsData?.steps.filter((step) => step.task === id) || [];
-    const count = (moves) => steps.filter((step) => moves.includes(step.move)).length;
-    const meta = !task ? "missing" : isSettled(task.status) || task.status === "waiting" ? TASK_STATUS_LABELS[task.status].toLowerCase()
-      : [[count(MOVE_FILTERS.you), "you"], [count(MOVE_FILTERS.agent), "agent"], [count(MOVE_FILTERS.others), "waiting"]].filter(([n]) => n).map(([n, label]) => `${n} ${label}`).join(" · ");
-    return stepRowHtml({ key: id, lead: `<code class="step-row-id">${escapeHtml(id.slice(5))}</code>`, title: task?.title || id, note, meta: escapeHtml(meta), className: " is-task" });
+    const meta = !task ? "missing" : isSettled(task.status) || task.status === "waiting" ? TASK_STATUS_LABELS[task.status].toLowerCase() : stepCountsHtml(id);
+    return stepRowHtml({ key: id, lead: `<code class="step-row-id">${escapeHtml(id.slice(5))}</code>`, title: task?.title || id, note, meta, className: " is-task" });
   }).join("");
   const remaining = rest.trim();
   return `<div class="step-rows scheduled-tasks" style="--step-lead: 4ch">${html}</div>${remaining ? `<div class="markdown">${renderMarkdownSource(remaining, doc.path)}</div>` : ""}`;
@@ -2160,15 +2169,18 @@ function todayLeadHtml() {
     loadSteps().then(() => { if (state.view === "document" && state.document?.path === state.defaultPath) renderDocument(); });
     return "";
   }
-  const layer = (move) => {
-    const shown = visibleSteps(stepsData.steps, { move });
-    const rows = shown.slice(0, LEAD_ROWS).map((step) => stepRowHtml({ key: stepKey(step), lead: movePill(step), title: step.title.split(" — ")[0], meta: `${escapeHtml(step.task)} ${escapeHtml(step.id)}` })).join("");
-    return `<div class="step-rows">${rows || `<p class="step-rows-empty">${move === "you" ? "Nothing waits on you." : "No steps here."}</p>`}</div>
-      ${shown.length > LEAD_ROWS ? `<a class="today-lead-more" href="?view=steps${move === "you" ? "" : `&move=${move}`}" data-steps-page="${move}">All ${shown.length} on Steps →</a>` : ""}`;
-  };
-  const move = leadMove();
-  return `<section class="today-lead step-panel" aria-label="Steps" data-move-default="you"><header class="today-lead-head"><h2>Steps</h2>${stepToggleHtml(move, moveCounts(stepsData.steps))}</header>
-    ${stepStackHtml(move, Object.fromEntries(Object.keys(MOVE_FILTERS).map((key) => [key, layer(key)])))}</section>`;
+  const { toggle, stack } = stepListHtml(stepsData.steps, { move: leadMove(), cap: LEAD_ROWS, withTask: true,
+    more: (move, count) => `<a class="today-lead-more" href="?view=steps${move === "you" ? "" : `&move=${move}`}" data-steps-page="${move}">All ${count} on Steps →</a>` });
+  return `<section class="today-lead step-panel" aria-label="Steps" data-move-default="you"><header class="today-lead-head"><h2>Steps</h2>${toggle}</header>${stack}</section>`;
+}
+
+// What waits on whom in one task, for the Tasks table and a plan's Scheduled tasks: `2 you · 5 agent · 1 waiting`,
+// zeros left out, the part that is yours in the waiting color.
+function stepCountsHtml(taskId, separator = " · ") {
+  const steps = stepsData?.steps.filter((step) => step.task === taskId) || [];
+  const count = (moves) => steps.filter((step) => moves.includes(step.move)).length;
+  return [[count(MOVE_FILTERS.you), "you"], [count(MOVE_FILTERS.agent), "agent"], [count(MOVE_FILTERS.others), "waiting"]].filter(([n]) => n)
+    .map(([n, label]) => `<span${label === "you" ? ' class="step-count-you"' : ""}>${n} ${label}</span>`).join(separator);
 }
 
 const stepContext = () => ({ startConfigured: Boolean(stepsData?.startConfigured), runConfigured: Boolean(config().steps.run?.length), freeSlots: (stepsData?.slots || 0) - (stepsData?.runs?.length || 0) });
@@ -2995,7 +3007,7 @@ elements.chunks.addEventListener("click", (event) => {
   }
   const sort = event.target.closest("[data-task-sort]");
   if (sort) {
-    taskSort.dir = taskSort.key === sort.dataset.taskSort ? -taskSort.dir : ["refs", "updated", "contents"].includes(sort.dataset.taskSort) ? -1 : 1;
+    taskSort.dir = taskSort.key === sort.dataset.taskSort ? -taskSort.dir : ["steps", "updated", "contents"].includes(sort.dataset.taskSort) ? -1 : 1;
     taskSort.key = sort.dataset.taskSort;
     renderTasksPage();
     return;

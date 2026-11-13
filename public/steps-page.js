@@ -104,6 +104,22 @@ export function showStepLayer(panel, move) {
 }
 export const stepRowHtml = ({ key, lead = "", pill = "", title, note = "", meta = "", className = "" }) => `<button type="button" class="step-row${className}" data-open-step="${escapeHtml(key)}"><span class="step-row-lead">${lead}</span><span class="step-row-title">${pill}${escapeHtml(title)}${note ? `<span class="step-row-note">${escapeHtml(note)}</span>` : ""}</span><span class="step-row-meta">${meta}</span></button>`;
 
+// The segment a short step list opens on: the first mover with anything waiting, You first.
+export const firstMove = (counts) => ["you", "agent", "others"].find((move) => counts[move]) || "all";
+
+// A short step list with its toggle (today's plan, a task in the Tasks inspector, a task's World): every segment
+// pre-rendered in one cell, `cap` rows each. `withTask` puts the task beside the step ID; `more(name, count)` renders
+// what follows a segment longer than the cap. `only` renders just the chosen segment, with no toggle or reserved height.
+export function stepListHtml(steps, { move = firstMove(moveCounts(steps)), cap = 8, withTask = false, more = () => "", only = false } = {}) {
+  const layer = (name) => {
+    const shown = visibleSteps(steps, { move: name });
+    const rows = shown.slice(0, cap).map((step) => stepRowHtml({ key: stepKey(step), lead: movePill(step), title: step.title.split(" — ")[0], meta: escapeHtml(withTask ? `${step.task} ${step.id}` : step.id) })).join("");
+    return `<div class="step-rows">${rows || `<p class="step-rows-empty">${name === "you" ? "Nothing waits on you." : "No steps here."}</p>`}</div>${shown.length > cap ? more(name, shown.length) : ""}`;
+  };
+  if (only) return { toggle: "", stack: layer(move) };
+  return { toggle: stepToggleHtml(move, moveCounts(steps)), stack: stepStackHtml(move, Object.fromEntries(Object.keys(MOVE_FILTERS).map((name) => [name, layer(name)]))) };
+}
+
 // A plan's Scheduled tasks section: one row per task bullet with the plan's note for it as plain text (whatever follows the
 // task's link or ID, after a colon or dash; indented lines under it continue the note), and the section's other lines.
 export function scheduledTasks(markdown) {
