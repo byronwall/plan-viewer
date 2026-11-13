@@ -1710,7 +1710,12 @@ async function pickStep(step, form) {
   } catch (error) { showNotice(error.message, true); }
 }
 
+// A press that starts and ends on the backdrop closes the dialog, like the other overlays; a graph drag that ends
+// outside does not. The dialog itself has no padding, so only the backdrop targets it.
+let workItemBackdropPress = false;
+workItemDialog.addEventListener("pointerdown", (event) => { workItemBackdropPress = event.target === workItemDialog; });
 workItemDialog.addEventListener("click", async (event) => {
+  if (event.target === workItemDialog) { if (workItemBackdropPress) workItemDialog.close(); return; }
   const agent = event.target.closest("[data-work-agent]");
   if (agent) {
     event.stopPropagation(); // the document's outside-click handler would close the composer this click opens
