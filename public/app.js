@@ -2948,9 +2948,10 @@ function inAppTarget(link) {
   if (kind === "jira" && cachedIssues()?.sources?.includes("jira")) return { open: () => openIssue(key).then(opened => opened || window.open(link.href, "_blank", "noreferrer")), site: "Jira" };
   return null;
 }
-// Plain clicks on PR and issue links in written content open the in-app overview first; modified clicks still go out.
+// Plain clicks on PR and issue links in written content (the tab brief's title line too) open the in-app overview
+// first; modified clicks still go out.
 document.addEventListener("click", (event) => {
-  const link = event.target.closest(".markdown a[href], a.dock-link");
+  const link = event.target.closest(".markdown a[href], .tab-brief a[href], a.dock-link");
   if (!link || event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   const target = inAppTarget(link);
   if (!target) return;
