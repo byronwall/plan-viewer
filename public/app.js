@@ -839,6 +839,13 @@ function composerTemplate(target) {
     const path = target.path || state.selectedPath;
     const meta = `<span title="${escapeHtml(path)}">${escapeHtml(path.split("/").pop())}</span> · ${escapeHtml(node.id)} · ${node.ready ? escapeHtml(label) : `<span class="action-waiting">${escapeHtml(label)}${waiting.length ? ` · after ${escapeHtml(waiting.join(", "))}` : ""}</span>`}`;
     const preview = mode === "run" && action ? `<div class="action-prompt-preview" aria-label="Stored action prompt"><div class="markdown">${renderMarkdownSource(action.prompt, path)}</div></div>` : "";
+    if (mode === "decide") {
+      return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="work" data-source-path="${escapeHtml(path)}" data-work-item="${escapeHtml(node.id)}" data-work-mode="decide">
+      ${heading(meta)}
+      <div class="composer-body"><div class="composer-field"><label for="work-context">What did you decide?</label><textarea id="work-context" name="commentary" required placeholder="Talk it through: what you chose, why, and anything it changes. An agent records it in the task and carries it out."></textarea><div class="composer-images" hidden></div></div></div>
+      <footer class="composer-actions"><p class="composer-hint"><kbd>Enter</kbd> save · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</p><button class="copy-prompt-button" type="button">Copy prompt</button><button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Save decision</button></footer>
+    </form>`;
+    }
     const field = mode === "update"
       ? `<label for="work-context">What should change? <span class="optional-label">optional</span></label><textarea id="work-context" name="commentary" placeholder="Split it, reword it, mark it done, add or drop a prerequisite… Leave empty to bring it in line with the latest updates."></textarea>`
       : `<label for="work-context">Add context <span class="optional-label">optional</span></label><textarea id="work-context" name="commentary" placeholder="${node.ready ? "A constraint, recent finding, or where to start…" : "Say whether the prerequisites are done, or what can safely start now…"}"></textarea>`;
@@ -924,7 +931,7 @@ function syncComposerDraftState() {
   const hint = elements.handoffPopover.querySelector(".composer-hint");
   if (hint) {
     hint.classList.remove("draft-warning");
-    hint.innerHTML = "<kbd>Enter</kbd> open · <kbd>⌘</kbd><kbd>Enter</kbd> note";
+    hint.innerHTML = elements.handoffPopover.querySelector('[data-work-mode="decide"]') ? "<kbd>Enter</kbd> save · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line" : "<kbd>Enter</kbd> open · <kbd>⌘</kbd><kbd>Enter</kbd> note";
   }
 }
 
@@ -1689,6 +1696,14 @@ async function runStepAction(step, kind, action) {
     return data;
   };
   try {
+    if (kind === "decide") {
+      const doc = await fetchTaskDocument(step.path, true);
+      const node = doc.work.nodes.find((n) => n.id === step.id);
+      if (!node) throw new Error(`${step.id} isn't in ${step.task} any more.`);
+      closeQuietly();
+      openComposer({ key: `work:decide:${step.id}`, scope: "work", mode: "decide", node, nodes: doc.work.nodes, path: step.path, title: `Decide ${step.id}: ${node.title}` }, action);
+      return false;
+    }
     if (kind === "copy-statement") { await navigator.clipboard.writeText(step.machinery.fields.run); action.classList.add("is-copied"); setTimeout(() => action.classList.remove("is-copied"), 900); return false; }
     action.disabled = true;
     if (kind === "start") { await post("start", { key: step.key }); showNotice(`Started an agent on ${step.task} ${step.id}.`); }
@@ -2575,13 +2590,13 @@ async function copyComposerPrompt(form) {
 
 // Save note: the same prompt, kept as a note an agent thread picks up from Up next instead of a draft opened now.
 async function saveComposerNote(form) {
-  const button = form.querySelector(".note-button");
+  const button = form.querySelector(".note-button") || form.querySelector(".send-button");
   if (!button || button.disabled) return;
   button.disabled = true;
   try {
     const { note } = await requestDispatch({ ...composerRequest(form), note: true });
     closeComposer();
-    showNotice(`Saved a note for ${agentName()}; it waits under Up next.`, false, { action: { label: "Open", run: () => selectDocument(note, { historyMode: "push" }) } });
+    showNotice(form.dataset.workMode === "decide" ? `Saved your decision on ${form.dataset.workItem}; an agent picks it up from Up next.` : `Saved a note for ${agentName()}; it waits under Up next.`, false, { action: { label: "Open", run: () => selectDocument(note, { historyMode: "push" }) } });
   } catch (error) {
     button.disabled = false;
     showNotice(error.message, true);
@@ -2589,6 +2604,7 @@ async function saveComposerNote(form) {
 }
 
 async function dispatch(form) {
+  if (form.dataset.workMode === "decide") return saveComposerNote(form); // a decision waits under Up next for an agent
   const button = form.querySelector(".send-button");
   if (button.disabled) return;
   button.disabled = true;

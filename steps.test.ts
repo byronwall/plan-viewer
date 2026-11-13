@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { draftFromText } from "./outbound.ts";
-import { activeRuns, applyRule, closeNote, deriveSteps, listNotes, pickChoice, runStatement, saveNote, startStep, withStepFlag } from "./steps.ts";
+import { activeRuns, applyRule, closeNote, deriveSteps, listNotes, loadSteps, pickChoice, runStatement, saveNote, startStep, withStepFlag } from "./steps.ts";
 import { setConfig } from "./public/config.js";
 
 const TASK = `---
@@ -108,6 +108,12 @@ test("a saved note keeps its prompt and images, waits under Up next, and leaves 
   const notes = await listNotes(root);
   assert.deepEqual(notes.map((n) => [n.task, n.title, n.next, n.move, n.kind]), [["", "Idea for the plan", true, "agent", "note"], ["TASK-0001", "Tighten the retry section", true, "agent", "note"]]);
   assert.match(notes[1].prompt!, /^Source file: tasks\/TASK-0001\.md[\s\S]*-1\.png$/m);
+  const decided = await saveNote(root, { commentary: "Go with the fast path", prompt: "Resolve decision W3", task: "TASK-0001", step: "TASK-0001 W3" }, new Date(2026, 10, 13, 15, 0, 0));
+  const tasks = [{ path: "tasks/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: TASK }];
+  const listed = (await loadSteps(root, tasks, [])).steps;
+  assert.deepEqual(listed.filter((s) => s.key === "TASK-0001 W3" || s.path === decided.path).map((s) => [s.task, s.id, s.kind, s.reason]), [["TASK-0001", "W3", "note", "apply note"]]);
+  await closeNote(root, decided.path, "Pat", "2026-11-14");
+  assert.equal((await loadSteps(root, tasks, [])).steps.find((s) => s.key === "TASK-0001 W3")?.move, "you-decide");
   await closeNote(root, task.path, "Pat", "2026-11-14");
   assert.deepEqual((await listNotes(root)).map((n) => n.path), [loose.path]);
   assert.match(await readFile(join(root, task.path), "utf8"), /^note: done$[\s\S]*2026-11-14 — Marked done \(Pat/m);

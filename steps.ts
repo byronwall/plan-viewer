@@ -114,7 +114,9 @@ export async function listMachinery(root: string) {
 
 export async function loadSteps(root: string, tasks: TaskInput[], planOrder: string[]) {
   const machinery = await listMachinery(root);
-  const steps = [...await listNotes(root), ...deriveSteps(tasks, machinery, planOrder)];
+  const notes = await listNotes(root);
+  const covered = new Set(notes.map((note) => note.task && note.id && `${note.task} ${note.id}`));
+  const steps = [...notes, ...deriveSteps(tasks, machinery, planOrder).filter((step) => !covered.has(step.key))];
   for (const step of steps) if (runs.has(step.key)) Object.assign(step, { move: "agent", running: true, reason: "running" });
   return {
     steps,
@@ -286,7 +288,9 @@ export async function startStep(root: string, step: Step, today: string, next?: 
 export const notesFolder = (task: string) => task ? `tasks/${task}-assets/notes` : "reference/notes";
 const stamp = (date: Date) => date.toLocaleString("sv-SE").replace(" ", "-").replace(/:/g, "").slice(0, 17);
 
-export async function saveNote(root: string, { commentary, prompt, source = "", task = "", images = [] as string[] }, now = new Date()) {
+// `step` (`TASK-0101 W2.1`) ties the note to a step: a decision voiced over, or direction for one step. While the note
+// is open it stands in for that step, so the step leaves its mover's list.
+export async function saveNote(root: string, { commentary, prompt, source = "", task = "", step = "", images = [] as string[] }, now = new Date()) {
   const title = commentary.trim().split("\n")[0].replace(/\s+/g, " ").slice(0, 90) || "Note";
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "note";
   const folder = notesFolder(task);
@@ -300,7 +304,7 @@ export async function saveNote(root: string, { commentary, prompt, source = "", 
     kept.push(to);
   }
   const path = `${folder}/${stem}.md`;
-  const front = [`note: open`, `created: ${now.toLocaleString("sv-SE").slice(0, 16)}`, source && `source: ${source}`, task && `task: ${task}`].filter(Boolean).join("\n");
+  const front = [`note: open`, `created: ${now.toLocaleString("sv-SE").slice(0, 16)}`, source && `source: ${source}`, task && `task: ${task}`, step && `step: ${step}`].filter(Boolean).join("\n");
   const body = kept.length ? `${prompt}\n\nAttached images (pasted with the note; open each file to view it):\n${kept.map((file) => `- ${file}`).join("\n")}` : prompt;
   await writeFile(join(root, path), `---\n${front}\n---\n\n# ${title}\n\n${body}\n`);
   return { path, title };
@@ -323,8 +327,8 @@ export async function listNotes(root: string): Promise<Step[]> {
       const title = text.match(/^# (.+)$/m)?.[1] || name;
       const created = Date.parse(fields.created?.replace(" ", "T") || "") || Date.now();
       notes.push({
-        key: `note ${path}`, task: fields.task || "", taskTitle: fields.source || "", path, id: name.slice(0, 17), title, status: "open",
-        kind: "note", size: "", deps: [], next: true, move: "agent", reason: "note", prompt: text.replace(/^---\n[\s\S]*?\n---\n+/, "").replace(/^# .+\n+/, ""),
+        key: `note ${path}`, task: fields.task || "", taskTitle: fields.source || "", path, id: fields.step?.split(" ")[1] || name.slice(0, 17), title, status: "open",
+        kind: "note", size: "", deps: [], next: true, move: "agent", reason: fields.step ? "apply note" : "note", prompt: text.replace(/^---\n[\s\S]*?\n---\n+/, "").replace(/^# .+\n+/, ""),
         age: Math.max(0, Math.floor((Date.now() - created) / 86_400_000)), order: -1, running: false,
       });
     }

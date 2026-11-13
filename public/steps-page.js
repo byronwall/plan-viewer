@@ -227,7 +227,7 @@ function ownActionsHtml(step, { startConfigured = false, runConfigured = false, 
     if (f.run && readOnly(f.run)) return `<div class="outbound-actions step-actions">${button("run", "Approve and run", true, runConfigured ? "" : "Set steps.run in viewer.config.json")}${button("done", "Mark done")}</div>`;
     return `<div class="outbound-actions step-actions">${f.run ? button("copy-statement", "Copy statement", true) : ""}${button("done", "Mark done", !f.run)}</div>`;
   }
-  if (step.move === "you-decide" && step.kind === "decision") return `<div class="outbound-actions step-actions">${button("done", "Mark decided", compact)}${note("Record the decision in the task, then mark it.")}</div>`;
+  if (step.move === "you-decide" && step.kind === "decision") return `<div class="outbound-actions step-actions">${button("decide", "Decide…", true)}${button("done", "Mark decided")}${note("Say what you decided; an agent records it and carries it out.")}</div>`;
   return "";
 }
 

@@ -21,8 +21,9 @@ test('the toggle marks one segment and counts all but All', () => {
 });
 
 test("the dialog's compact actions drop the notes beside the buttons", () => {
-  assert.match(stepActionsHtml(step()), /Record the decision/);
+  assert.match(stepActionsHtml(step()), /Say what you decided/);
   const compact = stepActionsHtml(step(), { compact: true });
+  assert.match(compact, /data-step-action="decide"[^>]*>Decide…/);
   assert.match(compact, /data-step-action="done"[^>]*>Mark decided/);
   assert.doesNotMatch(compact, /step-choice-note/);
 });
