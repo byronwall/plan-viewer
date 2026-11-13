@@ -2,8 +2,8 @@
 // status, prerequisites and an optional `{kind, size}`; everything else here is derived. Outbound drafts and other
 // machinery files (task assets whose front matter names a `step:`) supply the kind when the line doesn't.
 import { execFile, spawn } from "node:child_process";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { dirname, join, resolve, sep } from "node:path";
+import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { parseActions, parseWorkBreakdown } from "./public/actions.js";
 import { config } from "./public/config.js";
@@ -114,7 +114,7 @@ export async function listMachinery(root: string) {
 
 export async function loadSteps(root: string, tasks: TaskInput[], planOrder: string[]) {
   const machinery = await listMachinery(root);
-  const steps = deriveSteps(tasks, machinery, planOrder);
+  const steps = [...await listNotes(root), ...deriveSteps(tasks, machinery, planOrder)];
   for (const step of steps) if (runs.has(step.key)) Object.assign(step, { move: "agent", running: true, reason: "running" });
   return {
     steps,
@@ -277,4 +277,65 @@ export async function startStep(root: string, step: Step, today: string, next?: 
   });
   child.unref();
   return { started: true, key: step.key, pid: child.pid };
+}
+
+// --- Notes: a composer request saved for later instead of opened in an agent. The note holds the whole prompt the agent
+// would have received (source file, task, selection, the user's words, image paths), so it reads well days later. A
+// task's notes live in its assets, the rest in reference/notes/. Open notes are Up next until marked done.
+
+export const notesFolder = (task: string) => task ? `tasks/${task}-assets/notes` : "reference/notes";
+const stamp = (date: Date) => date.toLocaleString("sv-SE").replace(" ", "-").replace(/:/g, "").slice(0, 17);
+
+export async function saveNote(root: string, { commentary, prompt, source = "", task = "", images = [] as string[] }, now = new Date()) {
+  const title = commentary.trim().split("\n")[0].replace(/\s+/g, " ").slice(0, 90) || "Note";
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "note";
+  const folder = notesFolder(task);
+  const stem = `${stamp(now)}-${slug}`;
+  await mkdir(join(root, folder), { recursive: true });
+  // Pasted images move beside the note, so they last as long as it does (they arrive in the ignored tmp/).
+  const kept: string[] = [];
+  for (const [index, image] of images.entries()) {
+    const to = join(root, folder, `${stem}-${index + 1}${extname(image)}`);
+    await rename(image, to);
+    kept.push(to);
+  }
+  const path = `${folder}/${stem}.md`;
+  const front = [`note: open`, `created: ${now.toLocaleString("sv-SE").slice(0, 16)}`, source && `source: ${source}`, task && `task: ${task}`].filter(Boolean).join("\n");
+  const body = kept.length ? `${prompt}\n\nAttached images (pasted with the note; open each file to view it):\n${kept.map((file) => `- ${file}`).join("\n")}` : prompt;
+  await writeFile(join(root, path), `---\n${front}\n---\n\n# ${title}\n\n${body}\n`);
+  return { path, title };
+}
+
+// Open notes as Up next steps: an agent reviews the note and works it into its source.
+export async function listNotes(root: string): Promise<Step[]> {
+  const folders = [notesFolder("")];
+  for (const entry of await readdir(join(root, "tasks"), { withFileTypes: true }).catch(() => [])) {
+    if (entry.isDirectory() && /^TASK-\d{4}-assets$/.test(entry.name)) folders.push(`tasks/${entry.name}/notes`);
+  }
+  const notes: Step[] = [];
+  for (const folder of folders) {
+    for (const name of await readdir(join(root, folder)).catch(() => [] as string[])) {
+      if (!name.endsWith(".md")) continue;
+      const path = `${folder}/${name}`;
+      const text = await readFile(join(root, path), "utf8");
+      const fields = outboundFields(text);
+      if (fields.note !== "open") continue;
+      const title = text.match(/^# (.+)$/m)?.[1] || name;
+      const created = Date.parse(fields.created?.replace(" ", "T") || "") || Date.now();
+      notes.push({
+        key: `note ${path}`, task: fields.task || "", taskTitle: fields.source || "", path, id: name.slice(0, 17), title, status: "open",
+        kind: "note", size: "", deps: [], next: true, move: "agent", reason: "note", prompt: text.replace(/^---\n[\s\S]*?\n---\n+/, "").replace(/^# .+\n+/, ""),
+        age: Math.max(0, Math.floor((Date.now() - created) / 86_400_000)), order: -1, running: false,
+      });
+    }
+  }
+  return notes.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+export async function closeNote(root: string, path: string, user: string, today: string) {
+  if (!/^(tasks\/TASK-\d{4}-assets|reference)\/notes\/[^/]+\.md$/.test(path)) throw new Error("Not a note.");
+  const absolute = resolve(root, path);
+  const text = await readFile(absolute, "utf8");
+  if (outboundFields(text).note !== "open") throw new Error("That note is already closed.");
+  await writeFile(absolute, `${text.replace(/^note: open$/m, "note: done").trimEnd()}\n\n- **${today} — Marked done (${user}, in the viewer).**\n`);
 }

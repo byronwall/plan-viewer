@@ -25,7 +25,7 @@ export const KIND_FILTERS = {
   byron: ["Only you", (s) => s.kind === "byron"],
   none: ["No kind yet", (s) => !s.kind],
 };
-const KIND_LABELS = { agent: "Agent", "check-in": "Check-in", decision: "Decision", "pick-one": "Choice", "pick-any": "Choice", "do-all": "Group", byron: "Only you" };
+const KIND_LABELS = { agent: "Agent", "check-in": "Check-in", decision: "Decision", "pick-one": "Choice", "pick-any": "Choice", "do-all": "Group", byron: "Only you", note: "Note" };
 export const kindLabel = (kind) => KIND_LABELS[kind] || (OUTBOUND.has(kind) ? outboundKindLabel(kind) : kind || "—");
 export const stepKey = (step) => `${step.task}:${step.id}`;
 
@@ -56,7 +56,7 @@ function row(step, selected) {
     <td class="step-col-title"><button class="task-row-select" type="button" data-select-step="${escapeHtml(stepKey(step))}">${step.next ? '<span class="step-next-mark" aria-label="Up next" title="Up next">●</span>' : ""}${step.move === "you-act" ? '<span class="step-friction-mark" aria-label="Friction">▲</span>' : ""}${escapeHtml(step.title.split(" — ")[0])}</button>${friction}</td>
     <td class="step-col-move">${pill(step)}</td>
     <td class="step-col-kind">${OUTBOUND.has(step.kind) ? outboundIcon(step.kind) : ""}${escapeHtml(kindLabel(step.kind))}</td>
-    <td class="step-col-work"><button class="task-list-id" type="button" data-task-path="${escapeHtml(step.path)}" title="${escapeHtml(step.taskTitle)}">${escapeHtml(step.task)}</button> <span class="step-id">${escapeHtml(step.id)}</span></td>
+    <td class="step-col-work"><button class="task-list-id" type="button" data-task-path="${escapeHtml(step.path)}" title="${escapeHtml(step.taskTitle)}">${escapeHtml(step.task || "Note")}</button> <span class="step-id">${escapeHtml(step.id)}</span></td>
     <td class="step-col-size">${step.size ? `<span class="step-size">${escapeHtml(step.size)}</span>` : '<span class="step-size is-none" title="No size yet">·</span>'}</td>
     <td class="step-col-age">${step.running ? "running" : step.age ? `${step.age}d` : "today"}</td>
   </tr>`;
@@ -64,7 +64,7 @@ function row(step, selected) {
 
 export function stepsTableHtml(steps, filters, selected) {
   const shown = visibleSteps(steps, filters);
-  if (!shown.length) return `<p class="task-empty">${filters.move === "next" ? "Nothing is up next. Select a step and press Up next to queue it for an agent thread." : filters.kind === "outbound" ? "Nothing waiting to go out." : "No open steps match."}</p>`;
+  if (!shown.length) return `<p class="task-empty">${filters.move === "next" ? "Nothing is up next. Press Up next on a step, or Save note (⌘Enter) in the composer." : filters.kind === "outbound" ? "Nothing waiting to go out." : "No open steps match."}</p>`;
   const groups = ORDER.map((move) => [move, shown.filter((step) => step.move === move)]).filter(([, list]) => list.length);
   return `<table class="task-table step-table">
     <thead><tr><th scope="col">Step</th><th scope="col">Next move</th><th scope="col">Kind</th><th scope="col">Workstream</th><th scope="col">Size</th><th scope="col">Age</th></tr></thead>
@@ -208,6 +208,7 @@ const button = (action, label, primary = false, disabled = "") => `<button type=
 // `compact` (the step dialog's header) drops the explanatory notes beside the buttons.
 // Up next rides along with every step's own actions: it queues the step for an orchestrating agent thread.
 export function stepActionsHtml(step, context = {}) {
+  if (step.kind === "note") return `<div class="outbound-actions step-actions">${button("done", "Mark done", true)}${context.compact ? "" : '<span class="step-choice-note">An agent works it into its source; mark it done when that\'s handled.</span>'}</div>`;
   const own = ownActionsHtml(step, context);
   const next = `<button type="button" class="outbound-secondary step-next-toggle" data-step-action="next" aria-pressed="${Boolean(step.next)}" title="${step.next ? "Take it off the Up next queue" : "Queue it for an agent thread: plan-viewer next lists it"}">${step.next ? "● Up next" : "Up next"}</button>`;
   return own.includes('class="outbound-actions') ? own.replace(/<\/div>$/, `${next}</div>`) : `${own}<div class="outbound-actions step-actions">${next}</div>`;

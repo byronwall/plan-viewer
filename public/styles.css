@@ -264,7 +264,7 @@ button { cursor: pointer; }
 .chunk-actions { display: flex; gap: 2px; }
 .handoff-button.is-copied { animation: path-copy-confirmation 900ms ease-out; }
 .handoff-button:hover, .handoff-button[aria-expanded="true"] { border-color: var(--line); background: var(--hover-field); color: var(--ink); }
-.handoff-button:focus-visible, .send-button:focus-visible, .cancel-button:focus-visible, .copy-prompt-button:focus-visible, .popover-close:focus-visible, .document-link:focus-visible, .day-row:focus-visible, .view-navigation-link:focus-visible { outline: 3px solid rgba(49, 87, 213, .26); outline-offset: 2px; }
+.handoff-button:focus-visible, .send-button:focus-visible, .cancel-button:focus-visible, .copy-prompt-button:focus-visible, .note-button:focus-visible, .popover-close:focus-visible, .document-link:focus-visible, .day-row:focus-visible, .view-navigation-link:focus-visible { outline: 3px solid rgba(49, 87, 213, .26); outline-offset: 2px; }
 .markdown { margin: 8px 0 0 34px; color: #344055; font-size: .88rem; line-height: 1.55; }
 /* Prose keeps a reading measure; tables and figures bleed to the full card width. */
 .chunk-card .markdown > :not(.markdown-table, .markdown-figure, .markdown-tree) { max-width: 80ch; }
@@ -736,12 +736,12 @@ button.task-list-id:hover { text-decoration: underline; }
 .composer-hint { margin: 0 auto 0 0; color: var(--muted); font-size: .74rem; }
 .composer-hint kbd { border: 1px solid var(--line); border-radius: 5px; background: var(--hover-field); padding: 1px 5px; color: var(--body-ink); font: 600 .68rem/1.4 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; }
 .composer-hint.draft-warning { color: var(--action-ink); font-weight: 650; }
-.send-button, .cancel-button, .copy-prompt-button { flex: none; white-space: nowrap; border-radius: 8px; padding: 10px 14px; font-size: .82rem; font-weight: 650; }
+.send-button, .cancel-button, .copy-prompt-button, .note-button { flex: none; white-space: nowrap; border-radius: 8px; padding: 10px 14px; font-size: .82rem; font-weight: 650; }
 .send-button { border: 0; background: var(--action); color: var(--paper); }
 .send-button:hover { background: var(--action-deep); }
 .send-button:disabled { cursor: wait; opacity: .6; }
-.cancel-button, .copy-prompt-button { border: 0; background: transparent; color: var(--muted); }
-.cancel-button:hover, .copy-prompt-button:hover { background: var(--quiet-field); color: var(--ink); }
+.cancel-button, .copy-prompt-button, .note-button { border: 0; background: transparent; color: var(--muted); }
+.cancel-button:hover, .copy-prompt-button:hover, .note-button:hover { background: var(--quiet-field); color: var(--ink); }
 @media (max-width: 560px) { .composer-hint { display: none; } .composer-actions { justify-content: flex-end; } }
 .card-drafted .chunk-index { background: var(--status-waiting-field); color: var(--status-waiting-ink); }
 

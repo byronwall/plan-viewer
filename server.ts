@@ -19,7 +19,7 @@ import { createPlans } from "./plans.ts";
 import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig } from "./public/config.js";
-import { applyRule, loadSteps, markStepDone, pickChoice, runStatement, setStepNext, startStep } from "./steps.ts";
+import { applyRule, closeNote, loadSteps, markStepDone, pickChoice, runStatement, saveNote, setStepNext, startStep } from "./steps.ts";
 import { approveOutbound, draftFromText, dropOutbound, listOutbound, markOutboundSent, sendBackOutbound, stripFrontMatter } from "./outbound.ts";
 
 // The planning workspace is the current directory (npm scripts run from the content repository); PLANNING_ROOT
@@ -746,9 +746,17 @@ export async function saveHandoffImages(images: unknown[]) {
 }
 
 // `copy` hands the prompt back instead of opening the app (Copy prompt), so it can be pasted into a chat already open.
-async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex", images: string[] = [], workItem = "", mode = "", selection = "", section = "", copy = false, diagram = "") {
+// `note` saves the prompt as a note for an agent thread to pick up from Up next instead of opening it now.
+async function dispatchToCodex(path: string, scope: string, chunkId: string, commentary: string, requestId: string, actionId = "", expectedPrompt = "", app = "codex", images: string[] = [], workItem = "", mode = "", selection = "", section = "", copy = false, diagram = "", note = false) {
   const openDraft = async (title: string, prompt: string) => {
     if (copy) return { accepted: true, prompt: withImages(prompt, images) };
+    if (note) {
+      const task = path.match(/^tasks\/(TASK-\d{4})/)?.[1] || "";
+      const saved = await saveNote(ROOT, { commentary: commentary || title, prompt, source: path, task, images });
+      viewerWrites.add(saved.path);
+      dispatchLog(requestId, "note-saved", { note: saved.path });
+      return { accepted: true, note: saved.path };
+    }
     if (process.env.PLAN_VIEWER_DRY_RUN === "1") return { accepted: true, draftOpened: true, dryRun: true, prompt };
     const result = await getCodexApp().openDraft(ROOT, title, prompt, app, images);
     dispatchLog(requestId, "draft-opened", { draftOpened: result.draftOpened });
@@ -773,7 +781,7 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
     dispatchLog(requestId, "validated", { scope, path, workItem, mode });
     return openDraft(`${mode === "update" ? "Update" : "Advance"} ${node.id}: ${node.title}`, prompt);
   }
-  if (!commentary.trim() && !copy) throw new Error("Add a request before opening a draft.");
+  if (!commentary.trim() && !copy) throw new Error(note ? "Add a note before saving it." : "Add a request before opening a draft.");
   if (commentary.length > MAX_COMMENT_LENGTH) throw new Error("Commentary is too long for this first version.");
   if (scope === "diagram") {
     const source = safeAssetPath(diagram);
@@ -1116,7 +1124,9 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (request.method === "POST" && url.pathname === "/api/steps/done") {
       const body = await readJson(request);
       viewerWrites.add(String(body.path || ""));
-      await markStepDone(ROOT, String(body.path || ""), String(body.id || ""), config().user, todayDate());
+      const path = String(body.path || "");
+      if (/\/notes\/[^/]+\.md$/.test(path)) await closeNote(ROOT, path, config().user, todayDate());
+      else await markStepDone(ROOT, path, String(body.id || ""), config().user, todayDate());
       return json(response, 200, { done: true });
     }
     if (request.method === "GET" && url.pathname === "/api/outbound") return json(response, 200, { drafts: await listOutbound(ROOT), sendConfigured: Boolean(config().outbound.send.length) });
@@ -1142,7 +1152,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request, 50_000_000);
       dispatchLog(requestId, "received", { path: String(body.path || ""), scope: String(body.scope || ""), chunkId: String(body.chunkId || "") });
       try {
-        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex"), await saveHandoffImages(Array.isArray(body.images) ? body.images : []), String(body.workItem || ""), String(body.mode || ""), String(body.selection || ""), String(body.section || ""), body.copy === true, String(body.diagram || "")));
+        return json(response, 202, await dispatchToCodex(String(body.path || ""), String(body.scope || ""), String(body.chunkId || ""), String(body.commentary || ""), requestId, String(body.actionId || ""), String(body.expectedPrompt || ""), String(body.app || "codex"), await saveHandoffImages(Array.isArray(body.images) ? body.images : []), String(body.workItem || ""), String(body.mode || ""), String(body.selection || ""), String(body.section || ""), body.copy === true, String(body.diagram || ""), body.note === true));
       } catch (error) {
         dispatchLog(requestId, "failed", { error: error instanceof Error ? error.message : String(error) });
         throw error;

@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { draftFromText } from "./outbound.ts";
-import { activeRuns, applyRule, deriveSteps, pickChoice, runStatement, startStep, withStepFlag } from "./steps.ts";
+import { activeRuns, applyRule, closeNote, deriveSteps, listNotes, pickChoice, runStatement, saveNote, startStep, withStepFlag } from "./steps.ts";
 import { setConfig } from "./public/config.js";
 
 const TASK = `---
@@ -92,6 +92,26 @@ test("Up next adds and removes the next flag without touching kind, size or prer
   assert.equal(withStepFlag(flagged, "W6", "next", false), withStepFlag(TASK, "W7", "next", true));
   assert.equal(withStepFlag(withStepFlag(TASK, "W8", "next", true), "W8", "next", false), TASK);
   assert.throws(() => withStepFlag(TASK, "W99", "next", true), /W99/);
+});
+
+test("a saved note keeps its prompt and images, waits under Up next, and leaves the list once done", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "notes-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "tmp"));
+  await writeFile(join(root, "tmp", "shot.png"), "png");
+  const now = new Date(2026, 10, 13, 14, 5, 9);
+  const task = await saveNote(root, { commentary: "Tighten the retry section\nand cite OPS-77", prompt: "Source file: tasks/TASK-0001.md\n\nTighten it", source: "tasks/TASK-0001.md", task: "TASK-0001", images: [join(root, "tmp", "shot.png")] }, now);
+  const loose = await saveNote(root, { commentary: "Idea for the plan", prompt: "Idea", source: "daily/2026/11/13.md" }, now);
+  assert.equal(task.path, "tasks/TASK-0001-assets/notes/2026-11-13-140509-tighten-the-retry-section.md");
+  assert.equal(loose.path, "reference/notes/2026-11-13-140509-idea-for-the-plan.md");
+  assert.equal(await readFile(join(root, "tasks/TASK-0001-assets/notes/2026-11-13-140509-tighten-the-retry-section-1.png"), "utf8"), "png");
+  const notes = await listNotes(root);
+  assert.deepEqual(notes.map((n) => [n.task, n.title, n.next, n.move, n.kind]), [["", "Idea for the plan", true, "agent", "note"], ["TASK-0001", "Tighten the retry section", true, "agent", "note"]]);
+  assert.match(notes[1].prompt!, /^Source file: tasks\/TASK-0001\.md[\s\S]*-1\.png$/m);
+  await closeNote(root, task.path, "Pat", "2026-11-14");
+  assert.deepEqual((await listNotes(root)).map((n) => n.path), [loose.path]);
+  assert.match(await readFile(join(root, task.path), "utf8"), /^note: done$[\s\S]*2026-11-14 — Marked done \(Pat/m);
+  await assert.rejects(closeNote(root, "tasks/TASK-0001.md", "Pat", "2026-11-14"), /Not a note/);
 });
 
 test("Pick completes the choice, defers the options not picked, and records the pick", async (t) => {
