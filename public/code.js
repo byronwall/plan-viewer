@@ -1,4 +1,4 @@
-import { documentHref, escapeHtml, renderMarkdown, SERVICE_ICONS } from "./markdown.js";
+import { documentHref, escapeHtml, renderMarkdown, renderMarkdownInRepo, SERVICE_ICONS } from "./markdown.js";
 import { GLYPHS } from "./icons.js";
 import { agentApp, agentName as appName, config, escapeRegExp } from "./config.js";
 import { decorate, lineClasses, markWords } from "./word-diff.js";
@@ -1870,7 +1870,7 @@ function notesSection(pr, workspace) {
   const remove = `<svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.x}</svg>`;
   const list = notes.map((note) => `<li><button type="button" class="code-diff-scope" data-note-jump="${note.id}"><b>${note.status === "draft" ? "" : "✓"}</b><span><code>${escapeHtml(note.file.split("/").pop())}${note.line ? `:${note.line}` : ""}</code>${noteState(noteAt(note))} ${escapeHtml(note.body)}</span></button><button type="button" class="code-notes-x" data-note-delete="${note.id}" data-tip="Delete this note" aria-label="Delete this note">${remove}</button></li>`).join("");
   const bar = stale ? `<div class="code-notes-bar">${diffSegment("data-note-filter", filter, { all: `All ${all.length}`, stale: `Stale ${stale}` })}<button type="button" class="code-notes-clear" data-note-clear data-tip="Delete every edited, outdated and file-changed note">Clear ${stale} stale</button></div>` : "";
-  const file = diff.notes?.path && notes.length ? `<a class="code-icon-button" href="/?path=${encodeURIComponent(diff.notes.path)}" target="_blank" rel="noreferrer" data-tip="Open the notes file" aria-label="Open the notes file">${icon("external")}</a>` : "";
+  const file = diff.notes?.path && notes.length ? `<a class="code-icon-button" href="${escapeHtml(documentHref(diff.notes.path, ""))}" data-planning-path="${escapeHtml(diff.notes.path)}" data-tip="Open the notes file" aria-label="Open the notes file">${icon("external")}</a>` : "";
   const target = `data-url="${escapeHtml(pr.url || "")}" data-path="${escapeHtml(workspace)}"`;
   const actions = drafts && pr.url ? iconButton("comment", `Post ${drafts} draft${drafts === 1 ? "" : "s"} as a pending GitHub review in ${appName()} · ${altKey}-click copies the prompt`, `data-code-skill="notes-post" ${target}`) + iconButton("discuss", `Work through the drafts in ${appName()} · ${altKey}-click copies the prompt`, `data-code-skill="notes-work" ${target}`) : "";
   const meta = all.length ? `${drafts} draft${drafts === 1 ? "" : "s"}${all.length > drafts ? `, ${all.length - drafts} posted` : ""}` : "select code, press <kbd>C</kbd>";
@@ -2194,7 +2194,7 @@ function discussionHtml(pr, info) {
   const toggle = bots ? `<button type="button" class="code-more" data-diff-bots>${showBotComments ? "Hide" : "Show"} ${bots} bot ${bots === 1 ? "comment" : "comments"}</button>` : "";
   const rows = shown.map((item) => `<article class="code-comment${item.bot ? " is-bot" : ""}"><header>${avatar(item.author)}<b>${escapeHtml(item.author)}</b>`
     + `${item.kind === "line" ? `<span class="code-muted" data-tip="${escapeHtml(item.path)}">${escapeHtml(item.path.split("/").pop())}${item.line ? `:${item.line}` : ""}</span>` : item.kind === "review" ? `<span class="code-muted">${escapeHtml({ APPROVED: "approved", CHANGES_REQUESTED: "requested changes", COMMENTED: "reviewed" }[item.state] || "reviewed")}</span>` : ""}`
-    + `<a class="code-muted" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer" data-tip="${escapeHtml(new Date(item.at).toLocaleString())}">${ago(new Date(item.at).getTime())} ago</a>`
+    + `<a class="code-muted" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer" data-external data-tip="${escapeHtml(new Date(item.at).toLocaleString())}">${ago(new Date(item.at).getTime())} ago</a>`
     + `${info.url && workspace ? iconButton("discuss", `Discuss with ${appName()} · ${altKey}-click copies the prompt`, `data-code-skill="discuss-comment" data-comment="${escapeHtml(item.id)}" data-url="${escapeHtml(info.url)}" data-path="${escapeHtml(workspace)}"`) : ""}</header>`
     + `<div class="markdown">${prBodyHtml(pr.slug, pr.number, item.body)}</div></article>`).join("");
   return `<section class="code-discussion"><h4>Comments <span class="code-muted">${shown.length}</span>${toggle}</h4>${rows || `<p class="code-muted">No comments from people yet.</p>`}</section>`;
@@ -2218,7 +2218,7 @@ function renderDiff() {
   const wtCommit = wt ? wtCommits().find((candidate) => candidate.sha === diff.scope) : null;
   const wtScope = { local: "Local files", all: wtInfo?.base ? `All changes vs ${wtInfo.base}` : "All changes", uncommitted: "Uncommitted" }[diff.scope];
   const title = wt ? `${icon("branch")} ${escapeHtml(wtInfo?.tree?.branch || shortPath(wt.path))}`
-    : pr ? `<a class="code-pr-link" href="${escapeHtml(info.url || `https://github.com/${pr.slug}/pull/${pr.number}`)}" target="_blank" rel="noreferrer">#${pr.number}</a> ${escapeHtml(info.title || "")}` : escapeHtml(diff.title);
+    : pr ? `<a class="code-pr-link" href="${escapeHtml(info.url || `https://github.com/${pr.slug}/pull/${pr.number}`)}" target="_blank" rel="noreferrer" data-external data-tip="Open on GitHub">#${pr.number}</a> ${escapeHtml(info.title || "")}` : escapeHtml(diff.title);
   const sub = wt ? `${escapeHtml(shortPath(wt.path))} · ${wtCommit ? `commit ${wtCommits().indexOf(wtCommit) + 1} of ${wtCommits().length} · ${escapeHtml(wtCommit.sha.slice(0, 7))} ${escapeHtml(wtCommit.subject)}` : wtScope || ""}`
     : pr ? `${escapeHtml(pr.slug.split("/")[1])} · ${commit ? `commit ${commits.indexOf(commit) + 1} of ${commits.length} · ${escapeHtml(commit.sha.slice(0, 7))} ${escapeHtml(commit.subject)}` : description ? "Description" : diff.scope === "stack" ? `Whole stack vs ${escapeHtml(prStack().stack[0]?.base || "")}` : "All changes"}` : escapeHtml(diff.sub) + (diff.params?.source === "commit" ? commitPlace(diff.context) : "");
   const viewedCount = subject() && files && !description && !local ? files.filter(isViewed).length : 0;
@@ -2379,7 +2379,7 @@ function runSection(path) {
 function prDetail(pr) {
   const tree = worktreeFor(pr);
   const extra = ui.detail.get(`pr:${pr.slug}#${pr.number}`);
-  return `<header class="code-detail-head">${ciBadge(pr)}<h3><a class="code-pr-link" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">#${pr.number}</a> ${escapeHtml(pr.title)}</h3><span class="code-side-tools">${iconButton("expand", "PR overview (Enter)", "data-code-pr-overlay")}${ui.data.previews?.includes(pr.repo) ? previewButton(pr) : ""}${copyButton(pr.url, "Copy PR link")}</span></header>
+  return `<header class="code-detail-head">${ciBadge(pr)}<h3><a class="code-pr-link" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer" data-external>#${pr.number}</a> ${escapeHtml(pr.title)}</h3><span class="code-side-tools">${iconButton("expand", "PR overview (Enter)", "data-code-pr-overlay")}${ui.data.previews?.includes(pr.repo) ? previewButton(pr) : ""}${copyButton(pr.url, "Copy PR link")}</span></header>
     ${prFacts(pr, tree, tree?.path)}
     ${runSection(tree?.path)}
     ${stackSection(pr)}
@@ -2450,7 +2450,7 @@ function stackSection(pr) {
 }
 
 // A PR body's attached images load through the server, which can sign in to GitHub for them.
-const prBodyHtml = (slug, number, body) => renderMarkdown(body.replace(/https:\/\/github\.com\/user-attachments\/assets\/([0-9a-f-]{36})/g, (_, id) => `/api/github-image?${new URLSearchParams({ slug, number, id })}`));
+const prBodyHtml = (slug, number, body) => renderMarkdownInRepo(slug, body.replace(/https:\/\/github\.com\/user-attachments\/assets\/([0-9a-f-]{36})/g, (_, id) => `/api/github-image?${new URLSearchParams({ slug, number, id })}`));
 
 // Long PR bodies collapse to a short preview; the toggle remembers per PR so background refreshes keep it open.
 function descriptionSection(pr, body) {

@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createLinkMetadataStore, refreshSlackChannels } from "./link-metadata.ts";
 import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle, withImages } from "./codex-desktop.ts";
-import { delimitedTable, inlineMarkdown, pullRequestRefs, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
+import { delimitedTable, inlineMarkdown, pullRequestRefs, renderMarkdownInRepo, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
 import { dateKey, parseDateKey, startOfWeek } from "./public/dates.js";
 import { config, setConfig } from "./public/config.js";
 import { comparePanels, isDiffDiagram, sourceHtml, statementId } from "./public/diagram.js";
@@ -575,6 +575,15 @@ test("a PR overview's Linked documents count bare and repo-named PR references, 
   assert.deepEqual(pullRequestRefs("Take #2301 to review; it sits on #1831/#1872 and Orbit#77, see https://github.com/acme/Orbit/pull/12. Not #12, abc#999 or a/b#456."), [
     "acme/orbit#12", "acme/orbit#77", "acme/atlas#2301", "acme/atlas#1831", "acme/atlas#1872",
   ]);
+});
+
+test("a PR's own text links bare #N and SHAs in that PR's repository, as GitHub does", () => {
+  const hrefs = (html) => [...html.matchAll(/href="([^"]+)"/g)].map(([, href]) => href);
+  assert.deepEqual(hrefs(renderMarkdownInRepo("other/tool", "Fixes #12 and #1831/#1872 at abc1234def; Orbit#77.")), [
+    "https://github.com/other/tool/pull/12", "https://github.com/other/tool/pull/1831", "https://github.com/other/tool/pull/1872",
+    "https://github.com/other/tool/commit/abc1234def", "https://github.com/acme/Orbit/pull/77",
+  ]);
+  assert.deepEqual(hrefs(renderMarkdown("Fixes #1831.")), ["https://github.com/acme/atlas/pull/1831"]);
 });
 
 test("the daily plan schedules the pilot by ID without copying its body", async () => {

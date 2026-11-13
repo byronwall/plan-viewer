@@ -576,7 +576,7 @@ function renderDetail({ animate = false } = {}) {
   if (!pane) return;
   const issue = byKey().get(ui.sel);
   pane.innerHTML = issue
-    ? `<div class="code-detail-head">${typeIcon(issue)}<h3><a class="code-pr-link" href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in ${trackerName(issue)} (O)">${keyMark(issue) || escapeHtml(issue.key)}</a> ${escapeHtml(issue.summary)}</h3></div>${issueFacts(issue)}${codeSection(issue)}${relationsSection(issue)}${textSections(issue, false)}`
+    ? `<div class="code-detail-head">${typeIcon(issue)}<h3><a class="code-pr-link" data-external href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in ${trackerName(issue)} (O)">${keyMark(issue) || escapeHtml(issue.key)}</a> ${escapeHtml(issue.summary)}</h3></div>${issueFacts(issue)}${codeSection(issue)}${relationsSection(issue)}${textSections(issue, false)}`
     : `<p class="code-detail-empty">Select an issue to see its details, code, and comments.<br><br><kbd>J</kbd><kbd>K</kbd> move · <kbd>Enter</kbd> overview · ${(ui.data.skills || []).length > 1 ? `<kbd>1</kbd>–<kbd>${ui.data.skills.length}</kbd> agent drafts` : "<kbd>1</kbd> agent draft"} · <kbd>Space</kbd> select · shift-click a range · ${ui.tab === "triage" ? "<kbd>X</kbd> seen · " : ""}<kbd>O</kbd> open · <kbd>Y</kbd> copy link · <kbd>A</kbd> people · <kbd>F</kbd> filter · <kbd>R</kbd> refresh</p>`;
   if (animate) { pane.scrollTop = 0; fadeIn(pane, 160); }
   if (issue) loadDetail(issue.key);
@@ -586,7 +586,7 @@ function renderDetail({ animate = false } = {}) {
 // `handleIssueClick`. `loadIssueDetail` resolves once the description and comments are in.
 export const issueInspector = (key) => {
   const issue = ui.data && byKey().get(key);
-  return issue ? `<div class="code-detail-head">${typeIcon(issue)}<h3><a class="code-pr-link" href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in ${trackerName(issue)} (O)">${keyMark(issue) || escapeHtml(issue.key)}</a> ${escapeHtml(issue.summary)}</h3></div>${issueFacts(issue)}${codeSection(issue)}${relationsSection(issue)}${textSections(issue, false)}` : "";
+  return issue ? `<div class="code-detail-head">${typeIcon(issue)}<h3><a class="code-pr-link" data-external href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in ${trackerName(issue)} (O)">${keyMark(issue) || escapeHtml(issue.key)}</a> ${escapeHtml(issue.summary)}</h3></div>${issueFacts(issue)}${codeSection(issue)}${relationsSection(issue)}${textSections(issue, false)}` : "";
 };
 export const loadIssueDetail = (key) => loadDetail(key);
 export const issueLink = (key) => issueUrl(key);
@@ -650,7 +650,7 @@ function renderOverview() {
   const position = overview.list.indexOf(issue.key);
   const walk = position >= 0 && overview.list.length > 1 ? `<span class="code-muted">${position + 1} of ${overview.list.length} · <kbd>J</kbd><kbd>K</kbd> walk · <kbd>X</kbd> seen and next</span>` : "";
   const where = issue.source === "linear" ? `Linear · ${issue.project} team${issue.mirrorOf ? ` · synced copy of ${issue.mirrorOf}` : ""}` : issue.source === "github" ? `GitHub · ${issue.project}${issue.components.length ? ` · ${issue.components.join(", ")}` : ""}` : `${issue.project} · ${issue.components.join(", ") || "no component"}`;
-  dialog.querySelector('[data-o="head"]').innerHTML = `${typeIcon(issue)}<div class="issue-overview-title"><h3><a class="code-pr-link" href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in ${trackerName(issue)} (O)">${keyMark(issue) || escapeHtml(issue.key)}</a> ${escapeHtml(issue.summary)}</h3><p class="code-muted">${escapeHtml(where)}${issue.inScope ? "" : " · outside the configured scope"}${isSeen(issue) ? " · seen" : ""}</p></div><span class="code-spacer"></span>${walk}${issue.source === "jira" ? iconButton("refresh", "Re-read this issue from Jira (R)", "data-issue-reread").replace('class="code-icon-button"', `class="code-icon-button${overview.rereading === issue.key ? " is-spinning" : ""}"`) : ""}${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
+  dialog.querySelector('[data-o="head"]').innerHTML = `${typeIcon(issue)}<div class="issue-overview-title"><h3><a class="code-pr-link" data-external href="${escapeHtml(issueUrl(issue.key))}" target="_blank" rel="noreferrer" data-tip="Open in ${trackerName(issue)} (O)">${keyMark(issue) || escapeHtml(issue.key)}</a> ${escapeHtml(issue.summary)}</h3><p class="code-muted">${escapeHtml(where)}${issue.inScope ? "" : " · outside the configured scope"}${isSeen(issue) ? " · seen" : ""}</p></div><span class="code-spacer"></span>${walk}${issue.source === "jira" ? iconButton("refresh", "Re-read this issue from Jira (R)", "data-issue-reread").replace('class="code-icon-button"', `class="code-icon-button${overview.rereading === issue.key ? " is-spinning" : ""}"`) : ""}${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
   dialog.querySelector('[data-o="side"]').innerHTML = issueFacts(issue, true) + codeSection(issue) + relationsSection(issue, true);
   dialog.querySelector('[data-o="main"]').innerHTML = `<div class="issue-overview-text">${textSections(issue, true)}</div>`;
 }
@@ -680,7 +680,7 @@ export async function openIssue(key, list = null) {
     ensureDialog();
     overview.key = key;
     syncIssueUrl(key);
-    dialog.querySelector('[data-o="head"]').innerHTML = `<span class="issue-reading">${icon("refresh")}</span><div class="issue-overview-title"><h3><a class="code-pr-link" href="${escapeHtml(issueUrl(key))}" target="_blank" rel="noreferrer">${escapeHtml(key)}</a></h3><p class="code-muted">Reading from Jira…</p></div><span class="code-spacer"></span>${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
+    dialog.querySelector('[data-o="head"]').innerHTML = `<span class="issue-reading">${icon("refresh")}</span><div class="issue-overview-title"><h3><a class="code-pr-link" data-external href="${escapeHtml(issueUrl(key))}" target="_blank" rel="noreferrer">${escapeHtml(key)}</a></h3><p class="code-muted">Reading from Jira…</p></div><span class="code-spacer"></span>${iconButton("fail", "Close (Esc)", "data-issue-close")}`;
     dialog.querySelector('[data-o="side"]').innerHTML = "";
     dialog.querySelector('[data-o="main"]').innerHTML = `<p class="code-muted issue-overview-text">Loading…</p>`;
     if (!dialog.open) { dialog.showModal(); dialog.focus({ preventScroll: true }); }

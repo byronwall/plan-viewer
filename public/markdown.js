@@ -246,11 +246,22 @@ function referencePatterns() {
 export function commitRepo(textBefore) {
   const { mention, refs } = referencePatterns();
   const found = [...textBefore.matchAll(mention)].pop();
+  if (!found?.[1] && !found?.[2] && home) return home;
   return refs.repos[(found?.[1] || found?.[2] || refs.defaultRepo).toLowerCase()] || "";
 }
 
+// While a PR's own text renders, its bare `#N` and SHAs belong to that PR's repository (`owner/repo`), as on GitHub,
+// not to `github.defaultRepo`.
+let home = "";
+export function renderMarkdownInRepo(slug, markdown) {
+  home = slug;
+  try { return renderMarkdown(markdown); } finally { home = ""; }
+}
+// A repository name from the config, or a whole `owner/repo` slug.
+const repoSlug = (repo) => repo.includes("/") ? repo : githubSlug(repo);
+
 function commitLink(repo, sha, label) {
-  return repo ? externalLink(`https://github.com/${githubSlug(repo)}/commit/${sha}`, label) : label;
+  return repo ? externalLink(`https://github.com/${repoSlug(repo)}/commit/${sha}`, label) : label;
 }
 
 // Trace IDs: 32 hex characters (OpenTelemetry's form) is a trace, never an abbreviated commit. They link through `traceUrl`.
@@ -288,14 +299,15 @@ export function pullRequestRefs(text) {
 
 function linkifyReferences(html, textBefore = "", bare = true) {
   const { refs } = referencePatterns();
-  const pull = (repo) => (n, label) => externalLink(`https://github.com/${githubSlug(repo)}/pull/${n}`, label);
+  const pull = (repo) => (n, label) => externalLink(`https://github.com/${repoSlug(repo)}/pull/${n}`, label);
   const task = (n, label) => documentLink({ path: `tasks/TASK-${n.padStart(4, "0")}.md`, anchor: "" }, label);
   let output = linkifyCommits(html, textBefore, bare)
     .replace(new RegExp(`(^|[^\\w/-])${refs.ownerPattern}(${refs.repoNames})#(\\d+)${LIST}`, "gi"), (_, lead, name, n, rest) => {
       const repo = refs.repos[name.toLowerCase()];
       return lead + linkList(pull(repo)(n, `${repo}#${n}`), rest, pull(repo));
     });
-  if (refs.defaultSlug) output = output.replace(new RegExp(`(^|[^\\w&;/#])#(\\d{3,})${LIST}`, "g"), (_, lead, n, rest) => lead + linkList(pull(refs.defaultRepo)(n, `#${n}`), rest, pull(refs.defaultRepo)));
+  const bareRepo = home || (refs.defaultSlug && refs.defaultRepo);
+  if (bareRepo) output = output.replace(new RegExp(`(^|[^\\w&;/#])#(\\d{${home ? 1 : 3},})${LIST}`, "g"), (_, lead, n, rest) => lead + linkList(pull(bareRepo)(n, `#${n}`), rest, pull(bareRepo)));
   for (const tracker of refs.trackers) {
     const issue = (n, label) => externalLink(tracker.url.replace("{id}", `${tracker.prefix}-${n}`), label);
     output = output.replace(new RegExp(`(^|[^\\w/-])${tracker.prefix}-(\\d+)${LIST}`, "g"), (_, lead, n, rest) => lead + linkList(issue(n, `${tracker.prefix}-${n}`), rest, issue));
