@@ -1,4 +1,4 @@
-import { documentHref, escapeHtml, markdownHeadingId } from './markdown.js';
+import { escapeHtml, markdownHeadingId } from './markdown.js';
 import { GLYPHS } from './icons.js';
 
 // This small Markdown contract is shared by the server and the browser.
@@ -127,24 +127,7 @@ const labelWidth = labels => `--label-chars:${Math.max(4, ...labels.map(label =>
 export function renderActions(actions, key) {
   if (!actions.length) return '<p class="action-empty">No next actions recorded yet.</p>';
   const width = labelWidth(actions.map(action => action.workItem || ''));
-  if (!actions.some(action => action.taskTitle)) return `<div class="action-list" style="${width}">${actions.map((action, index) => actionRow(action, index, key)).join('')}</div>`;
-  const groups = new Map();
-  actions.forEach((action, index) => {
-    const groupKey = action.taskTitle ? action.sourcePath : 'day';
-    if (!groups.has(groupKey)) groups.set(groupKey, []);
-    groups.get(groupKey).push({ action, index });
-  });
-  // The day shows each task's next ready action; the full list lives on the task page.
-  return [...groups.values()].map(group => {
-    const first = group.find(item => !item.action.blocked) || group[0];
-    const { taskTitle, sourcePath } = first.action;
-    if (!taskTitle) return `<section class="daily-action-group" style="${width}"><h3 class="daily-action-task"><span class="daily-action-day">${icon('calendar')}</span><span>Day-specific steps</span></h3>${group.map(item => actionRow(item.action, item.index, key)).join('')}</section>`;
-    const [id, ...rest] = taskTitle.split(' · ');
-    const href = documentHref(sourcePath, 'next-actions');
-    const link = (cls, body) => `<a class="markdown-document-link ${cls}" href="${escapeHtml(href)}" data-document-path="${escapeHtml(sourcePath)}" data-document-anchor="next-actions">${body}</a>`;
-    const more = group.length - 1;
-    return `<section class="daily-action-group" style="${width}"><header class="daily-action-task">${link('daily-action-task-link', `${escapeHtml(id)} · ${escapeHtml(rest.join(' · '))}`)}${more ? link('daily-action-more', `+${more} more`) : ''}</header>${actionRow(first.action, first.index, key)}</section>`;
-  }).join('');
+  return `<div class="action-list" style="${width}">${actions.map((action, index) => actionRow(action, index, key)).join('')}</div>`;
 }
 
 const STATUS_ICONS = { Open: 'circle', Active: 'circle-dot', Ready: 'circle-check', Blocked: 'lock', Waiting: 'clock', Deferred: 'pause', Completed: 'check' };

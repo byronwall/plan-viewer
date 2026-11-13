@@ -293,8 +293,7 @@ export function renderDock({ doc, documents, links, body, diagrams = [] }) {
   const linkCount = links.reduce((sum, group) => sum + group.items.length, 0);
   const leaves = (doc.work?.nodes || []).filter((node) => !doc.work.nodes.some((child) => child.parent === node.id));
   const doneLeaves = leaves.filter((node) => node.status === "completed").length;
-  // Next steps on a day also lists the scheduled tasks' actions, so its counts include them.
-  const listed = [...(doc.nextActions || []), ...(actions && /^next steps$/i.test(actions.title) ? doc.scheduledActions || [] : [])];
+  const listed = doc.nextActions || [];
   const readyActions = listed.filter((action) => !action.blocked).length;
 
   const items = [];

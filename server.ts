@@ -663,25 +663,10 @@ export async function loadDocument(requested: string) {
       : waitingOn.length ? `After ${waitingOn.join(", ")}`
       : `${node.id} is ${node.status}`;
   }
-  const scheduledActions = [];
   const actionWarnings: string[] = [];
   const stalled = stalledTaskReason(summary.task?.status, nextActions, work);
   if (stalled) actionWarnings.push(stalled);
-  if (summary.kind === "Plan") {
-    const scheduled = chunks.find(chunk => /^scheduled tasks$/i.test(chunk.title));
-    const ids = new Set([...(scheduled?.markdown || "").matchAll(/\[[^\]]+\]\([^)]*tasks\/(TASK-\d{4})\.md(?:#[^)]*)?\)/g)].map(match => match[1]));
-    for (const id of ids) {
-      try {
-        const task = await loadDocument(`tasks/${id}.md`);
-        if (["completed", "deferred", "waiting"].includes(task.task?.status || "")) continue;
-        scheduledActions.push(...task.nextActions.map(action => ({ ...action, taskTitle: `${id} · ${task.title}` })));
-      } catch { actionWarnings.push(`Could not load ${id}. Check the scheduled task link.`); }
-    }
-    if (scheduledActions.length && !chunks.some(chunk => /^next steps$/i.test(chunk.title))) {
-      chunks.splice(chunks.findIndex(chunk => chunk === scheduled) + 1, 0, { id: "scheduled-next-steps", anchor: "next-steps", title: "Next steps", markdown: "", level: 2, kind: "section" });
-    }
-  }
-  return { ...summary, outbound, absolutePath: path.absolute, markdown: contents, chatLinks: extractChatLinks(renderedContents), chunks, nextActions, scheduledActions, actionWarnings, work };
+  return { ...summary, outbound, absolutePath: path.absolute, markdown: contents, chatLinks: extractChatLinks(renderedContents), chunks, nextActions, actionWarnings, work };
 }
 
 // Names the open file, and its task ID for a task file, so the receiving agent never has to guess what was on screen.

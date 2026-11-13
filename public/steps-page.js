@@ -92,7 +92,15 @@ export const movePill = (step) => {
 const TOGGLE_LABELS = { you: "You", agent: "Agent", others: "Others", all: "All" };
 // A thin segmented control; `counts` adds a number to each segment, `keys` picks the segments.
 export const stepToggleHtml = (move, counts = null, keys = Object.keys(TOGGLE_LABELS)) => `<span class="step-toggle" role="group" aria-label="Next move">${keys.map((key) => `<button type="button" data-step-list-move="${key}" aria-pressed="${move === key}">${TOGGLE_LABELS[key]}${counts && key !== "all" ? ` <span>${counts[key]}</span>` : ""}</button>`).join("")}</span>`;
-export const stepRowHtml = ({ key, lead = "", title, meta = "", className = "" }) => `<button type="button" class="step-row${className}" data-open-step="${escapeHtml(key)}">${lead}<span class="step-row-title">${escapeHtml(title)}</span><span class="step-row-meta">${meta}</span></button>`;
+// Every segment's rows are rendered into one grid cell and only the chosen one is visible, so the panel is always as tall as
+// its fullest segment and switching never moves what follows it. `layers` maps a segment to its HTML.
+export const stepStackHtml = (move, layers) => `<div class="step-stack">${Object.entries(layers).map(([key, html]) => `<div class="step-layer" data-step-layer="${key}"${key === move ? "" : " inert"}>${html}</div>`).join("")}</div>`;
+// Shows one segment of a stack rendered by stepStackHtml; the caller keeps the choice in the URL.
+export function showStepLayer(panel, move) {
+  for (const button of panel.querySelectorAll("[data-step-list-move]")) button.setAttribute("aria-pressed", String(button.dataset.stepListMove === move));
+  for (const layer of panel.querySelectorAll("[data-step-layer]")) layer.inert = layer.dataset.stepLayer !== move;
+}
+export const stepRowHtml = ({ key, lead = "", title, note = "", meta = "", className = "" }) => `<button type="button" class="step-row${className}" data-open-step="${escapeHtml(key)}">${lead}<span class="step-row-title">${escapeHtml(title)}${note ? `<span class="step-row-note">${escapeHtml(note)}</span>` : ""}</span><span class="step-row-meta">${meta}</span></button>`;
 
 function optionsHtml(step) {
   const type = step.kind === "pick-one" ? "radio" : "checkbox";
@@ -134,17 +142,15 @@ function machineryHtml(step) {
     ${step.machinery ? `<p class="outbound-note"><a class="markdown-document-link" href="?path=${encodeURIComponent(step.machinery.path)}" data-document-path="${escapeHtml(step.machinery.path)}" data-document-anchor="">Open ${escapeHtml(step.machinery.path.split("/").pop())}</a></p>` : ""}`;
 }
 
-// What a step needs from you beyond its title: friction and its fix, what it waits on, and a choice's options, an outbound
-// draft's approval panel or its machinery. Shared by the Steps inspector and the step dialog.
+// A choice's options, an outbound draft's approval panel, or its machinery (and a note when it has no kind yet). Shared by
+// the Steps inspector and the step dialog, which each say why the step is where it is in their own way.
 export function stepBodyHtml(step) {
-  const friction = step.move === "you-act" && !step.draft ? `<p class="step-friction"><strong>Friction:</strong> ${escapeHtml(step.reason)}.${step.fix ? ` <strong>Fix:</strong> ${escapeHtml(step.fix)}.` : ""}</p>` : "";
-  const blocked = step.move === "blocked" ? `<p class="outbound-note">Waits on ${escapeHtml(step.reason.replace(/^after /, ""))} in ${escapeHtml(step.task)}.</p>` : "";
   const untyped = step.move === "unclassified" ? `<p class="outbound-note">No kind and no prompt: add <code>{kind, size}</code> to its line, or a prompt under Next actions with <code>Work item: ${escapeHtml(step.id)}</code>.</p>` : "";
   const body = step.options ? optionsHtml(step)
     : step.draft ? outboundPanel(step.draft, { showBody: true })
     : step.machinery ? machineryHtml(step)
     : "";
-  return `${friction}${blocked}${untyped}${body}`;
+  return `${untyped}${body}`;
 }
 
 export function stepInspectorHtml(step, extra = "", context = {}) {
@@ -153,6 +159,8 @@ export function stepInspectorHtml(step, extra = "", context = {}) {
       <span class="task-detail-buttons"><button class="task-detail-open" type="button" data-task-path="${escapeHtml(step.path)}">Workstream <span aria-hidden="true">→</span></button></span></header>
     <h3>${escapeHtml(step.title.split(" — ")[0])}</h3>
     <p class="task-detail-meta"><span>${escapeHtml(kindLabel(step.kind))}</span><span>${step.size ? `Size ${escapeHtml(step.size)}` : "No size yet"}</span><span>${escapeHtml(step.status)}</span><span>${escapeHtml(step.taskTitle)}</span></p>`;
+  const friction = step.move === "you-act" && !step.draft ? `<p class="step-friction"><strong>Friction:</strong> ${escapeHtml(step.reason)}.${step.fix ? ` <strong>Fix:</strong> ${escapeHtml(step.fix)}.` : ""}</p>` : "";
+  const blocked = step.move === "blocked" ? `<p class="outbound-note">Waits on ${escapeHtml(step.reason.replace(/^after /, ""))} in ${escapeHtml(step.task)}.</p>` : "";
   const prompt = step.prompt ? `<section class="task-detail-section"><h4>Prompt${step.actionTitle ? ` <span class="step-action-title">${escapeHtml(step.actionTitle)}</span>` : ""}</h4><pre class="step-prompt">${escapeHtml(step.prompt)}</pre></section>` : "";
-  return `${head}${extra}${stepBodyHtml(step)}${stepActionsHtml(step, context)}${prompt}`;
+  return `${head}${friction}${blocked}${extra}${stepBodyHtml(step)}${stepActionsHtml(step, context)}${prompt}`;
 }

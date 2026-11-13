@@ -695,14 +695,11 @@ test("work breakdown diagnostics explain unsupported statuses and how to repair 
   assert.doesNotMatch(entirelyInvalid, /Add nested work items/);
 });
 
-test("daily next steps resolve scheduled source tasks without copying their prompts", async () => {
+test("a daily plan lists its scheduled tasks without deriving Next steps from them", async () => {
   const plan = await loadDocument('daily/2026/10/01/plan.md');
-  assert.ok(plan.chunks.some(c => c.title === 'Next steps'));
-  assert.ok(plan.scheduledActions.length > 0);
-  const action = plan.scheduledActions.find(a => a.sourcePath === 'tasks/TASK-0015.md');
-  assert.ok(action);
-  const task = await loadDocument(action.sourcePath);
-  assert.equal(action.prompt, task.nextActions.find(a => a.id === action.id)?.prompt);
+  assert.ok(plan.chunks.some(c => /^scheduled tasks$/i.test(c.title)));
+  assert.ok(!plan.chunks.some(c => c.id === 'scheduled-next-steps'));
+  assert.equal(plan.scheduledActions, undefined);
   assert.doesNotMatch(plan.markdown, /```prompt/);
 });
 

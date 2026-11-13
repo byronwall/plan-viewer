@@ -15,7 +15,7 @@ import { installBrief } from "./brief.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { bindOutbound, outboundPanel } from "./outbound.js";
-import { MOVE_FILTERS, KIND_FILTERS, moveCounts, movePill, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, stepRowHtml, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, visibleSteps } from "./steps-page.js";
+import { MOVE_FILTERS, KIND_FILTERS, moveCounts, movePill, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, stepRowHtml, stepStackHtml, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, visibleSteps } from "./steps-page.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planForLink, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
@@ -1451,9 +1451,12 @@ async function openStep(key) {
     const [doc] = await Promise.all([fetchTaskDocument(`tasks/${task}.md`), stepsData || loadSteps()]);
     const steps = stepsData?.steps.filter((step) => step.task === task) || [];
     const leaves = doc.work.nodes.filter((n) => !doc.work.nodes.some((child) => child.parent === n.id));
-    const first = id || (steps.find((step) => MOVE_FILTERS.you.includes(step.move)) || steps.find((step) => step.move === "agent") || steps[0])?.id
+    const first = id || steps.find((step) => MOVE_FILTERS.you.includes(step.move))?.id
       || (leaves.find((n) => n.ready) || leaves.find((n) => !isSettled(n.status)) || doc.work.nodes[0])?.id;
-    if (!id) railMove = steps.some((step) => MOVE_FILTERS.you.includes(step.move)) ? "you" : "all";
+
+    // The rail opens on the mover of the step you clicked (You for a task row with steps waiting on you), else All.
+    const mover = (step) => MOVE_FILTERS.you.includes(step?.move) ? "you" : step?.move === "agent" ? "agent" : "all";
+    railMove = mover(steps.find((step) => step.id === first));
     if (first) openWorkItem(first, doc);
     else showNotice(`${task} has no work breakdown yet.`);
   } catch (error) { showNotice(error.message, true); }
@@ -1502,7 +1505,7 @@ function openWorkItem(id, doc = state.document) {
   const frontier = node.ready ? "" : " is-off-frontier";
   const offFrontier = node.ready ? "" : ` title="${escapeHtml(`${id} is ${label.toLowerCase()}, not ready: the draft says what it still waits on`)}"`;
   const parent = byId.get(node.parent);
-  const why = !step ? "" : step.move.startsWith("you") ? `${step.move === "you-act" ? "Friction" : "Why it's yours"}: ${step.reason}${step.fix ? `. Fix: ${step.fix}` : ""}` : step.move === "agent" ? `Agent: ${step.running ? "running" : step.reason}` : step.move === "others" ? `With others: ${step.reason}` : step.move === "blocked" ? `Blocked: ${step.reason}` : "No kind or prompt yet: add {kind, size} to its line.";
+  const why = !step ? "" : step.move.startsWith("you") ? `${step.move === "you-act" ? "Friction" : "Why it's yours"}: ${step.reason}${step.fix ? `. Fix: ${step.fix}` : ""}` : step.move === "agent" ? `Agent: ${step.running ? "running" : step.reason}` : step.move === "others" ? `With others: ${step.reason}` : step.move === "blocked" ? `Blocked: ${step.reason}` : "";
   const mentionHtml = mentions.map(m => `<li><button type="button" class="work-item-mention-source" data-work-jump="${escapeHtml(m.chunkId)}">${escapeHtml(m.source)}</button>${m.date ? `<time datetime="${m.date}">${escapeHtml(formatDate(m.date))}</time>` : ""}${m.lines.map(line => `<p>${markId(inlineMarkdown(line, path), id)}</p>`).join("")}</li>`).join("");
   workItemDialog.dataset.item = id;
   workItemDialog.innerHTML = `<header class="work-item-task">
@@ -1788,12 +1791,39 @@ workItemDialog.addEventListener("close", () => {
 function chunkBody(doc, chunk) {
   return actionGroups.has(chunk.id)
     ? `${(doc.actionWarnings || []).map(w => `<p class="work-warning">${escapeHtml(w)}</p>`).join("")}${renderActions(actionGroups.get(chunk.id), chunk.id)}`
+    : doc.kind === "Plan" && /^scheduled tasks$/i.test(chunk.title)
+    ? scheduledTasksHtml(doc, chunk)
     : /^work breakdown$/i.test(chunk.title)
     ? renderWorkBreakdown(doc.work, doc.nextActions, doc.chunks.find(c => /^next actions$/i.test(c.title))?.id || "work", chunk.id, (id) => workUpdates(doc).get(id)?.length || 0, new URLSearchParams(location.search).get("done") === "1")
     : doc.format === "text"
     ? `<pre class="plain-text">${escapeHtml(chunk.markdown)}</pre>`
     : (/^updates$/i.test(chunk.title) && renderUpdates(chunk.markdown, state.selectedPath))
       || `<div class="markdown">${renderMarkdownSource(chunk.markdown, state.selectedPath)}</div>`;
+}
+
+// A plan's Scheduled tasks as one panel: per task its short ID, title and the plan's note for it (muted, in full), with its
+// open steps counted by who moves next. A row opens the step dialog on that task at its first step waiting on you.
+function scheduledTasksHtml(doc, chunk) {
+  const rows = [], rest = [];
+  for (const line of chunk.markdown.split("\n")) {
+    const id = /^[-*] /.test(line) && line.match(/TASK-\d{4}/)?.[0];
+    if (id) rows.push({ id, note: line.replace(/^[-*] /, "").split(/\s+[—–-]\s+/).slice(1).join(" — ") });
+    else if (rows.length && /^\s+\S/.test(line)) rows.at(-1).note += ` ${line.trim().replace(/^[-*] /, "")}`;
+    else rest.push(line);
+  }
+  if (!rows.length) return `<div class="markdown">${renderMarkdownSource(chunk.markdown, doc.path)}</div>`;
+  if (!stepsData) loadSteps().then(() => { if (state.view === "document" && state.document === doc) renderDocument(); });
+  const plain = (text) => text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[`*_]/g, "").trim();
+  const html = rows.map(({ id, note }) => {
+    const task = state.documents.find((candidate) => candidate.task?.id === id)?.task;
+    const steps = stepsData?.steps.filter((step) => step.task === id) || [];
+    const count = (moves) => steps.filter((step) => moves.includes(step.move)).length;
+    const meta = !task ? "missing" : isSettled(task.status) || task.status === "waiting" ? TASK_STATUS_LABELS[task.status].toLowerCase()
+      : [[count(MOVE_FILTERS.you), "you"], [count(MOVE_FILTERS.agent), "agent"], [count(MOVE_FILTERS.others), "waiting"]].filter(([n]) => n).map(([n, label]) => `${n} ${label}`).join(" · ");
+    return stepRowHtml({ key: id, lead: `<code class="step-row-id">${escapeHtml(id.slice(5))}</code>`, title: task?.title || id, note: plain(note), meta: escapeHtml(meta), className: " is-task" });
+  }).join("");
+  const remaining = rest.join("\n").trim();
+  return `<div class="step-rows scheduled-tasks" style="--step-lead: 4ch">${html}</div>${remaining ? `<div class="markdown">${renderMarkdownSource(remaining, doc.path)}</div>` : ""}`;
 }
 
 // The diagrams the page embeds, in page order, then the task's other `.draft` files (which the list from /api/diagrams knows).
@@ -1919,7 +1949,7 @@ function renderDocument() {
   actionGroups.clear();
   for (const chunk of doc.chunks) {
     if (/^(next actions|next steps)$/i.test(chunk.title)) {
-      actionGroups.set(chunk.id, /^next steps$/i.test(chunk.title) ? [...doc.nextActions, ...doc.scheduledActions] : doc.nextActions);
+      actionGroups.set(chunk.id, doc.nextActions);
     }
   }
   elements.chunks.innerHTML = (doc.outbound ? outboundPanel(doc.outbound, { showBody: true }) : "") + (doc.path === state.defaultPath ? todayLeadHtml() : "") + doc.chunks.map((chunk, index) => `<article class="chunk-card" id="${chunk.id}" data-source-anchor="${escapeHtml(chunk.anchor)}">
@@ -1964,7 +1994,7 @@ function renderDocument() {
 }
 
 function enhanceTaskReferences() {
-  for (const link of elements.chunks.querySelectorAll('.markdown-document-link[data-document-path^="tasks/"]:not(.daily-action-more, .dock-link)')) {
+  for (const link of elements.chunks.querySelectorAll('.markdown-document-link[data-document-path^="tasks/"]:not(.dock-link)')) {
     const doc = state.documents.find((candidate) => candidate.path === link.dataset.documentPath);
     if (!doc?.task) continue;
     const before = link.previousSibling;
@@ -2123,15 +2153,15 @@ function todayLeadHtml() {
     loadSteps().then(() => { if (state.view === "document" && state.document?.path === state.defaultPath) renderDocument(); });
     return "";
   }
+  const layer = (move) => {
+    const shown = visibleSteps(stepsData.steps, { move });
+    const rows = shown.slice(0, LEAD_ROWS).map((step) => stepRowHtml({ key: stepKey(step), lead: movePill(step), title: step.title.split(" — ")[0], meta: `${escapeHtml(step.task)} ${escapeHtml(step.id)}` })).join("");
+    return `<div class="step-rows">${rows || `<p class="step-rows-empty">${move === "you" ? "Nothing waits on you." : "No steps here."}</p>`}</div>
+      ${shown.length > LEAD_ROWS ? `<a class="today-lead-more" href="?view=steps${move === "you" ? "" : `&move=${move}`}" data-steps-page="${move}">All ${shown.length} on Steps →</a>` : ""}`;
+  };
   const move = leadMove();
-  const shown = visibleSteps(stepsData.steps, { move });
-  const counts = moveCounts(stepsData.steps);
-  // Room for the fullest segment, so switching segments never moves what follows the panel.
-  const most = Math.max(...Object.values(counts));
-  const rows = shown.slice(0, LEAD_ROWS).map((step) => stepRowHtml({ key: stepKey(step), lead: movePill(step), title: step.title.split(" — ")[0], meta: `${escapeHtml(step.task)} ${escapeHtml(step.id)}` })).join("");
-  return `<section class="today-lead" aria-label="Steps"><header class="today-lead-head"><h2>Steps</h2>${stepToggleHtml(move, counts)}</header>
-    <div class="step-rows" style="--lead-rows:${Math.min(LEAD_ROWS, most)}">${rows || `<p class="today-lead-empty">${move === "you" ? "Nothing waits on you." : "No steps here."}</p>`}</div>
-    ${most > LEAD_ROWS ? `<a class="today-lead-more" href="?view=steps${move === "you" ? "" : `&move=${move}`}" data-steps-page${shown.length > LEAD_ROWS ? "" : " hidden"}>All ${shown.length} on Steps →</a>` : ""}</section>`;
+  return `<section class="today-lead step-panel" aria-label="Steps" data-move-default="you"><header class="today-lead-head"><h2>Steps</h2>${stepToggleHtml(move, moveCounts(stepsData.steps))}</header>
+    ${stepStackHtml(move, Object.fromEntries(Object.keys(MOVE_FILTERS).map((key) => [key, layer(key)])))}</section>`;
 }
 
 const stepContext = () => ({ startConfigured: Boolean(stepsData?.startConfigured), runConfigured: Boolean(config().steps.run?.length), freeSlots: (stepsData?.slots || 0) - (stepsData?.runs?.length || 0) });
@@ -2176,19 +2206,21 @@ function showSteps({ historyMode = "push", kind } = {}) {
 }
 
 elements.stepsButton.addEventListener("click", () => showSteps({ kind: "any" }));
-// The lead's toggle re-renders only the lead, so nothing below it moves while the counts stay put.
+// A step panel's toggle (today's plan, a task's Steps) shows another of its pre-rendered segments and keeps the choice
+// in the URL as `&move=`.
 elements.chunks.addEventListener("click", (event) => {
-  const move = state.view === "document" && event.target.closest(".today-lead [data-step-list-move]");
+  const move = event.target.closest(".step-panel [data-step-list-move]");
   if (!move) return;
+  const panel = move.closest(".step-panel");
+  showStepLayer(panel, move.dataset.stepListMove);
   const url = new URL(location.href);
-  if (move.dataset.stepListMove === "you") url.searchParams.delete("move"); else url.searchParams.set("move", move.dataset.stepListMove);
+  if (move.dataset.stepListMove === panel.dataset.moveDefault) url.searchParams.delete("move"); else url.searchParams.set("move", move.dataset.stepListMove);
   history.replaceState(history.state, "", url);
-  elements.chunks.querySelector(".today-lead").outerHTML = todayLeadHtml();
 });
 // A step row opens the step dialog over the page; only "All N on Steps →" goes to the Steps page.
 elements.chunks.addEventListener("click", (event) => {
   const all = event.target.closest("[data-steps-page]");
-  if (all && !event.metaKey && !event.ctrlKey) { event.preventDefault(); stepsFilters.kind = "any"; stepsFilters.move = leadMove(); selectedStep = ""; return showSteps(); }
+  if (all && !event.metaKey && !event.ctrlKey) { event.preventDefault(); stepsFilters.kind = "any"; stepsFilters.move = all.dataset.stepsPage; selectedStep = ""; return showSteps(); }
   const open = state.view !== "steps" && event.target.closest("[data-open-step]");
   if (open) openStep(open.dataset.openStep);
 });

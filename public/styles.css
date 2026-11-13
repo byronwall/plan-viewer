@@ -808,12 +808,12 @@ button.task-list-id:hover { text-decoration: underline; }
 .action-row { scroll-margin-top: 64px; }
 /* One row grammar for next actions, the day's next steps and their task headers: label · status icon · text · aside. */
 :root { --label-char: .47rem; }
-.action-card, .daily-action-task { --label-width: calc(var(--label-chars, 4) * var(--label-char)); display: grid; grid-template-columns: var(--label-width) 18px minmax(0, 1fr) auto; align-items: start; column-gap: 10px; }
+.action-card { --label-width: calc(var(--label-chars, 4) * var(--label-char)); display: grid; grid-template-columns: var(--label-width) 18px minmax(0, 1fr) auto; align-items: start; column-gap: 10px; }
 .action-card { width: 100%; margin: 0; border: 0; border-radius: 6px; background: transparent; padding: 5px 8px; color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease-out; }
 .action-card:hover, .action-card[aria-expanded="true"] { background: var(--quiet-field); }
 .action-label { color: var(--muted); font: 600 .74rem/20px ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .action-status { display: grid; place-items: center; height: 20px; color: var(--action-ink); }
-.action-status svg, .action-go svg, .daily-action-day svg, .work-validation .handoff-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.action-status svg, .action-go svg, .work-validation .handoff-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .action-status.is-waiting { color: var(--status-waiting-ink); }
 .action-text { min-width: 0; display: grid; gap: 1px; }
 .action-title { font-size: .86rem; line-height: 20px; overflow-wrap: anywhere; }
@@ -826,21 +826,7 @@ button.task-list-id:hover { text-decoration: underline; }
 @media (hover: none) { .action-go { opacity: 1; } }
 .action-source { display: block; margin: 6px 0; color: var(--muted); font-size: .76rem; line-height: 1.5; overflow-wrap: anywhere; }
 .action-empty { color: var(--muted); font-size: .9rem; }
-.chunk-heading + .daily-action-group, .chunk-heading + .action-list { margin-top: 8px; }
-.daily-action-group + .daily-action-group { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 6px; }
-.daily-action-task { margin: 0; padding: 5px 8px 1px; color: var(--ink); font-size: .88rem; font-weight: 600; line-height: 20px; }
-.daily-action-day { grid-column: 2; display: grid; place-items: center; height: 20px; color: var(--muted); }
-.daily-action-day svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.daily-action-day + span { grid-column: 3; }
-/* The task link spans the label, icon and text columns so its number and title line up with the action below. */
-/* grid-auto-rows: 0 parks the word joiner that enhanceTaskReferences puts after the icon. */
-.daily-action-task .task-reference-item { grid-column: 1 / 4; display: grid; grid-template-columns: subgrid; grid-template-rows: auto; grid-auto-rows: 0; align-items: start; font-size: .88rem; }
-.daily-action-task .task-reference-item .service-icon { grid-column: 2; grid-row: 1; justify-self: center; margin-top: 3px; }
-.daily-action-task .task-reference-id { grid-column: 1; grid-row: 1; margin: 0; color: var(--muted); font: 600 .74rem/20px ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; }
-.daily-action-task .task-reference-description { grid-column: 3; grid-row: 1; color: var(--ink); }
-.markdown-document-link.daily-action-more { grid-column: 4; color: var(--muted); font-size: .74rem; font-weight: 650; text-decoration: none; white-space: nowrap; }
-.markdown-document-link.daily-action-more::after { content: none; }
-.markdown-document-link.daily-action-more:hover { color: var(--action-ink); }
+.chunk-heading + .action-list { margin-top: 8px; }
 .composer[data-scope="action"] .composer-heading h3 { white-space: normal; overflow-wrap: anywhere; }
 .work-row code, .work-node code, .work-group code { flex: none; color: var(--muted); font: 600 .74rem/1.2 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; }
 .work-tree { --work-indent: 14px; }
@@ -912,7 +898,7 @@ button.work-row:hover, .work-line:has(.work-row-draft:hover) .work-row { backgro
 .work-node.is-ready { background: var(--selected); border-color: var(--action-muted); }
 .work-node.is-actionable:hover { border-color: var(--action); }
 .work-node.is-completed { background: var(--quiet-field); color: var(--muted); }
-.action-card:focus-visible, .work-row:focus-visible, .work-node:focus-visible, .work-graph-scroll:focus-visible, .work-graph-disclosure > summary:focus-visible, .daily-action-group a:focus-visible { outline: 2px solid rgba(49, 87, 213, .4); outline-offset: 1px; }
+.action-card:focus-visible, .work-row:focus-visible, .work-node:focus-visible, .work-graph-scroll:focus-visible, .work-graph-disclosure > summary:focus-visible { outline: 2px solid rgba(49, 87, 213, .4); outline-offset: 1px; }
 @media (max-width: 600px) {
   .action-go { display: none; }
   .work-tree { --work-indent: 10px; }
@@ -2582,7 +2568,8 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 .work-item-goto { display: flex; flex: none; gap: 6px; }
 .work-item-rail-head { border-bottom: 1px solid var(--line); padding: 6px 8px; }
 .work-item-rail ol > .work-item-empty { padding: 6px; }
-.work-item-headline { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.work-item-headline { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; }
+.work-item-agent { justify-content: flex-end; }
 .work-item-agent .step-actions { display: contents; }
 .work-item-why { margin: -4px 0 0; color: var(--muted); font-size: .84rem; line-height: 1.45; }
 .work-item-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 14px 0 0; }
@@ -3165,9 +3152,15 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .step-toggle button[aria-pressed="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgba(24, 33, 47, .12); }
 @media (hover: hover) { .step-toggle button:hover { color: var(--ink); } }
 .step-rows { display: grid; }
+.step-stack { display: grid; }
+.step-layer { grid-area: 1 / 1; min-width: 0; }
+.step-layer[inert] { visibility: hidden; }
+.step-rows-empty { margin: 0; border-top: 1px solid var(--line); padding: 6px 4px; color: var(--muted); font-size: .84rem; }
 .step-row { display: grid; grid-template-columns: var(--step-lead, 70px) minmax(0, 1fr) auto; gap: 10px; align-items: baseline; width: 100%; border: 0; border-top: 1px solid var(--line); background: transparent; padding: 5px 4px; color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease-out; }
 .step-row > .step-move { justify-self: start; }
 .step-row-title { font-size: .86rem; font-weight: 600; line-height: 1.4; }
+.step-row-note { display: block; color: var(--muted); font-size: .78rem; font-weight: 450; }
+.step-row-id { color: var(--muted); font: 600 .74rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
 .step-row-meta { color: var(--muted); font-size: .74rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 @media (hover: hover) { .step-row:hover { background: var(--hover-field); } }
 .step-row:focus-visible { outline: 2px solid rgba(49, 87, 213, .4); outline-offset: -2px; }
@@ -3176,7 +3169,5 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .today-lead { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 10px clamp(14px, 2vw, 22px) 12px; }
 .today-lead-head { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
 .today-lead-head h2 { margin: 0; font-size: 1rem; }
-.today-lead .step-rows { align-content: start; min-height: calc(var(--lead-rows) * 30.5px); }
-.today-lead-more[hidden] { display: inline-block; visibility: hidden; }
-.today-lead-empty { margin: 0; border-top: 1px solid var(--line); padding: 6px 4px; color: var(--muted); font-size: .84rem; }
+
 .today-lead-more { display: inline-block; margin-top: 6px; color: var(--action-ink); font-size: .78rem; font-weight: 650; text-decoration: none; }
