@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createLinkMetadataStore, refreshSlackChannels } from "./link-metadata.ts";
 import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle, withImages } from "./codex-desktop.ts";
-import { delimitedTable, inlineMarkdown, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
+import { delimitedTable, inlineMarkdown, pullRequestRefs, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
 import { dateKey, parseDateKey, startOfWeek } from "./public/dates.js";
 import { config, setConfig } from "./public/config.js";
 import { comparePanels, isDiffDiagram, sourceHtml, statementId } from "./public/diagram.js";
@@ -569,6 +569,12 @@ test("indexes tasks separately from daily documents", async () => {
   assert.equal(task?.group, "Tasks");
   assert.equal(task?.task?.project, "Atlas onboarding");
   assert.deepEqual(task?.task?.tags, ["onboarding", "design-review"]);
+});
+
+test("a PR overview's Linked documents count bare and repo-named PR references, as the renderer links them", () => {
+  assert.deepEqual(pullRequestRefs("Take #2301 to review; it sits on #1831/#1872 and Orbit#77, see https://github.com/acme/Orbit/pull/12. Not #12, abc#999 or a/b#456."), [
+    "acme/orbit#12", "acme/orbit#77", "acme/atlas#2301", "acme/atlas#1831", "acme/atlas#1872",
+  ]);
 });
 
 test("the daily plan schedules the pilot by ID without copying its body", async () => {

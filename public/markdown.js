@@ -275,6 +275,17 @@ const LIST = "((?:/#?\\d+)*)(?![\\w-]|\\.\\w)";
 export const slashListItems = (rest = "") => rest.split("/").slice(1);
 const linkList = (first, rest, link) => first + slashListItems(rest).map((item) => `/${link(item.replace("#", ""), item)}`).join("");
 
+// Every PR a document names as `owner/repo#N`, in the forms the renderer links: GitHub URLs, `<repo>#N` and bare `#N`
+// (slash lists included), so a PR overview can list the documents that cite it.
+export function pullRequestRefs(text) {
+  const { refs } = referencePatterns();
+  const found = [...text.matchAll(/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g)].map(([, slug, n]) => `${slug}#${n}`);
+  const add = (repo, n, rest) => [n, ...slashListItems(rest).map((item) => item.replace("#", ""))].forEach((item) => found.push(`${githubSlug(repo)}#${item}`));
+  for (const [, name, n, rest] of text.matchAll(new RegExp(`(?:^|[^\\w/-])${refs.ownerPattern}(${refs.repoNames})#(\\d+)${LIST}`, "gi"))) add(refs.repos[name.toLowerCase()], n, rest);
+  if (refs.defaultSlug) for (const [, n, rest] of text.matchAll(new RegExp(`(?:^|[^\\w&;/#])#(\\d{3,})${LIST}`, "g"))) add(refs.defaultRepo, n, rest);
+  return [...new Set(found.map((ref) => ref.toLowerCase()))];
+}
+
 function linkifyReferences(html, textBefore = "", bare = true) {
   const { refs } = referencePatterns();
   const pull = (repo) => (n, label) => externalLink(`https://github.com/${githubSlug(repo)}/pull/${n}`, label);

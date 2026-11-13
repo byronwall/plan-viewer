@@ -7,7 +7,7 @@ import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseActions, parseWorkBreakdown, stalledTaskReason } from "./public/actions.js";
-import { extractChatLinks, inlineMarkdown } from "./public/markdown.js";
+import { extractChatLinks, inlineMarkdown, pullRequestRefs } from "./public/markdown.js";
 import { isDiffDiagram } from "./public/diagram.js";
 import { metadataKey } from "./public/dock.js";
 import { CodexDesktopClient, taskTitle, withImages } from "./codex-desktop.ts";
@@ -542,8 +542,8 @@ export async function listDocuments() {
   for (const [index, { contents }] of files.entries()) {
     const keys = [...new Set(contents.match(/\b[A-Z][A-Z0-9]+-\d+\b/g) || [])].filter((key) => !key.startsWith("TASK-"));
     if (keys.length) docs[index].issueKeys = keys;
-    // GitHub PR links as `owner/repo#N`, so a PR overview can list the planning docs that link it.
-    const prs = [...new Set([...contents.matchAll(/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g)].map(([, slug, n]) => `${slug.toLowerCase()}#${n}`))];
+    // PRs as `owner/repo#N` (links, `<repo>#N` and bare `#N`), so a PR overview can list the planning docs that name it.
+    const prs = pullRequestRefs(contents);
     if (prs.length) docs[index].pullRequests = prs;
     // Slack permalinks as `channel/thread/message`, so a thread overlay can list (and mark) the documents that cite it.
     const slack = [...new Set([...contents.matchAll(/https:\/\/([a-z0-9-]+)\.slack\.com\/archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})(?:\?[^\s)>\]]*?thread_ts=(\d{10}\.\d{6}))?/g)].map(([, host, channel, seconds, micros, thread]) => {
