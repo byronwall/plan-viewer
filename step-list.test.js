@@ -57,21 +57,30 @@ test("a task's Steps group rows under workstreams, pill only what waits on you, 
   assert.doesNotMatch(taskStepsHtml({ taskId: 'TASK-0101', work, tools: false }), /popover|data-move-default/);
 });
 
-test("a plan's scheduled tasks keep each task's note, whichever separator the plan uses", () => {
+test("a plan's scheduled tasks keep each task's note as Markdown, whichever separator the plan uses", () => {
   const { rows, rest } = scheduledTasks([
     '- [TASK-0101](../../../../tasks/TASK-0101.md): merge #12, then [ask](https://example.com) about `W2`.',
     '  - and check the flag',
     '- TASK-0102 — File the issues.',
     '- [TASK-0103](../TASK-0103.md)',
+    '- [TASK-0106](../TASK-0106.md), [TASK-0104](../TASK-0104.md), [TASK-0105](../TASK-0105.md): decisions carried from Thursday.',
     '',
     'Carry-over goes to Monday.',
   ].join('\n'));
   assert.deepEqual(rows, [
-    { id: 'TASK-0101', note: 'merge #12, then ask about W2. and check the flag' },
+    { id: 'TASK-0101', note: 'merge #12, then [ask](https://example.com) about `W2`. and check the flag' },
     { id: 'TASK-0102', note: 'File the issues.' },
     { id: 'TASK-0103', note: '' },
+    // One row for a bullet naming several tasks: the first is the row, the others lead its note as links, no stray comma.
+    { id: 'TASK-0106', note: '[TASK-0104](../TASK-0104.md), [TASK-0105](../TASK-0105.md): decisions carried from Thursday.' },
   ]);
   assert.match(rest, /Carry-over goes to Monday/);
+});
+
+test('a row whose note holds links is a div with the title as its button, so the links stay links', () => {
+  const html = stepRowHtml({ key: 'TASK-0101', title: 'Ship invites', noteHtml: '<a href="https://example.com">#12</a>', meta: '1 you' });
+  assert.match(html, /^<div class="step-row" data-open-step="TASK-0101">/);
+  assert.match(html, /<button type="button" class="step-row-open" data-open-step="TASK-0101">Ship invites<\/button><span class="step-row-note"><a href=/);
 });
 
 test('a short step list opens on the first mover with anything waiting and caps each segment', () => {

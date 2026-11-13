@@ -1514,7 +1514,10 @@ function openWorkItem(id, doc = state.document) {
   // The step's own action (Mark decided, Start, Approve and run, Apply) leads; Send to agent follows; Update is quiet.
   const own = step ? stepActionsHtml(step, { ...stepContext(), compact: true }) : "";
   // A reason that only restates the pill ("decide", "ready") says nothing; friction and longer reasons do.
-  const why = !step || (step.move !== "you-act" && step.reason.split(" ").length < 3) ? "" : step.move.startsWith("you") ? `${step.move === "you-act" ? "Friction" : "Why it's yours"}: ${step.reason}${step.fix ? `. Fix: ${step.fix}` : ""}` : step.move === "agent" ? `Agent: ${step.running ? "running" : step.reason}` : step.move === "others" ? `With others: ${step.reason}` : step.move === "blocked" ? `Blocked: ${step.reason}` : "";
+  // A reason that only restates the pill or the strip says nothing ("decide", "ready", "after W1.2"); "approve",
+  // "pick one", "retry or send back", "apply a rule", a draft's state and friction's why and fix do.
+  const said = new Set(["decide", "ready", "in progress", "running", "waiting", "watching", "no kind or prompt"]);
+  const why = !step || step.move === "blocked" || said.has(step.reason) ? "" : step.move.startsWith("you") ? `${step.move === "you-act" ? "Friction" : "Why it's yours"}: ${step.reason}${step.fix ? `. Fix: ${step.fix}` : ""}` : step.move === "agent" ? `Agent: ${step.running ? "running" : step.reason}` : step.move === "others" ? `With others: ${step.reason}` : step.move === "blocked" ? `Blocked: ${step.reason}` : "";
   const mentionHtml = mentions.map(m => `<li><button type="button" class="work-item-mention-source" data-work-jump="${escapeHtml(m.chunkId)}">${escapeHtml(m.source)}</button>${m.date ? `<time datetime="${m.date}">${escapeHtml(formatDate(m.date))}</time>` : ""}${m.lines.map(line => `<p>${markId(inlineMarkdown(line, path), id)}</p>`).join("")}</li>`).join("");
   workItemDialog.dataset.item = id;
   // ← → step through the items with updates from the keyboard; the rail's footer names the keys.
@@ -1835,8 +1838,12 @@ function scheduledTasksHtml(doc, chunk) {
   if (!stepsData) loadSteps().then(() => { if (state.view === "document" && state.document === doc) renderDocument(); });
   const html = rows.map(({ id, note }) => {
     const task = state.documents.find((candidate) => candidate.task?.id === id)?.task;
-    const meta = !task ? "missing" : isSettled(task.status) || task.status === "waiting" ? TASK_STATUS_LABELS[task.status].toLowerCase() : stepCountsHtml(id);
-    return stepRowHtml({ key: id, lead: `<code class="step-row-id">${escapeHtml(id.slice(5))}</code>`, title: task?.title || id, note, meta, className: " is-task" });
+    // The task's own state reads as words, apart from the step counts: a waiting task says when it checks in, and still
+    // counts its open steps; a settled one shows only its status.
+    const state_ = !task ? "missing" : isSettled(task.status) ? TASK_STATUS_LABELS[task.status].toLowerCase() : task.status === "waiting" ? `on hold, check in ${shortDate(task.checkIn || task.updated)}` : "";
+    const counts = task && !isSettled(task.status) ? stepCountsHtml(id) : "";
+    const meta = [state_ && `<span class="step-row-state">${escapeHtml(state_)}</span>`, counts].filter(Boolean).join(" · ");
+    return stepRowHtml({ key: id, lead: `<code class="step-row-id">${escapeHtml(id.slice(5))}</code>`, title: task?.title || id, noteHtml: note ? inlineMarkdown(note, doc.path) : "", meta, className: " is-task" });
   }).join("");
   const remaining = rest.trim();
   return `<div class="step-rows scheduled-tasks" style="--step-lead: 4ch">${html}</div>${remaining ? `<div class="markdown">${renderMarkdownSource(remaining, doc.path)}</div>` : ""}`;
@@ -2241,7 +2248,8 @@ elements.chunks.addEventListener("click", (event) => {
 elements.chunks.addEventListener("click", (event) => {
   const all = event.target.closest("[data-steps-page]");
   if (all && !event.metaKey && !event.ctrlKey) { event.preventDefault(); stepsFilters.kind = "any"; stepsFilters.move = all.dataset.stepsPage; selectedStep = ""; return showSteps(); }
-  const open = state.view !== "steps" && event.target.closest("[data-open-step]");
+  // A link inside a row (a scheduled task's note) follows the link; anywhere else on the row opens the dialog.
+  const open = state.view !== "steps" && !event.target.closest("a") && event.target.closest("[data-open-step]");
   if (open) openStep(open.dataset.openStep);
 });
 elements.outboxButton.addEventListener("click", () => showSteps({ kind: "outbound" }));

@@ -102,7 +102,10 @@ export function showStepLayer(panel, move) {
   for (const button of panel.querySelectorAll("[data-step-list-move]")) button.setAttribute("aria-pressed", String(button.dataset.stepListMove === move));
   for (const layer of panel.querySelectorAll("[data-step-layer]")) layer.inert = layer.dataset.stepLayer !== move;
 }
-export const stepRowHtml = ({ key, lead = "", pill = "", title, note = "", meta = "", className = "" }) => `<button type="button" class="step-row${className}" data-open-step="${escapeHtml(key)}"><span class="step-row-lead">${lead}</span><span class="step-row-title">${pill}${escapeHtml(title)}${note ? `<span class="step-row-note">${escapeHtml(note)}</span>` : ""}</span><span class="step-row-meta">${meta}</span></button>`;
+// With `noteHtml` (a note that holds links) the row is a div whose title is the button, so the links stay real links.
+export const stepRowHtml = ({ key, lead = "", pill = "", title, note = "", noteHtml = "", meta = "", className = "" }) => noteHtml
+  ? `<div class="step-row${className}" data-open-step="${escapeHtml(key)}"><span class="step-row-lead">${lead}</span><span class="step-row-title">${pill}<button type="button" class="step-row-open" data-open-step="${escapeHtml(key)}">${escapeHtml(title)}</button><span class="step-row-note">${noteHtml}</span></span><span class="step-row-meta">${meta}</span></div>`
+  : `<button type="button" class="step-row${className}" data-open-step="${escapeHtml(key)}"><span class="step-row-lead">${lead}</span><span class="step-row-title">${pill}${escapeHtml(title)}${note ? `<span class="step-row-note">${escapeHtml(note)}</span>` : ""}</span><span class="step-row-meta">${meta}</span></button>`;
 
 // The segment a short step list opens on: the first mover with anything waiting, You first.
 export const firstMove = (counts) => ["you", "agent", "others"].find((move) => counts[move]) || "all";
@@ -120,17 +123,18 @@ export function stepListHtml(steps, { move = firstMove(moveCounts(steps)), cap =
   return { toggle: stepToggleHtml(move, moveCounts(steps)), stack: stepStackHtml(move, Object.fromEntries(Object.keys(MOVE_FILTERS).map((name) => [name, layer(name)]))) };
 }
 
-// A plan's Scheduled tasks section: one row per task bullet with the plan's note for it as plain text (whatever follows the
-// task's link or ID, after a colon or dash; indented lines under it continue the note), and the section's other lines.
+// A plan's Scheduled tasks section: one row per task bullet, keyed by the first task it names, with the plan's note for it
+// as Markdown (whatever follows that task's link or ID; indented lines under it continue the note). A bullet that links
+// several tasks before its note (`- [TASK-0136](…), [TASK-0134](…): …`) stays one row; the others lead its note as links.
 export function scheduledTasks(markdown) {
   const rows = [], rest = [];
   for (const line of markdown.split("\n")) {
     const id = /^[-*] /.test(line) && line.match(/TASK-\d{4}/)?.[0];
-    if (id) rows.push({ id, note: line.replace(/^[-*]\s+(?:\[[^\]]*\]\([^)]*\)|\S*TASK-\d{4}\S*)\s*[:—–-]?\s*/, "") });
+    if (id) rows.push({ id, note: line.replace(/^[-*]\s+(?:\[[^\]]*\]\([^)]*\)|\S*TASK-\d{4}\S*)/, "").replace(/^[\s,;:—–-]+/, "") });
     else if (rows.length && /^\s+\S/.test(line)) rows.at(-1).note += ` ${line.trim().replace(/^[-*] /, "")}`;
     else rest.push(line);
   }
-  for (const row of rows) row.note = row.note.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[`*_]/g, "").trim();
+  for (const row of rows) row.note = row.note.trim();
   return { rows, rest: rest.join("\n") };
 }
 
