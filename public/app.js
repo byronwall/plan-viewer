@@ -17,7 +17,7 @@ import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { bindOutbound, outboundPanel } from "./outbound.js";
 import { MOVE_FILTERS, KIND_FILTERS, moveCounts, stepInspectorHtml, stepKey, stepsTableHtml, stepsToolbarHtml, visibleSteps } from "./steps-page.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
-import { cachedPlans, loadPlans, openPlan, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice, setPlansPageOpener } from "./plans.js";
+import { cachedPlans, loadPlans, openPlan, planForLink, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./dates.js";
 
@@ -712,12 +712,12 @@ function renderCode(tab = new URLSearchParams(location.search).get("tab") || "")
   renderCodePage(elements.chunks, { tab, showNotice });
 }
 
-function showPlans({ historyMode = "push", initiative = "", doc = "" } = {}) {
+function showPlans({ historyMode = "push" } = {}) {
   if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
   closeComposer();
   if (historyMode !== "none") {
     const url = new URL(location.href);
-    url.search = new URLSearchParams({ view: "plans", ...(initiative ? { initiative } : {}), ...(doc ? { doc } : {}) });
+    url.search = new URLSearchParams({ view: "plans" });
     url.hash = "";
     history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
   }
@@ -740,7 +740,6 @@ function renderPlans() {
   if (fresh) elements.chunks.replaceChildren();
   renderPlansPage(elements.chunks);
 }
-setPlansPageOpener((initiative, doc) => showPlans({ initiative, doc }));
 
 function showIssues({ historyMode = "push", tab = "" } = {}) {
   if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
@@ -2658,7 +2657,7 @@ function openRailItem(target) {
   else if (kind === "issue") openIssue(value);
   else if (kind === "slack") openSlackThread(value);
   else if (kind === "diagram") openDiagram(value);
-  else if (kind === "plan") showPlans({ initiative: value });
+  else if (kind === "plan") openPlan(value);
 }
 elements.library.addEventListener("pointerover", (event) => {
   const row = railTarget(event.target);
@@ -2753,6 +2752,8 @@ document.addEventListener("click", (event) => {
 function inAppTarget(link) {
   const commit = commitLinkMatch(link.href);
   if (commit) return { open: () => openCommit(commit[1], commit[2]), site: "GitHub" };
+  const plan = planForLink(link.href);
+  if (plan) return { open: () => openPlan(plan.id, plan.doc), site: "GitHub" };
   const [, kind, ref] = metadataKey(link.href).match(/^(github|linear|jira):(.+)$/) || [];
   if (kind === "github" && /\/pull\//.test(link.href)) {
     const [slug, number] = ref.split("#");
@@ -4082,7 +4083,7 @@ function visitResult(href) {
   const page = (icon, title, detail) => ({ icon, title: escapeHtml(title), detail: escapeHtml(detail), side: "Page" });
   if (view === "tasks") return doc(`tasks/${params.get("task")}.md`) ? docResult(doc(`tasks/${params.get("task")}.md`), []) : page("list", "Tasks", "Every task by status");
   if (view === "code") return page("code", "Code", CODE_TABS[params.get("tab") || "prs"] || "Pull requests");
-  if (view === "plans") return params.get("initiative") ? { icon: "initiative", title: escapeHtml(planTitle(params.get("initiative")) || params.get("initiative").split("/").pop()), detail: escapeHtml(`${params.get("initiative").split(":")[0].split("/").pop()} · ${params.get("doc")?.split("/").pop() || "initiative"}`), side: "Plans" } : page("initiative", "Plans", "Initiatives by repo and status");
+  if (view === "plans") return page("initiative", "Plans", "Initiatives by repo and status");
   if (view === "issues") return page("issue", "Issues", ISSUE_TABS[params.get("tab") || "all"] || "All");
   if (view === "slack") return page("slack", "Slack", "Linked threads");
   if (view === "activity") return page("plan", "Activity", "Everything that changed");

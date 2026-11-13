@@ -1,6 +1,6 @@
 # Plans tab: plan
 
-> Since 2026-11-11 the Plans tab is its own page (`?view=plans`): a rail by repo and status, an overview table, and the reader on the page. The modal stays as a quick peek from other pages. `docs/guide.md` describes the current behavior; this plan records why the surface works the way it does.
+> Since 2026-11-12 the Plans page (`?view=plans`) follows the Code view: a filter toolbar, one dense table, an inspector on wide screens, and the reader as a modal on Enter (Byron found the Nov 11 rail by repo and status, with the reader on the page, awkward). The same modal opens from ⌘K and from GitHub links to an initiative's files. `docs/guide.md` describes the current behavior; this plan records why the surface works the way it does.
 
 A read-only view of the initiatives (`initiative-map.json` plus the briefs beside it) in every tracked repository, shown as a fourth tab of the Code view next to Worktrees, PRs and Commits. It brings over the reading half of `tk view`'s Initiatives tab (`~/Projects/ticket/plugins/ticket-view`) and follows the Code view's rules ([code-view.md](code-view.md)).
 
