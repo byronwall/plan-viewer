@@ -19,6 +19,7 @@ export interface Step {
   kind: string; size: string; deps: string[]; next: boolean; move: Move; reason: string; fix?: string; running?: boolean;
   prompt?: string; actionTitle?: string; draft?: OutboundDraft; machinery?: { path: string; fields: Record<string, string> };
   options?: StepOption[]; age: number; order: number;
+  noteFor?: string; notes?: { path: string; title: string }[];
 }
 
 interface TaskInput { path: string; id: string; title: string; status: string; updated: string; markdown: string }
@@ -104,7 +105,7 @@ export async function listMachinery(root: string) {
       const text = await readFile(join(root, path), "utf8").catch(() => "");
       if (!text.startsWith("---\n")) continue;
       const fields = outboundFields(text);
-      if (!fields.step && !fields.outbound) continue;
+      if (fields.note || (!fields.step && !fields.outbound)) continue; // a note names its step too, but isn't machinery
       const modified = (await stat(join(root, path))).mtimeMs;
       out.push({ path, fields, draft: draftFromText(path, text, modified) || undefined, modified });
     }
@@ -114,9 +115,17 @@ export async function listMachinery(root: string) {
 
 export async function loadSteps(root: string, tasks: TaskInput[], planOrder: string[]) {
   const machinery = await listMachinery(root);
+  // A note tied to a step doesn't replace it: the step stays as it is, waiting on an agent to process its notes and set
+  // what comes next. A tied note whose step is gone (completed, renamed) still shows on its own.
   const notes = await listNotes(root);
-  const covered = new Set(notes.map((note) => note.task && note.id && `${note.task} ${note.id}`));
-  const steps = [...notes, ...deriveSteps(tasks, machinery, planOrder).filter((step) => !covered.has(step.key))];
+  const derived = deriveSteps(tasks, machinery, planOrder);
+  const keys = new Set(derived.map((step) => step.key));
+  for (const step of derived) {
+    const tied = notes.filter((note) => note.noteFor === step.key);
+    if (tied.length) Object.assign(step, { move: "agent", reason: "notes to process", next: true, notes: tied.map(({ path, title }) => ({ path, title })) });
+  }
+  derived.sort((a, b) => Number(b.next) - Number(a.next)); // stable: a step with notes rises with the other Up next ones
+  const steps = [...notes.filter((note) => !note.noteFor || !keys.has(note.noteFor)), ...derived];
   for (const step of steps) if (runs.has(step.key)) Object.assign(step, { move: "agent", running: true, reason: "running" });
   return {
     steps,
@@ -328,7 +337,7 @@ export async function listNotes(root: string): Promise<Step[]> {
       const created = Date.parse(fields.created?.replace(" ", "T") || "") || Date.now();
       notes.push({
         key: `note ${path}`, task: fields.task || "", taskTitle: fields.source || "", path, id: fields.step?.split(" ")[1] || name.slice(0, 17), title, status: "open",
-        kind: "note", size: "", deps: [], next: true, move: "agent", reason: fields.step ? "apply note" : "note", prompt: text.replace(/^---\n[\s\S]*?\n---\n+/, "").replace(/^# .+\n+/, ""),
+        kind: "note", size: "", deps: [], next: true, move: "agent", reason: "note", noteFor: fields.step?.trim().replace(/\s+/, " ") || undefined, prompt: text.replace(/^---\n[\s\S]*?\n---\n+/, "").replace(/^# .+\n+/, ""),
         age: Math.max(0, Math.floor((Date.now() - created) / 86_400_000)), order: -1, running: false,
       });
     }

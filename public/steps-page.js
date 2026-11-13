@@ -247,7 +247,8 @@ export function stepBodyHtml(step) {
     : step.draft ? outboundPanel(step.draft, { showBody: true })
     : step.machinery ? machineryHtml(step)
     : "";
-  return `${untyped}${body}`;
+  const notes = step.notes?.length ? `<section class="step-notes"><h5>Waiting for an agent</h5><ul>${step.notes.map((note) => `<li><a class="markdown-document-link" href="?path=${encodeURIComponent(note.path)}" data-document-path="${escapeHtml(note.path)}" data-document-anchor="">${escapeHtml(note.title)}</a></li>`).join("")}</ul><p class="outbound-note">An agent records ${step.notes.length === 1 ? "this note" : "these notes"} and sets what comes next; the step stays open until then.</p></section>` : "";
+  return `${notes}${untyped}${body}`;
 }
 
 export function stepInspectorHtml(step, extra = "", context = {}) {

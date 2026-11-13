@@ -738,6 +738,12 @@ button.task-list-id:hover { text-decoration: underline; }
 .step-note label { display: block; margin-bottom: 6px; font-size: .78rem; font-weight: 650; }
 .step-note textarea { display: block; box-sizing: border-box; width: 100%; min-height: 64px; max-height: 50vh; resize: none; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; font-size: .86rem; line-height: 1.4; }
 .step-note textarea:focus-visible { outline: 2px solid rgba(49, 87, 213, .26); border-color: var(--action); }
+.step-notes { margin: 0 0 10px; }
+.step-notes h5 { margin: 0 0 4px; font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.step-notes ul { margin: 0; padding-left: 18px; font-size: .86rem; }
+.step-notes a { color: var(--action); text-decoration: none; }
+.step-notes a:hover { text-decoration: underline; }
+.step-notes .outbound-note { margin: 4px 0 0; }
 .step-note-hint { margin: 6px 0 0; color: var(--muted); font-size: .72rem; }
 .composer-hint kbd { border: 1px solid var(--line); border-radius: 5px; background: var(--hover-field); padding: 1px 5px; color: var(--body-ink); font: 600 .68rem/1.4 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; }
 .composer-hint.draft-warning { color: var(--action-ink); font-weight: 650; }

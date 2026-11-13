@@ -111,7 +111,8 @@ test("a saved note keeps its prompt and images, waits under Up next, and leaves 
   const decided = await saveNote(root, { commentary: "Go with the fast path", prompt: "Resolve decision W3", task: "TASK-0001", step: "TASK-0001 W3" }, new Date(2026, 10, 13, 15, 0, 0));
   const tasks = [{ path: "tasks/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: TASK }];
   const listed = (await loadSteps(root, tasks, [])).steps;
-  assert.deepEqual(listed.filter((s) => s.key === "TASK-0001 W3" || s.path === decided.path).map((s) => [s.task, s.id, s.kind, s.reason]), [["TASK-0001", "W3", "note", "apply note"]]);
+  const w3 = listed.filter((s) => s.key === "TASK-0001 W3" || s.path === decided.path);
+  assert.deepEqual(w3.map((s) => [s.key, s.kind, s.status, s.move, s.reason, s.next, s.notes]), [["TASK-0001 W3", "pick-one", "open", "agent", "notes to process", true, [{ path: decided.path, title: "Go with the fast path" }]]]);
   await closeNote(root, decided.path, "Pat", "2026-11-14");
   assert.equal((await loadSteps(root, tasks, [])).steps.find((s) => s.key === "TASK-0001 W3")?.move, "you-decide");
   await closeNote(root, task.path, "Pat", "2026-11-14");
