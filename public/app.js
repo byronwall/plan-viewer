@@ -839,15 +839,6 @@ function composerTemplate(target) {
     const path = target.path || state.selectedPath;
     const meta = `<span title="${escapeHtml(path)}">${escapeHtml(path.split("/").pop())}</span> · ${escapeHtml(node.id)} · ${node.ready ? escapeHtml(label) : `<span class="action-waiting">${escapeHtml(label)}${waiting.length ? ` · after ${escapeHtml(waiting.join(", "))}` : ""}</span>`}`;
     const preview = mode === "run" && action ? `<div class="action-prompt-preview" aria-label="Stored action prompt"><div class="markdown">${renderMarkdownSource(action.prompt, path)}</div></div>` : "";
-    // A note on the step for an agent to act on later: a decision (worded as one on a decision step), an approval, direction.
-    if (mode === "note") {
-      const decision = node.kind === "decision";
-      return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="work" data-source-path="${escapeHtml(path)}" data-work-item="${escapeHtml(node.id)}" data-work-mode="note">
-      ${heading(meta)}
-      <div class="composer-body"><div class="composer-field"><label for="work-context">${decision ? "What did you decide?" : "Your note for the agent"}</label><textarea id="work-context" name="commentary" required placeholder="${decision ? "Talk it through: what you chose, why, and anything it changes." : "Approve it, decide it, or say what to change. The agent records it in the task, carries it through (sending, linking, cleanup) and completes the step."}"></textarea><div class="composer-images" hidden></div></div></div>
-      <footer class="composer-actions"><p class="composer-hint"><kbd>Enter</kbd> save · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</p><button class="copy-prompt-button" type="button">Copy prompt</button><button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">${decision ? "Save decision" : "Save note"}</button></footer>
-    </form>`;
-    }
     const field = mode === "update"
       ? `<label for="work-context">What should change? <span class="optional-label">optional</span></label><textarea id="work-context" name="commentary" placeholder="Split it, reword it, mark it done, add or drop a prerequisite… Leave empty to bring it in line with the latest updates."></textarea>`
       : `<label for="work-context">Add context <span class="optional-label">optional</span></label><textarea id="work-context" name="commentary" placeholder="${node.ready ? "A constraint, recent finding, or where to start…" : "Say whether the prerequisites are done, or what can safely start now…"}"></textarea>`;
@@ -933,7 +924,7 @@ function syncComposerDraftState() {
   const hint = elements.handoffPopover.querySelector(".composer-hint");
   if (hint) {
     hint.classList.remove("draft-warning");
-    hint.innerHTML = elements.handoffPopover.querySelector('[data-work-mode="note"]') ? "<kbd>Enter</kbd> save · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line" : "<kbd>Enter</kbd> open · <kbd>⌘</kbd><kbd>Enter</kbd> note";
+    hint.innerHTML = "<kbd>Enter</kbd> open · <kbd>⌘</kbd><kbd>Enter</kbd> note";
   }
 }
 
@@ -1698,14 +1689,7 @@ async function runStepAction(step, kind, action) {
     return data;
   };
   try {
-    if (kind === "note") {
-      const doc = await fetchTaskDocument(step.path, true);
-      const node = doc.work.nodes.find((n) => n.id === step.id);
-      if (!node) throw new Error(`${step.id} isn't in ${step.task} any more.`);
-      closeQuietly();
-      openComposer({ key: `work:note:${step.id}`, scope: "work", mode: "note", node, nodes: doc.work.nodes, path: step.path, title: `${node.kind === "decision" ? "Decide" : "Note on"} ${step.id}: ${node.title}` }, action);
-      return false;
-    }
+    if (kind === "note") { openStepNote(step, action); return false; }
     if (kind === "copy-statement") { await navigator.clipboard.writeText(step.machinery.fields.run); action.classList.add("is-copied"); setTimeout(() => action.classList.remove("is-copied"), 900); return false; }
     action.disabled = true;
     if (kind === "start") { await post("start", { key: step.key }); showNotice(`Started an agent on ${step.task} ${step.id}.`); }
@@ -1716,6 +1700,45 @@ async function runStepAction(step, kind, action) {
   } catch (error) { showNotice(error.message, true); }
   return true;
 }
+// Note… and Decide…: a small popover under the button, over whatever is open (the step dialog included, so it is placed
+// inside that dialog to stay interactive). Enter saves the note tied to the step; Esc, or an outside click while empty,
+// closes it. Typed text survives an outside click.
+const stepNote = Object.assign(document.createElement("form"), { className: "step-note", popover: "manual" });
+function openStepNote(step, anchor) {
+  const decision = step.kind === "decision";
+  stepNote.innerHTML = `<label for="step-note-text">${decision ? "What did you decide?" : `Note on ${escapeHtml(step.id)} for the agent`}</label>
+    <textarea id="step-note-text" name="commentary" rows="3" required placeholder="${decision ? "What you chose, why, and anything it changes." : "Approve it, decide it, or say what to change."}"></textarea>
+    <p class="step-note-hint"><kbd>Enter</kbd> save · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · <kbd>Esc</kbd> cancel</p>`;
+  stepNote.dataset.path = step.path;
+  stepNote.dataset.id = step.id;
+  (anchor.closest("dialog[open]") || document.body).append(stepNote);
+  stepNote.showPopover();
+  const box = anchor.getBoundingClientRect(), width = stepNote.offsetWidth;
+  stepNote.style.left = `${Math.max(16, Math.min(box.right - width, innerWidth - width - 16))}px`;
+  stepNote.style.top = `${Math.min(box.bottom + 6, innerHeight - stepNote.offsetHeight - 16)}px`;
+  stepNote.querySelector("textarea").focus();
+}
+const closeStepNote = () => { if (stepNote.matches(":popover-open")) stepNote.hidePopover(); };
+stepNote.addEventListener("keydown", async (event) => {
+  if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeStepNote(); return; }
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+  event.preventDefault();
+  const textarea = stepNote.querySelector("textarea");
+  if (!textarea.value.trim() || textarea.readOnly) return;
+  textarea.readOnly = true;
+  try {
+    await requestDispatch({ path: stepNote.dataset.path, scope: "work", workItem: stepNote.dataset.id, mode: "note", commentary: textarea.value, note: true });
+    closeStepNote();
+    showNotice(`Saved your note on ${stepNote.dataset.id}; an agent picks it up from Up next.`);
+    if (workItemDialog.open) reloadStepDialog();
+    if (state.view === "steps") refreshSteps();
+  } catch (error) { textarea.readOnly = false; showNotice(error.message, true); }
+});
+stepNote.addEventListener("input", (event) => { event.target.style.height = "auto"; event.target.style.height = `${event.target.scrollHeight}px`; });
+document.addEventListener("pointerdown", (event) => {
+  if (stepNote.matches(":popover-open") && !stepNote.contains(event.target) && !stepNote.querySelector("textarea").value.trim()) closeStepNote();
+}, true);
+
 async function pickStep(step, form) {
   const picked = [...form.querySelectorAll('input[name="pick"]:checked')].map((input) => input.value);
   try {
@@ -2592,13 +2615,13 @@ async function copyComposerPrompt(form) {
 
 // Save note: the same prompt, kept as a note an agent thread picks up from Up next instead of a draft opened now.
 async function saveComposerNote(form) {
-  const button = form.querySelector(".note-button") || form.querySelector(".send-button");
+  const button = form.querySelector(".note-button");
   if (!button || button.disabled) return;
   button.disabled = true;
   try {
     const { note } = await requestDispatch({ ...composerRequest(form), note: true });
     closeComposer();
-    showNotice(form.dataset.workMode === "note" ? `Saved your note on ${form.dataset.workItem}; an agent picks it up from Up next.` : `Saved a note for ${agentName()}; it waits under Up next.`, false, { action: { label: "Open", run: () => selectDocument(note, { historyMode: "push" }) } });
+    showNotice(`Saved a note for ${agentName()}; it waits under Up next.`, false, { action: { label: "Open", run: () => selectDocument(note, { historyMode: "push" }) } });
   } catch (error) {
     button.disabled = false;
     showNotice(error.message, true);
@@ -2606,7 +2629,6 @@ async function saveComposerNote(form) {
 }
 
 async function dispatch(form) {
-  if (form.dataset.workMode === "note") return saveComposerNote(form); // a step's note waits under Up next for an agent
   const button = form.querySelector(".send-button");
   if (button.disabled) return;
   button.disabled = true;
