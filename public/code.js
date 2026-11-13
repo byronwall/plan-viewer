@@ -2534,8 +2534,8 @@ function toolbar() {
 
 // Tracked repositories live in a settings popover opened from the toolbar gear.
 function repoBar() {
-  const repos = ui.data.repos.map((repo) => `<li><span><b>${escapeHtml(repoName(repo))}</b><code>${escapeHtml(repo.replace(/^\/Users\/[^/]+/, "~"))}</code></span><button type="button" class="code-icon-button" data-code-remove-repo="${escapeHtml(repo)}" data-tip="Stop tracking (nothing on disk changes)" aria-label="Stop tracking ${escapeHtml(repo)}">${icon("trash")}</button></li>`).join("");
-  return `<h3>Tracked repositories</h3><p class="code-muted">Worktrees and open PRs come from these checkouts. Stored in <code>${escapeHtml(config().code.reposFile)}</code>.</p><ul class="code-repo-list">${repos || '<li class="code-muted">None yet.</li>'}</ul><form class="code-repo-add" data-code-add-repo><input name="path" placeholder="~/repos/my-app" autocomplete="off" spellcheck="false" aria-label="Repository path"><button type="submit" class="code-bar-button">Add</button></form>`;
+  const repos = ui.data.repos.map((repo) => `<li><span><b>${escapeHtml(repoName(repo))}</b> <code>${escapeHtml(repo.replace(/^\/Users\/[^/]+/, "~")).replaceAll("/", "/<wbr>")}</code></span><button type="button" class="code-icon-button" data-code-remove-repo="${escapeHtml(repo)}" data-tip="Stop tracking (nothing on disk changes)" aria-label="Stop tracking ${escapeHtml(repo)}">${icon("trash")}</button></li>`).join("");
+  return `<h3>Tracked repositories <span class="code-muted">${ui.data.repos.length}</span></h3><p class="code-muted">Worktrees and open PRs come from these checkouts. Stored in <code>${escapeHtml(config().code.reposFile)}</code>.</p><form class="code-repo-add" data-code-add-repo><input name="path" placeholder="~/repos/my-app" autocomplete="off" spellcheck="false" aria-label="Repository path"><button type="submit" class="code-bar-button">Add</button></form><ul class="code-repo-list">${repos || '<li class="code-muted">None yet.</li>'}</ul>`;
 }
 
 const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
@@ -3250,6 +3250,8 @@ export function renderCodePage(container, { tab, showNotice }) {
       // The pickers follow their trigger through CSS anchors (styles.css); settings, and older browsers, get placed once here.
       if (!branches || !CSS.supports("anchor-name: --a")) {
         panel.style.top = `${anchor.bottom + 6}px`;
+        // Settings never runs past the window; its repository list scrolls instead.
+        if (!branches) panel.style.maxHeight = `${innerHeight - anchor.bottom - 14}px`;
         panel.style.left = `${Math.max(8, Math.min(innerWidth - panel.offsetWidth - 8, branches ? anchor.left : anchor.right - panel.offsetWidth))}px`;
       }
       const input = panel.querySelector("input");
