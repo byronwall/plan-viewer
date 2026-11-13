@@ -104,6 +104,20 @@ export function showStepLayer(panel, move) {
 }
 export const stepRowHtml = ({ key, lead = "", pill = "", title, note = "", meta = "", className = "" }) => `<button type="button" class="step-row${className}" data-open-step="${escapeHtml(key)}"><span class="step-row-lead">${lead}</span><span class="step-row-title">${pill}${escapeHtml(title)}${note ? `<span class="step-row-note">${escapeHtml(note)}</span>` : ""}</span><span class="step-row-meta">${meta}</span></button>`;
 
+// A plan's Scheduled tasks section: one row per task bullet with the plan's note for it as plain text (whatever follows the
+// task's link or ID, after a colon or dash; indented lines under it continue the note), and the section's other lines.
+export function scheduledTasks(markdown) {
+  const rows = [], rest = [];
+  for (const line of markdown.split("\n")) {
+    const id = /^[-*] /.test(line) && line.match(/TASK-\d{4}/)?.[0];
+    if (id) rows.push({ id, note: line.replace(/^[-*]\s+(?:\[[^\]]*\]\([^)]*\)|\S*TASK-\d{4}\S*)\s*[:—–-]?\s*/, "") });
+    else if (rows.length && /^\s+\S/.test(line)) rows.at(-1).note += ` ${line.trim().replace(/^[-*] /, "")}`;
+    else rest.push(line);
+  }
+  for (const row of rows) row.note = row.note.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[`*_]/g, "").trim();
+  return { rows, rest: rest.join("\n") };
+}
+
 // A task's Steps panel (its page and its dock's Work panel): the toggle with this task's counts, then every step under a
 // light header line per workstream (top-level item), each row with its ID, status icon, a pill only when it waits on you,
 // the full title, and gray meta (`ready`, `after W1.2`, `running`, its note count). Completed and deferred steps sit behind

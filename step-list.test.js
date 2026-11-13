@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseWorkBreakdown } from './public/actions.js';
-import { movePill, taskStepsHtml, stepActionsHtml, stepBodyHtml, stepRowHtml, stepToggleHtml } from './public/steps-page.js';
+import { movePill, scheduledTasks, taskStepsHtml, stepActionsHtml, stepBodyHtml, stepRowHtml, stepToggleHtml } from './public/steps-page.js';
 
 const step = (fields) => ({ key: 'TASK-0101 W1', task: 'TASK-0101', id: 'W1', title: 'Decide the rollout', reason: 'decide', move: 'you-decide', kind: 'decision', ...fields });
 
@@ -55,4 +55,21 @@ test("a task's Steps group rows under workstreams, pill only what waits on you, 
   assert.doesNotMatch(you, /TASK-0101:W1.3/);
   assert.match(html, /data-step-layer="all">/, 'All is shown by default');
   assert.doesNotMatch(taskStepsHtml({ taskId: 'TASK-0101', work, tools: false }), /popover|data-move-default/);
+});
+
+test("a plan's scheduled tasks keep each task's note, whichever separator the plan uses", () => {
+  const { rows, rest } = scheduledTasks([
+    '- [TASK-0101](../../../../tasks/TASK-0101.md): merge #12, then [ask](https://example.com) about `W2`.',
+    '  - and check the flag',
+    '- TASK-0102 — File the issues.',
+    '- [TASK-0103](../TASK-0103.md)',
+    '',
+    'Carry-over goes to Monday.',
+  ].join('\n'));
+  assert.deepEqual(rows, [
+    { id: 'TASK-0101', note: 'merge #12, then ask about W2. and check the flag' },
+    { id: 'TASK-0102', note: 'File the issues.' },
+    { id: 'TASK-0103', note: '' },
+  ]);
+  assert.match(rest, /Carry-over goes to Monday/);
 });

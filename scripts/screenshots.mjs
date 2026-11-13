@@ -40,13 +40,13 @@ const codeReady = async (tab) => {
 const shots = {
   today: async () => { await page.goto(base); await settle(); },
   action: async () => {
-    await page.goto(base); await settle();
-    await page.locator(".action-card:visible").first().click(); await settle();
+    await page.goto(`${base}/?path=tasks/TASK-0101.md`); await settle();
+    await page.locator(".chunk-card .task-steps .step-layer:not([inert]) .step-row:visible").first().click(); await settle();
   },
   task: async () => {
     await page.goto(`${base}/?path=tasks/TASK-0101.md`); await settle();
     await page.evaluate(() => {
-      const heading = [...document.querySelectorAll("h2, h3")].find((el) => /Work breakdown/.test(el.textContent));
+      const heading = [...document.querySelectorAll(".chunk-card h2")].find((el) => el.textContent === "Steps");
       window.scrollTo({ top: (heading?.getBoundingClientRect().top ?? 0) + scrollY - 90, behavior: "instant" });
     });
     await settle();

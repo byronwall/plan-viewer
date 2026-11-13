@@ -2,23 +2,23 @@
 
 **A local reading desk for planning in Markdown and handing the work to coding agents.**
 
-You keep daily plans, tasks, and notes as plain Markdown files in a folder or Git repository. Plan Viewer turns that folder into a fast, keyboard-driven app: today's plan as work cards, tasks with dependency graphs, and one-click handoffs that load any piece of work into a [Codex](https://openai.com/codex/) or [Claude](https://claude.com/download) desktop draft. Beside your plans sit the pull requests, worktrees, diffs, and issues that the work touches.
+You keep daily plans, tasks, and notes as plain Markdown files in a folder or Git repository. Plan Viewer turns that folder into a fast, keyboard-driven app: today's plan as work cards, tasks as lists of steps with dependency graphs, and one-click handoffs that load any piece of work into a [Codex](https://openai.com/codex/) or [Claude](https://claude.com/download) desktop draft. Beside your plans sit the pull requests, worktrees, diffs, and issues that the work touches.
 
 The viewer never edits your files. Your Markdown stays the source of truth, readable anywhere, and agents make the changes.
 
-![Today's plan, with scheduled tasks, their next actions, and the day's milestones as cards](docs/images/today.png)
+![Today's plan, with its scheduled tasks and the day's milestones as cards](docs/images/today.png)
 
 ## What you get
 
-**Plans that read as work.** The viewer opens today's plan. Each milestone or section is a card, and scheduled tasks bring their next action with them. Tasks, PRs, commits, and Linear or Jira keys become links that show live titles and states.
+**Plans that read as work.** The viewer opens today's plan. Each milestone or section is a card, and scheduled tasks show how many of their steps wait on you, an agent or someone else. Tasks, PRs, commits, and Linear or Jira keys become links that show live titles and states.
 
-**Hand any piece of work to an agent.** Every card and next action opens as an editable draft in Codex or Claude Desktop, with the source context attached. You add a note, review the prompt, and send it yourself. Nothing runs until you do.
+**Hand any piece of work to an agent.** Every card and step opens as an editable draft in Codex or Claude Desktop, with the source context attached. You add a note, review the prompt, and send it yourself. Nothing runs until you do.
 
-![Preparing a next action for an agent](docs/images/action.png)
+![A step, with what it waits on and its prompt, ready for an agent](docs/images/action.png)
 
-**Tasks with real structure.** A task file can carry a work breakdown with prerequisites. The viewer draws it as a tree and a dependency graph, marks what is ready, and blocks actions whose prerequisites aren't done. `plan-viewer lint` keeps every task valid.
+**Tasks with real structure.** A task file can carry a work breakdown with prerequisites. The viewer lists its steps by who moves next, with a dependency graph one click away, and marks what is ready and what waits on prerequisites. `plan-viewer lint` keeps every task valid.
 
-![A task with its work breakdown and dependency graph](docs/images/task.png)
+![A task's steps](docs/images/task.png)
 
 **Every task in one list.** Tasks lists everything unfinished, with an inspector for the selected one. Progress lives on the task itself: its status and dated updates.
 

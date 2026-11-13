@@ -15,7 +15,7 @@ import { installBrief } from "./brief.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { bindOutbound, outboundPanel } from "./outbound.js";
-import { MOVE_FILTERS, KIND_FILTERS, moveCounts, movePill, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, stepRowHtml, stepStackHtml, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, taskStepsHtml, visibleSteps } from "./steps-page.js";
+import { MOVE_FILTERS, KIND_FILTERS, moveCounts, movePill, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, scheduledTasks, stepRowHtml, stepStackHtml, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, taskStepsHtml, visibleSteps } from "./steps-page.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planForLink, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
@@ -1818,25 +1818,18 @@ const chunkTitle = (doc, chunk) => showsSteps(doc) && /^work breakdown$/i.test(c
 // A plan's Scheduled tasks as one panel: per task its short ID, title and the plan's note for it (muted, in full), with its
 // open steps counted by who moves next. A row opens the step dialog on that task at its first step waiting on you.
 function scheduledTasksHtml(doc, chunk) {
-  const rows = [], rest = [];
-  for (const line of chunk.markdown.split("\n")) {
-    const id = /^[-*] /.test(line) && line.match(/TASK-\d{4}/)?.[0];
-    if (id) rows.push({ id, note: line.replace(/^[-*] /, "").split(/\s+[—–-]\s+/).slice(1).join(" — ") });
-    else if (rows.length && /^\s+\S/.test(line)) rows.at(-1).note += ` ${line.trim().replace(/^[-*] /, "")}`;
-    else rest.push(line);
-  }
+  const { rows, rest } = scheduledTasks(chunk.markdown);
   if (!rows.length) return `<div class="markdown">${renderMarkdownSource(chunk.markdown, doc.path)}</div>`;
   if (!stepsData) loadSteps().then(() => { if (state.view === "document" && state.document === doc) renderDocument(); });
-  const plain = (text) => text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[`*_]/g, "").trim();
   const html = rows.map(({ id, note }) => {
     const task = state.documents.find((candidate) => candidate.task?.id === id)?.task;
     const steps = stepsData?.steps.filter((step) => step.task === id) || [];
     const count = (moves) => steps.filter((step) => moves.includes(step.move)).length;
     const meta = !task ? "missing" : isSettled(task.status) || task.status === "waiting" ? TASK_STATUS_LABELS[task.status].toLowerCase()
       : [[count(MOVE_FILTERS.you), "you"], [count(MOVE_FILTERS.agent), "agent"], [count(MOVE_FILTERS.others), "waiting"]].filter(([n]) => n).map(([n, label]) => `${n} ${label}`).join(" · ");
-    return stepRowHtml({ key: id, lead: `<code class="step-row-id">${escapeHtml(id.slice(5))}</code>`, title: task?.title || id, note: plain(note), meta: escapeHtml(meta), className: " is-task" });
+    return stepRowHtml({ key: id, lead: `<code class="step-row-id">${escapeHtml(id.slice(5))}</code>`, title: task?.title || id, note, meta: escapeHtml(meta), className: " is-task" });
   }).join("");
-  const remaining = rest.join("\n").trim();
+  const remaining = rest.trim();
   return `<div class="step-rows scheduled-tasks" style="--step-lead: 4ch">${html}</div>${remaining ? `<div class="markdown">${renderMarkdownSource(remaining, doc.path)}</div>` : ""}`;
 }
 
