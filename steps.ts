@@ -3,7 +3,7 @@
 // machinery files (task assets whose front matter names a `step:`) supply the kind when the line doesn't.
 import { execFile, spawn } from "node:child_process";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, posix, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { parseActions, parseWorkBreakdown } from "./public/actions.js";
 import { config } from "./public/config.js";
@@ -297,6 +297,12 @@ export async function startStep(root: string, step: Step, today: string, next?: 
 export const notesFolder = (task: string) => task ? `tasks/${task}-assets/notes` : "reference/notes";
 const stamp = (date: Date) => date.toLocaleString("sv-SE").replace(" ", "-").replace(/:/g, "").slice(0, 17);
 
+// The note copies a chunk of its source verbatim, so relative links and image paths are re-pointed from the source's
+// folder to the note's. URLs, anchors, absolute and workspace-rooted (`tasks/…`) links resolve the same from anywhere.
+export const relinkFrom = (text: string, source: string, note: string) => !source ? text : text.replace(/(\]\()([^)\s#]+)/g, (match, open, link) =>
+  /^[a-z][\w+.-]*:/i.test(link) || link.startsWith("/") || /^(daily|tasks|plans|reference)\//.test(link) ? match
+    : open + posix.relative(posix.dirname(note), posix.join(posix.dirname(source), link)));
+
 // `step` (`TASK-0101 W2.1`) ties the note to a step: a decision voiced over, or direction for one step. While the note
 // is open it stands in for that step, so the step leaves its mover's list.
 export async function saveNote(root: string, { commentary, prompt, source = "", task = "", step = "", images = [] as string[] }, now = new Date()) {
@@ -314,6 +320,7 @@ export async function saveNote(root: string, { commentary, prompt, source = "", 
   }
   const path = `${folder}/${stem}.md`;
   const front = [`note: open`, `created: ${now.toLocaleString("sv-SE").slice(0, 16)}`, source && `source: ${source}`, task && `task: ${task}`, step && `step: ${step}`].filter(Boolean).join("\n");
+  prompt = relinkFrom(prompt, source, path);
   const body = kept.length ? `${prompt}\n\nAttached images (pasted with the note; open each file to view it):\n${kept.map((file) => `- ${file}`).join("\n")}` : prompt;
   await writeFile(join(root, path), `---\n${front}\n---\n\n# ${title}\n\n${body}\n`);
   return { path, title };

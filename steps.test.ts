@@ -190,3 +190,12 @@ test("Start marks the step active, holds a slot until the run ends, and refuses 
   await new Promise((done) => setTimeout(done, 700));
   assert.deepEqual(activeRuns(), []);
 });
+
+test("a saved note re-points the copied chunk's relative links and images from its source to the note", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "notes-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const prompt = "[audit](TASK-0001-assets/audit.md) ![map](TASK-0001-assets/diagrams/1-map.draft) [plan](../plans/acme/README.md#goals) [other](TASK-0002.md) [web](https://acme.test/x) [here](#retry) [rooted](tasks/TASK-0003.md) `TASK-0001-assets/audit.md`";
+  const saved = await saveNote(root, { commentary: "Links", prompt, source: "tasks/TASK-0001.md", task: "TASK-0001" }, new Date(2026, 10, 13, 9, 0, 0));
+  const text = await readFile(join(root, saved.path), "utf8");
+  assert.ok(text.includes("[audit](../audit.md) ![map](../diagrams/1-map.draft) [plan](../../../plans/acme/README.md#goals) [other](../../TASK-0002.md) [web](https://acme.test/x) [here](#retry) [rooted](tasks/TASK-0003.md) `TASK-0001-assets/audit.md`"), text);
+});
