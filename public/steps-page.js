@@ -81,6 +81,19 @@ export function stepsToolbarHtml(steps, filters, slots, runs = 0) {
   </div>`;
 }
 
+// The shared step list (today's plan, a task's Steps panel, the World's Today column, the step dialog's rail): one line per
+// step, a short state pill only where it says who moves next, the full title, and right-aligned gray meta. Every row opens
+// the step dialog (`data-open-step`); none navigates.
+const PILLS = { "you-decide": ["you", "Decide"], "you-act": ["friction", "Friction"], agent: ["agent", "Agent"], others: ["others", "Waiting"], blocked: ["blocked", "Blocked"], unclassified: ["unclassified", "No kind"] };
+export const movePill = (step) => {
+  const [tone, label] = PILLS[step.move] || PILLS.unclassified;
+  return `<span class="step-move step-move-${tone}" title="${escapeHtml(step.reason)}">${step.running ? "Running" : label}</span>`;
+};
+const TOGGLE_LABELS = { you: "You", agent: "Agent", others: "Others", all: "All" };
+// A thin segmented control; `counts` adds a number to each segment, `keys` picks the segments.
+export const stepToggleHtml = (move, counts = null, keys = Object.keys(TOGGLE_LABELS)) => `<span class="step-toggle" role="group" aria-label="Next move">${keys.map((key) => `<button type="button" data-step-list-move="${key}" aria-pressed="${move === key}">${TOGGLE_LABELS[key]}${counts && key !== "all" ? ` <span>${counts[key]}</span>` : ""}</button>`).join("")}</span>`;
+export const stepRowHtml = ({ key, lead = "", title, meta = "", className = "" }) => `<button type="button" class="step-row${className}" data-open-step="${escapeHtml(key)}">${lead}<span class="step-row-title">${escapeHtml(title)}</span><span class="step-row-meta">${meta}</span></button>`;
+
 function optionsHtml(step) {
   const type = step.kind === "pick-one" ? "radio" : "checkbox";
   const ordered = [...step.options].sort((a, b) => b.recommended - a.recommended);
@@ -96,27 +109,42 @@ const readOnly = (sql) => READ_ONLY.test(sql) && !sql.trim().replace(/;\s*$/, ""
 const button = (action, label, primary = false, disabled = "") => `<button type="button" class="${primary ? "outbound-primary" : "outbound-secondary"}" data-step-action="${action}"${disabled ? ` disabled title="${escapeHtml(disabled)}"` : ""}>${label}</button>`;
 
 // What the inspector lets you do now: start an agent, run or copy a statement, apply a rule, or mark it done.
-export function stepActionsHtml(step, { startConfigured = false, runConfigured = false, freeSlots = 0 } = {}) {
+// `compact` (the step dialog's header) drops the explanatory notes beside the buttons.
+export function stepActionsHtml(step, { startConfigured = false, runConfigured = false, freeSlots = 0, compact = false } = {}) {
   const f = step.machinery?.fields || {};
+  const note = (text) => compact ? "" : `<span class="step-choice-note">${text}</span>`;
   if (step.draft) return ""; // an outbound step's panel has its own Approve, Mark sent and Drop
   if (step.move === "agent" && !step.draft && !step.running) {
     const why = !startConfigured ? "Set steps.start in viewer.config.json" : freeSlots < 1 ? "All agent slots are in use" : "";
-    return `<div class="outbound-actions step-actions">${button("start", "Start", true, why)}<span class="step-choice-note">${step.prompt ? "Runs its prompt as a local agent session." : "No prompt: the agent gets the step title and the task."}</span></div>`;
+    return `<div class="outbound-actions step-actions">${button("start", "Start", true, why)}${note(step.prompt ? "Runs its prompt as a local agent session." : "No prompt: the agent gets the step title and the task.")}</div>`;
   }
   if (step.running) return `<p class="outbound-note">An agent is running this step.</p>`;
-  if (f.apply) return `<div class="step-run"><h5>Allow rule</h5><pre><code>${escapeHtml(f.apply)}</code></pre></div><div class="outbound-actions step-actions">${button("apply", "Apply", true)}<span class="step-choice-note">Adds it to the workspace's Claude settings.</span></div>`;
+  if (f.apply) return `<div class="outbound-actions step-actions">${button("apply", "Apply", true)}${note("Adds it to the workspace's Claude settings.")}</div>`;
   if (step.move === "you-act") {
     if (f.run && readOnly(f.run)) return `<div class="outbound-actions step-actions">${button("run", "Approve and run", true, runConfigured ? "" : "Set steps.run in viewer.config.json")}${button("done", "Mark done")}</div>`;
     return `<div class="outbound-actions step-actions">${f.run ? button("copy-statement", "Copy statement", true) : ""}${button("done", "Mark done", !f.run)}</div>`;
   }
-  if (step.move === "you-decide" && step.kind === "decision") return `<div class="outbound-actions step-actions">${button("done", "Mark decided")}<span class="step-choice-note">Record the decision in the task, then mark it.</span></div>`;
+  if (step.move === "you-decide" && step.kind === "decision") return `<div class="outbound-actions step-actions">${button("done", "Mark decided", compact)}${note("Record the decision in the task, then mark it.")}</div>`;
   return "";
 }
 
 function machineryHtml(step) {
   const f = step.machinery?.fields || {};
-  return `${f.run ? `<div class="step-run"><h5>Statement${readOnly(f.run) ? " · read-only" : " · changes data"}</h5><pre><code>${escapeHtml(f.run)}</code></pre>${f.target ? `<p class="outbound-note">Runs as ${escapeHtml(f.target)}${f.undo ? ` · undo: <code>${escapeHtml(f.undo)}</code>` : ""}</p>` : ""}</div>` : ""}
+  return `${f.apply ? `<div class="step-run"><h5>Allow rule</h5><pre><code>${escapeHtml(f.apply)}</code></pre></div>` : ""}${f.run ? `<div class="step-run"><h5>Statement${readOnly(f.run) ? " · read-only" : " · changes data"}</h5><pre><code>${escapeHtml(f.run)}</code></pre>${f.target ? `<p class="outbound-note">Runs as ${escapeHtml(f.target)}${f.undo ? ` · undo: <code>${escapeHtml(f.undo)}</code>` : ""}</p>` : ""}</div>` : ""}
     ${step.machinery ? `<p class="outbound-note"><a class="markdown-document-link" href="?path=${encodeURIComponent(step.machinery.path)}" data-document-path="${escapeHtml(step.machinery.path)}" data-document-anchor="">Open ${escapeHtml(step.machinery.path.split("/").pop())}</a></p>` : ""}`;
+}
+
+// What a step needs from you beyond its title: friction and its fix, what it waits on, and a choice's options, an outbound
+// draft's approval panel or its machinery. Shared by the Steps inspector and the step dialog.
+export function stepBodyHtml(step) {
+  const friction = step.move === "you-act" && !step.draft ? `<p class="step-friction"><strong>Friction:</strong> ${escapeHtml(step.reason)}.${step.fix ? ` <strong>Fix:</strong> ${escapeHtml(step.fix)}.` : ""}</p>` : "";
+  const blocked = step.move === "blocked" ? `<p class="outbound-note">Waits on ${escapeHtml(step.reason.replace(/^after /, ""))} in ${escapeHtml(step.task)}.</p>` : "";
+  const untyped = step.move === "unclassified" ? `<p class="outbound-note">No kind and no prompt: add <code>{kind, size}</code> to its line, or a prompt under Next actions with <code>Work item: ${escapeHtml(step.id)}</code>.</p>` : "";
+  const body = step.options ? optionsHtml(step)
+    : step.draft ? outboundPanel(step.draft, { showBody: true })
+    : step.machinery ? machineryHtml(step)
+    : "";
+  return `${friction}${blocked}${untyped}${body}`;
 }
 
 export function stepInspectorHtml(step, extra = "", context = {}) {
@@ -125,14 +153,6 @@ export function stepInspectorHtml(step, extra = "", context = {}) {
       <span class="task-detail-buttons"><button class="task-detail-open" type="button" data-task-path="${escapeHtml(step.path)}">Workstream <span aria-hidden="true">→</span></button></span></header>
     <h3>${escapeHtml(step.title.split(" — ")[0])}</h3>
     <p class="task-detail-meta"><span>${escapeHtml(kindLabel(step.kind))}</span><span>${step.size ? `Size ${escapeHtml(step.size)}` : "No size yet"}</span><span>${escapeHtml(step.status)}</span><span>${escapeHtml(step.taskTitle)}</span></p>`;
-  const friction = step.move === "you-act" && !step.draft ? `<p class="step-friction"><strong>Friction:</strong> ${escapeHtml(step.reason)}.${step.fix ? ` <strong>Fix:</strong> ${escapeHtml(step.fix)}.` : ""}</p>` : "";
-  const blocked = step.move === "blocked" ? `<p class="outbound-note">Waits on ${escapeHtml(step.reason.replace(/^after /, ""))} in ${escapeHtml(step.task)}.</p>` : "";
-  const body = step.options ? optionsHtml(step)
-    : step.draft ? outboundPanel(step.draft, { showBody: true })
-    : step.machinery ? machineryHtml(step)
-    : "";
   const prompt = step.prompt ? `<section class="task-detail-section"><h4>Prompt${step.actionTitle ? ` <span class="step-action-title">${escapeHtml(step.actionTitle)}</span>` : ""}</h4><pre class="step-prompt">${escapeHtml(step.prompt)}</pre></section>` : "";
-  const untyped = step.move === "unclassified" ? `<p class="outbound-note">No kind and no prompt: add <code>{kind, size}</code> to its line, or a prompt under Next actions with <code>Work item: ${escapeHtml(step.id)}</code>.</p>` : "";
-  return `${head}${friction}${blocked}${untyped}${extra}${body}${stepActionsHtml(step, context)}${prompt}`;
+  return `${head}${extra}${stepBodyHtml(step)}${stepActionsHtml(step, context)}${prompt}`;
 }
-

@@ -15,7 +15,7 @@ import { installBrief } from "./brief.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { bindOutbound, outboundPanel } from "./outbound.js";
-import { MOVE_FILTERS, KIND_FILTERS, moveCounts, stepInspectorHtml, stepKey, stepsTableHtml, stepsToolbarHtml, visibleSteps } from "./steps-page.js";
+import { MOVE_FILTERS, KIND_FILTERS, moveCounts, movePill, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, stepRowHtml, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, visibleSteps } from "./steps-page.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planForLink, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
@@ -831,12 +831,13 @@ function composerTemplate(target) {
     const { node, nodes, action, mode } = target;
     const label = workStatusLabel(node, nodes);
     const waiting = node.deps.filter((id) => nodes.find((n) => n.id === id)?.status !== "completed");
-    const meta = `<span title="${escapeHtml(state.selectedPath)}">${escapeHtml(state.selectedPath.split("/").pop())}</span> · ${escapeHtml(node.id)} · ${node.ready ? escapeHtml(label) : `<span class="action-waiting">${escapeHtml(label)}${waiting.length ? ` · after ${escapeHtml(waiting.join(", "))}` : ""}</span>`}`;
-    const preview = mode === "run" && action ? `<div class="action-prompt-preview" aria-label="Stored action prompt"><div class="markdown">${renderMarkdownSource(action.prompt, state.selectedPath)}</div></div>` : "";
+    const path = target.path || state.selectedPath;
+    const meta = `<span title="${escapeHtml(path)}">${escapeHtml(path.split("/").pop())}</span> · ${escapeHtml(node.id)} · ${node.ready ? escapeHtml(label) : `<span class="action-waiting">${escapeHtml(label)}${waiting.length ? ` · after ${escapeHtml(waiting.join(", "))}` : ""}</span>`}`;
+    const preview = mode === "run" && action ? `<div class="action-prompt-preview" aria-label="Stored action prompt"><div class="markdown">${renderMarkdownSource(action.prompt, path)}</div></div>` : "";
     const field = mode === "update"
       ? `<label for="work-context">What should change? <span class="optional-label">optional</span></label><textarea id="work-context" name="commentary" placeholder="Split it, reword it, mark it done, add or drop a prerequisite… Leave empty to bring it in line with the latest updates."></textarea>`
       : `<label for="work-context">Add context <span class="optional-label">optional</span></label><textarea id="work-context" name="commentary" placeholder="${node.ready ? "A constraint, recent finding, or where to start…" : "Say whether the prerequisites are done, or what can safely start now…"}"></textarea>`;
-    return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="work" data-work-item="${escapeHtml(node.id)}" data-work-mode="${mode}">
+    return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="work" data-source-path="${escapeHtml(path)}" data-work-item="${escapeHtml(node.id)}" data-work-mode="${mode}">
       ${heading(meta)}
       <div class="composer-body">${preview}<div class="composer-field">${field}<div class="composer-images" hidden></div></div></div>
       <footer class="composer-actions">${hint}<button class="copy-prompt-button" type="button">Copy prompt</button><button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open in ${agentName()}</button></footer>
@@ -950,7 +951,7 @@ function closeComposer(returnFocus = false) {
   elements.globalHandoff.setAttribute("aria-expanded", "false");
   elements.documentHandoff?.setAttribute("aria-expanded", "false");
   for (const button of elements.chunks.querySelectorAll(".handoff-button, [data-action-key]")) button.setAttribute("aria-expanded", "false");
-  if (workItem) openWorkItem(workItem);
+  if (workItem) openWorkItem(workItem, dialogDoc || state.document);
   else if (returnFocus) trigger?.focus();
 }
 
@@ -1377,13 +1378,13 @@ let workItemView = new URLSearchParams(location.search).get("graph") === "1" ? "
 const glyph = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS[name]}</svg>`;
 
 // A dated update reads as a titled note; its nested bullets become the note's own list.
-function workItemNote(entry) {
+function workItemNote(entry, path = state.selectedPath) {
   const [, date = "", title = "", rest = ""] = entry.match(/^[-*]\s+\*\*(?:(\d{4}-\d{2}-\d{2})\s*[—–-]\s*)?(.+?):?\*\*:?\s*([\s\S]*)$/) || [];
-  if (!title) return `<article class="work-item-note"><div class="markdown">${renderMarkdownSource(entry, state.selectedPath)}</div></article>`;
+  if (!title) return `<article class="work-item-note"><div class="markdown">${renderMarkdownSource(entry, path)}</div></article>`;
   const [first, ...nested] = rest.split("\n");
   const body = [first, "", ...nested.map(line => line.replace(/^ {2}/, ""))].join("\n");
   const when = date ? `<time datetime="${date}">${escapeHtml(formatDate(date))} · ${escapeHtml(relativeDate(date))}</time>` : "";
-  return `<article class="work-item-note"><header><h4>${inlineMarkdown(title, state.selectedPath)}</h4>${when}</header><div class="markdown">${renderMarkdownSource(body, state.selectedPath)}</div></article>`;
+  return `<article class="work-item-note"><header><h4>${inlineMarkdown(title, path)}</h4>${when}</header><div class="markdown">${renderMarkdownSource(body, path)}</div></article>`;
 }
 
 // Lines elsewhere in the task that mention a work item without being filed under it (an update about something else, a
@@ -1425,14 +1426,55 @@ function workItemGraph(doc, id, noteCount) {
   return graph?.outerHTML || '<p class="work-item-empty">No graph for this task.</p>';
 }
 
-// The work item dialog reads like a small inspector for one item: the task it belongs to on top, the whole breakdown as a
-// rail on the left, and on the right the item's prerequisites, next action, updates filed under it, and other mentions.
-// It stays open until Esc or ×; J/K walk every item, ← → the ones with updates, and ?item= reopens it on refresh.
-function openWorkItem(id) {
-  const doc = state.document, nodes = doc?.work?.nodes || [];
+// The step dialog (the work item dialog) reads one work item of any task, from any page: the task on top with Open task
+// and World, the task's steps as a rail on the left (You | Agent | All), and on the right the item's move, why it is
+// yours, a dependency strip, its choice, draft or machinery, its prompt, the updates filed under it, and other mentions.
+// It stays open until Esc or ×; J/K walk the rail, ← → the items with updates, G the graph. `?step=TASK-0101:W2.1` reopens it.
+let dialogDoc = null;
+let railMove = "all";
+const dialogStep = (doc, id) => stepsData?.steps.find((step) => step.task === doc?.task?.id && step.id === id);
+const stepDocs = new Map();
+async function fetchTaskDocument(path, fresh = false) {
+  if (!fresh && state.document?.path === path) return state.document;
+  if (!fresh && stepDocs.has(path)) return stepDocs.get(path);
+  const response = await fetch(`/api/document?path=${encodeURIComponent(path)}`);
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || `Could not open ${path}.`);
+  stepDocs.set(path, body);
+  return body;
+}
+// `TASK-0101:W2.1`, or just `TASK-0101` to land on its first step waiting on you, else its first ready one.
+async function openStep(key) {
+  const [task, id = ""] = key.split(":");
+  if (!/^TASK-\d{4}$/.test(task)) return;
+  try {
+    const [doc] = await Promise.all([fetchTaskDocument(`tasks/${task}.md`), stepsData || loadSteps()]);
+    const steps = stepsData?.steps.filter((step) => step.task === task) || [];
+    const leaves = doc.work.nodes.filter((n) => !doc.work.nodes.some((child) => child.parent === n.id));
+    const first = id || (steps.find((step) => MOVE_FILTERS.you.includes(step.move)) || steps.find((step) => step.move === "agent") || steps[0])?.id
+      || (leaves.find((n) => n.ready) || leaves.find((n) => !isSettled(n.status)) || doc.work.nodes[0])?.id;
+    if (!id) railMove = steps.some((step) => MOVE_FILTERS.you.includes(step.move)) ? "you" : "all";
+    if (first) openWorkItem(first, doc);
+    else showNotice(`${task} has no work breakdown yet.`);
+  } catch (error) { showNotice(error.message, true); }
+}
+// After an action changes the task, read it and the steps again and show the same item.
+async function reloadStepDialog() {
+  const doc = dialogDoc, id = workItemDialog.dataset.item;
+  if (!doc) return;
+  const [fresh] = await Promise.all([fetchTaskDocument(doc.path, true).catch(() => doc), loadSteps()]);
+  if (state.document?.path === fresh.path) state.document = fresh;
+  if (workItemDialog.open && workItemDialog.dataset.item === id) openWorkItem(id, fresh);
+}
+
+function openWorkItem(id, doc = state.document) {
+  const nodes = doc?.work?.nodes || [];
   const node = nodes.find(n => n.id === id);
   if (!node) return void (workItemDialog.open && workItemDialog.close());
-  if (!openViewerDialog(workItemDialog)) return;
+  if (!openViewerDialog(workItemDialog, { stack: true })) return;
+  if (!stepsData) loadSteps().then(() => { if (workItemDialog.open && workItemDialog.dataset.item === id && dialogDoc === doc) openWorkItem(id, doc); });
+  dialogDoc = doc;
+  const path = doc.path;
   const byId = new Map(nodes.map(n => [n.id, n]));
   const updates = workUpdates(doc), notes = updates.get(id) || [];
   const mentions = workMentions(doc, id, notes);
@@ -1444,39 +1486,52 @@ function openWorkItem(id) {
   // From an item without updates, ← → still go to the nearest items that have them.
   const neighbors = { prev: [...stepper].reverse().find(n => nodes.indexOf(n) < position), next: stepper.find(n => nodes.indexOf(n) > position) };
   const noteCount = (n) => updates.get(n.id)?.length ? `<span class="work-item-notes-count">${glyph("message-square")}${updates.get(n.id).length}</span>` : "";
-  const ref = (n) => `<button type="button" class="work-item-ref" data-work-item="${escapeHtml(n.id)}"><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${noteCount(n)}</button>`;
-  const rail = nodes.map(n => `<li><button type="button" class="work-item-rail-row${n === node ? " is-current" : ""}${isSettled(n.status) ? " is-settled" : ""}${kids(n.id).length ? " is-parent" : ""}" style="--depth:${depthOf(n)}" data-work-item="${escapeHtml(n.id)}"${n === node ? ' aria-current="true"' : ' tabindex="-1"'}><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${noteCount(n)}</button></li>`).join("");
-  const relation = (label, list) => list.length ? `<dt>${label}</dt><dd>${list.map(ref).join("")}</dd>` : "";
-  const relations = relation("After", node.deps.map(dep => byId.get(dep)).filter(Boolean)) + relation("Unblocks", nodes.filter(n => n.deps.includes(id))) + relation("Contains", kids(id));
-  const actionIndex = doc.nextActions.findIndex(a => a.workItem === id);
-  const action = doc.nextActions[actionIndex];
+  const step = dialogStep(doc, id);
+  // You and Agent list only the steps that wait on that mover, flat; All is the whole breakdown as a tree.
+  const railNodes = railMove === "all" ? nodes : nodes.filter(n => MOVE_FILTERS[railMove].includes(dialogStep(doc, n.id)?.move));
+  const rail = railNodes.length ? railNodes.map(n => `<li><button type="button" class="work-item-rail-row${n === node ? " is-current" : ""}${isSettled(n.status) ? " is-settled" : ""}${railMove === "all" && kids(n.id).length ? " is-parent" : ""}" style="--depth:${railMove === "all" ? depthOf(n) : 0}" data-work-item="${escapeHtml(n.id)}"${n === node ? ' aria-current="true"' : ' tabindex="-1"'}><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${noteCount(n)}</button></li>`).join("")
+    : `<li class="work-item-empty">No steps wait on ${railMove === "you" ? "you" : "an agent"}.</li>`;
+  const chip = (n, current = false) => `<button type="button" class="work-item-chip${current ? " is-current" : ""}" data-work-item="${escapeHtml(n.id)}" title="${escapeHtml(`${n.id} · ${n.title}`)}">${workStatusIcon(n, nodes)}<code>${escapeHtml(n.id)}</code></button>`;
+  const waitsOn = node.deps.map(dep => byId.get(dep)).filter(Boolean), unblocks = nodes.filter(n => n.deps.includes(id));
+  const arrow = `<span class="work-item-strip-arrow" aria-hidden="true">→</span>`;
+  const strip = waitsOn.length || unblocks.length ? `<p class="work-item-strip" aria-label="Dependencies">${waitsOn.length ? `<span class="work-item-strip-label">Waits on</span>${waitsOn.map(n => chip(n)).join("")}${arrow}` : ""}${chip(node, true)}${unblocks.length ? `${arrow}${unblocks.map(n => chip(n)).join("")}<span class="work-item-strip-label">unblocks</span>` : ""}</p>` : "";
+  const contained = kids(id);
+  const action = doc.nextActions.find(a => a.workItem === id);
   const task = doc.task;
   const label = workStatusLabel(node, nodes);
   const frontier = node.ready ? "" : " is-off-frontier";
   const offFrontier = node.ready ? "" : ` title="${escapeHtml(`${id} is ${label.toLowerCase()}, not ready: the draft says what it still waits on`)}"`;
   const parent = byId.get(node.parent);
-  const mentionHtml = mentions.map(m => `<li><button type="button" class="work-item-mention-source" data-work-jump="${escapeHtml(m.chunkId)}">${escapeHtml(m.source)}</button>${m.date ? `<time datetime="${m.date}">${escapeHtml(formatDate(m.date))}</time>` : ""}${m.lines.map(line => `<p>${markId(inlineMarkdown(line, state.selectedPath), id)}</p>`).join("")}</li>`).join("");
+  const why = !step ? "" : step.move.startsWith("you") ? `${step.move === "you-act" ? "Friction" : "Why it's yours"}: ${step.reason}${step.fix ? `. Fix: ${step.fix}` : ""}` : step.move === "agent" ? `Agent: ${step.running ? "running" : step.reason}` : step.move === "others" ? `With others: ${step.reason}` : step.move === "blocked" ? `Blocked: ${step.reason}` : "No kind or prompt yet: add {kind, size} to its line.";
+  const mentionHtml = mentions.map(m => `<li><button type="button" class="work-item-mention-source" data-work-jump="${escapeHtml(m.chunkId)}">${escapeHtml(m.source)}</button>${m.date ? `<time datetime="${m.date}">${escapeHtml(formatDate(m.date))}</time>` : ""}${m.lines.map(line => `<p>${markId(inlineMarkdown(line, path), id)}</p>`).join("")}</li>`).join("");
   workItemDialog.dataset.item = id;
   workItemDialog.innerHTML = `<header class="work-item-task">
-      ${task ? `<button type="button" class="work-item-task-link" data-dialog-close title="${escapeHtml(`${task.id} · ${task.title} — back to the task`)}"><code>${escapeHtml(task.id)}</code><span>${escapeHtml(task.title)}</span></button><span class="work-item-task-status">${escapeHtml(TASK_STATUS_LABELS[task.status] || task.status)}</span>` : `<span class="work-item-task-link"><span>${escapeHtml(doc.title)}</span></span>`}
+      ${task ? `<span class="work-item-task-link"><code>${escapeHtml(task.id)}</code><span>${escapeHtml(task.title)}</span></span><span class="work-item-task-status">${escapeHtml(TASK_STATUS_LABELS[task.status] || task.status)}</span>` : `<span class="work-item-task-link"><span>${escapeHtml(doc.title)}</span></span>`}
       <span class="work-item-progress" title="${doneLeaves} of ${leaves.length} work items completed"><span style="--done:${leaves.length ? doneLeaves / leaves.length : 0}"></span>${doneLeaves}/${leaves.length} done</span>
       <span class="work-item-views" role="tablist" aria-label="View">${[["item", "Item"], ["graph", "Graph"]].map(([view, label]) => `<button type="button" role="tab" data-work-view="${view}" aria-selected="${workItemView === view}" title="${label} (G)">${label}</button>`).join("")}</span>
       <span class="work-item-step"><span class="work-item-step-count">${at >= 0 ? `${at + 1} of ${stepper.length} with updates` : stepper.length ? `${stepper.length} with updates` : ""}</span>${["prev", "next"].map(dir => { const n = neighbors[dir]; return `<button type="button" class="work-item-icon-button" ${n ? `data-work-item="${escapeHtml(n.id)}" data-work-step="${dir}" title="${escapeHtml(`${n.id} · ${n.title}`)}"` : "disabled"} aria-label="${dir === "prev" ? "Previous" : "Next"} item with updates${n ? `: ${escapeHtml(n.id)}` : ""}" aria-keyshortcuts="${dir === "prev" ? "ArrowLeft" : "ArrowRight"}">${glyph("arrow-right")}</button>`; }).join("")}</span>
+      ${task ? `<span class="work-item-goto">${path === state.selectedPath && state.view === "document" ? "" : `<button type="button" class="code-bar-button" data-step-open-task title="Open ${escapeHtml(task.id)} as the page">Open task</button>`}<button type="button" class="code-bar-button" data-step-world="${escapeHtml(task.id)}" title="Everything filed for ${escapeHtml(task.id)} on one timeline">World</button></span>` : ""}
       <button type="button" class="work-item-icon-button" data-dialog-close aria-label="Close">${glyph("x")}</button>
     </header>
-    <nav class="work-item-rail" aria-label="Work breakdown"><ol>${rail}</ol><p><span><kbd>J</kbd><kbd>K</kbd> items</span><span><kbd>←</kbd><kbd>→</kbd> updates</span><span><kbd>G</kbd> graph</span></p></nav>
+    <nav class="work-item-rail" aria-label="Steps">${task ? `<div class="work-item-rail-head">${stepToggleHtml(railMove, null, ["you", "agent", "all"])}</div>` : ""}<ol>${rail}</ol><p><span><kbd>J</kbd><kbd>K</kbd> steps</span><span><kbd>←</kbd><kbd>→</kbd> updates</span><span><kbd>G</kbd> graph</span></p></nav>
     ${workItemView === "graph" ? `<div class="work-item-main is-graph" tabindex="-1"><div class="work-item-graph" tabindex="0" aria-label="Work stream graph">${workItemGraph(doc, id, (key) => updates.get(key)?.length || 0)}</div>${workGraphTools}</div>` : `<div class="work-item-main" tabindex="-1">
       <header class="work-item-heading">
-        <p class="work-item-kicker"><code>${escapeHtml(node.id)}</code>${workStatusIcon(node, nodes)}<span>${escapeHtml(label)}</span>${parent ? `<span class="work-item-in">in</span><button type="button" class="work-item-parent" data-work-item="${escapeHtml(parent.id)}" title="${escapeHtml(`${parent.id} · ${parent.title}`)}">${escapeHtml(parent.id)} ${escapeHtml(parent.title)}</button>` : ""}</p>
-        <h2 id="work-item-title">${escapeHtml(node.title)}</h2>
-        <div class="work-item-agent">
-          <button type="button" class="work-item-agent-button${frontier}" data-work-agent="run"${offFrontier}>${glyph("play")}Send to agent</button>
-          <button type="button" class="work-item-agent-button is-secondary${frontier}" data-work-agent="update"${offFrontier}>${glyph("pen-line")}Update with agent</button>
+        <div class="work-item-headline">
+          <p class="work-item-kicker"><code>${escapeHtml(node.id)}</code>${workStatusIcon(node, nodes)}<span>${escapeHtml(label)}</span>${step ? movePill(step) : ""}${parent ? `<span class="work-item-in">in</span><button type="button" class="work-item-parent" data-work-item="${escapeHtml(parent.id)}" title="${escapeHtml(`${parent.id} · ${parent.title}`)}">${escapeHtml(parent.id)} ${escapeHtml(parent.title)}</button>` : ""}</p>
+          <div class="work-item-agent">
+            ${step ? stepActionsHtml(step, { ...stepContext(), compact: true }) : ""}
+            <button type="button" class="work-item-agent-button${step && stepActionsHtml(step, stepContext()) ? " is-secondary" : ""}${frontier}" data-work-agent="run"${offFrontier}>${glyph("play")}Send to agent</button>
+            <button type="button" class="work-item-agent-button is-secondary${frontier}" data-work-agent="update"${offFrontier}>${glyph("pen-line")}Update with agent</button>
+          </div>
         </div>
+        <h2 id="work-item-title">${escapeHtml(node.title)}</h2>
+        ${why ? `<p class="work-item-why">${escapeHtml(why)}</p>` : ""}
       </header>
-      ${relations ? `<dl class="work-item-relations">${relations}</dl>` : ""}
-      ${action ? `<section class="work-item-section"><h3>Next action</h3><div class="work-item-action"><p class="work-item-action-title">${escapeHtml(action.title)}</p><p class="work-item-action-prompt">${inlineMarkdown(action.prompt.replace(/\s+/g, " "), state.selectedPath)}</p></div></section>` : ""}
-      <section class="work-item-section"><h3>Updates <span>${notes.length}</span></h3>${notes.length ? notes.map(workItemNote).join("") : `<p class="work-item-empty">None filed yet. An update titled “… (${escapeHtml(id)}):” lands here.</p>`}</section>
+      ${strip}
+      ${contained.length ? `<dl class="work-item-relations"><dt>Contains</dt><dd>${contained.map(n => `<button type="button" class="work-item-ref" data-work-item="${escapeHtml(n.id)}"><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${noteCount(n)}</button>`).join("")}</dd></dl>` : ""}
+      ${step ? `<div class="work-item-step-body">${stepBodyHtml(step)}</div>` : ""}
+      ${action ? `<section class="work-item-section"><h3>Prompt <span class="step-action-title">${escapeHtml(action.title)}</span></h3><pre class="step-prompt">${escapeHtml(action.prompt)}</pre></section>` : ""}
+      <section class="work-item-section"><h3>Updates <span>${notes.length}</span></h3>${notes.length ? notes.map(entry => workItemNote(entry, path)).join("") : `<p class="work-item-empty">None filed yet. An update titled “… (${escapeHtml(id)}):” lands here.</p>`}</section>
       ${mentions.length ? `<section class="work-item-section"><h3>Also mentioned <span>${mentions.reduce((sum, m) => sum + m.lines.length, 0)}</span></h3><ul class="work-item-mentions">${mentionHtml}</ul></section>` : ""}
     </div>`}`;
   const main = workItemDialog.querySelector(".work-item-main");
@@ -1488,7 +1543,9 @@ function openWorkItem(id) {
   centerIn(workItemDialog.querySelector(".work-item-rail ol"), workItemDialog.querySelector(".work-item-rail-row.is-current"));
   showWorkGraph(workItemDialog.querySelector(".work-item-graph"));
   const url = new URL(location.href);
-  url.searchParams.set("item", id);
+  url.searchParams.delete("item");
+  url.searchParams.delete("step");
+  if (task) url.searchParams.set("step", `${task.id}:${id}`); else url.searchParams.set("item", id);
   if (workItemView === "graph") url.searchParams.set("graph", "1"); else url.searchParams.delete("graph");
   history.replaceState(null, "", url);
 }
@@ -1594,45 +1651,106 @@ workItemDialog.addEventListener("pointerup", endWorkGraphDrag);
 workItemDialog.addEventListener("pointercancel", endWorkGraphDrag);
 
 // Send and Update open the composer for the item; the dialog closes first so the composer is not inert behind it.
+// Leaving the dialog for somewhere else (a draft, the task, its world, a link) offers no Reopen; Esc and × do.
+let quietClose = false;
+// The close event fires a task later, so the flag holds until its handler reads it.
+const closeQuietly = () => { if (!workItemDialog.open) return; quietClose = true; workItemDialog.close(); };
 function openWorkComposer(id, mode) {
-  const nodes = state.document?.work?.nodes || [];
+  const doc = dialogDoc, nodes = doc?.work?.nodes || [];
   const node = nodes.find(n => n.id === id);
   if (!node) return;
-  workItemDialog.close();
-  const trigger = elements.chunks.querySelector(`.work-tree [data-work-item="${CSS.escape(id)}"]`);
-  openComposer({ key: `work:${mode}:${id}`, scope: "work", mode, node, nodes, action: state.document.nextActions.find(a => a.workItem === id), title: `${mode === "update" ? "Update" : "Advance"} ${id}: ${node.title}` }, trigger);
+  closeQuietly();
+  const trigger = elements.chunks.querySelector(`[data-open-step="${CSS.escape(`${doc.task?.id}:${id}`)}"]`);
+  openComposer({ key: `work:${mode}:${id}`, scope: "work", mode, node, nodes, path: doc.path, action: doc.nextActions.find(a => a.workItem === id), title: `${mode === "update" ? "Update" : "Advance"} ${id}: ${node.title}` }, trigger);
 }
 
-workItemDialog.addEventListener("click", (event) => {
+// Start, Approve and run, Apply and Mark done: the Steps page's inspector and the step dialog both act through this.
+async function runStepAction(step, kind, action) {
+  const post = async (route, body) => {
+    const response = await fetch(`/api/steps/${route}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "The viewer couldn't do that.");
+    return data;
+  };
+  try {
+    if (kind === "copy-statement") { await navigator.clipboard.writeText(step.machinery.fields.run); action.classList.add("is-copied"); setTimeout(() => action.classList.remove("is-copied"), 900); return false; }
+    action.disabled = true;
+    if (kind === "start") { await post("start", { key: step.key }); showNotice(`Started an agent on ${step.task} ${step.id}.`); }
+    if (kind === "run") { const result = await post("run", { path: step.machinery.path }); showNotice(result.ok ? "Ran it; the output is in its file." : "The statement failed; the error is in its file.", !result.ok); }
+    if (kind === "apply") { const result = await post("apply", { path: step.machinery.path }); showNotice(result.added ? `Added ${result.rule} to ${result.file}.` : `${result.file} already allows it.`); }
+    if (kind === "done") { await post("done", { path: step.path, id: step.id }); showNotice(`Marked ${step.task} ${step.id} done.`); }
+  } catch (error) { showNotice(error.message, true); }
+  return true;
+}
+async function pickStep(step, form) {
+  const picked = [...form.querySelectorAll('input[name="pick"]:checked')].map((input) => input.value);
+  try {
+    const response = await fetch("/api/steps/pick", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: step.path, id: step.id, picked }) });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || "Couldn't record the pick.");
+    showNotice(`Picked ${picked.join(", ") || "none"} for ${step.task} ${step.id}.`);
+  } catch (error) { showNotice(error.message, true); }
+}
+
+workItemDialog.addEventListener("click", async (event) => {
   const agent = event.target.closest("[data-work-agent]");
   if (agent) {
     event.stopPropagation(); // the document's outside-click handler would close the composer this click opens
     return openWorkComposer(workItemDialog.dataset.item, agent.dataset.workAgent);
   }
+  const stepAction = event.target.closest("[data-step-action]");
+  if (stepAction) {
+    const step = dialogStep(dialogDoc, workItemDialog.dataset.item);
+    if (step && !stepAction.disabled && await runStepAction(step, stepAction.dataset.stepAction, stepAction)) reloadStepDialog();
+    return;
+  }
+  const move = event.target.closest("[data-step-list-move]");
+  if (move) { railMove = move.dataset.stepListMove; return openWorkItem(workItemDialog.dataset.item, dialogDoc); }
+  if (event.target.closest("[data-step-open-task]")) {
+    closeQuietly();
+    closeOverview();
+    return selectDocument(dialogDoc.path, { historyMode: "push" });
+  }
+  const world = event.target.closest("[data-step-world]");
+  if (world) { closeQuietly(); return openTaskWorld(world.dataset.stepWorld); }
   const graphAction = event.target.closest("[data-graph-action]");
   if (graphAction) return workGraphActions[graphAction.dataset.graphAction](workItemDialog.querySelector(".work-item-graph"));
   const view = event.target.closest("[data-work-view]");
   if (view) {
     workItemView = view.dataset.workView;
-    return openWorkItem(workItemDialog.dataset.item);
+    return openWorkItem(workItemDialog.dataset.item, dialogDoc);
   }
   const item = event.target.closest("[data-work-item]");
   // Picking a node in the graph reads that item; the rail and stepper keep the current view.
   if (item?.closest(".work-item-graph")) workItemView = "item";
-  if (item) return openWorkItem(item.dataset.workItem);
+  if (item) return openWorkItem(item.dataset.workItem, dialogDoc);
+  if (event.target.closest(".outbound-panel, .step-choice")) return;
   const jump = event.target.closest("[data-work-jump]");
   const documentLink = event.target.closest(".markdown-document-link");
   // A link that opens a new tab leaves the dialog where it was; one that navigates here closes it.
   if (!jump && !documentLink && !event.target.closest("[data-dialog-close], a[href]:not([target=_blank])")) return;
-  workItemDialog.close();
-  if (jump) document.getElementById(jump.dataset.workJump)?.scrollIntoView({ block: "start", behavior: "instant" });
+  const doc = dialogDoc;
+  if (event.target.closest("[data-dialog-close]")) workItemDialog.close(); else closeQuietly();
+  if (jump) {
+    if (doc.path === state.selectedPath && state.view === "document") document.getElementById(jump.dataset.workJump)?.scrollIntoView({ block: "start", behavior: "instant" });
+    else { closeOverview(); selectDocument(doc.path, { historyMode: "push", anchor: doc.chunks.find((chunk) => chunk.id === jump.dataset.workJump)?.anchor || "" }); }
+  }
   if (documentLink) {
     event.preventDefault();
+    closeOverview();
     selectDocument(documentLink.dataset.documentPath, { historyMode: "push", anchor: documentLink.dataset.documentAnchor });
   }
 });
+workItemDialog.addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-step-pick]");
+  if (!form) return;
+  event.preventDefault();
+  const step = dialogStep(dialogDoc, workItemDialog.dataset.item);
+  if (step) { await pickStep(step, form); reloadStepDialog(); }
+});
+bindOutbound(workItemDialog, { notice: (message, error = false) => showNotice(message, error), refresh: reloadStepDialog, bodyOf: (path) => stepsOutboundBody(path) });
 workItemDialog.addEventListener("keydown", (event) => {
-  if (event.metaKey || event.ctrlKey || event.altKey || event.target.closest("input, textarea")) return;
+  if (event.metaKey || event.ctrlKey || event.altKey || event.target.closest("input, textarea, select")) return;
   if (["ArrowLeft", "ArrowRight"].includes(event.key)) {
     event.preventDefault();
     workItemDialog.querySelector(`[data-work-step="${event.key === "ArrowLeft" ? "prev" : "next"}"]`)?.click();
@@ -1640,7 +1758,7 @@ workItemDialog.addEventListener("keydown", (event) => {
   if (event.key.toLowerCase() === "g") {
     event.preventDefault();
     workItemView = workItemView === "graph" ? "item" : "graph";
-    return openWorkItem(workItemDialog.dataset.item);
+    return openWorkItem(workItemDialog.dataset.item, dialogDoc);
   }
   const graphKey = workItemView === "graph" && workGraphKeys[event.key.toLowerCase()];
   if (graphKey) {
@@ -1650,13 +1768,17 @@ workItemDialog.addEventListener("keydown", (event) => {
   const walk = { j: 1, k: -1 }[event.key.toLowerCase()];
   if (!walk) return;
   event.preventDefault();
-  const nodes = state.document?.work?.nodes || [];
-  const next = nodes[nodes.findIndex(n => n.id === workItemDialog.dataset.item) + walk];
-  if (next) openWorkItem(next.id);
+  // J and K walk the rail as filtered (You, Agent or the whole breakdown).
+  const rows = [...workItemDialog.querySelectorAll(".work-item-rail-row")];
+  const next = rows[rows.findIndex(row => row.dataset.workItem === workItemDialog.dataset.item) + walk] || (walk > 0 && !rows.some(row => row.dataset.workItem === workItemDialog.dataset.item) ? rows[0] : null);
+  if (next) openWorkItem(next.dataset.workItem, dialogDoc);
 });
 workItemDialog.addEventListener("close", () => {
+  if (!quietClose && new URLSearchParams(location.search).get("step")) announceClosed();
+  quietClose = false;
   const url = new URL(location.href);
   url.searchParams.delete("item");
+  url.searchParams.delete("step");
   url.searchParams.delete("graph");
   history.replaceState(null, "", url);
   const previous = dialogReturnFocus.get(workItemDialog);
@@ -1979,7 +2101,7 @@ async function refreshSteps() {
 function updateStepsUrl(historyMode) {
   if (historyMode === "none") return;
   const url = new URL(location.href);
-  url.search = new URLSearchParams({ view: "steps", ...(stepsFilters.move !== "you" ? { move: stepsFilters.move } : {}), ...(stepsFilters.kind !== "any" ? { kind: stepsFilters.kind } : {}), ...(stepsFilters.hidden ? { hidden: "1" } : {}), ...(selectedStep ? { step: selectedStep } : {}) });
+  url.search = new URLSearchParams({ view: "steps", ...(stepsFilters.move !== "you" ? { move: stepsFilters.move } : {}), ...(stepsFilters.kind !== "any" ? { kind: stepsFilters.kind } : {}), ...(stepsFilters.hidden ? { hidden: "1" } : {}), ...(selectedStep ? { select: selectedStep } : {}) });
   url.hash = "";
   history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
 }
@@ -1989,23 +2111,27 @@ function readStepsUrl() {
   stepsFilters.move = params.get("move") in MOVE_FILTERS ? params.get("move") : "you";
   stepsFilters.kind = params.get("kind") in KIND_FILTERS ? params.get("kind") : "any";
   stepsFilters.hidden = params.get("hidden") === "1";
-  selectedStep = params.get("step") || "";
+  selectedStep = params.get("select") || "";
 }
 
-// Today's plan opens with what waits on you, from the Steps page: decisions first, then friction, each a link to its step.
+// Today's plan opens with the steps that wait on a mover (You by default, `&move=` in the URL), eight at most, each
+// opening the step dialog over the plan. "All N on Steps →" is the one link that leaves the page.
+const LEAD_ROWS = 8;
+const leadMove = () => { const move = new URLSearchParams(location.search).get("move"); return move in MOVE_FILTERS ? move : "you"; };
 function todayLeadHtml() {
   if (!stepsData) {
     loadSteps().then(() => { if (state.view === "document" && state.document?.path === state.defaultPath) renderDocument(); });
     return "";
   }
-  const mine = visibleSteps(stepsData.steps, { move: "you" });
-  if (!mine.length) return `<section class="today-lead"><h2>Next move is yours</h2><p class="outbound-note">Nothing waits on you.</p></section>`;
-  const decide = mine.filter((step) => step.move === "you-decide").length;
-  const link = (step) => `<a class="today-lead-row" href="?view=steps&step=${encodeURIComponent(stepKey(step))}" data-open-step="${escapeHtml(stepKey(step))}"><span class="step-move step-move-${step.move === "you-act" ? "friction" : "you"}">${step.move === "you-act" ? "Friction" : "Decide"}</span><span class="today-lead-title">${escapeHtml(step.title.split(" — ")[0])}</span><span class="today-lead-meta">${escapeHtml(step.task)} ${escapeHtml(step.id)} · ${escapeHtml(step.reason)}</span></a>`;
-  const shown = mine.slice(0, 8);
-  return `<section class="today-lead" aria-label="Next move is yours"><h2>Next move is yours <span>${decide} to decide${mine.length - decide ? ` · ${mine.length - decide} friction` : ""}</span></h2>
-    <div class="today-lead-rows">${shown.map(link).join("")}</div>
-    ${mine.length > shown.length ? `<a class="today-lead-more" href="?view=steps" data-open-step="">All ${mine.length} on Steps →</a>` : ""}</section>`;
+  const move = leadMove();
+  const shown = visibleSteps(stepsData.steps, { move });
+  const counts = moveCounts(stepsData.steps);
+  // Room for the fullest segment, so switching segments never moves what follows the panel.
+  const most = Math.max(...Object.values(counts));
+  const rows = shown.slice(0, LEAD_ROWS).map((step) => stepRowHtml({ key: stepKey(step), lead: movePill(step), title: step.title.split(" — ")[0], meta: `${escapeHtml(step.task)} ${escapeHtml(step.id)}` })).join("");
+  return `<section class="today-lead" aria-label="Steps"><header class="today-lead-head"><h2>Steps</h2>${stepToggleHtml(move, counts)}</header>
+    <div class="step-rows" style="--lead-rows:${Math.min(LEAD_ROWS, most)}">${rows || `<p class="today-lead-empty">${move === "you" ? "Nothing waits on you." : "No steps here."}</p>`}</div>
+    ${most > LEAD_ROWS ? `<a class="today-lead-more" href="?view=steps${move === "you" ? "" : `&move=${move}`}" data-steps-page${shown.length > LEAD_ROWS ? "" : " hidden"}>All ${shown.length} on Steps →</a>` : ""}</section>`;
 }
 
 const stepContext = () => ({ startConfigured: Boolean(stepsData?.startConfigured), runConfigured: Boolean(config().steps.run?.length), freeSlots: (stepsData?.slots || 0) - (stepsData?.runs?.length || 0) });
@@ -2050,14 +2176,21 @@ function showSteps({ historyMode = "push", kind } = {}) {
 }
 
 elements.stepsButton.addEventListener("click", () => showSteps({ kind: "any" }));
+// The lead's toggle re-renders only the lead, so nothing below it moves while the counts stay put.
 elements.chunks.addEventListener("click", (event) => {
-  const open = event.target.closest("[data-open-step]");
-  if (!open || event.metaKey || event.ctrlKey) return;
-  event.preventDefault();
-  stepsFilters.kind = "any";
-  stepsFilters.move = "you";
-  selectedStep = open.dataset.openStep;
-  showSteps();
+  const move = state.view === "document" && event.target.closest(".today-lead [data-step-list-move]");
+  if (!move) return;
+  const url = new URL(location.href);
+  if (move.dataset.stepListMove === "you") url.searchParams.delete("move"); else url.searchParams.set("move", move.dataset.stepListMove);
+  history.replaceState(history.state, "", url);
+  elements.chunks.querySelector(".today-lead").outerHTML = todayLeadHtml();
+});
+// A step row opens the step dialog over the page; only "All N on Steps →" goes to the Steps page.
+elements.chunks.addEventListener("click", (event) => {
+  const all = event.target.closest("[data-steps-page]");
+  if (all && !event.metaKey && !event.ctrlKey) { event.preventDefault(); stepsFilters.kind = "any"; stepsFilters.move = leadMove(); selectedStep = ""; return showSteps(); }
+  const open = state.view !== "steps" && event.target.closest("[data-open-step]");
+  if (open) openStep(open.dataset.openStep);
 });
 elements.outboxButton.addEventListener("click", () => showSteps({ kind: "outbound" }));
 elements.chunks.addEventListener("click", (event) => {
@@ -2076,23 +2209,7 @@ elements.chunks.addEventListener("click", async (event) => {
   const action = state.view === "steps" && event.target.closest("[data-step-action]");
   if (!action || action.disabled) return;
   const step = stepsData.steps.find((candidate) => stepKey(candidate) === selectedStep);
-  if (!step) return;
-  const post = async (route, body) => {
-    const response = await fetch(`/api/steps/${route}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "The viewer couldn't do that.");
-    return data;
-  };
-  try {
-    const kind = action.dataset.stepAction;
-    if (kind === "copy-statement") { await navigator.clipboard.writeText(step.machinery.fields.run); action.classList.add("is-copied"); setTimeout(() => action.classList.remove("is-copied"), 900); return; }
-    action.disabled = true;
-    if (kind === "start") { await post("start", { key: step.key }); showNotice(`Started an agent on ${step.task} ${step.id}.`); }
-    if (kind === "run") { const result = await post("run", { path: step.machinery.path }); showNotice(result.ok ? "Ran it; the output is in its file." : "The statement failed; the error is in its file.", !result.ok); }
-    if (kind === "apply") { const result = await post("apply", { path: step.machinery.path }); showNotice(result.added ? `Added ${result.rule} to ${result.file}.` : `${result.file} already allows it.`); }
-    if (kind === "done") { await post("done", { path: step.path, id: step.id }); showNotice(`Marked ${step.task} ${step.id} done.`); }
-  } catch (error) { showNotice(error.message, true); }
-  refreshSteps();
+  if (step && await runStepAction(step, action.dataset.stepAction, action)) refreshSteps();
 });
 elements.chunks.addEventListener("change", (event) => {
   if (state.view !== "steps") return;
@@ -2107,13 +2224,7 @@ elements.chunks.addEventListener("submit", async (event) => {
   if (!form) return;
   event.preventDefault();
   const step = stepsData.steps.find((candidate) => stepKey(candidate) === form.dataset.stepPick);
-  const picked = [...form.querySelectorAll('input[name="pick"]:checked')].map((input) => input.value);
-  try {
-    const response = await fetch("/api/steps/pick", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: step.path, id: step.id, picked }) });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error || "Couldn't record the pick.");
-    showNotice(`Picked ${picked.join(", ") || "none"} for ${step.task} ${step.id}.`);
-  } catch (error) { showNotice(error.message, true); }
+  if (step) await pickStep(step, form);
   refreshSteps();
 });
 
@@ -2154,6 +2265,10 @@ async function selectDocument(path, { historyMode = "push", anchor = "" } = {}) 
 
 async function refreshFromMarkdown(changedPaths) {
   const currentPath = state.selectedPath;
+  for (const path of changedPaths) stepDocs.delete(path);
+  // Steps derive from every task, so a task edit reloads them before anything that lists steps renders again.
+  if ([...changedPaths].some((path) => path.startsWith("tasks/"))) await loadSteps();
+  if (workItemDialog.open && dialogDoc && dialogDoc.path !== currentPath && changedPaths.has(dialogDoc.path)) reloadStepDialog();
   const currentChanged = changedPaths.has(currentPath);
   // Live refreshes keep the reader where they are: pin the first card still on screen to its current offset.
   const scrollY = window.scrollY;
@@ -2223,7 +2338,7 @@ async function refreshFromMarkdown(changedPaths) {
     const newPinned = pinnedId ? document.getElementById(pinnedId) : null;
     if (newPinned && pinnedTop != null) window.scrollBy({ top: newPinned.getBoundingClientRect().top - pinnedTop, behavior: "instant" });
     else window.scrollTo({ top: scrollY, behavior: "instant" });
-    if (workItemDialog.open) openWorkItem(workItemDialog.dataset.item);
+    if (workItemDialog.open && dialogDoc?.path === currentPath) openWorkItem(workItemDialog.dataset.item, state.document);
     if (openPanel) {
       document.getElementById(openPanel)?.showPopover();
       elements.chunks.querySelector(`[data-dock-source="${openSource}"]`)?.click();
@@ -3935,6 +4050,10 @@ const OVERLAYS = [
     open: (params) => peekDocument(params.get("peek")),
     result: (params) => { const doc = state.documents.find((candidate) => candidate.path === params.get("peek")); return doc ? docResult(doc, []) : { icon: "file", title: escapeHtml(params.get("peek")), detail: "Document", side: "Document" }; },
     closed: (params) => { const doc = state.documents.find((candidate) => candidate.path === params.get("peek")); return ["document", doc ? `${doc.task ? `${doc.task.id} ` : ""}${doc.task?.title || doc.title}` : params.get("peek")]; } },
+  { param: "step", extra: ["graph"],
+    open: (params) => openStep(params.get("step")),
+    result: (params) => { const [task, id] = params.get("step").split(":"); const doc = state.documents.find((candidate) => candidate.path === `tasks/${task}.md`); const work = doc?.task?.work?.find((candidate) => candidate.id === id); return work ? workResult({ work, doc }, []) : { icon: "list", title: escapeHtml(params.get("step").replace(":", " ")), detail: "Step", side: "Step" }; },
+    closed: (params) => { const [task, id] = params.get("step").split(":"); const doc = state.documents.find((candidate) => candidate.path === `tasks/${task}.md`); return ["step", `${task} ${id} ${doc?.task?.work?.find((candidate) => candidate.id === id)?.title || ""}`.trim()]; } },
   { param: "pr", extra: ["file", "scope"],
     open: (params) => { const pr = params.get("pr").split("#"); if (pr.length === 2) openPrOverlay(pr[0], Number(pr[1]), params.get("file") || "", params.get("scope") || ""); },
     result: (params) => { const [slug, number] = params.get("pr").split("#"); return prResult(findPr(slug, Number(number)) || { slug, number: Number(number) }, []); },
