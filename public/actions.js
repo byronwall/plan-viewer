@@ -29,9 +29,10 @@ export function parseActions(markdown, sourcePath) {
 }
 
 // A work item's optional `{kind, size}` suffix: one kind (`agent`, `decision`, `byron`, `check-in`, an outbound kind, or a
-// choice mode: `pick-one`, `pick-any`, `do-all`), a size, and the flags an option of a choice carries.
+// choice mode: `pick-one`, `pick-any`, `do-all`), a size, the flags an option of a choice carries, and `next` (Up next:
+// the steps an orchestrating agent thread picks up first).
 export const STEP_SIZES = new Set(['S', 'M', 'L']);
-export const STEP_FLAGS = new Set(['option', 'recommended', 'not picked']);
+export const STEP_FLAGS = new Set(['option', 'recommended', 'not picked', 'next']);
 
 export function parseWorkBreakdown(markdown) {
   const nodes = [], stack = [], warnings = [];

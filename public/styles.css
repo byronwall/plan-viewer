@@ -3111,6 +3111,8 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .step-col-title { min-width: 280px; max-width: 460px; }
 .step-col-title .task-row-select { display: inline; }
 .step-friction-mark { margin-right: 6px; color: #b07a12; font-size: .7em; vertical-align: .12em; }
+.step-next-mark { margin-right: 6px; color: var(--action); font-size: .7em; vertical-align: .12em; }
+.step-next-toggle[aria-pressed="true"] { color: var(--action); }
 .step-friction-line { display: block; margin-top: 2px; color: var(--status-waiting-ink); font-size: .74rem; }
 .step-move { display: inline-block; white-space: nowrap; border-radius: 999px; padding: 3px 7px; font-size: .64rem; font-weight: 720; line-height: 1.1; }
 .step-move-you { background: var(--status-waiting-field); color: var(--status-waiting-ink); }

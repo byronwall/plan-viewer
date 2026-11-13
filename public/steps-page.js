@@ -29,16 +29,18 @@ const KIND_LABELS = { agent: "Agent", "check-in": "Check-in", decision: "Decisio
 export const kindLabel = (kind) => KIND_LABELS[kind] || (OUTBOUND.has(kind) ? outboundKindLabel(kind) : kind || "—");
 export const stepKey = (step) => `${step.task}:${step.id}`;
 
+// `next` (Up next) is a filter across movers, not a mover: every step flagged `{next}`, blocked ones too.
 export function visibleSteps(steps, { move = "all", kind = "any", hidden = false } = {}) {
   const moves = MOVE_FILTERS[move] || ORDER;
   const test = KIND_FILTERS[kind]?.[1] || (() => true);
+  if (move === "next") return steps.filter((step) => step.next && test(step));
   return steps.filter((step) => moves.includes(step.move) && test(step) && (hidden || move !== "all" || !HIDDEN.has(step.move)));
 }
 
 export function moveCounts(steps, kind = "any") {
   const test = KIND_FILTERS[kind]?.[1] || (() => true);
   const of = (moves) => steps.filter((step) => moves.includes(step.move) && test(step)).length;
-  return { you: of(MOVE_FILTERS.you), agent: of(MOVE_FILTERS.agent), others: of(MOVE_FILTERS.others), all: of(ORDER.filter((m) => !HIDDEN.has(m))) };
+  return { next: steps.filter((step) => step.next && test(step)).length, you: of(MOVE_FILTERS.you), agent: of(MOVE_FILTERS.agent), others: of(MOVE_FILTERS.others), all: of(ORDER.filter((m) => !HIDDEN.has(m))) };
 }
 
 const pill = (step) => {
@@ -51,7 +53,7 @@ const pill = (step) => {
 function row(step, selected) {
   const friction = step.move === "you-act" ? `<span class="step-friction-line">${escapeHtml(step.reason)}${step.fix ? ` · fix: ${escapeHtml(step.fix)}` : ""}</span>` : "";
   return `<tr data-select-step="${escapeHtml(stepKey(step))}" aria-selected="${selected}">
-    <td class="step-col-title"><button class="task-row-select" type="button" data-select-step="${escapeHtml(stepKey(step))}">${step.move === "you-act" ? '<span class="step-friction-mark" aria-label="Friction">▲</span>' : ""}${escapeHtml(step.title.split(" — ")[0])}</button>${friction}</td>
+    <td class="step-col-title"><button class="task-row-select" type="button" data-select-step="${escapeHtml(stepKey(step))}">${step.next ? '<span class="step-next-mark" aria-label="Up next" title="Up next">●</span>' : ""}${step.move === "you-act" ? '<span class="step-friction-mark" aria-label="Friction">▲</span>' : ""}${escapeHtml(step.title.split(" — ")[0])}</button>${friction}</td>
     <td class="step-col-move">${pill(step)}</td>
     <td class="step-col-kind">${OUTBOUND.has(step.kind) ? outboundIcon(step.kind) : ""}${escapeHtml(kindLabel(step.kind))}</td>
     <td class="step-col-work"><button class="task-list-id" type="button" data-task-path="${escapeHtml(step.path)}" title="${escapeHtml(step.taskTitle)}">${escapeHtml(step.task)}</button> <span class="step-id">${escapeHtml(step.id)}</span></td>
@@ -62,7 +64,7 @@ function row(step, selected) {
 
 export function stepsTableHtml(steps, filters, selected) {
   const shown = visibleSteps(steps, filters);
-  if (!shown.length) return `<p class="task-empty">${filters.kind === "outbound" ? "Nothing waiting to go out." : "No open steps match."}</p>`;
+  if (!shown.length) return `<p class="task-empty">${filters.move === "next" ? "Nothing is up next. Select a step and press Up next to queue it for an agent thread." : filters.kind === "outbound" ? "Nothing waiting to go out." : "No open steps match."}</p>`;
   const groups = ORDER.map((move) => [move, shown.filter((step) => step.move === move)]).filter(([, list]) => list.length);
   return `<table class="task-table step-table">
     <thead><tr><th scope="col">Step</th><th scope="col">Next move</th><th scope="col">Kind</th><th scope="col">Workstream</th><th scope="col">Size</th><th scope="col">Age</th></tr></thead>
@@ -76,7 +78,7 @@ export function stepsToolbarHtml(steps, filters, slots, runs = 0) {
   const running = runs;
   const hiddenCount = steps.filter((step) => HIDDEN.has(step.move)).length;
   return `<div class="task-index-tools step-tools">
-    <span class="step-segs" role="group" aria-label="Next move">${seg("you", "Next move: You")}${seg("agent", "Agent")}${seg("others", "Others")}${seg("all", "All")}</span>
+    <span class="step-segs" role="group" aria-label="Next move">${seg("next", "Up next")}${seg("you", "Next move: You")}${seg("agent", "Agent")}${seg("others", "Others")}${seg("all", "All")}</span>
     <select class="step-kind" data-step-kind aria-label="Kind">${Object.entries(KIND_FILTERS).map(([key, [label]]) => `<option value="${key}"${filters.kind === key ? " selected" : ""}>${label}</option>`).join("")}</select>
     ${filters.move === "all" && hiddenCount ? `<label class="show-done"><input type="checkbox" data-step-hidden${filters.hidden ? " checked" : ""}> Show ${hiddenCount} blocked or without a kind</label>` : ""}
     <span class="step-slots" title="Agent runs started from this page">${running} of ${slots} agent slots in use</span>
@@ -204,7 +206,13 @@ const button = (action, label, primary = false, disabled = "") => `<button type=
 
 // What the inspector lets you do now: start an agent, run or copy a statement, apply a rule, or mark it done.
 // `compact` (the step dialog's header) drops the explanatory notes beside the buttons.
-export function stepActionsHtml(step, { startConfigured = false, runConfigured = false, freeSlots = 0, compact = false } = {}) {
+// Up next rides along with every step's own actions: it queues the step for an orchestrating agent thread.
+export function stepActionsHtml(step, context = {}) {
+  const own = ownActionsHtml(step, context);
+  const next = `<button type="button" class="outbound-secondary step-next-toggle" data-step-action="next" aria-pressed="${Boolean(step.next)}" title="${step.next ? "Take it off the Up next queue" : "Queue it for an agent thread: plan-viewer next lists it"}">${step.next ? "● Up next" : "Up next"}</button>`;
+  return own.includes('class="outbound-actions') ? own.replace(/<\/div>$/, `${next}</div>`) : `${own}<div class="outbound-actions step-actions">${next}</div>`;
+}
+function ownActionsHtml(step, { startConfigured = false, runConfigured = false, freeSlots = 0, compact = false } = {}) {
   const f = step.machinery?.fields || {};
   const note = (text) => compact ? "" : `<span class="step-choice-note">${text}</span>`;
   if (step.draft) return ""; // an outbound step's panel has its own Approve, Mark sent and Drop

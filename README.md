@@ -129,6 +129,7 @@ Run each from the workspace (or set `PLANNING_ROOT`). `plan-viewer help` lists t
 | `plan-viewer links [--fix\|--warm\|--refresh-slack]` | Reports broken links, unknown tasks, unlinked task assets, and unnamed Slack channels. |
 | `plan-viewer move <from> <to\|TASK-NNNN>` | Moves one file and repairs every link to it. `TASK-NNNN` moves it into that task's assets folder; the task must exist. |
 | `plan-viewer task TASK-NNNN` | Prints a task's context in compact form for an agent. |
+| `plan-viewer next [--json]` | Prints the steps flagged Up next, for an agent thread to work through. |
 
 ### Optional integrations
 

@@ -19,7 +19,7 @@ import { createPlans } from "./plans.ts";
 import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig } from "./public/config.js";
-import { applyRule, loadSteps, markStepDone, pickChoice, runStatement, startStep } from "./steps.ts";
+import { applyRule, loadSteps, markStepDone, pickChoice, runStatement, setStepNext, startStep } from "./steps.ts";
 import { approveOutbound, draftFromText, dropOutbound, listOutbound, markOutboundSent, sendBackOutbound, stripFrontMatter } from "./outbound.ts";
 
 // The planning workspace is the current directory (npm scripts run from the content repository); PLANNING_ROOT
@@ -926,7 +926,7 @@ export async function renderDiagram(requested: string, panels = "") {
 const escapeXml = (value: string) => value.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]!);
 
 // Every open step of every unfinished task, ordered by today's plan, then age (the Steps page and the Today lead).
-async function stepsIndex() {
+export async function stepsIndex() {
   const files = (await readdir(join(ROOT, "tasks"))).filter((name) => /^TASK-\d{4}\.md$/.test(name));
   const tasks = (await Promise.all(files.map(async (name) => {
     const path = `tasks/${name}`;
@@ -1106,6 +1106,12 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (request.method === "POST" && url.pathname === "/api/steps/apply") {
       const body = await readJson(request);
       return json(response, 200, await applyRule(ROOT, String(body.path || ""), config().user, todayDate()));
+    }
+    if (request.method === "POST" && url.pathname === "/api/steps/next") {
+      const body = await readJson(request);
+      viewerWrites.add(String(body.path || ""));
+      await setStepNext(ROOT, String(body.path || ""), String(body.id || ""), Boolean(body.on));
+      return json(response, 200, { next: Boolean(body.on) });
     }
     if (request.method === "POST" && url.pathname === "/api/steps/done") {
       const body = await readJson(request);

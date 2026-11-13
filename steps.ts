@@ -16,7 +16,7 @@ export type Move = "you-decide" | "you-act" | "agent" | "others" | "blocked" | "
 export interface StepOption { id: string; title: string; tradeoff: string; recommended: boolean; status: string }
 export interface Step {
   key: string; task: string; taskTitle: string; path: string; id: string; title: string; status: string;
-  kind: string; size: string; deps: string[]; move: Move; reason: string; fix?: string; running?: boolean;
+  kind: string; size: string; deps: string[]; next: boolean; move: Move; reason: string; fix?: string; running?: boolean;
   prompt?: string; actionTitle?: string; draft?: OutboundDraft; machinery?: { path: string; fields: Record<string, string> };
   options?: StepOption[]; age: number; order: number;
 }
@@ -51,7 +51,7 @@ export function deriveSteps(tasks: TaskInput[], machinery: { path: string; field
       const step: Step = {
         key, task: task.id, taskTitle: task.title, path: task.path, id: node.id, title: node.title, status: node.status,
         kind: node.kind || m?.fields.outbound || m?.fields.kind || (action ? (node.status === "waiting" ? "check-in" : "agent") : ""),
-        size: node.size, deps: node.deps, move: "unclassified", reason: "", prompt: action?.prompt, actionTitle: action?.title,
+        size: node.size, deps: node.deps, next: node.flags.includes("next"), move: "unclassified", reason: "", prompt: action?.prompt, actionTitle: action?.title,
         age: daysSince(m?.modified ? new Date(m.modified).toISOString() : task.updated, now),
         order: planOrder.includes(task.id) ? planOrder.indexOf(task.id) : planOrder.length + 1,
       };
@@ -63,7 +63,7 @@ export function deriveSteps(tasks: TaskInput[], machinery: { path: string; field
       steps.push(step);
     }
   }
-  return steps.sort((a, b) => a.order - b.order || b.age - a.age || a.key.localeCompare(b.key, undefined, { numeric: true }));
+  return steps.sort((a, b) => Number(b.next) - Number(a.next) || a.order - b.order || b.age - a.age || a.key.localeCompare(b.key, undefined, { numeric: true }));
 }
 
 // [next move, why, the fix for friction]; null hides a step whose machinery says it's done.
@@ -192,6 +192,22 @@ async function completeStep(root: string, step: string, update: string, today: s
 export async function markStepDone(root: string, path: string, id: string, user: string, today: string) {
   const absolute = taskFile(root, path);
   await writeFile(absolute, withStepStatus(await readFile(absolute, "utf8"), id, "completed", `${id} done (${user}, in the viewer).`, today));
+}
+
+// Up next: adds or removes the `next` flag in a step's `{…}` suffix, leaving its kind and size as they are.
+export function withStepFlag(markdown: string, id: string, flag: string, on: boolean) {
+  const line = new RegExp(`^(\\s*-\\s+${id.replace(/\./g, "\\.")}:\\s.*?\\[(?:open|active|waiting|deferred|completed)\\](?:\\s+\\(after:[^)]*\\))?)(?:\\s+\\{([^}]*)\\})?[ \\t]*$`, "m");
+  if (!line.test(markdown)) throw new Error(`${id} isn't in the work breakdown.`);
+  return markdown.replace(line, (_all, head, suffix = "") => {
+    const parts = suffix.split(",").map((part: string) => part.trim()).filter((part: string) => part && part !== flag);
+    if (on) parts.push(flag);
+    return parts.length ? `${head} {${parts.join(", ")}}` : head;
+  });
+}
+
+export async function setStepNext(root: string, path: string, id: string, on: boolean) {
+  const absolute = taskFile(root, path);
+  await writeFile(absolute, withStepFlag(await readFile(absolute, "utf8"), id, "next", on));
 }
 
 // Approve and run: a `kind: byron` step's read-only statement, run by the workspace's configured runner on the user's

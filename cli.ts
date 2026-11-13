@@ -1,8 +1,8 @@
 #!/usr/bin/env -S node --experimental-strip-types --no-warnings=ExperimentalWarning
-// `plan-viewer [serve|init|lint|links|move|task] …`, run from a planning workspace (or with PLANNING_ROOT set).
+// `plan-viewer [serve|init|lint|links|move|task|next] …`, run from a planning workspace (or with PLANNING_ROOT set).
 import { fileURLToPath } from "node:url";
 
-const COMMANDS: Record<string, string> = { serve: "server.ts", lint: "check-planning.ts", links: "check-links.ts", move: "move-doc.ts", task: "task-context.ts", init: "init-workspace.ts" };
+const COMMANDS: Record<string, string> = { serve: "server.ts", lint: "check-planning.ts", links: "check-links.ts", move: "move-doc.ts", task: "task-context.ts", init: "init-workspace.ts", next: "next-steps.ts" };
 const HELP = `Usage: plan-viewer <command> [args], run from a planning workspace (or with PLANNING_ROOT set)
 
   serve                                     open the viewer (the default)
@@ -10,7 +10,8 @@ const HELP = `Usage: plan-viewer <command> [args], run from a planning workspace
   lint [paths | --staged]                   check task front matter, work breakdowns and next actions
   links [--fix | --warm | --refresh-slack]  check links and task IDs
   move <from> <to | TASK-NNNN>              move a file and repair the links to it
-  task <TASK-NNNN>                          print a task's context for an agent`;
+  task <TASK-NNNN>                          print a task's context for an agent
+  next [--json]                             print the steps flagged Up next, for an agent thread`;
 const [command = "serve", ...args] = process.argv.slice(2);
 if (["help", "--help", "-h"].includes(command)) {
   console.log(HELP);

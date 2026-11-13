@@ -1697,6 +1697,7 @@ async function runStepAction(step, kind, action) {
     if (kind === "run") { const result = await post("run", { path: step.machinery.path }); showNotice(result.ok ? "Ran it; the output is in its file." : "The statement failed; the error is in its file.", !result.ok); }
     if (kind === "apply") { const result = await post("apply", { path: step.machinery.path }); showNotice(result.added ? `Added ${result.rule} to ${result.file}.` : `${result.file} already allows it.`); }
     if (kind === "done") { await post("done", { path: step.path, id: step.id }); showNotice(`Marked ${step.task} ${step.id} done.`); }
+    if (kind === "next") { await post("next", { path: step.path, id: step.id, on: !step.next }); showNotice(step.next ? `Took ${step.task} ${step.id} off Up next.` : `Queued ${step.task} ${step.id} as Up next.`); }
   } catch (error) { showNotice(error.message, true); }
   return true;
 }
@@ -2166,7 +2167,7 @@ function updateStepsUrl(historyMode) {
 
 function readStepsUrl() {
   const params = stepsParams();
-  stepsFilters.move = params.get("move") in MOVE_FILTERS ? params.get("move") : "you";
+  stepsFilters.move = params.get("move") in MOVE_FILTERS || params.get("move") === "next" ? params.get("move") : "you";
   stepsFilters.kind = params.get("kind") in KIND_FILTERS ? params.get("kind") : "any";
   stepsFilters.hidden = params.get("hidden") === "1";
   selectedStep = params.get("select") || "";

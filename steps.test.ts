@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { draftFromText } from "./outbound.ts";
-import { activeRuns, applyRule, deriveSteps, pickChoice, runStatement, startStep } from "./steps.ts";
+import { activeRuns, applyRule, deriveSteps, pickChoice, runStatement, startStep, withStepFlag } from "./steps.ts";
 import { setConfig } from "./public/config.js";
 
 const TASK = `---
@@ -81,6 +81,17 @@ test("each open step gets one next move from its kind, status, prerequisites and
   const sent = draft("TASK-0001 W2", "jira-comment");
   sent.draft.fields.status = "sent";
   assert.equal(deriveSteps([task], [sent]).some((s) => s.id === "W2"), false);
+});
+
+test("Up next adds and removes the next flag without touching kind, size or prerequisites, and sorts first", () => {
+  const flagged = withStepFlag(withStepFlag(TASK, "W7", "next", true), "W6", "next", true);
+  assert.match(flagged, /^- W7: Later \[open\] \(after: W6\) \{next\}$/m);
+  assert.match(flagged, /^- W6: Build it \[active\] \{agent, M, next\}$/m);
+  const steps = deriveSteps([{ path: "tasks/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: flagged }], []);
+  assert.deepEqual(steps.slice(0, 2).map((s) => [s.id, s.next, s.kind]), [["W6", true, "agent"], ["W7", true, ""]]);
+  assert.equal(withStepFlag(flagged, "W6", "next", false), withStepFlag(TASK, "W7", "next", true));
+  assert.equal(withStepFlag(withStepFlag(TASK, "W8", "next", true), "W8", "next", false), TASK);
+  assert.throws(() => withStepFlag(TASK, "W99", "next", true), /W99/);
 });
 
 test("Pick completes the choice, defers the options not picked, and records the pick", async (t) => {

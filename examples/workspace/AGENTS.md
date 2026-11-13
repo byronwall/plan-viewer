@@ -39,7 +39,7 @@ check_in: 2026-10-28  # optional; the viewer's status menu writes it for waiting
 
 Then, in any order:
 
-- `## Work breakdown`: nested bullets `- W1.2: Title [status] (after: W1.1)`. IDs are unique within the task; `after` lists prerequisites.
+- `## Work breakdown`: nested bullets `- W1.2: Title [status] (after: W1.1)`. IDs are unique within the task; `after` lists prerequisites. A trailing `{next}` (alone or beside the kind and size) marks a step Up next: when asked to process what's next, run `plan-viewer next`, work through those steps in order, and remove `next` once a step is done or handed to its own session.
 - `## Next actions`: a `###` heading per action, an optional `Work item: W1.2` line, and a fenced `prompt` block an agent can carry out on its own.
 - `## Updates`: dated bullets, newest first.
 - `## Chats`: links to the conversations that worked on the task.
