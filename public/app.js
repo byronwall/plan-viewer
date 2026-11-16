@@ -660,10 +660,16 @@ function renderDiagramsPage() {
     elements.chunks.innerHTML = `<section class="library-list"><p class="library-intro">Loading diagrams…</p></section>`;
     return;
   }
-  elements.chunks.innerHTML = diagramsPageHtml(state.diagrams, state.documents, query, ago);
+  elements.chunks.innerHTML = diagramsPageHtml(state.diagrams, state.documents, query, ago, new URLSearchParams(location.search).get("by") || "");
   if (query) filterDiagrams(elements.chunks, query);
 }
 
+elements.chunks.addEventListener("click", (event) => {
+  const by = event.target.closest("[data-diagrams-by]");
+  if (!by || state.view !== "diagrams") return;
+  setOverlayParams({ by: by.dataset.diagramsBy });
+  renderDiagramsPage();
+});
 elements.chunks.addEventListener("input", (event) => {
   const filter = event.target.closest(".diagram-filter");
   if (!filter) return;
@@ -675,7 +681,7 @@ elements.chunks.addEventListener("keydown", (event) => {
   if (!filter) return;
   if (event.key === "Escape" && filter.value) { event.stopPropagation(); filter.value = ""; filter.dispatchEvent(new Event("input", { bubbles: true })); }
   else if (event.key === "Escape") filter.blur();
-  else if (event.key === "Enter") elements.chunks.querySelector(".diagram-card:not([hidden])")?.click();
+  else if (event.key === "Enter") [...elements.chunks.querySelectorAll(".diagram-card")].find((card) => !card.closest("[hidden]"))?.click();
 });
 
 document.addEventListener("keydown", (event) => {
@@ -953,7 +959,7 @@ function closeComposer(returnFocus = false) {
 
 // Images in an open overlay (an issue's description) page among themselves; elsewhere among the document's.
 function imageViewerItems(trigger) {
-  return [...(trigger.closest("dialog") || elements.chunks).querySelectorAll(".markdown-image-trigger:not([hidden])")].map((trigger, index) => {
+  return [...(trigger.closest("dialog") || elements.chunks).querySelectorAll(".markdown-image-trigger:not([hidden])")].filter((trigger) => !trigger.closest("[hidden]")).map((trigger, index) => {
     const image = trigger.querySelector(".markdown-image");
     return {
       trigger,

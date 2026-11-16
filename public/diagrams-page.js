@@ -1,5 +1,6 @@
-// The Diagrams page (`?view=diagrams`): every `.draft` in the workspace as thumbnails, one row per task or folder,
-// newest first. A card opens the image viewer's diagram mode, with every card on the page in its rail.
+// The Diagrams page (`?view=diagrams`): every `.draft` in the workspace, by default as one table sorted by when each
+// was last saved, or (`&by=task`) as thumbnails with one row per task or folder. A thumbnail opens the image viewer's
+// diagram mode, with every diagram on the page in its rail.
 import { diagramHref, documentHref, escapeHtml } from "./markdown.js";
 
 const STATUS = { open: "Open", active: "Active", waiting: "Waiting", deferred: "Deferred", completed: "Completed" };
@@ -36,6 +37,28 @@ function card(diagram, group, query) {
   </button>`;
 }
 
+// The group a diagram belongs to, for the By task view and for the task column of the list.
+function groupOf(diagram, groups) {
+  return groups.find((group) => group.items.includes(diagram));
+}
+
+function listRow(diagram, group, query, ago) {
+  const { doc } = group;
+  const task = doc?.task;
+  const where = task
+    ? `<a class="diagram-row-link markdown-document-link" href="${escapeHtml(documentHref(doc.path, ""))}" data-document-path="${escapeHtml(doc.path)}" data-document-anchor=""><code>${escapeHtml(task.id)}</code><span>${escapeHtml(task.title)}</span></a>`
+    : `<span class="diagram-row-folder"><code>${escapeHtml(group.key)}/</code></span>`;
+  const modified = new Date(diagram.modified);
+  return `<div class="diagram-row" role="row" data-search="${escapeHtml(searchText(diagram, group))}">
+    <button class="markdown-image-trigger diagram-thumb diagram-card diagram-row-open" type="button" data-diagram="${escapeHtml(diagram.path)}" aria-label="Open the ${escapeHtml(diagram.title)} diagram">
+      <span class="diagram-thumb-frame"><img class="markdown-image" src="${escapeHtml(diagramHref(diagram.path))}" alt="${escapeHtml(diagram.title)}" loading="lazy" decoding="async"></span>
+      <span class="diagram-card-text"><strong data-title="${escapeHtml(diagram.title)}">${mark(diagram.title, query)}</strong>${diagram.subtitle ? `<span>${escapeHtml(diagram.subtitle)}</span>` : ""}<code>${escapeHtml(diagram.path)}</code></span>
+    </button>
+    <span class="diagram-row-task">${where}${task ? `<span class="diagram-group-status" data-status="${escapeHtml(task.status)}">${STATUS[task.status] || escapeHtml(task.status)}</span>` : ""}</span>
+    <time class="diagram-row-time" datetime="${modified.toISOString()}" title="${escapeHtml(modified.toLocaleString())}">${ago(diagram.modified)} ago</time>
+  </div>`;
+}
+
 function groupHead(group, ago) {
   const { doc } = group;
   const task = doc?.task;
@@ -50,7 +73,7 @@ function groupHead(group, ago) {
   return `<header class="diagram-group-head">${title}<span class="diagram-group-meta">${facts}</span></header>`;
 }
 
-export function diagramsPageHtml(diagrams, documents, query, ago) {
+export function diagramsPageHtml(diagrams, documents, query, ago, by = "") {
   const groups = diagramGroups(diagrams, documents);
   const places = groups.length;
   const intro = diagrams.length
@@ -58,8 +81,11 @@ export function diagramsPageHtml(diagrams, documents, query, ago) {
     : "No diagrams yet. Write a <code>.draft</code> beside a task and embed it with <code>![What it shows](TASK-NNNN-assets/x.draft)</code>; it shows here and in the task.";
   const q = query.trim().toLowerCase();
   return `<section class="library-list diagram-index" aria-label="Diagrams">
-    <div class="diagram-index-bar"><p class="library-intro">${intro}</p>${diagrams.length ? `<input class="diagram-filter" type="search" value="${escapeHtml(query)}" placeholder="Filter by title, task or file" aria-label="Filter diagrams (/)" spellcheck="false"><kbd class="diagram-filter-key">/</kbd>` : ""}</div>
-    ${groups.map((group) => `<section class="diagram-group" data-group="${escapeHtml(group.key)}">${groupHead(group, ago)}<div class="diagram-strip">${group.items.map((diagram) => card(diagram, group, q)).join("")}</div></section>`).join("")}
+    <div class="diagram-index-bar"><p class="library-intro">${intro}</p>${diagrams.length ? `<span class="code-segment diagram-by" role="group" aria-label="Arrange diagrams"><button type="button" data-diagrams-by="" aria-pressed="${by !== "task"}">By date</button><button type="button" data-diagrams-by="task" aria-pressed="${by === "task"}">By task</button></span><input class="diagram-filter" type="search" value="${escapeHtml(query)}" placeholder="Filter by title, task or file" aria-label="Filter diagrams (/)" spellcheck="false"><kbd class="diagram-filter-key">/</kbd>` : ""}</div>
+    ${by === "task" ? groups.map((group) => `<section class="diagram-group" data-group="${escapeHtml(group.key)}">${groupHead(group, ago)}<div class="diagram-strip">${group.items.map((diagram) => card(diagram, group, q)).join("")}</div></section>`).join("") : `<div class="diagram-table" role="table" aria-label="Diagrams by date modified">
+      <div class="diagram-row diagram-row-head" role="row"><span>Diagram</span><span>Task</span><span>Modified</span></div>
+      ${[...diagrams].sort((a, b) => b.modified - a.modified).map((diagram) => listRow(diagram, groupOf(diagram, groups), q, ago)).join("")}
+    </div>`}
     <p class="library-intro diagram-none" hidden>No diagram matches “<span></span>”.</p>
   </section>`;
 }
@@ -80,6 +106,13 @@ export function filterDiagrams(container, query) {
     }
     group.hidden = !inGroup;
     shown += inGroup;
+  }
+  for (const row of container.querySelectorAll(".diagram-row[data-search]")) {
+    const match = !q || row.dataset.search.includes(q);
+    row.hidden = !match;
+    const title = row.querySelector("[data-title]");
+    title.innerHTML = mark(title.dataset.title, q);
+    shown += match;
   }
   const none = container.querySelector(".diagram-none");
   if (none) {

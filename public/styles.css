@@ -2856,6 +2856,36 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
   .diagram-group-meta { margin-left: 0; }
 }
 .library-page.diagrams-page { max-width: 1480px; }
+.diagram-by { flex: none; }
+.diagram-by button[aria-pressed="true"] { font-weight: inherit; }
+/* By date: one table, newest first; a thumbnail and title that open the viewer, the task, and when it was saved. */
+.diagram-table { display: grid; }
+.diagram-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px) 84px; align-items: center; gap: 16px; border-bottom: 1px solid var(--line); padding: 6px 4px; }
+.diagram-row[hidden] { display: none; }
+.diagram-row-head { position: sticky; top: 0; z-index: 1; background: var(--paper); padding-block: 6px; color: var(--muted); font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.diagram-row-head span:last-child, .diagram-row-time { text-align: right; }
+.markdown-image-trigger.diagram-row-open { width: auto; min-width: 0; display: grid; grid-template-columns: 148px minmax(0, 1fr); grid-template-rows: none; align-items: center; gap: 14px; text-align: left; }
+.diagram-row-open .diagram-thumb-frame { height: 84px; }
+.diagram-row-open .diagram-card-text { gap: 2px; }
+.diagram-row-open .diagram-card-text strong { white-space: normal; font-size: .88rem; }
+.diagram-row-open .diagram-card-text code { overflow: hidden; color: var(--muted); font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.diagram-row-task { min-width: 0; display: grid; gap: 1px; font-size: .82rem; }
+.diagram-row-task a.diagram-row-link { color: var(--ink); text-decoration: none; }
+.diagram-row-task a.diagram-row-link::after { content: none; }
+.diagram-row-task a.diagram-row-link:hover span { color: var(--action-ink); }
+.diagram-row-task a.diagram-row-link code { color: var(--action-ink); font-weight: 600; text-decoration: none; }
+.diagram-row-task a { min-width: 0; display: flex; gap: 8px; align-items: baseline; }
+.diagram-row-task a code { flex: none; font-size: .74rem; }
+.diagram-row-task a span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diagram-row-task .diagram-group-status { font-size: .72rem; }
+.diagram-row-folder code { color: var(--muted); font-size: .74rem; }
+.diagram-row-time { color: var(--muted); font-size: .78rem; white-space: nowrap; }
+@media (max-width: 760px) {
+  .diagram-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .diagram-row-head { display: none; }
+  .diagram-row-task { grid-column: 1; grid-row: 2; }
+  .diagram-row-time { grid-column: 2; grid-row: 2; }
+}
 .diagram-index .diagram-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); }
 .diagram-index .markdown-image-trigger.diagram-card { width: auto; }
 @media (max-width: 760px) { .diagram-index .diagram-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
