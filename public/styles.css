@@ -2819,7 +2819,8 @@ li > .diagram-strip { margin: 6px 0 8px; }
 .image-viewer-thumbnail.is-diagram { background: #f6f5f1; } .image-viewer-thumbnail.is-diagram img { object-fit: contain; padding: 4px; }
 
 /* Diagrams page: one row of thumbnails per task or folder, under a one-line header; a filter that marks its match. */
-.diagram-index { gap: 26px; }
+.diagram-index { gap: 14px; }
+.diagram-group:not([data-folded]) { margin-bottom: 10px; }
 .diagram-index-bar { display: flex; align-items: center; gap: 12px; }
 .diagram-index-bar .library-intro { flex: 1; min-width: 0; }
 .diagram-index-bar .library-intro code { font-size: .78rem; }
@@ -2865,9 +2866,9 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .diagram-index[data-as="large"] .diagram-strip { grid-template-columns: repeat(auto-fill, minmax(min(100%, 600px), 1fr)); }
 .diagram-index .markdown-image-trigger.diagram-card:not(.diagram-row-open) { grid-template-rows: auto auto; gap: 8px; }
 .diagram-card:not(.diagram-row-open) .diagram-thumb-frame { aspect-ratio: 16 / 10; padding: 10px; }
-.diagram-card:not(.diagram-row-open) .diagram-card-text strong { font-size: .92rem; }
-.diagram-card:not(.diagram-row-open) .diagram-card-text > span { font-size: .8rem; -webkit-line-clamp: 2; }
-.diagram-card-text > .diagram-card-meta { display: block; margin-top: 2px; font-size: .72rem; }
+.diagram-card:not(.diagram-row-open) .diagram-card-text strong { font-size: .9rem; line-height: 1.35; }
+.diagram-card:not(.diagram-row-open) .diagram-card-text > span { font-size: .8rem; line-height: 1.4; -webkit-line-clamp: 2; }
+.diagram-card-text > .diagram-card-meta { display: block; margin-top: 3px; color: #7a8497; font-size: .74rem; }
 .diagram-card-meta code { font-size: .7rem; }
 .diagram-index .diagram-group { gap: 12px; }
 .diagram-project { height: 28px; max-width: 180px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 0 6px; color: var(--ink); font: .78rem/1 system-ui, sans-serif; }
@@ -2875,10 +2876,18 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .diagram-fold-all { flex: none; height: 28px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 0 10px; color: var(--muted); font: .78rem/1 system-ui, sans-serif; transition: background-color 140ms, color 140ms; }
 .diagram-fold-all:hover { background: var(--hover-field); color: var(--ink); }
 .diagram-fold-all:active { background: var(--quiet-field); }
-.diagram-fold { flex: none; align-self: center; width: 22px; height: 22px; margin-right: -8px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; position: relative; transition: background-color 140ms, color 140ms; }
-.diagram-fold::before { content: ""; position: absolute; left: 7px; top: 6px; width: 6px; height: 6px; border: solid currentColor; border-width: 0 1.6px 1.6px 0; transform: rotate(45deg); transition: transform 140ms ease; }
-.diagram-group[data-folded] .diagram-fold::before { transform: rotate(-45deg); top: 8px; }
-.diagram-fold:hover { background: var(--hover-field); color: var(--ink); }
+.diagram-fold { flex: none; width: 20px; height: 20px; margin-right: -6px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; position: relative; transition: color 140ms; }
+.diagram-fold::before { content: ""; position: absolute; inset: 0; margin: auto; width: 6px; height: 6px; border: solid currentColor; border-width: 0 1.6px 1.6px 0; transform: translateY(-1.5px) rotate(45deg); transition: transform 140ms ease; }
+.diagram-group[data-folded] .diagram-fold::before { transform: translateX(-1.5px) rotate(-45deg); }
+.diagram-group-head[data-diagram-fold-head] { min-height: 28px; align-items: center; cursor: pointer; border-radius: 6px; user-select: none; }
+.diagram-group-head[data-diagram-fold-head]:hover .diagram-fold { color: var(--ink); }
+.diagram-group-head[data-diagram-fold-head]:hover .diagram-group-title strong { color: var(--action-ink); }
+.diagram-index .diagram-group-title { align-items: center; gap: 10px; cursor: pointer; }
+.diagram-index .diagram-group-title strong { font-size: 1.02rem; font-weight: 650; letter-spacing: -.005em; }
+.diagram-index .diagram-group-title code { font-size: .78rem; }
+.diagram-index .diagram-group-meta { font-size: .78rem; }
+.diagram-index .diagram-group-title a.diagram-row-link { display: inline; }
+.diagram-index .diagram-group-title a.diagram-row-link:hover code { text-decoration: underline; }
 .diagram-group[data-folded] > :not(.diagram-group-head) { display: none; }
 .diagram-row-status { color: var(--muted); font-size: .72rem; }
 .diagram-row-task .diagram-row-status .diagram-group-status { font-size: inherit; }

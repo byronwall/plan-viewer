@@ -666,8 +666,8 @@ function renderDiagramsPage() {
 }
 
 elements.chunks.addEventListener("click", (event) => {
-  const fold = event.target.closest("[data-diagram-fold]");
-  if (fold && state.view === "diagrams") { const group = fold.closest(".diagram-group"); group.toggleAttribute("data-folded"); return; }
+  const fold = event.target.closest("[data-diagram-fold-head]");
+  if (fold && state.view === "diagrams" && !event.target.closest("a")) { fold.closest(".diagram-group").toggleAttribute("data-folded"); return; }
   const all = event.target.closest("[data-diagrams-fold-all]");
   if (all && state.view === "diagrams") { setOverlayParams({ fold: all.dataset.diagramsFoldAll }); renderDiagramsPage(); return; }
   const choice = event.target.closest("[data-diagrams-by], [data-diagrams-as]");

@@ -88,17 +88,17 @@ function listRow(diagram, group, query, ago, documents) {
 function groupHead(group, ago) {
   const { doc } = group;
   const task = doc?.task;
-  let name;
-  if (group.by === "task") name = task ? `<code>${escapeHtml(task.id)}</code><strong>${escapeHtml(task.title)}</strong>` : `<strong>${escapeHtml(doc?.title || group.key)}</strong>`;
-  else name = `<strong>${escapeHtml(group.label)}</strong>`;
-  const title = doc ? `<a class="diagram-group-title markdown-document-link" href="${escapeHtml(documentHref(doc.path, ""))}" data-document-path="${escapeHtml(doc.path)}" data-document-anchor="">${name}</a>` : `<span class="diagram-group-title">${name}</span>`;
+  const folded = `<button class="diagram-fold" type="button" data-diagram-fold aria-label="Collapse or expand ${escapeHtml(group.label || group.key)}"></button>`;
+  const name = group.by === "task" && task ? `${doc ? taskLink(doc, `<code>${escapeHtml(task.id)}</code>`) : `<code>${escapeHtml(task.id)}</code>`}<strong>${escapeHtml(task.title)}</strong>`
+    : `<strong>${escapeHtml(group.by === "task" ? doc?.title || group.key : group.label)}</strong>`;
+  const title = `<span class="diagram-group-title">${name}</span>`;
   const facts = [
     task && group.by === "task" ? statusText(task) : "",
     group.by === "task" ? (task?.project ? escapeHtml(task.project) : doc ? "" : `<code>${escapeHtml(group.key)}/</code>`) : "",
     `${group.items.length} ${group.items.length === 1 ? "diagram" : "diagrams"}`,
     group.by === "day" ? "" : `${ago(group.newest)} ago`,
   ].filter(Boolean).join('<span aria-hidden="true"> · </span>');
-  return `<header class="diagram-group-head"><button class="diagram-fold" type="button" data-diagram-fold aria-label="Collapse or expand ${escapeHtml(group.label || group.key)}"></button>${title}<span class="diagram-group-meta">${facts}</span></header>`;
+  return `<header class="diagram-group-head" data-diagram-fold-head>${folded}${title}<span class="diagram-group-meta">${facts}</span></header>`;
 }
 
 const segment = (label, options, current, attribute) => `<span class="diagram-control"><span class="diagram-control-label">${label}</span><span class="code-segment" role="group" aria-label="${label}">${options.map(([value, text]) => `<button type="button" ${attribute}="${value}" aria-pressed="${value === current}">${text}</button>`).join("")}</span></span>`;
