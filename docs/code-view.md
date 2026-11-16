@@ -116,3 +116,4 @@ When a list gets too long to read, add a picture of its shape: the subway rail f
 - GitHub comments inside the PR overview ("OK with excluding the GH comments for now", Oct 16).
 - A dependency view beside the change map.
 - A wide-screen commit layout with the file list and diff side by side.
+- Stacks board polish left from the November 16 100x pass (daily-planning TASK-0127 W3): the toolbar wraps at 1100px, the board wraps to three columns at 1440px, and the skill buttons cover the end of a row's title on hover.
