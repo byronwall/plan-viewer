@@ -845,7 +845,16 @@ function authorTrigger() {
   const label = picked.length === 1 ? authorName(picked[0].key) : picked.length ? `${picked.length} authors` : "Authors";
   const marks = picked.length ? `<i class="code-avatar-stack">${picked.slice(0, 3).map((entry) => avatar(entry.login, entry.key)).join("")}</i>` : icon("person");
   return `<button type="button" class="code-branch-trigger code-author-trigger${picked.length ? " is-active" : ""}" popovertarget="code-authors" data-code-author-trigger>${marks}<span class="code-trigger-label">${escapeHtml(label)}</span><span class="code-count">${stats.length}</span><kbd>A</kbd></button>`
-    + (picked.length ? `<button type="button" class="code-more" data-code-author-clear>Clear</button>` : "");
+    // Mine is the one-click "just my work / everyone's" switch; Clear stays for any other pick.
+    + (!ui.data.me ? "" : `<div class="code-segment code-mine"><button type="button" data-code-mine aria-pressed="${mineOnly()}" data-tip="${mineOnly() ? "Show everyone's" : "Show only yours"}  (M)">Mine</button></div>`)
+    + (picked.length && !mineOnly() ? `<button type="button" class="code-more" data-code-author-clear>Clear</button>` : "");
+}
+const mineOnly = () => ui.authors.size === 1 && ui.authors.has(ui.data.me);
+function toggleMine() {
+  ui.authors = mineOnly() ? new Set() : new Set([ui.data.me]);
+  syncUrl();
+  render({ animate: true });
+  renderAuthorList();
 }
 
 function toggleAuthor(key, only = false) {
@@ -3117,6 +3126,7 @@ async function handleClick(event) {
     if (dataset.repoOnly) { toggleRepo(dataset.repoOnly, true); return host.querySelector("#code-repos").hidePopover(); }
     if ("codeRepoClear" in dataset) { ui.repos.clear(); syncUrl(); render({ animate: true }); return renderRepoList(); }
     if (dataset.authorOnly) { toggleAuthor(dataset.authorOnly, true); return host.querySelector("#code-authors").hidePopover(); }
+    if ("codeMine" in dataset) return toggleMine();
     if ("codeAuthorClear" in dataset) { ui.authors.clear(); syncUrl(); render({ animate: true }); return renderAuthorList(); }
     if (dataset.branchOnly) { toggleBranch(dataset.branchOnly, true); return host.querySelector("#code-branches").hidePopover(); }
     if (dataset.codePrefix) { ui.prefixes.has(dataset.codePrefix) ? ui.prefixes.delete(dataset.codePrefix) : ui.prefixes.add(dataset.codePrefix); return render({ animate: true }); }
@@ -3224,7 +3234,7 @@ function move(step) {
 // Page keys run before the global shortcuts (which skip prevented events), so J/K move rows here instead of sections.
 function handleKey(event) {
   if (!host?.querySelector(".code-surface") || event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
-  if (document.querySelector("dialog[open], :popover-open:not(.code-tip)")) return;
+  if (document.querySelector("dialog[open], :popover-open:not(.code-tip):not(.tab-brief)")) return;
   const filter = event.target.matches?.("[data-code-filter]");
   if (event.target.closest?.("input, textarea, select, [contenteditable]")) {
     // Esc clears the search; on an empty list it also clears the filters, as the empty state's button says
@@ -3245,6 +3255,7 @@ function handleKey(event) {
     escape: () => { if (!host.querySelector("[data-code-reset]")) return; resetFilters(); render({ animate: true }); },
     b: () => ui.tab === "commits" && host.querySelector("#code-branches")?.showPopover(),
     a: () => host.querySelector("#code-authors")?.showPopover(),
+    m: () => ["prs", "commits"].includes(ui.tab) && toggleMine(),
     g: () => host.querySelector("#code-repos")?.showPopover(),
     enter: () => item.commit ? openDiff() : item.pr ? openPrOverlay(item.pr.slug, item.pr.number) : item.tree && openWorktreeOverlay(item.tree.path),
     e: () => tree && post("open", { kind: "vscode", path: tree.path }),
@@ -3262,7 +3273,7 @@ function handleKey(event) {
     },
     1: () => skill(0), 2: () => skill(1), 3: () => skill(2), 4: () => skill(3),
   };
-  const always = ["arrowdown", "arrowup", "j", "k", "f", "r", "a", "b", "g", "escape"];
+  const always = ["arrowdown", "arrowup", "j", "k", "f", "r", "a", "b", "g", "m", "escape"];
   if (key === "a" && !["prs", "commits"].includes(ui.tab)) return; // elsewhere A stays the global Tasks shortcut
   if (!actions[key] || (!always.includes(key) && !item.tree && !item.pr && !item.commit)) return;
   event.preventDefault();

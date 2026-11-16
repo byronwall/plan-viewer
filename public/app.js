@@ -4091,7 +4091,7 @@ document.addEventListener("keydown", (event) => {
     rows[at < 0 ? (key === "arrowdown" ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, at + (key === "arrowdown" ? 1 : -1)))].focus();
     return;
   }
-  if (state.openComposer || document.querySelector(":popover-open:not(.code-tip)")) return;
+  if (state.openComposer || document.querySelector(":popover-open:not(.code-tip):not(.tab-brief)")) return;
   const shortcut = shortcuts.find(shortcut => shortcut.run && shortcut.keys.some(binding => binding.toLowerCase() === key));
   if (shortcut) { event.preventDefault(); shortcut.run(); }
 });

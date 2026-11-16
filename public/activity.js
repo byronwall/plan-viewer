@@ -363,7 +363,7 @@ document.addEventListener("pointerover", (event) => {
 });
 window.addEventListener("keydown", (event) => {
   if (!live() || event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
-  if (document.querySelector("dialog[open]") || document.querySelector(":popover-open:not(.code-tip)")) return;
+  if (document.querySelector("dialog[open]") || document.querySelector(":popover-open:not(.code-tip):not(.tab-brief)")) return;
   if (event.target.closest?.("input, textarea, select, [contenteditable]")) {
     if (!event.target.matches?.("[data-activity-filter]")) return;
     if (event.key === "Escape") { ui.query = ""; event.target.value = ""; event.target.blur(); syncUrl(); render(); event.preventDefault(); }

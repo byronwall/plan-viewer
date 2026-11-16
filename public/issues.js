@@ -949,7 +949,7 @@ function handleKey(event) {
     if (event.target.matches?.("[data-people-query]") && event.key === "Enter") { host.querySelector("[data-issue-person]")?.click(); event.preventDefault(); }
     return;
   }
-  if (document.querySelector(":popover-open:not(.code-tip)")) return; // the tooltip stays a popover while hidden
+  if (document.querySelector(":popover-open:not(.code-tip):not(.tab-brief)")) return; // the tooltip stays a popover while hidden
   const key = event.key.toLowerCase();
   const issue = byKey().get(ui.sel);
   const keys = issue && ui.selected.has(issue.key) ? [...ui.selected] : issue ? [issue.key] : [...ui.selected];
