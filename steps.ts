@@ -494,7 +494,8 @@ export async function listNotes(root: string): Promise<Step[]> {
       const path = `${folder}/${name}`;
       const text = await readFile(join(root, path), "utf8");
       const fields = outboundFields(text);
-      if (fields.note !== "open") continue;
+      // Agent friction flags (`kind: agent-flag`, from the workspace's scripts/flag) are the daily retro's input, not Up next.
+      if (fields.note !== "open" || fields.kind === "agent-flag") continue;
       const title = text.match(/^# (.+)$/m)?.[1] || name;
       const created = Date.parse(fields.created?.replace(" ", "T") || "") || Date.now();
       notes.push({

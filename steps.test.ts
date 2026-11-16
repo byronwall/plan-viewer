@@ -105,6 +105,8 @@ test("a saved note keeps its prompt and images, waits under Up next, and leaves 
   assert.equal(task.path, "tasks/TASK-0001-assets/notes/2026-11-13-140509-tighten-the-retry-section.md");
   assert.equal(loose.path, "reference/notes/2026-11-13-140509-idea-for-the-plan.md");
   assert.equal(await readFile(join(root, "tasks/TASK-0001-assets/notes/2026-11-13-140509-tighten-the-retry-section-1.png"), "utf8"), "png");
+  await writeFile(join(root, "reference/notes/2026-11-13-140600-flag-x.md"), "---\nflag: open\nkind: agent-flag\n---\n\n# 🚩 x\n");
+  await writeFile(join(root, "reference/notes/2026-11-13-140601-flag-y.md"), "---\nnote: open\nkind: agent-flag\n---\n\n# 🚩 y\n");
   const notes = await listNotes(root);
   assert.deepEqual(notes.map((n) => [n.task, n.title, n.next, n.move, n.kind]), [["", "Idea for the plan", true, "agent", "note"], ["TASK-0001", "Tighten the retry section", true, "agent", "note"]]);
   assert.match(notes[1].prompt!, /^Source file: tasks\/TASK-0001\.md[\s\S]*-1\.png$/m);
