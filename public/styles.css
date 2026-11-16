@@ -2656,12 +2656,11 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 @container doc-dock (max-width: 480px) { .doc-dock-buttons { flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; } }
 .work-item-main:focus { outline: none; }
 
-/* Activity page: a white working surface; a sticky toolbar, the list, and an inspector beside it on wide screens. */
-body:has(.activity-page), body:has(.activity-page) .reading-pane { background: var(--paper); }
+/* Activity page: like the other list pages, white cards on the gray canvas; a sticky toolbar, the list, and an inspector beside it on wide screens. */
 .activity-page { max-width: none; --src-tasks: #3157d5; --src-daily: #0f8a8a; --src-topics: #8a94a6; --src-diagrams: #b4632a; --src-jira: #e07a00; --src-linear: #6e56cf; --src-github: #1a7f37; --src-prs: #24292f; --src-slack: #611f69; }
 .src-tasks { --src: var(--src-tasks); } .src-daily { --src: var(--src-daily); } .src-topics { --src: var(--src-topics); } .src-diagrams { --src: var(--src-diagrams); } .src-jira { --src: var(--src-jira); } .src-linear { --src: var(--src-linear); } .src-github { --src: var(--src-github); } .src-prs { --src: var(--src-prs); } .src-slack { --src: var(--src-slack); }
 .activity-surface { min-width: 0; max-width: 1740px; } /* on very wide monitors the rest stays empty rather than stretching rows */
-.activity-toolbar { position: sticky; top: 0; z-index: 8; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: -8px 0 0; padding: 8px 0; background: var(--paper); border-bottom: 1px solid var(--line); }
+.activity-toolbar { position: sticky; top: 0; z-index: 8; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: -8px 0 0; padding: 8px 0; background: var(--canvas); }
 .activity-toolbar .code-filter { flex: 0 1 220px; }
 .activity-dot { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 2px; background: var(--src); vertical-align: 1px; }
 .activity-when-controls { display: inline-flex; align-items: center; gap: 8px; }
@@ -2684,7 +2683,7 @@ body:has(.activity-page), body:has(.activity-page) .reading-pane { background: v
 .activity-inspector { display: none; }
 @media (min-width: 1180px) {
   .activity-split { grid-template-columns: minmax(0, 960px) minmax(420px, 1fr); }
-  .activity-inspector { display: block; margin-top: 8px; }
+  .activity-inspector { display: block; }
 }
 .activity-table { width: 100%; table-layout: fixed; }
 .activity-table th:nth-child(1) { width: 62px; } .activity-table th:nth-child(2) { width: 18px; } .activity-table th:nth-child(4) { width: 30px; } .activity-table th:nth-child(5) { width: 128px; } .activity-table th:nth-child(6) { width: 34px; }

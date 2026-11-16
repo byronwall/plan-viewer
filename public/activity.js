@@ -175,7 +175,7 @@ function render() {
     : `<p class="code-muted activity-empty">${loading.length ? "Loading…" : "Nothing here. Widen the range, pick another day, or clear the filter."}</p>`;
   const scroll = ui.host.querySelector(".activity-inspector")?.scrollTop || 0;
   const hadInspector = ui.host.querySelector(".activity-inspector");
-  if (!hadInspector) ui.host.innerHTML = `<section class="activity-surface"><div data-region="toolbar"></div><div class="activity-split"><div class="activity-list" data-region="list"></div><aside class="activity-inspector code-detail" aria-live="polite"></aside></div></section>`;
+  if (!hadInspector) ui.host.innerHTML = `<section class="activity-surface"><div data-region="toolbar"></div><div class="activity-split"><div class="activity-list code-list" data-region="list"></div><aside class="activity-inspector code-detail" aria-live="polite"></aside></div></section>`;
   ui.host.querySelector('[data-region="toolbar"]').outerHTML = toolbar;
   ui.host.querySelector('[data-region="list"]').innerHTML = table;
   ui.host.style.setProperty("--code-bar-h", `${ui.host.querySelector(".activity-toolbar").offsetHeight}px`);
