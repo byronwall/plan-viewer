@@ -340,7 +340,7 @@ export function isViewableDocumentPath(path: string) {
     || /^tasks\/TASK-\d{4}(\.md|-assets\/.+\.(md|txt))$/.test(normalized);
 }
 
-export function watchMarkdownSources(onChange: (path: string) => void, root = ROOT, onDiagram?: (path: string) => void) {
+export function watchMarkdownSources(onChange: (path: string) => void, root = ROOT, onDiagram?: (path: string) => void, onAsset?: (path: string) => void) {
   const watchers: FSWatcher[] = [];
   const pending = new Map<string, NodeJS.Timeout>();
 
@@ -350,6 +350,11 @@ export function watchMarkdownSources(onChange: (path: string) => void, root = RO
         if (!fileName) return;
         const changedPath = join(source, fileName.toString()).replaceAll("\\", "/");
         if (onDiagram && changedPath.endsWith(".draft")) return onDiagram(changedPath);
+        if (onAsset && /\.(png|jpe?g|gif|webp|svg)$/i.test(changedPath)) {
+          clearTimeout(pending.get(changedPath));
+          pending.set(changedPath, setTimeout(() => { pending.delete(changedPath); onAsset(changedPath); }, 90));
+          return;
+        }
         if (!isViewableDocumentPath(changedPath)) return;
         clearTimeout(pending.get(changedPath));
         pending.set(changedPath, setTimeout(() => {
@@ -1249,10 +1254,12 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 export function startServer(port = PORT) {
   const server = createServer(handleRequest);
   seedSnapshots().catch(() => {});
-  const closeWatchers = watchMarkdownSources(broadcastMarkdownChange, ROOT, (path) => {
-    const message = `event: diagram\ndata: ${JSON.stringify({ path })}\n\n`;
+  const send = (type: string) => (path: string) => {
+    const message = `event: ${type}\ndata: ${JSON.stringify({ path })}\n\n`;
     for (const client of liveClients) client.write(message);
-  });
+  };
+  // An image saved under a source folder redraws its pictures in open tabs, as a saved `.draft` does.
+  const closeWatchers = watchMarkdownSources(broadcastMarkdownChange, ROOT, send("diagram"), send("asset"));
   codeDashboard.startBackgroundRefresh();
   issueTracker.startBackgroundRefresh();
   // Edits to viewer.config.json apply without a restart; pages pick them up on their next load. A broken edit keeps the

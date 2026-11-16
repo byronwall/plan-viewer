@@ -235,7 +235,7 @@ function diagramPanel(row) {
     ["Saved", `${when(diagram.modified)} ago<span class="code-muted">${escapeHtml(new Date(diagram.modified).toLocaleString())}</span>`],
     ["Path", `<code>${escapeHtml(diagram.path)}</code>`],
   ]);
-  return `<div class="code-detail-head"><span class="activity-head-icon src-diagrams">${SOURCE_ICONS.diagrams}</span><h3>${escapeHtml(diagram.title)}</h3>${tools("Open beside its source", "", new URL(row.href, location.href).href)}</div>${diagram.subtitle ? `<p class="activity-diagram-subtitle">${escapeHtml(diagram.subtitle)}</p>` : ""}<button type="button" class="activity-diagram" data-activity-expand aria-label="Open ${escapeHtml(diagram.title)} beside its source"><img src="${escapeHtml(diagramHref(diagram.path))}" alt="${escapeHtml(diagram.title)}"></button>${facts}`;
+  return `<div class="code-detail-head"><span class="activity-head-icon src-diagrams">${SOURCE_ICONS.diagrams}</span><h3>${escapeHtml(diagram.title)}</h3>${tools("Open beside its source", "", new URL(row.href, location.href).href)}</div>${diagram.subtitle ? `<p class="activity-diagram-subtitle">${escapeHtml(diagram.subtitle)}</p>` : ""}<button type="button" class="activity-diagram" data-activity-expand aria-label="Open ${escapeHtml(diagram.title)} beside its source"><img src="${escapeHtml(diagramHref(diagram.path, diagram.modified))}" alt="${escapeHtml(diagram.title)}"></button>${facts}`;
 }
 
 function prPanel(row) {

@@ -5,12 +5,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createLinkMetadataStore, refreshSlackChannels } from "./link-metadata.ts";
 import { claudeNewSessionUrl, CodexDesktopClient, codexNewTaskUrl, taskTitle, withImages } from "./codex-desktop.ts";
-import { delimitedTable, inlineMarkdown, pullRequestRefs, renderMarkdownInRepo, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
+import { assetHref, delimitedTable, diagramHref, inlineMarkdown, pullRequestRefs, renderMarkdownInRepo, markdownExcerpt, markdownHeadingId as clientHeadingId, markdownOutline, renderMarkdown, resolveMarkdownAsset, resolveMarkdownAttachment, resolveMarkdownLink } from "./public/markdown.js";
 import { dateKey, parseDateKey, startOfWeek } from "./public/dates.js";
 import { config, setConfig } from "./public/config.js";
 import { comparePanels, isDiffDiagram, sourceHtml, statementId } from "./public/diagram.js";
 import { taskItems } from "./public/world.js";
-import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, buildDiagramPrompt, listDiagrams, listTaskWorld, renderDiagram, safeAssetPath, withPanels, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
+import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, watchMarkdownSources, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, buildDiagramPrompt, listDiagrams, listTaskWorld, renderDiagram, safeAssetPath, withPanels, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
   const previous = process.env.SLACK_TOKEN;
@@ -935,4 +935,24 @@ test("draws a diff diagram's panels side by side or stacked on request, and leav
   const plain = 'node a "A"\nedge e a -> a "x-y"\n';
   assert.equal(isDiffDiagram(plain), false);
   assert.equal(withPanels(plain, "right"), plain);
+});
+
+test("asset and diagram URLs carry the file's modification time so re-renders never reuse a stale picture", () => {
+  assert.equal(diagramHref("tasks/TASK-0001-assets/a.draft"), "/api/diagram?path=tasks%2FTASK-0001-assets%2Fa.draft");
+  assert.equal(diagramHref("tasks/TASK-0001-assets/a.draft", 1234.6), "/api/diagram?path=tasks%2FTASK-0001-assets%2Fa.draft&v=1235");
+  assert.equal(assetHref("tasks/TASK-0001-assets/a.png", 99), "/api/asset?path=tasks%2FTASK-0001-assets%2Fa.png&v=99");
+});
+
+test("the source watcher reports saved images and diagrams apart from documents", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "watch-assets-"));
+  await mkdir(join(root, "tasks", "TASK-0001-assets"), { recursive: true });
+  const seen: string[] = [];
+  const close = watchMarkdownSources(() => {}, root, (path) => seen.push(`diagram ${path}`), (path) => seen.push(`asset ${path}`));
+  t.after(async () => { close(); await rm(root, { recursive: true, force: true }); });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  await writeFile(join(root, "tasks", "TASK-0001-assets", "shot.png"), "png");
+  await writeFile(join(root, "tasks", "TASK-0001-assets", "flow.draft"), "diagram \"Flow\"\n");
+  for (let i = 0; i < 40 && !(seen.some((line) => line.startsWith("asset")) && seen.some((line) => line.startsWith("diagram"))); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(seen.includes("asset tasks/TASK-0001-assets/shot.png"), seen.join(", "));
+  assert.ok(seen.includes("diagram tasks/TASK-0001-assets/flow.draft"), seen.join(", "));
 });

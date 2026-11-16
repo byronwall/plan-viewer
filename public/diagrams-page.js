@@ -52,7 +52,7 @@ function mark(text, query) {
 const taskLink = (doc, inner) => `<a class="diagram-row-link markdown-document-link" href="${escapeHtml(documentHref(doc.path, ""))}" data-document-path="${escapeHtml(doc.path)}" data-document-anchor="">${inner}</a>`;
 const taskName = (task) => `<code>${escapeHtml(task.id)}</code><span>${escapeHtml(task.title)}</span>`;
 const statusText = (task) => `<span class="diagram-group-status" data-status="${escapeHtml(task.status)}">${STATUS[task.status] || escapeHtml(task.status)}</span>`;
-const frame = (diagram) => `<span class="diagram-thumb-frame"><img class="markdown-image" src="${escapeHtml(diagramHref(diagram.path))}" alt="${escapeHtml(diagram.title)}" loading="lazy" decoding="async"></span>`;
+const frame = (diagram) => `<span class="diagram-thumb-frame"><img class="markdown-image" src="${escapeHtml(diagramHref(diagram.path, diagram.modified))}" alt="${escapeHtml(diagram.title)}" loading="lazy" decoding="async"></span>`;
 const titleHtml = (diagram, query) => `<strong data-title="${escapeHtml(diagram.title)}">${mark(diagram.title, query)}</strong>`;
 
 // Where a diagram came from, one quiet line: the task (unless the group already names it), and when it was saved.

@@ -3,7 +3,7 @@
 // nothing happening are skipped and marked as gaps; days more than two weeks before the newest are faded but stay
 // one drag away. Drag pans, pinch or ⌘-wheel zooms around the cursor.
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
-import { diagramHref, documentHref, escapeHtml } from "./markdown.js";
+import { assetHref, diagramHref, documentHref, escapeHtml } from "./markdown.js";
 import { localTodayKey } from "./dates.js";
 import { workStatusIcon } from "./actions.js";
 import { showStepLayer, stepListHtml } from "./steps-page.js";
@@ -46,7 +46,6 @@ let leaving = false;
 
 const dayNumber = (key) => Date.UTC(...key.split("-").map((part, index) => Number(part) - (index === 1 ? 1 : 0))) / DAY_MS;
 const dayLabel = (key, weekday = true) => new Date(`${key}T12:00:00`).toLocaleDateString(undefined, { ...(weekday ? { weekday: "short" } : {}), month: "short", day: "numeric" });
-const assetHref = (path) => `/api/asset?${new URLSearchParams({ path })}`;
 const fileName = (path) => path.split("/").pop();
 // Update titles carry `code` spans; anything richer stays plain text, since the card is itself a button.
 const codeSpans = (text) => escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</code>");
@@ -243,7 +242,7 @@ export async function openTaskWorld(id, day = "") {
   syncBack();
   // Images and diagrams open in the image viewer together, newest first, grouped by day, so its rail is the task's gallery.
   const visuals = items.filter((item) => item.lane === "image" || item.lane === "diagram").reverse();
-  box.visuals = visuals.map((item) => ({ src: item.lane === "diagram" ? diagramHref(item.path) : assetHref(item.path), alt: item.title, ...(item.lane === "diagram" ? { diagram: item.path } : {}), group: dayLabel(item.day) }));
+  box.visuals = visuals.map((item) => ({ src: item.lane === "diagram" ? diagramHref(item.path, item.modified) : assetHref(item.path, item.modified), alt: item.title, ...(item.lane === "diagram" ? { diagram: item.path } : {}), group: dayLabel(item.day) }));
   const visualIndex = new Map(visuals.map((item, index) => [item, index]));
   const cell = (lane, items) => {
     if (lane === "updates") return capped(items.map((item) => `<button type="button" class="world-card world-update${item.created ? " is-created" : ""}" data-world-peek="tasks/${escapeHtml(id)}.md" data-world-anchor="${item.created ? "" : "updates"}"><span>${codeSpans(item.title)}</span></button>`));
@@ -254,7 +253,7 @@ export async function openTaskWorld(id, day = "") {
     if (lane === "document") return capped(items.map((item) => `<button type="button" class="world-card" data-world-peek="${escapeHtml(item.path)}" title="${escapeHtml(item.path)}"><span>${escapeHtml(item.title)}</span>${item.folder ? `<small>${escapeHtml(item.folder)}</small>` : ""}</button>`));
     if (lane === "file") return capped(items.map((item) => `<button type="button" class="world-file" data-world-copy="${escapeHtml(item.path)}" title="Copy ${escapeHtml(item.path)}">${item.folder ? `<small>${escapeHtml(item.folder)}</small>` : ""}${escapeHtml(fileName(item.path))}</button>`));
     // Pictures past the cap open the viewer at the first one not shown; its rail holds the rest of the day.
-    const thumbs = items.map((item) => `<button type="button" class="world-thumb" data-world-visual="${visualIndex.get(item)}" title="${escapeHtml(item.path)}"><span class="world-thumb-frame"><img src="${escapeHtml(item.lane === "diagram" ? diagramHref(item.path) : assetHref(item.path))}" alt="" loading="lazy" decoding="async"></span><span class="world-thumb-title">${escapeHtml(item.title)}</span></button>`);
+    const thumbs = items.map((item) => `<button type="button" class="world-thumb" data-world-visual="${visualIndex.get(item)}" title="${escapeHtml(item.path)}"><span class="world-thumb-frame"><img src="${escapeHtml(item.lane === "diagram" ? diagramHref(item.path, item.modified) : assetHref(item.path, item.modified))}" alt="" loading="lazy" decoding="async"></span><span class="world-thumb-title">${escapeHtml(item.title)}</span></button>`);
     return `<span class="world-thumbs">${capped(thumbs, (hidden) => `<button type="button" class="world-more world-thumb-more" data-world-visual="${visualIndex.get(items[CELL_ROWS])}">+${hidden} more</button>`)}</span>`;
   };
   if (!columns.length) { scroller.innerHTML = `<p class="world-empty">${escapeHtml(id)} has no updates, plan mentions, work or files yet.</p>`; return; }
@@ -311,7 +310,7 @@ export async function openPortfolio(tasks) {
     if (!dots.length && !pictures.length) return `<div class="world-cell${columnClass(column)}"></div>`;
     const readyHere = here.filter((item) => item.ready).reduce((sum, item) => sum + (item.more || 1), 0);
     const summary = dots.map(([lane, count]) => lane.key === "work" && readyHere ? [count - readyHere && `${count - readyHere} done`, `${readyHere} ready`].filter(Boolean).join(" and ") + " work" : noun(lane, count)).join(", ");
-    return `<button type="button" class="world-cell world-mark${columnClass(column)}" data-world-task="${escapeHtml(row.id)}" data-world-at="${column.day}" title="${escapeHtml(`${row.id} · ${dayLabel(column.day)}: ${summary}`)}">${pictures.map((item) => `<span class="world-mini"><img src="${escapeHtml(item.lane === "diagram" ? diagramHref(item.path) : assetHref(item.path))}" alt="" loading="lazy" decoding="async"></span>`).join("")}<span class="world-dots">${dots.map(([lane, count]) => `<span><i class="world-dot" data-lane="${lane.key}"></i>${count > 1 ? count : ""}</span>`).join("")}</span></button>`;
+    return `<button type="button" class="world-cell world-mark${columnClass(column)}" data-world-task="${escapeHtml(row.id)}" data-world-at="${column.day}" title="${escapeHtml(`${row.id} · ${dayLabel(column.day)}: ${summary}`)}">${pictures.map((item) => `<span class="world-mini"><img src="${escapeHtml(item.lane === "diagram" ? diagramHref(item.path, item.modified) : assetHref(item.path, item.modified))}" alt="" loading="lazy" decoding="async"></span>`).join("")}<span class="world-dots">${dots.map(([lane, count]) => `<span><i class="world-dot" data-lane="${lane.key}"></i>${count > 1 ? count : ""}</span>`).join("")}</span></button>`;
   };
   const rows = rowsData.map((row) => `<button type="button" class="world-lane-label world-task-label" data-world-task="${escapeHtml(row.id)}"><code>${escapeHtml(row.id)}</code><span>${escapeHtml(row.title)}</span></button>${columns.map((column) => cell(row, column)).join("")}`).join("");
   scroller.innerHTML = `<div class="world-grid world-portfolio-grid" style="--columns:${columns.length}"><div class="world-corner"></div>${header}${rows}</div>`;

@@ -4,7 +4,7 @@ import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDocumen
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
 import "./table-fit.js";
-import { delimitedTable, diagramHref, documentHref, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
+import { assetHref, delimitedTable, diagramHref, documentHref, refreshAssetImages, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, connectPlanning, setPeople, ago, copyPrompt, cachedPrIndex, commitLinkMatch, diffSize, hideTip, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, isMyIssue, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { renderActivityPage } from "./activity.js";
@@ -1928,7 +1928,7 @@ function dockDiagrams(doc) {
   const taskId = doc.task?.id || doc.path.match(/^tasks\/(TASK-\d{4})-assets\//)?.[1];
   const rest = taskId ? (state.diagrams || []).filter((diagram) => diagram.task === taskId && !embedded.includes(diagram.path)).map((diagram) => diagram.path) : [];
   return [...embedded.map((path) => ({ path, embedded: true })), ...rest.map((path) => ({ path, embedded: false }))]
-    .map((item) => ({ ...item, title: known.get(item.path)?.title || elements.chunks.querySelector(`[data-diagram="${CSS.escape(item.path)}"] img`)?.alt || item.path.split("/").pop().replace(/\.draft$/, "") }));
+    .map((item) => ({ ...item, modified: known.get(item.path)?.modified, title: known.get(item.path)?.title || elements.chunks.querySelector(`[data-diagram="${CSS.escape(item.path)}"] img`)?.alt || item.path.split("/").pop().replace(/\.draft$/, "") }));
 }
 
 // Panels repeat chunk content, so their copies drop ids (SVG markers excepted) to keep anchors and jumps unique.
@@ -2648,6 +2648,7 @@ function announceChange(change) {
 let diagramListTimer = 0;
 let pendingDiagram = "";
 const LIVE_HANDLERS = {
+  asset: (update) => refreshDiagram(update.path),
   diagram: (update) => {
     refreshDiagram(update.path);
     clearTimeout(diagramListTimer);
@@ -3445,13 +3446,15 @@ async function openDiagramEditor(path) {
   showNotice(response.ok ? "Opening the draftably editor. Saves redraw the diagram here." : result.error || "Could not open the draftably editor.", !response.ok);
 }
 
-// A saved `.draft` redraws every embed of it, the image viewer's included.
+// A saved `.draft` or image redraws every picture of it on the page (embeds, thumbnails, inspectors, the image
+// viewer's rail and stage); views rendered later ask for the new version.
 function refreshDiagram(path) {
-  const src = `${diagramHref(path)}&v=${Date.now()}`;
-  for (const trigger of document.querySelectorAll(`[data-diagram="${CSS.escape(path)}"]`)) trigger.querySelector("img").src = src;
+  refreshAssetImages(path);
   for (const item of imageViewerState.items) {
-    if (item.diagram !== path) continue;
-    item.src = src;
+    const itemPath = item.diagram || (item.src?.includes("/api/asset?") ? new URL(item.src, location.href).searchParams.get("path") : "");
+    if (itemPath !== path) continue;
+    item.src = item.diagram ? diagramHref(path) : assetHref(path);
+    if (!item.diagram) continue;
     if (item === currentDiagram() && elements.imageViewer.open) loadDiagram(item);
     else item.loaded = false;
   }

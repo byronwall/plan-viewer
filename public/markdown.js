@@ -339,13 +339,34 @@ export function documentHref(path, anchor) {
   return `?${query}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
 }
 
-function assetHref(path) {
-  return `/api/asset?${new URLSearchParams({ path })}`;
+// Every asset and diagram URL carries a version: the file's modification time when a listing knows it, or the moment
+// the live stream last said it changed. A browser keeps decoded images in memory by URL for the life of the page and
+// reuses them on re-render without asking the server, so an unversioned URL showed the old picture until a reload.
+const assetVersions = new Map();
+const versioned = (base, path, modified) => {
+  const version = Math.max(assetVersions.get(path) || 0, Number(modified) || 0);
+  return `${base}?${new URLSearchParams(version ? { path, v: String(Math.round(version)) } : { path })}`;
+};
+
+export function assetHref(path, modified) {
+  return versioned("/api/asset", path, modified);
 }
 
 // A `.draft` diagram, drawn from its source by the server.
-export function diagramHref(path) {
-  return `/api/diagram?${new URLSearchParams({ path })}`;
+export function diagramHref(path, modified) {
+  return versioned("/api/diagram", path, modified);
+}
+
+// A file changed on disk: later URLs for it get a new version, and every picture of it already on the page (any view,
+// overlay or thumbnail) reloads in place.
+export function refreshAssetImages(path) {
+  assetVersions.set(path, Date.now());
+  for (const img of document.querySelectorAll('img[src*="/api/asset?"], img[src*="/api/diagram?"]')) {
+    const url = new URL(img.getAttribute("src"), location.href);
+    if (url.searchParams.get("path") !== path) continue;
+    url.searchParams.set("v", String(assetVersions.get(path)));
+    img.src = `${url.pathname}?${url.searchParams}`;
+  }
 }
 
 // A link to an image in the workspace draws as a thumbnail like a diagram's: the link text is the caption, and `note` (the
