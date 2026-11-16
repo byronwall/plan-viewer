@@ -39,19 +39,62 @@ const KIND_LABELS = { agent: "Agent", "check-in": "Check-in", decision: "Decisio
 export const kindLabel = (kind) => KIND_LABELS[kind] || (OUTBOUND.has(kind) ? outboundKindLabel(kind) : kind || "—");
 export const stepKey = (step) => `${step.task}:${step.id}`;
 
-// Priority: the server scores every step (`scoreStep` in steps.ts) and sends them highest first. A row shows the score with
-// a thin bar, its tier sets how loud the row is (top rows read first, low ones recede), and a gray "why" names what
-// raised it: the task's P1 or P3, today's plan, what it unblocks, its size and its age.
+// Priority: the server scores every step (`scoreStep` in steps.ts), sends the parts behind each score, and sends steps
+// highest first. A row shows the score with a thin bar and its tier sets how loud the row is (top rows read first, low ones
+// recede). Hovering the score (or focusing its row) opens a waterfall of the parts (attachScorePopover).
 export const tierOf = (score = 0) => score >= 70 ? "top" : score >= 50 ? "mid" : "low";
-const SIZE_WORDS = { S: "small", M: "medium", L: "large" };
-export const whyText = (step) => [
-  step.priority === "p1" ? "P1" : step.priority === "p3" ? "P3" : "",
-  step.planned === "step" ? "in today's plan" : step.planned === "task" ? "task planned today" : "",
-  step.unblocks ? `unblocks ${step.unblocks}` : "",
-  SIZE_WORDS[step.size] || "",
-  step.age ? `${step.age}d` : "",
-].filter(Boolean).join(" · ");
-export const scoreHtml = (step) => `<span class="step-score is-${tierOf(step.score)}" title="Priority ${step.score ?? 0} of 99"><span class="step-score-bar" style="--score:${(step.score ?? 0) / 99}"></span>${step.score ?? 0}</span>`;
+export const scoreHtml = (step) => `<span class="step-score is-${tierOf(step.score)}" data-score-step="${escapeHtml(stepKey(step))}" aria-label="Priority ${step.score ?? 0} of 99"><span class="step-score-bar" style="--score:${(step.score ?? 0) / 99}"></span>${step.score ?? 0}</span>`;
+
+// The waterfall: one row per part, its bar stepping from the running total before it to the one after (a gain in the
+// accent, a loss in red, nothing as a tick), its signed points, and a detail line where one helps; the total last.
+export function scoreWaterfallHtml(step) {
+  const parts = step.scoreParts || [];
+  let run = 0;
+  const steps = parts.map((part) => { const from = run; run += part.points; return { ...part, from, to: run }; });
+  const lo = Math.min(0, ...steps.map((s) => Math.min(s.from, s.to))), hi = Math.max(99, ...steps.map((s) => Math.max(s.from, s.to)));
+  const x = (value) => `${((value - lo) / (hi - lo)) * 100}%`;
+  const bar = (a, b, tone) => `<span class="score-wf-track"><span class="score-wf-bar is-${tone}" style="left:${x(Math.min(a, b))};width:${a === b ? "0px" : `calc(${x(Math.max(a, b))} - ${x(Math.min(a, b))})`}"></span>${lo < 0 ? `<span class="score-wf-zero" style="left:${x(0)}"></span>` : ""}</span>`;
+  const signed = (n) => n > 0 ? `+${n}` : n < 0 ? `−${-n}` : "0";
+  const rows = steps.map((s) => `<div class="score-wf-row${s.points ? "" : " is-zero"}"><span class="score-wf-label">${escapeHtml(s.label)}</span>${bar(s.from, s.to, s.points > 0 ? "up" : s.points < 0 ? "down" : "none")}<span class="score-wf-pts">${signed(s.points)}</span>${s.detail ? `<ul class="score-wf-detail">${s.detail.split("\n").map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` : ""}</div>`).join("");
+  const clamp = run !== step.score ? `<ul class="score-wf-detail"><li>${run > 99 ? `${run}, capped at 99` : `${run}, floored at 0`}</li></ul>` : "";
+  return `<div class="score-wf"><header>Why it scores ${step.score ?? 0}</header>${rows}<div class="score-wf-row is-total"><span class="score-wf-label">Priority</span>${bar(0, step.score ?? 0, "total")}<span class="score-wf-pts">${step.score ?? 0}</span>${clamp}</div></div>`;
+}
+
+// One shared popover for every score on the page (rows, the inspector, the step dialog): it opens on hover of a score, or
+// when keyboard focus lands on a row with one, sits beside the score inside the viewport, and closes on leave, blur,
+// scroll or Esc. It is a top-layer popover, so it shows over dialogs and never moves the page.
+export function attachScorePopover(lookup) {
+  const pop = Object.assign(document.createElement("div"), { className: "score-pop", popover: "manual", role: "tooltip" });
+  document.body.append(pop);
+  let current = null, hideTimer = 0;
+  const isOpen = () => pop.matches(":popover-open");
+  const close = () => { clearTimeout(hideTimer); if (isOpen()) pop.hidePopover(); current = null; };
+  const show = (el) => {
+    clearTimeout(hideTimer);
+    if (current === el && isOpen()) return;
+    const step = lookup(el.dataset.scoreStep);
+    if (!step?.scoreParts) return close();
+    current = el;
+    pop.innerHTML = scoreWaterfallHtml(step);
+    if (!isOpen()) pop.showPopover();
+    const r = el.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+    const left = r.right + 10 + w <= innerWidth - 8 ? r.right + 10 : Math.max(8, r.left - w - 10);
+    pop.style.left = `${left}px`;
+    pop.style.top = `${Math.min(Math.max(8, r.top + r.height / 2 - 24), innerHeight - h - 8)}px`;
+  };
+  const leave = () => { clearTimeout(hideTimer); hideTimer = setTimeout(close, 60); };
+  document.addEventListener("pointerover", (event) => { const el = event.target.closest?.("[data-score-step]"); if (el) show(el); });
+  document.addEventListener("pointerout", (event) => { const el = event.target.closest?.("[data-score-step]"); if (el && !el.contains(event.relatedTarget)) leave(); });
+  document.addEventListener("focusin", (event) => {
+    if (!event.target.matches?.(":focus-visible")) return;
+    const el = event.target.closest("tr, .step-row, .step-priority")?.querySelector("[data-score-step]");
+    if (el) show(el); else if (current) close();
+  });
+  document.addEventListener("focusout", (event) => { if (current && !event.relatedTarget?.closest?.("tr, .step-row, .step-priority")?.contains(current)) leave(); });
+  document.addEventListener("scroll", () => current && close(), true);
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape" && current) close(); });
+}
+
 // Sorts for the Steps page. Up next stays on top in all of them; Priority keeps the server's order.
 const pinNext = (a, b) => Number(b.next) - Number(a.next);
 export const SORTS = {
@@ -87,7 +130,7 @@ const pill = (step) => {
 function row(step, selected) {
   return `<tr class="step-tier-${tierOf(step.score)}" data-select-step="${escapeHtml(stepKey(step))}" aria-selected="${selected}">
     <td class="step-col-score">${scoreHtml(step)}</td>
-    <td class="step-col-title"><button class="task-row-select" type="button" data-select-step="${escapeHtml(stepKey(step))}">${step.next ? '<span class="step-next-mark" aria-label="Up next" title="Up next">●</span>' : ""}${stepTitleHtml(step.title)}</button><span class="step-col-why">${step.running ? "running · " : ""}${escapeHtml(whyText(step) || "new")}</span></td>
+    <td class="step-col-title"><button class="task-row-select" type="button" data-select-step="${escapeHtml(stepKey(step))}">${step.next ? '<span class="step-next-mark" aria-label="Up next" title="Up next">●</span>' : ""}${stepTitleHtml(step.title)}</button></td>
     <td class="step-col-move">${pill(step)}</td>
     <td class="step-col-kind">${OUTBOUND.has(step.kind) ? outboundIcon(step.kind) : ""}${escapeHtml(kindLabel(step.kind))}</td>
     <td class="step-col-work"><button class="task-list-id" type="button" data-task-path="${escapeHtml(step.path)}" title="${escapeHtml(step.taskTitle)}">${escapeHtml(step.task || "Note")}</button> <span class="step-id">${escapeHtml(step.id)}</span></td>
@@ -158,7 +201,7 @@ export function stepListHtml(steps, { move = firstMove(moveCounts(steps)), cap =
   const layer = (name) => {
     const shown = visibleSteps(steps, { move: name });
     const rows = shown.slice(0, cap).map((step) => stepRowHtml({ key: stepKey(step), lead: `${scoreHtml(step)}${movePill(step)}`, title: step.title,
-      meta: `<span class="step-row-why">${escapeHtml(whyText(step))}</span>${escapeHtml(withTask ? `${step.task} ${step.id}` : step.id)}`, className: ` is-ranked step-tier-${tierOf(step.score)}` })).join("");
+      meta: escapeHtml(withTask ? `${step.task} ${step.id}` : step.id), className: ` is-ranked step-tier-${tierOf(step.score)}` })).join("");
     return `<div class="step-rows">${rows || `<p class="step-rows-empty">${name === "you" ? "Nothing waits on you." : name === "next" ? "Nothing is up next." : "No steps here."}</p>`}</div>${shown.length > cap ? more(name, shown.length) : ""}`;
   };
   if (only) return { toggle: "", stack: layer(move) };
@@ -297,8 +340,8 @@ export function stepBodyHtml(step) {
   return `${notes}${untyped}${body}`;
 }
 
-// The inspector's priority line: the score, why, and the task's P1/P2/P3, which writes `priority:` to the task file.
-export const priorityHtml = (step) => step.kind === "note" ? "" : `<div class="step-priority">${scoreHtml(step)}<span class="step-priority-why">${escapeHtml(whyText(step) || "nothing raises it yet")}</span>
+// The inspector's priority line: the score (hover for its waterfall) and the task's P1/P2/P3, which writes `priority:` to the task file.
+export const priorityHtml = (step) => step.kind === "note" ? "" : `<div class="step-priority">${scoreHtml(step)}<span class="step-priority-why">Task priority</span>
   <span class="step-toggle" role="group" aria-label="Task priority" title="The whole task's priority: P1 raises every step in it, P3 lowers them">${["p1", "p2", "p3"].map((p) => `<button type="button" data-step-action="priority-${p}" aria-pressed="${(step.priority || "p2") === p}">${p.toUpperCase()}</button>`).join("")}</span></div>`;
 
 export function stepInspectorHtml(step, extra = "", context = {}) {

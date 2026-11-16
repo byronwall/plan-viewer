@@ -3335,9 +3335,31 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .step-tier-top .step-col-title .task-row-select { font-weight: 680; color: var(--ink); }
 .step-tier-mid .step-col-title .task-row-select { font-weight: 560; }
 .step-tier-low .step-col-title .task-row-select { font-weight: 450; color: var(--body-ink); }
-.step-col-why { display: block; margin-top: 2px; color: var(--muted); font-size: .74rem; font-weight: 450; font-variant-numeric: tabular-nums; }
 .step-priority { display: flex; align-items: center; gap: 10px; margin: 6px 0 4px; }
-.step-priority-why { flex: 1; min-width: 0; color: var(--muted); font-size: .78rem; }
+.step-priority-why { flex: 1; min-width: 0; color: var(--muted); font-size: .78rem; text-align: right; }
+.step-score { cursor: default; border-radius: 4px; transition: background-color 140ms ease-out; }
+@media (hover: hover) { .step-score:hover { background: var(--quiet-field); } }
+/* The score's waterfall: a top-layer popover beside the score. Each part is a row: label (and a detail line), a bar from
+   the running total before it to the one after, and its signed points; the total closes it. Bars are data marks, so they
+   take saturated color (accent up, danger down); everything else stays in text tokens. */
+.score-pop { position: fixed; inset: auto; margin: 0; width: 360px; max-width: calc(100vw - 16px); border: 0; border-radius: 10px; background: var(--paper); padding: 10px 12px 8px; box-shadow: 0 16px 40px rgba(24, 33, 47, .18), 0 1px 3px rgba(24, 33, 47, .1); color: var(--ink); font: 400 .78rem/1.35 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; pointer-events: none; }
+.score-wf header { margin-bottom: 6px; color: var(--label-text); font: 650 .66rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .035em; text-transform: uppercase; }
+.score-wf-row { display: grid; grid-template-columns: minmax(0, 1fr) 120px 30px; gap: 2px 10px; align-items: start; padding: 3px 0; }
+.score-wf-label { min-width: 0; color: var(--body-ink); }
+.score-wf-detail { grid-column: 1 / -1; margin: -1px 0 1px; padding: 0 0 0 12px; color: var(--muted); font-size: .72rem; list-style: none; }
+.score-wf-detail li { position: relative; }
+.score-wf-detail li::before { content: "·"; position: absolute; left: -9px; }
+.score-wf-track { position: relative; height: 10px; margin-top: 3px; }
+.score-wf-bar { position: absolute; top: 0; bottom: 0; min-width: 2px; border-radius: 2px; }
+.score-wf-bar.is-up { background: var(--action); }
+.score-wf-bar.is-down { background: var(--danger); }
+.score-wf-bar.is-none { background: var(--line-strong); }
+.score-wf-bar.is-total { background: var(--action-ink); }
+.score-wf-zero { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--line-strong); }
+.score-wf-pts { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; }
+.score-wf-row.is-zero .score-wf-label, .score-wf-row.is-zero .score-wf-pts { color: var(--quiet-text); }
+.score-wf-row.is-total { margin-top: 4px; border-top: 1px solid var(--line); padding-top: 6px; }
+.score-wf-row.is-total .score-wf-label { color: var(--ink); font-weight: 650; }
 .step-detail .outbound-panel { padding: 10px 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
 .step-friction { margin: 8px 0; color: var(--status-waiting-ink); font-size: .82rem; }
 /* An agent prompt: rendered Markdown on a pale blue surface, so it reads as "what the agent gets" and not as page text. */
@@ -3386,7 +3408,6 @@ div.step-row { cursor: pointer; }
 .step-row:focus-visible { outline: 2px solid rgba(49, 87, 213, .4); outline-offset: -2px; }
 .step-row.is-ranked { --step-lead: 118px; align-items: center; }
 .step-row.is-ranked .step-row-lead { gap: 10px; }
-.step-row-why { margin-right: 10px; }
 .step-row.step-tier-top .step-row-title { font-weight: 680; }
 .step-row.step-tier-mid .step-row-title { font-weight: 560; }
 .step-row.step-tier-low .step-row-title { font-weight: 450; color: var(--body-ink); }

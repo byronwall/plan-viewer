@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { draftFromText } from "./outbound.ts";
-import { activeRuns, applyRule, closeNote, deriveSteps, downstreamCount, followUpNote, planMentions, scoreStep, withTaskPriority, listNotes, loadSteps, pickChoice, runStatement, saveNote, startStep, withStepFlag, withStepStatus, withUpdate } from "./steps.ts";
+import { activeRuns, applyRule, closeNote, deriveSteps, downstreamCount, followUpNote, planMentions, scoreParts, scoreStep, totalOf, withTaskPriority, listNotes, loadSteps, pickChoice, runStatement, saveNote, startStep, withStepFlag, withStepStatus, withUpdate } from "./steps.ts";
 import { setConfig } from "./public/config.js";
 
 const TASK = `---
@@ -255,6 +255,12 @@ test("priority ranks a planned step that unblocks others above a P2 leaf, and P1
   assert.deepEqual(planMentions("- [TASK-0140](x) W3.2: who approves; W1.2: review\n- TASK-0143 and TASK-0140"), ["TASK-0140", "TASK-0140 W3.2", "TASK-0140 W1.2", "TASK-0143"]);
   const steps = deriveSteps([{ path: "tasks/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: TASK }], [], ["TASK-0001 W6"], Date.parse("2026-11-12"));
   assert.equal(steps.filter((step) => step.move !== "blocked")[0].id, "W6", "the step today's plan names, which unblocks W7, ranks first");
+  // The waterfall's parts sum to the score, and the unblocks part names what waits, by title.
+  const w6 = steps.find((step) => step.id === "W6")!;
+  assert.equal(totalOf(w6.scoreParts!), w6.score);
+  assert.deepEqual(w6.scoreParts!.map((part) => part.key), ["base", "priority", "today", "unblocks", "yours", "size", "age"]);
+  assert.equal(w6.scoreParts!.find((part) => part.key === "unblocks")!.detail, "Later");
+  assert.equal(totalOf(scoreParts({ ...base, priority: "p1", unblocks: 40, move: "you-act" }, "step")), 99, "capped");
   const p1 = withTaskPriority(TASK, "p1");
   assert.match(p1, /^status: active\npriority: p1$/m);
   assert.equal(withTaskPriority(p1, "p2"), TASK);

@@ -20,7 +20,7 @@ export interface Step {
   kind: string; size: string; deps: string[]; next: boolean; move: Move; reason: string; fix?: string; running?: boolean;
   prompt?: string; actionTitle?: string; draft?: OutboundDraft; machinery?: { path: string; fields: Record<string, string> };
   options?: StepOption[]; age: number; order: number;
-  priority: Priority; unblocks: number; score: number; planned?: "" | "task" | "step";
+  priority: Priority; unblocks: number; score: number; scoreParts?: ScorePart[]; planned?: "" | "task" | "step";
   noteFor?: string; notes?: { path: string; title: string }[];
 }
 
@@ -37,21 +37,35 @@ const splitOption = (title: string) => { const [head, ...rest] = title.split(" �
 // above every score. A step today's plan names by ID (`TASK-0140 W3.2`) counts more than a task it only mentions.
 export const PRIORITY_POINTS: Record<Priority, number> = { p1: 30, p2: 0, p3: -20 };
 const SIZE_POINTS: Record<string, number> = { S: 10, M: 4, L: 0, "": 4 };
-export function scoreStep(step: Pick<Step, "priority" | "unblocks" | "size" | "age" | "move">, today: "" | "task" | "step" = "") {
-  const parts = {
-    priority: PRIORITY_POINTS[step.priority] ?? 0,
-    today: today === "step" ? 25 : today === "task" ? 8 : 0,
-    unblocks: Math.round(10 * Math.log2(1 + step.unblocks)),
-    yours: step.move === "you-decide" || step.move === "you-act" ? 10 : 0,
-    size: SIZE_POINTS[step.size] ?? 4,
-    age: Math.min(step.age, 14),
-  };
-  return Math.max(0, Math.min(99, 20 + Object.values(parts).reduce((sum, value) => sum + value, 0)));
+export interface ScorePart { key: string; label: string; points: number; detail: string }
+const SIZE_WORDS: Record<string, string> = { S: "small", M: "medium", L: "large", "": "no size yet" };
+// The score's parts in the order a waterfall shows them, each with a short label and a detail line; the base is first.
+// `unblocked` names the steps behind this one (titles), for the unblocks detail.
+export function scoreParts(step: Pick<Step, "priority" | "unblocks" | "size" | "age" | "move">, today: "" | "task" | "step" = "", unblocked: string[] = []): ScorePart[] {
+  const yours = step.move === "you-decide" || step.move === "you-act";
+  const shown = [...unblocked.slice(0, 4), ...(unblocked.length > 4 ? [`and ${unblocked.length - 4} more`] : [])].join("\n");
+  return [
+    { key: "base", label: "Base", points: 20, detail: "" },
+    { key: "priority", label: `Task priority ${step.priority.toUpperCase()}`, points: PRIORITY_POINTS[step.priority] ?? 0, detail: "" },
+    { key: "today", label: today === "step" ? "Named in today's plan" : today === "task" ? "Task in today's plan" : "Not in today's plan", points: today === "step" ? 25 : today === "task" ? 8 : 0, detail: "" },
+    { key: "unblocks", label: step.unblocks ? `Unblocks ${step.unblocks} ${step.unblocks === 1 ? "step" : "steps"}` : "Unblocks nothing", points: Math.round(10 * Math.log2(1 + step.unblocks)), detail: shown },
+    { key: "yours", label: yours ? "Waits on you" : "Not waiting on you", points: yours ? 10 : 0, detail: "" },
+    { key: "size", label: `Size: ${SIZE_WORDS[step.size] ?? step.size}`, points: SIZE_POINTS[step.size] ?? 4, detail: "" },
+    { key: "age", label: `Age: ${step.age ? `${step.age} ${step.age === 1 ? "day" : "days"}` : "new"}`, points: Math.min(step.age, 14), detail: step.age > 14 ? "capped at 14" : "" },
+  ];
+}
+export const totalOf = (parts: ScorePart[]) => Math.max(0, Math.min(99, parts.reduce((sum, part) => sum + part.points, 0)));
+export const scoreStep = (step: Pick<Step, "priority" | "unblocks" | "size" | "age" | "move">, today: "" | "task" | "step" = "") => totalOf(scoreParts(step, today));
+// Sets a step's score and the parts behind it.
+function rank(step: Step, unblocked: string[] = []) {
+  step.scoreParts = scoreParts(step, step.planned, unblocked);
+  step.score = totalOf(step.scoreParts);
 }
 
 // Open steps that can't finish until this one does: work items whose `after:` names it or one of its scope parents,
 // then everything under those and everything after them in turn. Counts open leaves only, so scope isn't counted twice.
-export function downstreamCount(nodes: { id: string; parent: string; deps: string[]; status: string }[], id: string) {
+export const downstreamCount = (nodes: { id: string; parent: string; deps: string[]; status: string }[], id: string) => downstreamSteps(nodes, id).length;
+export function downstreamSteps(nodes: { id: string; parent: string; deps: string[]; status: string }[], id: string) {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const lineage = (x: string) => { const out: string[] = []; for (let n = byId.get(x); n; n = byId.get(n.parent)) out.push(n.id); return out; };
   const under = (x: string) => nodes.filter((n) => n.id !== x && lineage(n.id).includes(x)).map((n) => n.id);
@@ -65,8 +79,14 @@ export function downstreamCount(nodes: { id: string; parent: string; deps: strin
     }
   }
   seen.delete(id);
-  return [...seen].filter((y) => live(byId.get(y)!) && !nodes.some((c) => c.parent === y)).length;
+  return [...seen].filter((y) => live(byId.get(y)!) && !nodes.some((c) => c.parent === y));
 }
+
+// A work item's title as plain words for a detail line: the text before " — ", links as their labels, under 60 characters.
+const plainTitle = (title: string) => {
+  const text = title.split(" — ")[0].replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[`*]/g, "").trim();
+  return text.length > 60 ? `${text.slice(0, 57).trimEnd()}…` : text;
+};
 
 export const taskPriority = (markdown: string): Priority => {
   const front = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || "";
@@ -119,7 +139,7 @@ export function deriveSteps(tasks: TaskInput[], machinery: { path: string; field
         size: node.size, deps: node.deps, next: node.flags.includes("next"), move: "unclassified", reason: "", prompt: action?.prompt, actionTitle: action?.title,
         age: daysSince(m?.modified ? new Date(m.modified).toISOString() : task.updated, now),
         order: planOrder.includes(task.id) ? planOrder.indexOf(task.id) : planOrder.length + 1,
-        priority, unblocks: downstreamCount(nodes, node.id), score: 0,
+        priority, unblocks: 0, score: 0,
       };
       if (m?.draft) step.draft = m.draft; else if (m) step.machinery = { path: m.path, fields: m.fields };
       if (choice) step.options = children.map((child: { id: string; title: string; flags: string[]; status: string }) => ({ id: child.id, ...splitOption(child.title), recommended: child.flags.includes("recommended"), status: child.status }));
@@ -127,7 +147,9 @@ export function deriveSteps(tasks: TaskInput[], machinery: { path: string; field
       if (move === null) continue;
       Object.assign(step, { move, reason, ...(fix ? { fix } : {}), running: false });
       step.planned = planOrder.includes(key) ? "step" : planOrder.includes(task.id) ? "task" : "";
-      step.score = scoreStep(step, step.planned);
+      const behind = downstreamSteps(nodes, node.id);
+      step.unblocks = behind.length;
+      rank(step, behind.map((id) => plainTitle(byId.get(id)!.title)));
       steps.push(step);
     }
   }
@@ -190,7 +212,10 @@ export async function loadSteps(root: string, tasks: TaskInput[], planOrder: str
   for (const step of derived) {
     const tied = notes.filter((note) => note.noteFor === step.key);
     if (tied.length) Object.assign(step, { move: "agent", reason: "notes to process", next: true, notes: tied.map(({ path, title }) => ({ path, title })) });
-    if (tied.length) step.score = scoreStep(step, step.planned);
+    if (tied.length) { // now an agent's move: re-rank, keeping the unblocked steps' names
+      const unblocked = step.scoreParts?.find((part) => part.key === "unblocks")?.detail;
+      rank(step, unblocked ? [unblocked] : []);
+    }
   }
   derived.sort(byPriority); // a step with notes rises with the other Up next ones
   const steps = [...notes.filter((note) => !note.noteFor || !keys.has(note.noteFor)), ...derived];
@@ -443,7 +468,7 @@ export async function listNotes(root: string): Promise<Step[]> {
       });
     }
   }
-  for (const note of notes) note.score = scoreStep(note);
+  for (const note of notes) rank(note);
   return notes.sort((a, b) => a.id.localeCompare(b.id));
 }
 
