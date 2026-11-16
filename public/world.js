@@ -21,6 +21,16 @@ export const LANES = [
 ];
 const READY_SHOWN = 4;
 const TODAY_ROWS = 8;
+// A day's cell shows this many items of a kind; "+N more" shows the rest in place (pictures open the viewer instead), so
+// one busy day can't make its whole lane thousands of pixels tall. One extra item just shows; "+1 more" hides nothing worth hiding.
+const CELL_ROWS = 6;
+const capped = (rows, more = null) => rows.length <= CELL_ROWS + 1 ? rows.join("") : rows.slice(0, CELL_ROWS).join("")
+  + (more ? more(rows.length - CELL_ROWS) : `<div class="world-overflow" hidden>${rows.slice(CELL_ROWS).join("")}</div><button type="button" class="world-more" data-world-expand data-more="+${rows.length - CELL_ROWS} more">+${rows.length - CELL_ROWS} more</button>`);
+function expandCell(button) {
+  const rest = button.previousElementSibling;
+  rest.hidden = !rest.hidden;
+  button.textContent = rest.hidden ? button.dataset.more : "Show less";
+}
 const RECENT_DAYS = 14;
 const DAY_MS = 86_400_000;
 
@@ -236,14 +246,16 @@ export async function openTaskWorld(id, day = "") {
   box.visuals = visuals.map((item) => ({ src: item.lane === "diagram" ? diagramHref(item.path) : assetHref(item.path), alt: item.title, ...(item.lane === "diagram" ? { diagram: item.path } : {}), group: dayLabel(item.day) }));
   const visualIndex = new Map(visuals.map((item, index) => [item, index]));
   const cell = (lane, items) => {
-    if (lane === "updates") return items.map((item) => `<button type="button" class="world-card world-update${item.created ? " is-created" : ""}" data-world-peek="tasks/${escapeHtml(id)}.md" data-world-anchor="${item.created ? "" : "updates"}"><span>${codeSpans(item.title)}</span></button>`).join("");
+    if (lane === "updates") return capped(items.map((item) => `<button type="button" class="world-card world-update${item.created ? " is-created" : ""}" data-world-peek="tasks/${escapeHtml(id)}.md" data-world-anchor="${item.created ? "" : "updates"}"><span>${codeSpans(item.title)}</span></button>`));
     // Done items keep their check rows; today's ready items give way to the step list. Every row opens the step dialog.
-    if (lane === "work") return items.filter((item) => !item.ready).map((item) => `<button type="button" class="world-card world-work" data-open-step="${escapeHtml(`${id}:${item.node.id}`)}">${workStatusIcon(item.node, task.work)}<code>${escapeHtml(item.node.id)}</code><span>${codeSpans(item.title)}</span></button>`).join("")
+    if (lane === "work") return capped(items.filter((item) => !item.ready).map((item) => `<button type="button" class="world-card world-work" data-open-step="${escapeHtml(`${id}:${item.node.id}`)}">${workStatusIcon(item.node, task.work)}<code>${escapeHtml(item.node.id)}</code><span>${codeSpans(item.title)}</span></button>`))
       + (hasSteps && items.some((item) => item.ready) ? todaySteps(id) : "");
     if (lane === "days") return `<span class="world-chips">${items.map((item) => `<button type="button" class="world-chip" data-world-peek="${escapeHtml(item.path)}">${escapeHtml(item.title)}</button>`).join("")}</span>`;
-    if (lane === "document") return items.map((item) => `<button type="button" class="world-card" data-world-peek="${escapeHtml(item.path)}" title="${escapeHtml(item.path)}"><span>${escapeHtml(item.title)}</span>${item.folder ? `<small>${escapeHtml(item.folder)}</small>` : ""}</button>`).join("");
-    if (lane === "file") return items.map((item) => `<button type="button" class="world-file" data-world-copy="${escapeHtml(item.path)}" title="Copy ${escapeHtml(item.path)}">${item.folder ? `<small>${escapeHtml(item.folder)}</small>` : ""}${escapeHtml(fileName(item.path))}</button>`).join("");
-    return `<span class="world-thumbs">${items.map((item) => `<button type="button" class="world-thumb" data-world-visual="${visualIndex.get(item)}" title="${escapeHtml(item.path)}"><span class="world-thumb-frame"><img src="${escapeHtml(item.lane === "diagram" ? diagramHref(item.path) : assetHref(item.path))}" alt="" loading="lazy" decoding="async"></span><span class="world-thumb-title">${escapeHtml(item.title)}</span></button>`).join("")}</span>`;
+    if (lane === "document") return capped(items.map((item) => `<button type="button" class="world-card" data-world-peek="${escapeHtml(item.path)}" title="${escapeHtml(item.path)}"><span>${escapeHtml(item.title)}</span>${item.folder ? `<small>${escapeHtml(item.folder)}</small>` : ""}</button>`));
+    if (lane === "file") return capped(items.map((item) => `<button type="button" class="world-file" data-world-copy="${escapeHtml(item.path)}" title="Copy ${escapeHtml(item.path)}">${item.folder ? `<small>${escapeHtml(item.folder)}</small>` : ""}${escapeHtml(fileName(item.path))}</button>`));
+    // Pictures past the cap open the viewer at the first one not shown; its rail holds the rest of the day.
+    const thumbs = items.map((item) => `<button type="button" class="world-thumb" data-world-visual="${visualIndex.get(item)}" title="${escapeHtml(item.path)}"><span class="world-thumb-frame"><img src="${escapeHtml(item.lane === "diagram" ? diagramHref(item.path) : assetHref(item.path))}" alt="" loading="lazy" decoding="async"></span><span class="world-thumb-title">${escapeHtml(item.title)}</span></button>`);
+    return `<span class="world-thumbs">${capped(thumbs, (hidden) => `<button type="button" class="world-more world-thumb-more" data-world-visual="${visualIndex.get(items[CELL_ROWS])}">+${hidden} more</button>`)}</span>`;
   };
   if (!columns.length) { scroller.innerHTML = `<p class="world-empty">${escapeHtml(id)} has no updates, plan mentions, work or files yet.</p>`; return; }
   const columnClass = (column) => `${column.old ? " is-old" : ""}${column.gap ? " has-gap" : ""}${column.day === day ? " is-focus" : ""}${column.today ? " is-today" : ""}`;
@@ -314,6 +326,8 @@ function onClick(event) {
   if (openLink && !(event.metaKey || event.ctrlKey || event.shiftKey)) { event.preventDefault(); return openTask(); }
   const move = event.target.closest(".step-panel [data-step-list-move]");
   if (move) return showStepLayer(move.closest(".step-panel"), move.dataset.stepListMove);
+  const expand = event.target.closest("[data-world-expand]");
+  if (expand) return expandCell(expand);
   const step = event.target.closest("[data-open-step]");
   if (step) return host.step(step.dataset.openStep);
   const target = event.target.closest("[data-world-close], [data-world-back], [data-world-fit], [data-world-zoom], [data-world-retry], [data-world-peek], [data-world-visual], [data-world-copy], [data-world-task]");
