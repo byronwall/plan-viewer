@@ -2879,10 +2879,11 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .diagram-fold { flex: none; width: 20px; height: 20px; margin-right: -6px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; position: relative; transition: color 140ms; }
 .diagram-fold::before { content: ""; position: absolute; inset: 0; margin: auto; width: 6px; height: 6px; border: solid currentColor; border-width: 0 1.6px 1.6px 0; transform: translateY(-1.5px) rotate(45deg); transition: transform 140ms ease; }
 .diagram-group[data-folded] .diagram-fold::before { transform: translateX(-1.5px) rotate(-45deg); }
-.diagram-group-head[data-diagram-fold-head] { min-height: 28px; align-items: center; cursor: pointer; border-radius: 6px; user-select: none; }
-.diagram-group-head[data-diagram-fold-head]:hover .diagram-fold { color: var(--ink); }
-.diagram-group-head[data-diagram-fold-head]:hover .diagram-group-title strong { color: var(--action-ink); }
-.diagram-index .diagram-group-title { align-items: center; gap: 10px; cursor: pointer; }
+.diagram-group-head[data-diagram-fold-head] { min-height: 28px; align-items: center; }
+.diagram-index .diagram-group-title strong { cursor: pointer; user-select: none; }
+.diagram-fold:hover { color: var(--ink); }
+.diagram-index .diagram-group-title strong:hover { color: var(--action-ink); }
+.diagram-index .diagram-group-title { align-items: center; gap: 10px; }
 .diagram-index .diagram-group-title strong { font-size: 1.02rem; font-weight: 650; letter-spacing: -.005em; }
 .diagram-index .diagram-group-title code { font-size: .78rem; }
 .diagram-index .diagram-group-meta { font-size: .78rem; }
