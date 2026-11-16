@@ -153,6 +153,7 @@ function dailyDocumentLabel(doc) {
 
 function resetPageNavigation() {
   elements.taskDocumentPath.hidden = true;
+  elements.meta.replaceChildren();
   elements.taskPathValue.textContent = "";
   delete elements.copyTaskPath.dataset.copyPath;
   elements.taskPathStatus.textContent = "";
@@ -446,7 +447,6 @@ function renderTasksPage() {
   elements.tasksButton.setAttribute("aria-current", "page");
   for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
   elements.title.textContent = "Tasks";
-  elements.meta.textContent = `Repository tasks  /  ${showDoneTasks ? "all" : "unfinished"}`;
   elements.count.textContent = `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`;
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
@@ -553,8 +553,8 @@ function showTasks({ historyMode = "push" } = {}) {
 
 // Topics and Reference get their own pages instead of sidebar lists. Topics group each `plans/<topic>/` folder under its README.
 const LIBRARY_VIEWS = {
-  topics: { group: "Topics", title: "Topics", meta: "Cross-day plans  /  plans/", intro: "Cross-day planning work, one folder per topic." },
-  reference: { group: "Reference", title: "Reference", meta: "Stable context  /  reference/", intro: "Repository maps, conventions and other cross-day facts." },
+  topics: { group: "Topics", title: "Topics", intro: "Cross-day planning work, one folder per topic." },
+  reference: { group: "Reference", title: "Reference", intro: "Repository maps, conventions and other cross-day facts." },
 };
 
 function libraryRow(doc, label = doc.title, detail = doc.path) {
@@ -582,7 +582,6 @@ function renderLibraryPage(view) {
   elements[`${view}Button`].setAttribute("aria-current", "page");
   for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
   elements.title.textContent = config.title;
-  elements.meta.textContent = config.meta;
   elements.count.textContent = `${docs.length} ${docs.length === 1 ? "file" : "files"}`;
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
@@ -653,7 +652,6 @@ function renderDiagramsPage() {
   elements.diagramsButton.setAttribute("aria-current", "page");
   for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
   elements.title.textContent = "Diagrams";
-  elements.meta.textContent = "Every .draft in the workspace";
   elements.count.textContent = state.diagrams ? plural(state.diagrams.length, "diagram") : "";
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
@@ -709,7 +707,6 @@ function renderCode(tab = new URLSearchParams(location.search).get("tab") || "")
   elements.codeButton.setAttribute("aria-current", "page");
   for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
   elements.title.textContent = "Code";
-  elements.meta.textContent = `Tracked repositories  /  ${config().code.reposFile}`;
   elements.count.textContent = "";
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
@@ -737,7 +734,6 @@ function renderPlans() {
   elements.plansButton.setAttribute("aria-current", "page");
   for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
   elements.title.textContent = "Plans";
-  elements.meta.textContent = `Initiatives in tracked repositories  /  ${config().code.reposFile}`;
   elements.count.textContent = "";
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
@@ -766,7 +762,6 @@ function renderIssues(tab = new URLSearchParams(location.search).get("tab") || "
   for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
   elements.title.textContent = "Issues";
   const { jql, linear, github } = config().issues;
-  elements.meta.textContent = [jql && `Jira  /  ${jql}`, linear?.teams?.length && `Linear  /  ${linear.teams.join(", ")}`, github && "GitHub  /  tracked repositories"].filter(Boolean).join("   ·   ");
   elements.count.textContent = "";
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
@@ -793,7 +788,6 @@ function renderSlack() {
   elements.slackButton.setAttribute("aria-current", "page");
   for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
   elements.title.textContent = "Slack";
-  elements.meta.textContent = "Threads the planning documents link, read through Codex's Slack connector";
   elements.count.textContent = "";
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
@@ -820,7 +814,6 @@ function renderActivity() {
   elements.activityButton.setAttribute("aria-current", "page");
   for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
   elements.title.textContent = "Activity";
-  elements.meta.textContent = "Everything that changed, newest first";
   elements.count.textContent = "";
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
@@ -2245,7 +2238,6 @@ function renderStepsPage() {
   (outbox ? elements.outboxButton : elements.stepsButton).setAttribute("aria-current", "page");
   for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
   elements.title.textContent = outbox ? "Outbox" : "Steps";
-  elements.meta.textContent = outbox ? "Steps  /  outbound, waiting on your approval" : "Every open step  /  by next move";
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
   elements.chunks.classList.add("tasks-page", "steps-page");

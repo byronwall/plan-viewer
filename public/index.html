@@ -71,21 +71,21 @@
       </aside>
 
       <main class="reading-pane">
-        <div class="document-breadcrumb">
-          <div id="document-meta" class="document-meta">Loading today’s plan…</div>
-          <div id="task-document-path" class="task-document-path" hidden>
-            <button id="copy-task-path" class="copy-task-path" type="button" title="Click to copy path" aria-label="Copy document path" aria-describedby="task-path-value">
-              <code id="task-path-value"></code>
-              <svg aria-hidden="true" viewBox="0 0 20 20"><g class="path-copy-icon"><rect x="7" y="7" width="9" height="10" rx="1.5"/><path d="M12 7V3H3v10h4"/></g><path class="path-copied-icon" d="m4 10 4 4 8-8"/></svg>
-            </button>
-            <span id="task-path-status" class="sr-only" role="status"></span>
-          </div>
-        </div>
         <header class="document-header">
           <div>
             <h1 id="document-title">Daily plan</h1>
           </div>
           <div class="document-tools">
+            <div class="document-breadcrumb">
+              <div id="document-meta" class="document-meta"></div>
+              <div id="task-document-path" class="task-document-path" hidden>
+                <button id="copy-task-path" class="copy-task-path" type="button" title="Click to copy path" aria-label="Copy document path" aria-describedby="task-path-value">
+                  <code id="task-path-value"></code>
+                  <svg aria-hidden="true" viewBox="0 0 20 20"><g class="path-copy-icon"><rect x="7" y="7" width="9" height="10" rx="1.5"/><path d="M12 7V3H3v10h4"/></g><path class="path-copied-icon" d="m4 10 4 4 8-8"/></svg>
+                </button>
+                <span id="task-path-status" class="sr-only" role="status"></span>
+              </div>
+            </div>
             <button id="favorite-star" class="code-icon-button favorite-star" type="button" aria-pressed="false" aria-label="Favorite (⌘D)" aria-keyshortcuts="Meta+D Control+D"><svg viewBox="0 0 24 24" aria-hidden="true"></svg></button>
             <div id="chunk-count" class="chunk-count" aria-label="Chunk count"></div>
           </div>

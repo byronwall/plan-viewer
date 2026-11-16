@@ -104,8 +104,9 @@ button { cursor: pointer; }
 .reading-pane { width: 100%; padding: 26px clamp(18px, 3vw, 40px) 80px; }
 .document-header { display: flex; align-items: flex-start; gap: 8px 24px; flex-wrap: wrap; margin-bottom: 16px; }
 .document-header > div:first-child { flex: 1 1 420px; min-width: 0; }
-.document-breadcrumb { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; margin-bottom: 9px; }
-.document-meta { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--action); font: 650 .74rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .025em; }
+.document-breadcrumb { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 16px; }
+.document-meta { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--muted); font: 500 .8rem/1.2 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; }
+.document-meta:empty { display: none; }
 .document-meta > span { flex: none; white-space: nowrap; }
 .crumb { min-width: 0; max-width: 48ch; overflow: hidden; border: 0; border-radius: 5px; background: none; margin: 0 -4px; padding: 3px 4px; color: var(--action); font: inherit; letter-spacing: inherit; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; transition: background-color .12s, color .12s; }
 .crumb:hover { background: var(--selected); color: var(--action-ink); }
@@ -145,7 +146,7 @@ button { cursor: pointer; }
 .copy-task-path.is-copied .path-copied-icon { display: inline; }
 .copy-task-path.copy-error { color: var(--danger); }
 @keyframes path-copy-confirmation { 0%, 45% { color: var(--success); background-color: var(--selected); } 100% { color: var(--muted); background-color: transparent; } }
-.document-tools { flex: none; display: flex; align-items: center; gap: 10px; margin-top: .3em; }
+.document-tools { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: .3em; }
 .chunk-count { color: var(--muted); font-size: .78rem; white-space: nowrap; }
 .chunk-count:empty { display: none; }
 .toaster { position: fixed; right: 16px; bottom: 56px; z-index: 60; width: min(360px, calc(100vw - 32px)); height: var(--front-height, 0); margin: 0; padding: 0; list-style: none; }
