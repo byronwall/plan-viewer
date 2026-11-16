@@ -412,19 +412,71 @@ const taskPaneVisible = () => elements.chunks.clientWidth >= 1000;
 // `&done=1` shows completed and deferred tasks, sorted the same way but after the live ones, as work breakdowns do.
 let showDoneTasks = new URLSearchParams(location.search).get("done") === "1";
 
+// `&q=` filters the list (ID, title, summary, project, tags, status); `&group=` sections it. Status is the default
+// grouping, so the list reads as Check in, Active, Open, Waiting with a count on each.
+const TASK_GROUPS = { status: "Status", project: "Project", move: "Next move", updated: "Updated", none: "None" };
+let taskQuery = "";
+let taskGroup = "status";
+function readTasksUrl() {
+  const params = new URLSearchParams(location.search);
+  taskQuery = params.get("q") || "";
+  taskGroup = params.get("group") in TASK_GROUPS ? params.get("group") : "status";
+  showDoneTasks = params.get("done") === "1";
+}
+readTasksUrl();
+
+function taskMatches(doc) {
+  const terms = taskQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const { task } = doc;
+  const text = `${task.id} ${task.title} ${task.summary || ""} ${task.project || ""} ${(task.tags || []).join(" ")} ${checkInReason(task, doc.path) ? "check in" : ""} ${TASK_STATUS_LABELS[task.status] || task.status}`.toLowerCase();
+  return terms.every((term) => termMatch(term, text));
+}
+
 function taskDocuments() {
-  const tasks = state.documents
-    .filter((doc) => doc.task)
+  const all = state.documents.filter((doc) => doc.task);
+  const tasks = all.filter(taskMatches)
     .sort((a, b) => taskSort.dir * TASK_SORTS[taskSort.key](a, b) || a.task.id.localeCompare(b.task.id));
   const live = tasks.filter((doc) => !isSettled(doc.task.status));
-  return { tasks: showDoneTasks ? [...live, ...tasks.filter((doc) => isSettled(doc.task.status))] : live, settled: tasks.length - live.length };
+  return { tasks: showDoneTasks ? [...live, ...tasks.filter((doc) => isSettled(doc.task.status))] : live, settled: tasks.length - live.length, total: all.filter((doc) => showDoneTasks || !isSettled(doc.task.status)).length };
+}
+
+// [[label, docs]] in display order. Completed and deferred tasks keep their own sections below the live ones in every
+// grouping, as they do ungrouped.
+function taskGroups(tasks) {
+  if (taskGroup === "none") return [["", tasks]];
+  const live = tasks.filter((doc) => !isSettled(doc.task.status));
+  const settled = tasks.filter((doc) => isSettled(doc.task.status));
+  const bucket = (docs, keyOf, order) => {
+    const map = new Map();
+    for (const doc of docs) { const key = keyOf(doc); map.set(key, [...(map.get(key) || []), doc]); }
+    return [...map].sort(order || (() => 0));
+  };
+  let groups;
+  if (taskGroup === "status") {
+    const rank = ["Check in", "Active", "Open", "Waiting"];
+    groups = bucket(live, (doc) => checkInReason(doc.task, doc.path) ? "Check in" : TASK_STATUS_LABELS[doc.task.status], ([a], [b]) => rank.indexOf(a) - rank.indexOf(b));
+  } else if (taskGroup === "project") {
+    groups = bucket(live, (doc) => doc.task.project || "No project", ([a, x], [b, y]) => (a === "No project") - (b === "No project") || y.length - x.length || a.localeCompare(b));
+  } else if (taskGroup === "move") {
+    const rank = ["Waiting on you", "With an agent", "Waiting on others", "No open steps"];
+    const moveOf = (doc) => { const steps = stepsData?.steps.filter((step) => step.task === doc.task.id) || []; const has = (moves) => steps.some((step) => moves.includes(step.move)); return has(MOVE_FILTERS.you) ? rank[0] : has(MOVE_FILTERS.agent) ? rank[1] : has(MOVE_FILTERS.others) ? rank[2] : rank[3]; };
+    groups = bucket(live, moveOf, ([a], [b]) => rank.indexOf(a) - rank.indexOf(b));
+  } else {
+    const rank = ["Today", "This week", "This month", "Older"];
+    const today = new Date(`${localTodayKey()}T12:00:00`);
+    const ageOf = (doc) => { const days = Math.round((today - new Date(`${doc.task.updated}T12:00:00`)) / 864e5); return days <= 0 ? rank[0] : days < 7 ? rank[1] : days < 31 ? rank[2] : rank[3]; };
+    groups = bucket(live, ageOf, ([a], [b]) => rank.indexOf(a) - rank.indexOf(b));
+  }
+  if (taskGroup === "status") return [...groups, ...bucket(settled, (doc) => TASK_STATUS_LABELS[doc.task.status], ([a], [b]) => a.localeCompare(b))];
+  return settled.length ? [...groups, ["Completed or deferred", settled]] : groups;
 }
 
 function updateTasksUrl(historyMode) {
   if (historyMode === "none") return;
   const url = new URL(location.href);
   const task = selectedTaskPath.match(/TASK-\d{4}/)?.[0];
-  url.search = new URLSearchParams({ view: "tasks", ...(task ? { task } : {}), ...(showDoneTasks ? { done: "1" } : {}) });
+  url.search = new URLSearchParams({ view: "tasks", ...(task ? { task } : {}), ...(taskQuery.trim() ? { q: taskQuery.trim() } : {}), ...(taskGroup !== "status" ? { group: taskGroup } : {}), ...(showDoneTasks ? { done: "1" } : {}) });
   url.hash = "";
   history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
 }
@@ -442,21 +494,23 @@ function taskSortHeader(key, label) {
 }
 
 function renderTasksPage() {
-  const { tasks, settled } = taskDocuments();
+  const { tasks, settled, total } = taskDocuments();
+  const filtering = Boolean(taskQuery.trim());
   state.view = "tasks";
   resetPageNavigation();
   elements.tasksButton.setAttribute("aria-current", "page");
   for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
   elements.title.textContent = "Tasks";
-  elements.count.textContent = `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`;
+  elements.count.textContent = `${filtering ? `${tasks.length} of ${total}` : tasks.length} ${(filtering ? total : tasks.length) === 1 ? "task" : "tasks"}`;
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
   elements.chunks.classList.add("tasks-page");
-  if (!tasks.some((doc) => doc.path === selectedTaskPath)) selectedTaskPath = taskPaneVisible() ? tasks[0]?.path || "" : "";
-  elements.chunks.innerHTML = `<section class="task-browser" aria-label="Unfinished tasks">
-    <div class="task-index"><div class="task-index-tools">${settled ? showDoneToggle(settled, `data-show-done-tasks${showDoneTasks ? " checked" : ""}`) : ""}<button type="button" class="code-bar-button task-world-button" data-world-all title="Every listed task on one timeline (W)">World view</button></div>${tasks.length ? `<table class="task-table">
-      <thead><tr>${taskSortHeader("id", "ID")}${taskSortHeader("title", "Task")}${taskSortHeader("status", "Status")}${taskSortHeader("project", "Project")}${taskSortHeader("steps", "Steps")}${taskSortHeader("contents", "Contents")}${taskSortHeader("updated", "Updated")}</tr></thead>
-      <tbody>${tasks.map((doc) => `<tr data-select-task="${escapeHtml(doc.path)}" aria-selected="${doc.path === selectedTaskPath}"${isSettled(doc.task.status) ? ' class="is-done"' : ""}>
+  if (!tasks.some((doc) => doc.path === selectedTaskPath)) selectedTaskPath = taskPaneVisible() ? taskGroups(tasks)[0]?.[1][0]?.path || "" : "";
+  // The filter keeps focus and caret across the redraw each keystroke makes.
+  const focused = document.activeElement?.matches?.("[data-task-filter]");
+  const caret = focused ? document.activeElement.selectionStart : 0;
+  const segment = Object.entries(TASK_GROUPS).map(([id, label]) => `<button type="button" data-task-group="${id}" aria-pressed="${taskGroup === id}">${label}</button>`).join("");
+  const row = (doc) => `<tr data-select-task="${escapeHtml(doc.path)}" aria-selected="${doc.path === selectedTaskPath}"${isSettled(doc.task.status) ? ' class="is-done"' : ""}>
         <td class="task-col-id"><button class="task-list-id" type="button" data-task-path="${escapeHtml(doc.path)}" title="Open ${escapeHtml(doc.task.id)}">${escapeHtml(doc.task.id)}</button></td>
         <td class="task-col-title"><button class="task-row-select" type="button" data-select-task="${escapeHtml(doc.path)}">${escapeHtml(doc.task.title)}</button></td>
         <td class="task-col-status">${statusPill(doc.task, doc.path)}</td>
@@ -464,10 +518,19 @@ function renderTasksPage() {
         <td class="task-col-steps">${isSettled(doc.task.status) ? "" : stepCountsHtml(doc.task.id, "")}</td>
         <td class="task-col-contents">${contentCell(doc)}</td>
         <td class="task-col-updated"><time datetime="${escapeHtml(doc.task.updated)}" title="${escapeHtml(formatDate(doc.task.updated, true))}">${escapeHtml(shortDate(doc.task.updated))}</time></td>
-      </tr>`).join("")}</tbody>
-    </table>` : `<p class="task-empty">No unfinished tasks found.</p>`}</div>
+      </tr>`;
+  const body = taskGroups(tasks).map(([label, docs]) => `${label ? `<tr class="code-group-row task-group-row"><th colspan="7"><b>${escapeHtml(label)}</b><span>${docs.length}</span></th></tr>` : ""}${docs.map(row).join("")}`).join("");
+  const empty = filtering
+    ? `No ${showDoneTasks ? "" : "unfinished "}tasks match “${escapeHtml(taskQuery.trim())}”.${settled && !showDoneTasks ? ` ${settled} completed or deferred ${settled === 1 ? "does" : "do"}.` : ""}`
+    : "No unfinished tasks found.";
+  elements.chunks.innerHTML = `<section class="task-browser" aria-label="Unfinished tasks">
+    <div class="task-index"><div class="task-index-tools"><label class="code-filter task-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-task-filter placeholder="Filter  (F)" value="${escapeHtml(taskQuery)}" spellcheck="false" autocomplete="off" aria-label="Filter tasks"></label><span class="code-group-pick"><span class="plan-group-label">Group</span><div class="code-segment">${segment}</div></span>${settled ? showDoneToggle(settled, `data-show-done-tasks${showDoneTasks ? " checked" : ""}`) : ""}<button type="button" class="code-bar-button task-world-button" data-world-all title="Every listed task on one timeline (W)">World view</button></div>${tasks.length ? `<table class="task-table">
+      <thead><tr>${taskSortHeader("id", "ID")}${taskSortHeader("title", "Task")}${taskSortHeader("status", "Status")}${taskSortHeader("project", "Project")}${taskSortHeader("steps", "Steps")}${taskSortHeader("contents", "Contents")}${taskSortHeader("updated", "Updated")}</tr></thead>
+      <tbody>${body}</tbody>
+    </table>` : `<p class="task-empty">${empty}</p>`}</div>
     <aside class="task-detail" id="task-detail" aria-live="polite"></aside>
   </section>`;
+  if (focused) { const input = elements.chunks.querySelector("[data-task-filter]"); input.focus(); input.setSelectionRange(caret, caret); }
   renderTaskDetail();
   if (!contentCountsAsked) loadContentCounts();
   if (!stepsData) loadSteps().then(() => state.view === "tasks" && renderTasksPage());
@@ -543,6 +606,46 @@ elements.chunks.addEventListener("change", (event) => {
   updateTasksUrl("replace");
   renderTasksPage();
 });
+
+elements.chunks.addEventListener("input", (event) => {
+  if (state.view !== "tasks" || !event.target.matches("[data-task-filter]")) return;
+  taskQuery = event.target.value;
+  updateTasksUrl("replace");
+  renderTasksPage();
+});
+elements.chunks.addEventListener("click", (event) => {
+  const group = state.view === "tasks" && event.target.closest("[data-task-group]");
+  if (!group) return;
+  taskGroup = group.dataset.taskGroup;
+  updateTasksUrl("replace");
+  renderTasksPage();
+});
+// F focuses the filter; in it, Esc clears it (then leaves it) and Enter or ↓ selects the first listed task.
+document.addEventListener("keydown", (event) => {
+  if (state.view !== "tasks" || event.metaKey || event.ctrlKey || event.altKey || document.querySelector("dialog[open]")) return;
+  const filter = event.target.closest?.("[data-task-filter]");
+  if (filter) {
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (filter.value) { taskQuery = ""; updateTasksUrl("replace"); renderTasksPage(); } else filter.blur(); }
+    else if (event.key === "Enter" || event.key === "ArrowDown") {
+      event.preventDefault();
+      const first = elements.chunks.querySelector("tr[data-select-task]");
+      filter.blur();
+      if (!first) return;
+      if (!taskPaneVisible()) return selectDocument(first.dataset.selectTask);
+      selectedTaskPath = first.dataset.selectTask;
+      updateTasksUrl("replace");
+      renderTasksPage();
+    }
+    return;
+  }
+  if (event.key.toLowerCase() !== "f" || event.shiftKey || event.target.closest?.("input, textarea, select, [contenteditable]")) return;
+  const input = elements.chunks.querySelector("[data-task-filter]");
+  if (!input) return;
+  event.preventDefault();
+  event.stopPropagation();
+  input.focus();
+  input.select();
+}, true);
 
 function showTasks({ historyMode = "push" } = {}) {
   if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
@@ -4125,8 +4228,8 @@ window.addEventListener("resize", () => {
 // opening the daily plan. A page that sets `state.view` must be listed here (pages.test.js checks).
 const VIEWS = Object.assign(Object.create(null), {
   tasks: {
-    boot: () => { selectedTaskPath = taskFromUrl(); renderTasksPage(); },
-    back: (params) => { selectedTaskPath = taskFromUrl() || selectedTaskPath; showDoneTasks = params.get("done") === "1"; showTasks({ historyMode: "none" }); },
+    boot: () => { selectedTaskPath = taskFromUrl(); readTasksUrl(); renderTasksPage(); },
+    back: () => { selectedTaskPath = taskFromUrl() || selectedTaskPath; readTasksUrl(); showTasks({ historyMode: "none" }); },
     refresh: () => keepScroll(renderTasksPage),
   },
   steps: {

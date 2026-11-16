@@ -594,8 +594,15 @@ button.tip-row:focus-visible { outline: 2px solid rgba(49, 87, 213, .35); outlin
 .task-browser { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
 .task-detail { display: none; }
 @container (min-width: 1000px) { .task-browser { grid-template-columns: minmax(0, 1fr) minmax(340px, 420px); } .task-detail { display: block; } }
-.task-index-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 28px; margin: 0 0 8px 2px; }
-.task-index-tools .show-done { margin: 0; }
+.task-index-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 28px; margin: 0 0 8px 2px; }
+.task-index-tools .show-done { margin: 0; white-space: nowrap; }
+.task-index-tools .task-filter { flex: 1 1 160px; max-width: 320px; }
+.task-index-tools .code-segment button { height: 26px; }
+.task-table tbody tr.task-group-row { cursor: default; }
+.task-group-row th { padding: 16px 8px 6px; }
+.task-table tbody tr.task-group-row:first-child th { padding-top: 8px; }
+.task-group-row th b { color: var(--ink); font-weight: 650; }
+.task-group-row th span { margin-left: 6px; font-variant-numeric: tabular-nums; }
 .task-world-button { margin-left: auto; }
 .task-detail-buttons { display: inline-flex; align-items: center; gap: 6px; }
 .task-detail-buttons .code-bar-button { height: 28px; }
