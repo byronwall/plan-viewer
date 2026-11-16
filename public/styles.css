@@ -2856,8 +2856,19 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
   .diagram-group-meta { margin-left: 0; }
 }
 .library-page.diagrams-page { max-width: 1480px; }
-.diagram-by { flex: none; }
-.diagram-by button[aria-pressed="true"] { font-weight: inherit; }
+.diagram-control { flex: none; display: flex; align-items: center; gap: 6px; }
+.diagram-control-label { color: var(--muted); font-size: .74rem; }
+.diagram-control .code-segment button[aria-pressed="true"] { font-weight: inherit; }
+/* Cards: a frame in the diagram's own proportions, big enough that its labels read without opening it. */
+.diagram-index .diagram-strip { grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: 22px 18px; }
+.diagram-index[data-as="large"] .diagram-strip { grid-template-columns: repeat(auto-fill, minmax(min(100%, 600px), 1fr)); }
+.diagram-index .markdown-image-trigger.diagram-card:not(.diagram-row-open) { grid-template-rows: auto auto; gap: 8px; }
+.diagram-card:not(.diagram-row-open) .diagram-thumb-frame { aspect-ratio: 16 / 10; padding: 10px; }
+.diagram-card:not(.diagram-row-open) .diagram-card-text strong { font-size: .92rem; }
+.diagram-card:not(.diagram-row-open) .diagram-card-text > span { font-size: .8rem; -webkit-line-clamp: 2; }
+.diagram-card-text > .diagram-card-meta { display: block; margin-top: 2px; font-size: .72rem; }
+.diagram-card-meta code { font-size: .7rem; }
+.diagram-index .diagram-group { gap: 12px; }
 /* By date: one table, newest first; a thumbnail and title that open the viewer, the task, and when it was saved. */
 .diagram-table { display: grid; }
 .diagram-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px) 84px; align-items: center; gap: 16px; border-bottom: 1px solid var(--line); padding: 6px 4px; }
@@ -2886,9 +2897,9 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
   .diagram-row-task { grid-column: 1; grid-row: 2; }
   .diagram-row-time { grid-column: 2; grid-row: 2; }
 }
-.diagram-index .diagram-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); }
+.diagram-index .diagram-strip { display: grid; }
 .diagram-index .markdown-image-trigger.diagram-card { width: auto; }
-@media (max-width: 760px) { .diagram-index .diagram-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .diagram-index .diagram-strip, .diagram-index[data-as="large"] .diagram-strip { grid-template-columns: minmax(0, 1fr); } .diagram-control-label { display: none; } .diagram-index-bar { flex-wrap: wrap; } }
 
 /* Dock Diagrams panel: small thumbnails, two or three to a row, each opening the viewer. */
 .doc-dock-panel-diagrams { width: min(560px, calc(100vw - 32px)); }

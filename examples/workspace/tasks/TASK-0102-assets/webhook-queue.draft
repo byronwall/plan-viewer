@@ -1,0 +1,17 @@
+diagram "Billing webhooks through a queue" version=1
+subtitle "A slow handler no longer drops events"
+
+node stripe "Stripe" color=slate shade=200
+node endpoint "Webhook endpoint" color=blue
+node queue "Durable queue" color=amber shade=300
+node worker "Handler worker" color=blue shade=300
+node ledger "Billing ledger" color=green shade=300
+node dead "Dead-letter queue" color=red shade=200
+
+edge send stripe -> endpoint "POST event"
+edge enqueue endpoint -> queue "ack in 50 ms"
+edge pull queue -> worker "at-least-once"
+edge write worker -> ledger "idempotent write"
+edge fail worker -> dead "after 5 retries" kind=async
+
+layout root engine=layered fit=slide

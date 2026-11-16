@@ -1,0 +1,13 @@
+diagram "Where a cold dashboard load goes" version=1
+subtitle "4.8 s today; the two biggest costs are the first two steps"
+
+node auth "Session lookup" color=amber shade=300
+node schema "Schema introspection" color=red shade=300
+node queries "Widget queries" color=blue
+node render "First render" color=green shade=300
+
+edge a auth -> schema "1.4 s"
+edge b schema -> queries "2.1 s"
+edge c queries -> render "1.3 s"
+
+layout root engine=layered fit=slide

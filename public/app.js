@@ -646,7 +646,8 @@ function showDiagrams({ historyMode = "push" } = {}) {
 }
 
 function renderDiagramsPage() {
-  const query = new URLSearchParams(location.search).get("q") || "";
+  const params = new URLSearchParams(location.search);
+  const query = params.get("q") || "";
   state.view = "diagrams";
   resetPageNavigation();
   elements.diagramsButton.setAttribute("aria-current", "page");
@@ -660,15 +661,17 @@ function renderDiagramsPage() {
     elements.chunks.innerHTML = `<section class="library-list"><p class="library-intro">Loading diagrams…</p></section>`;
     return;
   }
-  elements.chunks.innerHTML = diagramsPageHtml(state.diagrams, state.documents, query, ago, new URLSearchParams(location.search).get("by") || "");
+  elements.chunks.innerHTML = diagramsPageHtml(state.diagrams, state.documents, query, ago, { by: params.get("by") || "", as: params.get("as") || "" });
   if (query) filterDiagrams(elements.chunks, query);
 }
 
 elements.chunks.addEventListener("click", (event) => {
-  const by = event.target.closest("[data-diagrams-by]");
-  if (!by || state.view !== "diagrams") return;
-  setOverlayParams({ by: by.dataset.diagramsBy });
+  const choice = event.target.closest("[data-diagrams-by], [data-diagrams-as]");
+  if (!choice || state.view !== "diagrams") return;
+  setOverlayParams("diagramsBy" in choice.dataset ? { by: choice.dataset.diagramsBy } : { as: choice.dataset.diagramsAs });
+  const y = scrollY;
   renderDiagramsPage();
+  window.scrollTo({ top: y, behavior: "instant" });
 });
 elements.chunks.addEventListener("input", (event) => {
   const filter = event.target.closest(".diagram-filter");
