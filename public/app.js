@@ -2399,7 +2399,6 @@ async function refreshFromMarkdown(changedPaths) {
   const pinnedTop = pinned?.getBoundingClientRect().top;
   const openPanel = elements.chunks.querySelector(".doc-dock-panel:popover-open")?.id;
   const openSource = elements.chunks.querySelector('.dock-source[aria-selected="true"]')?.dataset.dockSource;
-  const keepScroll = (render) => { render(); window.scrollTo({ top: scrollY, behavior: "instant" }); };
 
   try {
     const libraryResponse = await fetch("/api/documents");
@@ -2409,32 +2408,10 @@ async function refreshFromMarkdown(changedPaths) {
     updateNavCounts();
     loadWaiting();
 
-    if (state.view in LIBRARY_VIEWS) {
+    // Only a document page re-renders its document below. Every other page redraws in place or keeps its own data.
+    if (state.view !== "document") {
       renderLibrary();
-      keepScroll(() => renderLibraryPage(state.view));
-      return;
-    }
-
-    if (state.view === "tasks") {
-      renderLibrary();
-      keepScroll(renderTasksPage);
-      return;
-    }
-
-    if (state.view === "code" || state.view === "plans" || state.view === "issues" || state.view === "slack") {
-      renderLibrary();
-      return;
-    }
-
-    if (state.view === "activity") {
-      renderLibrary();
-      renderActivity();
-      return;
-    }
-
-    if (state.view === "steps") {
-      renderLibrary();
-      refreshSteps();
+      VIEWS[state.view]?.refresh?.();
       return;
     }
 
@@ -4045,47 +4022,47 @@ window.addEventListener("resize", () => {
   alignProgressiveColumns();
   resizeComposerTextarea(elements.handoffPopover.querySelector("textarea"));
 });
+// Every page except a document, in one place: how it opens from its URL (boot), how it comes back on Back/Forward
+// (back), and how it redraws when Markdown changes on disk (refresh; none when the page keeps its own data). Boot,
+// popstate and the live refresh all route through this table, so a page can't be left out of one and fall through to
+// opening the daily plan. A page that sets `state.view` must be listed here (pages.test.js checks).
+const VIEWS = Object.assign(Object.create(null), {
+  tasks: {
+    boot: () => { selectedTaskPath = taskFromUrl(); renderTasksPage(); },
+    back: (params) => { selectedTaskPath = taskFromUrl() || selectedTaskPath; showDoneTasks = params.get("done") === "1"; showTasks({ historyMode: "none" }); },
+    refresh: () => keepScroll(renderTasksPage),
+  },
+  steps: {
+    boot: () => { readStepsUrl(); renderStepsPage(); },
+    back: () => { readStepsUrl(); showSteps({ historyMode: "none" }); },
+    refresh: refreshSteps,
+  },
+  ...Object.fromEntries(Object.keys(LIBRARY_VIEWS).map((view) => [view, {
+    boot: () => renderLibraryPage(view),
+    back: () => showLibrary(view, { historyMode: "none" }),
+    refresh: () => keepScroll(() => renderLibraryPage(view)),
+  }])),
+  diagrams: { boot: () => renderDiagramsPage(), back: () => showDiagrams({ historyMode: "none" }), refresh: loadDiagrams }, // task titles label the groups
+  code: { boot: () => renderCode(), back: (params) => showCode({ historyMode: "none", tab: params.get("tab") || "" }) },
+  plans: { boot: () => renderPlans(), back: () => showPlans({ historyMode: "none" }) },
+  issues: { boot: () => renderIssues(), back: (params) => showIssues({ historyMode: "none", tab: params.get("tab") || "" }) },
+  slack: { boot: () => renderSlack(), back: () => showSlack({ historyMode: "none" }) },
+  activity: { boot: () => renderActivity(), back: () => showActivity({ historyMode: "none" }), refresh: () => renderActivity() },
+});
+
+// Redraw in place: a live update never moves the reader.
+function keepScroll(render) {
+  const top = window.scrollY;
+  render();
+  window.scrollTo({ top, behavior: "instant" });
+}
+
 window.addEventListener("popstate", () => {
   const params = new URLSearchParams(location.search);
-  if (params.get("view") === "tasks") {
-    selectedTaskPath = taskFromUrl() || selectedTaskPath;
-    showDoneTasks = params.get("done") === "1";
-    showTasks({ historyMode: "none" });
-    return;
-  }
-  if (params.get("view") === "steps") {
-    readStepsUrl();
-    showSteps({ historyMode: "none" });
-    return;
-  }
-  if (params.get("view") in LIBRARY_VIEWS) {
-    showLibrary(params.get("view"), { historyMode: "none" });
-    return;
-  }
-  if (params.get("view") === "diagrams") {
-    showDiagrams({ historyMode: "none" });
-    return;
-  }
-  if (params.get("view") === "plans" || (params.get("view") === "code" && params.get("tab") === "plans")) {
-    showPlans({ historyMode: params.get("view") === "plans" ? "none" : "replace" });
-    return;
-  }
-  if (params.get("view") === "code") {
-    showCode({ historyMode: "none", tab: params.get("tab") || "" });
-    return;
-  }
-  if (params.get("view") === "issues") {
-    showIssues({ historyMode: "none", tab: params.get("tab") || "" });
-    return;
-  }
-  if (params.get("view") === "slack") {
-    showSlack({ historyMode: "none" });
-    return;
-  }
-  if (params.get("view") === "activity") {
-    showActivity({ historyMode: "none" });
-    return;
-  }
+  // The Plans tab moved out of Code into its own page; old links land there.
+  if (params.get("view") === "code" && params.get("tab") === "plans") return showPlans({ historyMode: "replace" });
+  const page = VIEWS[params.get("view")];
+  if (page) return page.back(params);
   const requested = params.get("path");
   const path = state.documents.find((doc) => doc.path === requested)?.path
     || state.documents.find((doc) => doc.path === state.defaultPath)?.path
@@ -4522,18 +4499,7 @@ async function boot() {
       || state.documents.find((doc) => doc.path === body.defaultPath)?.path
       || state.documents[0]?.path;
     renderLibrary();
-    if (requestedView === "tasks") {
-      selectedTaskPath = taskFromUrl();
-      renderTasksPage();
-    }
-    else if (requestedView in LIBRARY_VIEWS) renderLibraryPage(requestedView);
-    else if (requestedView === "steps") { readStepsUrl(); renderStepsPage(); }
-    else if (requestedView === "diagrams") renderDiagramsPage();
-    else if (requestedView === "code") renderCode();
-    else if (requestedView === "plans") renderPlans();
-    else if (requestedView === "issues") renderIssues();
-    else if (requestedView === "slack") renderSlack();
-    else if (requestedView === "activity") renderActivity();
+    if (VIEWS[requestedView]) VIEWS[requestedView].boot();
     else if (initial) await selectDocument(initial, { historyMode: "none", anchor: locationAnchor() });
     else showNotice("No supported files were found under daily, tasks, plans, or reference.", true);
     connectLiveUpdates();
