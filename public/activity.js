@@ -156,7 +156,8 @@ function filtered() {
 }
 
 function render() {
-  if (!ui.host?.isConnected) return;
+  // The host is the shared page container: a fetch that lands after you leave Activity must not paint over the next page.
+  if (!ui.host?.isConnected || !ui.host.classList.contains("activity-page")) return;
   const { kept, inTime, shown } = filtered();
   const counts = Object.fromEntries(Object.keys(SOURCES).map((source) => [source, source === "all" ? inTime.length : inTime.filter((row) => row.source === source).length]));
   ui.visible = shown.slice(0, 500);
