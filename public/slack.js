@@ -7,6 +7,9 @@ import { applyLinkMetadata, collectLinks, linkBrowser, metadataKey, selectDockSo
 import { emojiFor, emojify } from "./emoji.js";
 import { glyph, GLYPHS } from "./icons.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
+import { saveUpNextNote } from "./note-popover.js";
+
+const HINT = "<kbd>Enter</kbd> save note · <kbd>⌘</kbd><kbd>Enter</kbd> open draft · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line";
 
 // Slack mrkdwn as the viewer's Markdown: `<url|label>` links, `<@U…|Name>` mentions, `:emoji:` shortcodes,
 // single-star bold, bullet glyphs, and single line breaks kept (two plain lines in a row become two paragraphs).
@@ -99,6 +102,7 @@ function ensureDialog() {
     else if (event.target.closest("[data-slack-open]")) openInSlack(event.target.closest("[data-slack-open]").dataset.slackOpen);
     else if (event.target.closest("[data-slack-refresh]")) load(true);
     else if (event.target.closest("[data-slack-copy-prompt]")) copyDiscussPrompt(event.target.closest("[data-slack-copy-prompt]"));
+    else if (event.target.closest("[data-slack-discuss]")) discuss(true);
     else if (event.target.closest("[data-slack-new]")) jumpToNew();
     else if (event.target.closest("[data-slack-retry]")) load(true);
     else if (event.target.closest("[data-slack-star]")) {
@@ -116,6 +120,7 @@ function ensureDialog() {
   });
   dialog.addEventListener("submit", (event) => { event.preventDefault(); discuss(); });
   dialog.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && event.target.closest?.(".slack-composer textarea")) { event.preventDefault(); discuss(true); return; }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const key = event.key.toLowerCase();
     const field = event.target.closest?.("input, textarea");
@@ -259,13 +264,13 @@ async function renderLinks() {
 
 function renderComposer() {
   const form = dialog.querySelector('[data-o="composer"]');
-  form.innerHTML = `<textarea rows="1" placeholder="Ask ${escapeHtml(agentName())} about this thread…" aria-label="Ask ${escapeHtml(agentName())} about this thread"></textarea><button type="button" class="code-bar-button" data-slack-copy-prompt>${icon("copy")}Copy prompt</button><button type="submit" class="code-bar-button is-primary">${icon("discuss")}Discuss in ${escapeHtml(agentName())}</button><p class="slack-composer-hint code-muted" data-slack-hint><kbd>Enter</kbd> opens a draft with the thread attached · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line${keys()}</p>`;
+  form.innerHTML = `<textarea rows="1" placeholder="Ask ${escapeHtml(agentName())} about this thread…" aria-label="Ask ${escapeHtml(agentName())} about this thread"></textarea><button type="button" class="note-pop-icon" data-slack-copy-prompt title="Copy the prompt" aria-label="Copy the prompt">${icon("copy")}</button><button type="button" class="note-pop-send" data-slack-discuss title="Open the draft in ${escapeHtml(agentName())} now (⌘Enter)">Discuss in ${escapeHtml(agentName())}</button><button type="submit" class="note-pop-save">Save note</button><p class="slack-composer-hint code-muted" data-slack-hint>${HINT}${keys()}</p>`;
 }
 const hint = (message = "", error = false) => {
   const line = dialog.querySelector("[data-slack-hint]");
   if (!line) return;
   line.classList.toggle("is-error", error);
-  line.innerHTML = message ? escapeHtml(message) : `<kbd>Enter</kbd> opens a draft with the thread attached · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line${keys()}`;
+  line.innerHTML = message ? escapeHtml(message) : `${HINT}${keys()}`;
 };
 function fitComposer(box) {
   box.style.height = "0px";
@@ -283,18 +288,25 @@ function copyDiscussPrompt(button) {
   copyPrompt(requestDiscuss(dialog.querySelector(".slack-composer textarea").value, true), button).then(() => hint(), (error) => hint(error.message, true));
 }
 
-async function discuss() {
+// Enter saves the ask, with the thread attached, as an Up next note; Discuss in (⌘Enter) opens the draft now.
+async function discuss(open = false) {
   if (!current?.thread) return;
   const box = dialog.querySelector(".slack-composer textarea");
-  const button = dialog.querySelector(".slack-composer button");
+  const button = dialog.querySelector(open ? "[data-slack-discuss]" : ".slack-composer [type=submit]");
   button.disabled = true;
-  hint(`Opening a draft in ${agentName()}…`);
+  hint(open ? `Opening a draft in ${agentName()}…` : "Saving a note…");
+  let saved;
   try {
-    await requestDiscuss(box.value);
+    if (open) await requestDiscuss(box.value);
+    else {
+      const { prompt } = await requestDiscuss(box.value, true);
+      const title = `Slack thread${current.thread.channelName ? ` in ${current.thread.channelName}` : ""}: ${box.value.trim().split("\n")[0] || "discuss"}`;
+      saved = await saveUpNextNote({ title, prompt });
+    }
     box.value = "";
     fitComposer(box);
     hint();
-    notify(`Drafted a discussion of this thread in ${agentName()}. Review it and press Enter to send.`);
+    notify(open ? `Drafted a discussion of this thread in ${agentName()}. Review it and press Enter to send.` : `Saved a note for Up next: ${saved.note}`);
   } catch (error) {
     hint(error.message, true);
   } finally {

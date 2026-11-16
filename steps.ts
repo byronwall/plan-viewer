@@ -424,6 +424,19 @@ export const relinkFrom = (text: string, source: string, note: string) => !sourc
 
 // `step` (`TASK-0101 W2.1`) ties the note to a step: a decision voiced over, or direction for one step. While the note
 // is open it stands in for that step, so the step leaves its mover's list.
+// A launch button's prompt (Shakedown, Start, Discuss…) saved as an Up next note instead of opened as an agent chat
+// (`/api/notes`). The person's comment goes at the top; the task comes from the body or a task-file source.
+export async function saveLaunchNote(root: string, body: Record<string, unknown>, user: string, now = new Date()) {
+  const title = String(body.title || "").slice(0, 200), comment = String(body.comment || "").trim().slice(0, 12_000);
+  let prompt = String(body.prompt || "").slice(0, 60_000);
+  if (!prompt.trim() && !comment) throw new Error("Nothing to save.");
+  if (comment) prompt = `${user}'s note: ${comment}\n\n${prompt}`.trim();
+  const source = /^[\w./-]+\.md$/.test(String(body.source || "")) ? String(body.source) : "";
+  const task = String(body.task || "").match(/^TASK-\d{4}$/)?.[0] || source.match(/^tasks\/(TASK-\d{4})/)?.[1] || "";
+  const step = new RegExp(`^${task} W[\\d.]+$`).test(String(body.step || "")) && task ? String(body.step) : "";
+  return saveNote(root, { commentary: title || comment || "Note", prompt, source, task, step }, now);
+}
+
 export async function saveNote(root: string, { commentary, prompt, source = "", task = "", step = "", images = [] as string[] }, now = new Date()) {
   const title = commentary.trim().split("\n")[0].replace(/\s+/g, " ").slice(0, 90) || "Note";
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "note";

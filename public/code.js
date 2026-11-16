@@ -4,6 +4,7 @@ import { agentApp, agentName as appName, config, escapeRegExp } from "./config.j
 import { decorate, lineClasses, markWords } from "./word-diff.js";
 import { mapHtml, mapSvg, moveGroups, svgToPng, tileCard } from "./diff-map.js";
 import { anchorNote } from "./note-anchor.js";
+import { openNotePopover, saveUpNextNote } from "./note-popover.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 
 // Code dashboard: tracked repos' worktrees (most recent first), their open PRs, and worktree cleanup.
@@ -640,8 +641,8 @@ function openMovePop(button) {
   pop.innerHTML = `<header>${glyph(MOVES[move].glyph)}<b>${MOVES[move].verb}</b><span>${prs.length} PR${prs.length === 1 ? "" : "s"}</span></header>
     <p class="code-move-ask">${escapeHtml(MOVES[move].ask(column))}</p>
     <p class="code-move-prs">${prs.map((pr) => `#${pr.number}`).join(" ")}</p>
-    <textarea data-move-note rows="2" placeholder="Add a note for the agent (optional)" spellcheck="true"></textarea>
-    <div class="code-move-actions"><button type="button" class="code-bar-button is-primary" data-move-send="draft">Draft in ${escapeHtml(appName())}</button><button type="button" class="code-bar-button" data-move-send="note">Save as note</button><button type="button" class="code-bar-button" data-move-send="copy">Copy prompt</button><span class="code-spacer"></span><kbd>Esc</kbd></div>`;
+    <textarea data-move-note rows="2" placeholder="Add a comment for the agent (optional)" spellcheck="true"></textarea>
+    <div class="code-move-actions"><span class="note-pop-hint"><kbd>Enter</kbd> save · <kbd>Esc</kbd> cancel</span><button type="button" class="note-pop-icon" data-move-send="copy" title="Copy the prompt" aria-label="Copy the prompt">${glyph("copy")}</button><button type="button" class="note-pop-send" data-move-send="draft" title="Draft it in ${escapeHtml(appName())} now (⌘Enter)">Draft in ${escapeHtml(appName())}</button><button type="button" class="note-pop-save" data-move-send="note">Save note</button></div>`;
   pop.dataset.tone = move;
   pop.showPopover();
   pop.querySelector("[data-move-note]").focus();
@@ -650,10 +651,9 @@ function openMovePop(button) {
 async function sendMove(kind, button) {
   const pop = host.querySelector("#code-move");
   const note = pop.querySelector("[data-move-note]").value;
-  if (kind === "note" && !note.trim()) { pop.querySelector("[data-move-note]").focus(); return notify("Write the note first; it becomes the note's title in Up next."); }
   const { title, prompt } = movePrompt(pop.dataset.move, pop.dataset.column, note);
   if (kind === "copy") return copyPrompt(post("group-move", { title, prompt, copy: true }), button);
-  const result = await post("group-move", { title, prompt, app: agentApp(), note: kind === "note", commentary: note });
+  const result = await post("group-move", { title, prompt, app: agentApp(), note: kind === "note", commentary: title });
   pop.hidePopover();
   notify(kind === "note" ? `Saved a note for Up next: ${result.note}` : `Drafted "${title}" in ${appName()}. Review it and press Enter to send.`);
 }
@@ -3166,13 +3166,9 @@ async function handleClick(event) {
     if (dataset.codeStopRun) return stopRun(dataset.codeStopRun);
     if (dataset.codePreview) { notify(`Opening the PR #${dataset.codePreview} deployment…`); await post("preview", { repo: dataset.repo, number: dataset.codePreview }); return; }
     if (dataset.codeOpen) { await post("open", { kind: dataset.codeOpen, path: dataset.path }); return; }
-    if ("codeSession" in dataset) { await post("session", { app: agentApp(), path: dataset.path }); notify(`Opened a ${appName()} session in ${shortPath(dataset.path)}.`); return; }
+    if ("codeSession" in dataset) return sessionNote(target, dataset.path);
     if (dataset.codeSkill && (event.altKey || "copyPrompt" in dataset)) return copyPrompt(post("agent", { app: agentApp(), skill: dataset.codeSkill, url: dataset.url, path: dataset.path, comment: dataset.comment || "", copy: true }), target);
-    if (dataset.codeSkill) {
-      await post("agent", { app: agentApp(), skill: dataset.codeSkill, url: dataset.url, path: dataset.path, comment: dataset.comment || "" });
-      notify(`Drafted ${dataset.codeSkill} in ${appName()}. Review it and press Enter to send.`);
-      return;
-    }
+    if (dataset.codeSkill) return skillNote(target, dataset.codeSkill, dataset.url, dataset.path, dataset.comment || "");
     if (dataset.codeRemoveRepo) {
       if (!confirm(`Stop tracking ${dataset.codeRemoveRepo}? Nothing on disk changes.`)) return;
       await post("remove-repo", { path: dataset.codeRemoveRepo });
@@ -3180,14 +3176,41 @@ async function handleClick(event) {
     }
     if ("codeCleanupAgent" in dataset && event.altKey) return copyPrompt(post("cleanup-agent", { app: agentApp(), paths: [...ui.selected], copy: true }), target);
     if ("codeCleanupAgent" in dataset) {
-      await post("cleanup-agent", { app: agentApp(), paths: [...ui.selected] });
-      notify(`Drafted a cleanup review of ${ui.selected.size} worktrees in ${appName()}.`);
-      return;
+      const paths = [...ui.selected], title = `Cleanup review of ${paths.length} worktree${paths.length === 1 ? "" : "s"}`;
+      return openNotePopover(target, {
+        heading: title, detail: paths.map(shortPath).join(", "),
+        save: async (comment) => { const { note } = await saveUpNextNote({ title, comment, prompt: (await post("cleanup-agent", { paths, copy: true })).prompt }); notify(`Saved a note for Up next: ${note}`); },
+        send: { label: `Draft in ${appName()}`, run: async (comment) => { await post("cleanup-agent", { app: agentApp(), paths }); notify(`Drafted a cleanup review of ${paths.length} worktrees in ${appName()}.`); } },
+        copy: async () => (await post("cleanup-agent", { paths, copy: true })).prompt,
+      });
     }
     if ("codeRemove" in dataset) return removeSelected();
   } catch (error) {
     notify(error.message, true);
   }
+}
+
+// Launch buttons (a PR's skills, New session, Agent review) open the note popover: Enter saves the prompt they would
+// have sent as an Up next note; the old launch is its quiet secondary button, and ⌥-click still copies the prompt.
+function skillNote(anchor, skillId, url, path, commentId = "") {
+  const skill = (meta().skills || []).find((candidate) => candidate.id === skillId) || { label: skillId };
+  const pr = [...(ui.data?.prs || []), ...(ui.data?.donePrs || [])].find((candidate) => candidate.url === url);
+  const title = `${skill.label} #${pr?.number || url.split("/").pop()}${pr ? ` ${pr.title}` : ""}`;
+  const request = (extra) => post("agent", { app: agentApp(), skill: skillId, url, path, comment: commentId, ...extra });
+  openNotePopover(anchor, {
+    heading: title, detail: shortPath(path),
+    save: async (comment) => { const { note } = await saveUpNextNote({ title, comment, prompt: (await request({ copy: true })).prompt }); notify(`Saved a note for Up next: ${note}`); },
+    send: { label: `${skill.label} in ${appName()}`, run: async () => { await request({}); notify(`Drafted ${skillId} in ${appName()}. Review it and press Enter to send.`); } },
+    copy: async () => (await request({ copy: true })).prompt,
+  });
+}
+function sessionNote(anchor, path) {
+  const title = `Work in ${shortPath(path)}`;
+  openNotePopover(anchor, {
+    heading: title, detail: path, placeholder: "What should the agent do there?", required: true,
+    save: async (comment) => { const { note } = await saveUpNextNote({ title, comment, prompt: `Work in \`${path}\`.` }); notify(`Saved a note for Up next: ${note}`); },
+    send: { label: `New ${appName()} session`, run: async () => { await post("session", { app: agentApp(), path }); notify(`Opened a ${appName()} session in ${shortPath(path)}.`); } },
+  });
 }
 
 function move(step) {
@@ -3212,7 +3235,8 @@ function handleKey(event) {
   const key = event.key.toLowerCase();
   const item = selectedItem();
   const tree = item.tree || (item.pr && worktreeFor(item.pr)) || (item.commit?.worktree && ui.data.worktrees.find((candidate) => candidate.path === item.commit.worktree));
-  const skill = (index) => item.pr && post("agent", { app: agentApp(), skill: ui.data.skills[index].id, url: item.pr.url, path: tree?.path || item.pr.repo }).then(() => notify(`Drafted ${ui.data.skills[index].id} in ${appName()}. Review it and press Enter to send.`));
+  const rowAnchor = () => host.querySelector(`[data-code-row="${CSS.escape(ui.sel)}"]`) || host;
+  const skill = (index) => item.pr && ui.data.skills[index] && skillNote(rowAnchor(), ui.data.skills[index].id, item.pr.url, tree?.path || item.pr.repo);
   const copyText = (text) => navigator.clipboard.writeText(text).then(() => notify(`Copied ${text}`));
   const actions = {
     arrowdown: () => move(1), j: () => move(1), arrowup: () => move(-1), k: () => move(-1),
@@ -3225,7 +3249,7 @@ function handleKey(event) {
     enter: () => item.commit ? openDiff() : item.pr ? openPrOverlay(item.pr.slug, item.pr.number) : item.tree && openWorktreeOverlay(item.tree.path),
     e: () => tree && post("open", { kind: "vscode", path: tree.path }),
     x: () => tree && post("open", { kind: "terminal", path: tree.path }),
-    s: () => tree && post("session", { app: agentApp(), path: tree.path }).then(() => notify(`Opened a ${appName()} session in ${shortPath(tree.path)}.`)),
+    s: () => tree && sessionNote(rowAnchor(), tree.path),
     y: () => copyText(item.commit ? item.commit.sha : item.pr ? item.pr.url : tree.path),
     d: () => { const pr = item.pr || prFor(item.tree); if (!pr || !ui.data.previews?.includes(pr.repo)) return; notify(`Opening the PR #${pr.number} deployment…`); return post("preview", { repo: pr.repo, number: String(pr.number) }); },
     l: () => {
@@ -3432,7 +3456,16 @@ export function renderCodePage(container, { tab, showNotice }) {
     ui.boardMove = move in MOVES ? move : "all";
     ui.stackedOnly = new URLSearchParams(location.search).get("stacked") === "1";
     // The move popover holds typed text, so only Esc, its own buttons, or an outside click while it is empty close it.
-    container.addEventListener("keydown", (event) => { if (event.key === "Escape" && event.target.closest?.("#code-move")) { event.preventDefault(); container.querySelector("#code-move")?.hidePopover(); } });
+    container.addEventListener("keydown", (event) => {
+      if (!event.target.closest?.("#code-move")) return;
+      if (event.key === "Escape") { event.preventDefault(); container.querySelector("#code-move")?.hidePopover(); }
+      // Enter saves the move as an Up next note, like every launch popover; ⌘Enter drafts it in the agent app now.
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.target.matches("[data-move-note]")) {
+        event.preventDefault();
+        const kind = event.metaKey || event.ctrlKey ? "draft" : "note";
+        sendMove(kind, container.querySelector(`[data-move-send="${kind}"]`)).catch((error) => notify(error.message));
+      }
+    });
     document.addEventListener("pointerdown", (event) => {
       const pop = container.querySelector("#code-move:popover-open");
       if (pop && !event.target.closest("#code-move, [data-board-move]") && !pop.querySelector("[data-move-note]").value.trim()) pop.hidePopover();

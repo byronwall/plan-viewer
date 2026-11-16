@@ -3,6 +3,7 @@ import { GLYPHS } from "./icons.js";
 import { agentApp, agentName as appName, config, escapeRegExp } from "./config.js";
 import { ago, altKey, avatar, planning, planningSection, ciBadge, copied, copyPrompt, fadeIn, heat, hideTip, icon, iconButton, isSummonKey, openPrOverlay, openWorktreeOverlay, showTip, sideFacts, sideHead, sideStatus, when } from "./code.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
+import { openNotePopover, saveUpNextNote } from "./note-popover.js";
 
 // Issues page: Jira, Linear and GitHub issues in the configured scope (viewer.config.json `issues`), laid out like the Code page:
 // a dense list newest first, an inspector for the selected row, and a full overview on Enter. Read-only; changes go
@@ -834,10 +835,17 @@ const requestDraft = async (skill, keys, copy = false) => {
   if (!response.ok) throw new Error(body.error || "Could not open the draft.");
   return body;
 };
-async function draft(skill, keys) {
-  await requestDraft(skill, keys);
+// A skill on issues opens the note popover: Enter saves its prompt as an Up next note; the draft is its quiet button.
+function draft(skill, keys, anchor) {
   const label = ui.data.skills.find((candidate) => candidate.id === skill)?.label || skill;
-  notify(`Drafted ${label} for ${keys.length === 1 ? keyLabel(keys[0]) : `${keys.length} issues`} in ${appName()}. Review it and press Enter to send.`);
+  const what = keys.length === 1 ? keyLabel(keys[0]) : `${keys.length} issues`;
+  const title = `${label} ${keys.length <= 3 ? keys.join(", ") : what}`;
+  openNotePopover(anchor || host, {
+    heading: title, detail: keys.length > 3 ? keys.join(", ") : "",
+    save: async (comment) => { const { note } = await saveUpNextNote({ title, comment, prompt: (await requestDraft(skill, keys, true)).prompt }); notify(`Saved a note for Up next: ${note}`); },
+    send: { label: `${label} in ${appName()}`, run: async () => { await requestDraft(skill, keys); notify(`Drafted ${label} for ${what} in ${appName()}. Review it and press Enter to send.`); } },
+    copy: async () => (await requestDraft(skill, keys, true)).prompt,
+  });
 }
 
 let skillMenuTrigger = null;
@@ -922,7 +930,7 @@ async function handleClick(event) {
     if (dataset.issueCopy) { await navigator.clipboard.writeText(dataset.issueCopy); return copied(target); }
     if (dataset.issueSkills !== undefined) return openSkillMenu(target);
     if (dataset.issueSkill && (event.altKey || "copyPrompt" in dataset)) return copyPrompt(requestDraft(dataset.issueSkill, dataset.keys.split(","), true), target);
-    if (dataset.issueSkill) { target.closest("#issue-skills")?.hidePopover(); return draft(dataset.issueSkill, dataset.keys.split(",")); }
+    if (dataset.issueSkill) { const menu = target.closest("#issue-skills"); menu?.hidePopover(); return draft(dataset.issueSkill, dataset.keys.split(","), menu ? skillMenuTrigger : target); }
     if (dataset.issuePr) { const [slug, number] = dataset.issuePr.split("#"); return openPrOverlay(slug, Number(number)); }
     if (dataset.issueWt) return openWorktreeOverlay(dataset.issueWt);
     if ("issueClosedPrs" in dataset) { ui.showClosedPrs = !ui.showClosedPrs; renderDetail(); return dialog?.open && renderOverview(); }
@@ -945,7 +953,7 @@ function handleKey(event) {
   const key = event.key.toLowerCase();
   const issue = byKey().get(ui.sel);
   const keys = issue && ui.selected.has(issue.key) ? [...ui.selected] : issue ? [issue.key] : [...ui.selected];
-  const skill = (index) => ui.data.skills[index] && keys.length && draft(ui.data.skills[index].id, keys);
+  const skill = (index) => ui.data.skills[index] && keys.length && draft(ui.data.skills[index].id, keys, host.querySelector(`[data-issue-row="${CSS.escape(ui.sel || "")}"]`));
   const actions = {
     arrowdown: () => move(1), j: () => move(1), arrowup: () => move(-1), k: () => move(-1),
     f: () => host.querySelector("[data-issue-filter]")?.focus(),

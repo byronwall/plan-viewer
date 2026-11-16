@@ -12,6 +12,7 @@ import { openSlackThread, refreshSlackStars, setSlackFavorites, setSlackNotice, 
 import { channelLabel, fresh as freshThread, lastActive, opener, permalink, refreshSlackPage, renderSlackPage } from "./slack-page.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { installBrief } from "./brief.js";
+import { openNotePopover } from "./note-popover.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { bindOutbound, outboundPanel } from "./outbound.js";
@@ -840,12 +841,12 @@ function renderActivity() {
   renderActivityPage(elements.chunks, state.documents, { openDocument: (path, anchor) => selectDocument(path, { historyMode: "push", anchor }), openDiagram: (path) => openDiagram(path) });
 }
 
-const COMPOSER_HINT = "<kbd>Enter</kbd> note · <kbd>⌘</kbd><kbd>Enter</kbd> open";
+const COMPOSER_HINT = "<kbd>Enter</kbd> save note · <kbd>⌘</kbd><kbd>Enter</kbd> open · <kbd>Esc</kbd> cancel";
 
 function composerTemplate(target) {
   const hint = `<p class="composer-hint">${COMPOSER_HINT}</p>`;
   // Save note is the default (Enter): notes batch up under Up next. Opening a draft now is ⌘Enter.
-  const actions = (open) => `<footer class="composer-actions">${hint}<button class="cancel-button" type="button">Cancel</button><button class="copy-prompt-button" type="button">Copy prompt</button><button class="send-button" type="submit" title="Open it in ${agentName()} now (⌘Enter)">${open}</button><button class="note-button" type="button" title="Save it for an agent thread: it waits under Up next (Enter)">Save note</button></footer>`;
+  const actions = (open) => `<footer class="composer-actions">${hint}<button class="copy-prompt-button" type="button" title="Copy the prompt" aria-label="Copy the prompt"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.copy}</svg></button><button class="send-button" type="submit" title="Open it in ${agentName()} now (⌘Enter)">${open}</button><button class="note-button" type="button" title="Save it for an agent thread: it waits under Up next (Enter)">Save note</button></footer>`;
   const close = `<button class="popover-close" type="button" aria-label="Close dialog">×</button>`;
   const heading = (meta) => `<header class="composer-heading"><div><h3>${escapeHtml(target.title)}</h3>${meta ? `<p class="composer-meta">${meta}</p>` : ""}</div>${close}</header>`;
   if (target.scope === "work") {
@@ -1087,7 +1088,7 @@ function renderImageViewer() {
         <pre>${item.source === undefined ? `<span class="draft-loading">Loading…</span>` : item.source === null ? `<span class="draft-loading">Could not load the diagram. <button type="button" data-image-action="retry-diagram">Retry</button></span>` : sourceHtml(item.source)}</pre>
         <form class="diagram-ask" data-diagram-ask>
           <textarea rows="1" aria-label="Ask ${escapeHtml(agentName())} about this diagram" placeholder="Ask ${escapeHtml(agentName())} to change this diagram (D)…">${escapeHtml(diagramDrafts.get(item.diagram) || "")}</textarea>
-          <footer><span class="code-spacer"></span><button type="button" data-image-action="copy-prompt">Copy prompt</button><button class="is-primary" type="submit">Open in ${escapeHtml(agentName())}</button></footer>
+          <footer><span class="note-pop-hint"><kbd>Enter</kbd> save note · <kbd>⌘</kbd><kbd>Enter</kbd> open</span><button type="button" class="note-pop-icon" data-image-action="copy-prompt" title="Copy the prompt" aria-label="Copy the prompt">${glyph("copy")}</button><button type="button" class="note-pop-send" data-image-action="diagram-open">Open in ${escapeHtml(agentName())}</button><button class="note-pop-save" type="submit">Save note</button></footer>
         </form>
       </aside>` : ""}
     </div>
@@ -1724,9 +1725,9 @@ async function runStepAction(step, kind, action) {
   };
   try {
     if (kind === "note") { openStepNote(step, action); return false; }
+    if (kind === "start") { openStepNote(step, action, true); return false; }
     if (kind === "copy-statement") { await navigator.clipboard.writeText(step.machinery.fields.run); action.classList.add("is-copied"); setTimeout(() => action.classList.remove("is-copied"), 900); return false; }
     action.disabled = true;
-    if (kind === "start") { await post("start", { key: step.key }); showNotice(`Started an agent on ${step.task} ${step.id}.`); }
     if (kind === "run") { const result = await post("run", { path: step.machinery.path }); showNotice(result.ok ? "Ran it; the output is in its file." : "The statement failed; the error is in its file.", !result.ok); }
     if (kind === "apply") { const result = await post("apply", { path: step.machinery.path }); showNotice(result.added ? `Added ${result.rule} to ${result.file}.` : `${result.file} already allows it.`); }
     if (kind === "done") { await post("done", { path: step.path, id: step.id }); showNotice(`Marked ${step.task} ${step.id} done.`); }
@@ -1735,44 +1736,32 @@ async function runStepAction(step, kind, action) {
   } catch (error) { showNotice(error.message, true); }
   return true;
 }
-// Note… and Decide…: a small popover under the button, over whatever is open (the step dialog included, so it is placed
-// inside that dialog to stay interactive). Enter saves the note tied to the step; Esc, or an outside click while empty,
-// closes it. Typed text survives an outside click.
-const stepNote = Object.assign(document.createElement("form"), { className: "step-note", popover: "manual" });
-function openStepNote(step, anchor) {
+// Note…, Decide… and Start: the shared note popover (note-popover.js) under the button, over whatever is open. Enter
+// saves a note tied to the step that waits under Up next; Start keeps launching the agent as the popover's quiet button.
+function openStepNote(step, anchor, start = false) {
   const decision = step.kind === "decision";
-  stepNote.innerHTML = `<label for="step-note-text">${decision ? "What did you decide?" : `Note on ${escapeHtml(step.id)} for the agent`}</label>
-    <textarea id="step-note-text" name="commentary" rows="3" required placeholder="${decision ? "What you chose, why, and anything it changes." : "Approve it, decide it, or say what to change."}"></textarea>
-    <p class="step-note-hint"><kbd>Enter</kbd> save · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · <kbd>Esc</kbd> cancel</p>`;
-  stepNote.dataset.path = step.path;
-  stepNote.dataset.id = step.id;
-  (anchor.closest("dialog[open]") || document.body).append(stepNote);
-  stepNote.showPopover();
-  const box = anchor.getBoundingClientRect(), width = stepNote.offsetWidth;
-  stepNote.style.left = `${Math.max(16, Math.min(box.right - width, innerWidth - width - 16))}px`;
-  stepNote.style.top = `${Math.min(box.bottom + 6, innerHeight - stepNote.offsetHeight - 16)}px`;
-  stepNote.querySelector("textarea").focus();
-}
-const closeStepNote = () => { if (stepNote.matches(":popover-open")) stepNote.hidePopover(); };
-stepNote.addEventListener("keydown", async (event) => {
-  if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeStepNote(); return; }
-  if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
-  event.preventDefault();
-  const textarea = stepNote.querySelector("textarea");
-  if (!textarea.value.trim() || textarea.readOnly) return;
-  textarea.readOnly = true;
-  try {
-    await requestDispatch({ path: stepNote.dataset.path, scope: "work", workItem: stepNote.dataset.id, mode: "note", commentary: textarea.value, note: true });
-    closeStepNote();
-    showNotice(`Saved your note on ${stepNote.dataset.id}; an agent picks it up from Up next.`);
+  const request = (extra, copy = false) => requestDispatch({ path: step.path, scope: "work", workItem: step.id, mode: start ? "run" : "note", ...extra }, copy);
+  const saved = () => {
+    showNotice(`Saved a note on ${step.id}; an agent picks it up from Up next.`);
     if (workItemDialog.open) reloadStepDialog();
     if (state.view === "steps") refreshSteps();
-  } catch (error) { textarea.readOnly = false; showNotice(error.message, true); }
-});
-stepNote.addEventListener("input", (event) => { event.target.style.height = "auto"; event.target.style.height = `${event.target.scrollHeight}px`; });
-document.addEventListener("pointerdown", (event) => {
-  if (stepNote.matches(":popover-open") && !stepNote.contains(event.target) && !stepNote.querySelector("textarea").value.trim()) closeStepNote();
-}, true);
+  };
+  openNotePopover(anchor, {
+    heading: start ? `Start ${step.id}: ${step.title}` : decision ? "What did you decide?" : `Note on ${step.id} for the agent`,
+    placeholder: start ? "Add a comment for the agent (optional)" : decision ? "What you chose, why, and anything it changes." : "Approve it, decide it, or say what to change.",
+    required: !start,
+    save: async (commentary) => { await request({ commentary, note: true }); saved(); },
+    ...(start ? {
+      send: { label: "Start agent now", run: async () => {
+        const response = await fetch("/api/steps/start", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: step.key }) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "The viewer couldn't start it.");
+        showNotice(`Started an agent on ${step.task} ${step.id}.`);
+      } },
+      copy: async (commentary) => (await request({ commentary }, true)).prompt,
+    } : {}),
+  });
+}
 
 async function pickStep(step, form) {
   const picked = [...form.querySelectorAll('input[name="pick"]:checked')].map((input) => input.value);
@@ -3179,6 +3168,7 @@ elements.imageViewer.addEventListener("click", (event) => {
   else if (action === "copy-source") copyDiagramSource(event.target.closest("button"));
   else if (action === "retry-diagram") { const item = currentDiagram(); if (item) { item.source = undefined; item.loaded = false; renderImageViewer(); } }
   else if (action === "copy-prompt") askAboutDiagram(true);
+  else if (action === "diagram-open") askAboutDiagram(false, true);
   else if (action === "copy-png") copyDiagramPng();
   else if (action === "panels") setDiagramPanels(event.target.closest("[data-panels]").dataset.panels);
   else if (!imageViewerState.moved) {
@@ -3234,16 +3224,17 @@ narrowDiagramViewer.addEventListener("change", () => {
 const diagramDrafts = new Map();
 
 // Opens a draft in the agent app about the diagram (or copies its prompt), naming the document it sits in.
-async function askAboutDiagram(copy = false) {
+// Enter (Save note) keeps the ask as an Up next note; Open in starts the draft now (⌘Enter); copy hands back the prompt.
+async function askAboutDiagram(copy = false, open = false) {
   const item = currentDiagram();
   const form = elements.imageViewer.querySelector("[data-diagram-ask]");
   if (!item || !form) return;
   const commentary = form.querySelector("textarea").value.trim();
   if (!commentary && !copy) { form.querySelector("textarea").focus(); return; }
-  const button = form.querySelector(copy ? '[data-image-action="copy-prompt"]' : '[type="submit"]');
+  const button = form.querySelector(copy ? '[data-image-action="copy-prompt"]' : open ? '[data-image-action="diagram-open"]' : '[type="submit"]');
   button.disabled = true;
   try {
-    const result = await requestDispatch({ scope: "diagram", diagram: item.diagram, path: state.view === "document" ? state.selectedPath || "" : "", commentary }, copy);
+    const result = await requestDispatch({ scope: "diagram", diagram: item.diagram, path: state.view === "document" ? state.selectedPath || "" : "", commentary, note: !copy && !open }, copy);
     if (copy) {
       await navigator.clipboard.writeText(result.prompt);
       button.classList.remove("is-copied");
@@ -3253,7 +3244,7 @@ async function askAboutDiagram(copy = false) {
       diagramDrafts.delete(item.diagram);
       form.querySelector("textarea").value = "";
       autosizeDiagramAsk();
-      showNotice(`Draft loaded in ${agentName()}. Review or edit it there, then send it.`);
+      showNotice(result.note ? `Saved a note for ${agentName()}; it waits under Up next.` : `Draft loaded in ${agentName()}. Review or edit it there, then send it.`);
     }
   } catch (error) {
     showNotice(error.message, true);
@@ -3453,7 +3444,7 @@ elements.imageViewer.addEventListener("keydown", (event) => {
   }
   const typing = event.target.closest("textarea");
   if (typing) {
-    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); askAboutDiagram(); }
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); askAboutDiagram(false, event.metaKey || event.ctrlKey); }
     else if (event.key === "Escape") { event.preventDefault(); typing.blur(); elements.imageViewer.querySelector(".image-viewer-stage")?.focus(); }
     event.stopPropagation();
     return;

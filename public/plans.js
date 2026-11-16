@@ -4,6 +4,7 @@ import { termMatch } from "./search.js";
 import { ago, copied, fadeIn, hideTip, iconButton, isSummonKey, openPrOverlay, repoBadge, showTip, sideFacts, when, heat } from "./code.js";
 import { GLYPHS } from "./icons.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
+import { openNotePopover, saveUpNextNote } from "./note-popover.js";
 
 // The Plans page and the initiative reader: initiatives on each tracked repo's origin/main (and proposed in open PRs,
 // and changed in the repo root), as a rail, an overview table, and a reader on the page or in a peek modal. Read-only; Update and Retire open agent drafts. docs/plans-plan.md has the why.
@@ -295,11 +296,23 @@ function planPanel(item, { reader = false } = {}) {
 
 // ---------- agent drafts ----------
 
-async function draft(kind, id, doc = "") {
-  const response = await fetch("/api/code/plan-agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app: agentApp(), id, kind, doc }) });
+// Update and Retire open the note popover: Enter saves the prompt as an Up next note; the draft is its quiet button.
+async function planRequest(route, kind, id, doc) {
+  const response = await fetch(`/api/code/${route}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app: agentApp(), id, kind, doc }) });
   const body = await response.json();
-  if (!response.ok) throw new Error(body.error || "Could not open the draft.");
-  notify(`Drafted ${kind === "retire" ? "a retirement" : "an update"} in ${appName()}. Add your notes under the --- line, then send.`);
+  if (!response.ok) throw new Error(body.error || "Could not build the prompt.");
+  return body;
+}
+async function draft(kind, id, doc = "", anchor) {
+  const scope = [...document.querySelectorAll("dialog[open]")].pop() || document;
+  anchor ||= scope.querySelector(`[data-plan-agent="${kind}"][data-id="${CSS.escape(id)}"]`) || scope.querySelector(`[data-plan-agent][data-id="${CSS.escape(id)}"]`) || scope.querySelector("[aria-selected=true]") || document.body;
+  const title = `${kind === "retire" ? "Retire" : "Update"} initiative ${id}${doc ? ` (${doc})` : ""}`;
+  openNotePopover(anchor, {
+    heading: title,
+    save: async (comment) => { const { note } = await saveUpNextNote({ title, comment, prompt: (await planRequest("plan-prompt", kind, id, doc)).draft }); notify(`Saved a note for Up next: ${note}`); },
+    send: { label: `Draft in ${appName()}`, run: async () => { await planRequest("plan-agent", kind, id, doc); notify(`Drafted ${kind === "retire" ? "a retirement" : "an update"} in ${appName()}. Add your notes under the --- line, then send.`); } },
+    copy: async () => (await planRequest("plan-prompt", kind, id, doc)).draft,
+  });
 }
 
 async function copyPrompt(button, kind, id, doc = "") {
@@ -325,7 +338,7 @@ export function planClick(dataset, target) {
   if (dataset.planOpen) { if (readerOpen() && dataset.planOpen === reader.id) showDoc(dataset.doc || "map"); else openPlan(dataset.planOpen, dataset.doc || ""); return true; }
   if (dataset.planGoto) { openPlan(dataset.planGoto); return true; }
   if (dataset.planPr) { openPrOverlay(dataset.slug, Number(dataset.planPr)); return true; }
-  if (dataset.planAgent) { draft(dataset.planAgent, dataset.id, openDoc()).catch((error) => notify(error.message, true)); return true; }
+  if (dataset.planAgent) { draft(dataset.planAgent, dataset.id, openDoc(), target).catch((error) => notify(error.message, true)); return true; }
   if (dataset.planCopyPrompt) { copyPrompt(target, dataset.planCopyPrompt, dataset.id, openDoc()).catch((error) => notify(error.message, true)); return true; }
   return false;
 }

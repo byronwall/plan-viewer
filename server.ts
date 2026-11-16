@@ -19,7 +19,7 @@ import { createPlans } from "./plans.ts";
 import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig } from "./public/config.js";
-import { applyRule, closeNote, followUpNote, loadSteps, markStepDone, pickChoice, planMentions, runStatement, saveNote, setStepNext, setTaskPriority, startStep } from "./steps.ts";
+import { applyRule, closeNote, followUpNote, saveLaunchNote, loadSteps, markStepDone, pickChoice, planMentions, runStatement, saveNote, setStepNext, setTaskPriority, startStep } from "./steps.ts";
 import { approveOutbound, draftFromText, dropOutbound, listOutbound, markOutboundSent, outboundFields, sendBackOutbound, stripFrontMatter } from "./outbound.ts";
 
 // The planning workspace is the current directory (npm scripts run from the content repository); PLANNING_ROOT
@@ -1169,6 +1169,12 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       viewerWrites.add(String(body.path || ""));
       await setTaskPriority(ROOT, String(body.path || ""), String(body.priority || "") as "p1" | "p2" | "p3");
       return json(response, 200, { priority: body.priority });
+    }
+    // Every launch button in the viewer saves its prompt here as an Up next note instead of opening an agent chat.
+    if (request.method === "POST" && url.pathname === "/api/notes") {
+      const saved = await saveLaunchNote(ROOT, await readJson(request), config().user);
+      viewerWrites.add(saved.path);
+      return json(response, 200, { note: saved.path });
     }
     if (request.method === "POST" && url.pathname === "/api/steps/done") {
       const body = await readJson(request);
