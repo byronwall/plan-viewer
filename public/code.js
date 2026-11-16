@@ -465,47 +465,63 @@ function nextStep(pr) {
   if (people.length) return ["wait", `Waiting on ${people.map(personName).join(", ")}`];
   return ["none", "No reviewer yet"];
 }
-// A stack's lane comes from its bottom PR, the one that has to move first. Drafts and stacks untouched for two
-// weeks get their own lanes, so parked work doesn't crowd the lanes that need a move today.
+// A stack sits in the column of whoever moves its bottom PR next: the reviewer it waits on, else its author.
+// Stacks untouched for two weeks get their own column, so parked work doesn't crowd the people who need to act.
 const IDLE = 14 * DAY;
-function laneOf(stack) {
+const SECTIONS = { review: ["Review", 0], merge: ["Merge", 1], fix: ["Fix first", 2], none: ["Pick a reviewer", 3], draft: ["Drafts", 4], idle: ["Idle", 5] };
+function placeOf(stack) {
   const pr = stack[0];
-  if (stack.every((item) => Date.now() - Date.parse(prWhen(item)) > IDLE)) return ["idle", "Idle two weeks or more", 6];
-  if (pr.draft) return ["draft", "Drafts", 5];
+  if (stack.every((item) => Date.now() - Date.parse(prWhen(item)) > IDLE)) return ["", "idle"];
+  if (pr.draft) return [`draft:${pr.author}`, "draft"];
   const [tone] = nextStep(pr);
-  if (tone === "wait") { const login = humanReviewers(pr)[0]; return [`r:${login}`, `Waiting on ${personName(login)}`, 3]; }
-  return { merge: ["merge", "Ready to merge", 0], fix: ["fix", "Fix first", 1], mine: ["mine", "Your review", 2], none: ["none", "No reviewer", 4], draft: ["draft", "Drafts", 5] }[tone];
+  if (tone === "mine") return [ui.data.me, "review"];
+  if (tone === "wait") return [humanReviewers(pr)[0], "review"];
+  return [pr.author, tone];
 }
 
-function stackRow(pr, position) {
+function stackRow(pr, position, column) {
   const key = `pr:${pr.slug}#${pr.number}`;
   const [tone, text] = nextStep(pr);
+  const people = humanReviewers(pr);
+  // In the reviewer's own column "Waiting on them" says nothing new.
+  const step = tone === "wait" && people[0] === column ? (people.length > 1 ? `Also ${people.slice(1).map(personName).join(", ")}` : "") : text;
+  const faces = [pr.author, ...people.filter((login) => login !== pr.author)].map((login) => `<span data-tip="${escapeHtml(`${login === pr.author ? "Author" : "Reviewer"}: ${personName(login)}`)}">${avatar(login)}</span>`).join("");
   return `<li class="code-chain-row" data-code-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">${position ? `<i class="code-chain-n${position === 1 ? " is-base" : ""}">${position}</i>` : ""}
     <div class="code-chain-line"><a class="code-pr-link" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">${ciBadge(pr)}#${pr.number}</a> <span class="code-chain-title">${escapeHtml(pr.title)}</span></div>
-    <div class="code-chain-sub"><span class="code-next code-next-${tone}">${escapeHtml(text)}</span>${pr.author === ui.data.me ? "" : `<span>${escapeHtml(personName(pr.author))}</span>`}${repoHead().length ? `<span>${escapeHtml(repoName(pr.repo))}</span>` : ""}${when(prWhen(pr))}</div></li>`;
+    <div class="code-chain-sub"><span class="code-chain-faces">${faces}</span>${step ? `<span class="code-next code-next-${tone}">${escapeHtml(step)}</span>` : ""}${repoHead().length ? `<span>${escapeHtml(repoName(pr.repo))}</span>` : ""}${when(prWhen(pr))}</div></li>`;
 }
+
+const chainHtml = (stack, column) => stack.length > 1
+  ? `<ol class="code-chain"><li class="code-chain-head">Stack of ${stack.length} · on ${escapeHtml(stack[0].base)}</li>${stack.map((pr, index) => stackRow(pr, index + 1, column)).join("")}</ol>`
+  : `<ol class="code-chain is-single">${stackRow(stack[0], 0, column)}</ol>`;
 
 function stacksBody(prs) {
   const visible = new Set(prs);
   const seen = new Set();
-  const lanes = new Map();
+  const columns = new Map();
   for (const pr of prs) {
     if (seen.has(pr)) continue;
     const stack = stackOf(pr).filter((item) => visible.has(item));
     stack.forEach((item) => seen.add(item));
-    const [key, label, rank] = laneOf(stack);
-    if (!lanes.has(key)) lanes.set(key, { key, label, rank, stacks: [], count: 0 });
-    const lane = lanes.get(key);
-    lane.stacks.push(stack);
-    lane.count += stack.length;
+    const [login, section] = placeOf(stack);
+    if (!columns.has(login)) columns.set(login, { login, count: 0, sections: new Map() });
+    const column = columns.get(login);
+    column.count += stack.length;
+    if (!column.sections.has(section)) column.sections.set(section, []);
+    column.sections.get(section).push(stack);
   }
-  // Fixed lanes first, then reviewers with the most waiting; stacks above single PRs inside a lane.
-  const order = [...lanes.values()].sort((a, b) => a.rank - b.rank || b.count - a.count || a.label.localeCompare(b.label));
-  return `<div class="code-stacks">${order.map((lane) => {
-    const stacks = [...lane.stacks].sort((a, b) => (b.length > 1) - (a.length > 1));
-    return `<section class="code-lane code-lane-${lane.key.startsWith("r:") ? "wait" : lane.key}"><h3>${escapeHtml(lane.label)} <span>${lane.count}</span></h3>${stacks.map((stack) => stack.length > 1
-      ? `<ol class="code-chain"><li class="code-chain-head">Stack of ${stack.length} · on ${escapeHtml(stack[0].base)}</li>${stack.map((pr, index) => stackRow(pr, index + 1)).join("")}</ol>`
-      : `<ol class="code-chain is-single">${stackRow(stack[0], 0)}</ol>`).join("")}</section>`;
+  // You first, then whoever has the most to move, idle work last.
+  // Drafts get a column of their own beside the people who act, so a long draft list doesn't bury today's moves.
+  const rank = (column) => column.login === ui.data.me ? 0 : !column.login ? 4 : column.login.startsWith("draft:") ? 3 : 1;
+  const order = [...columns.values()].sort((a, b) => rank(a) - rank(b) || b.count - a.count || personName(a.login).localeCompare(personName(b.login)));
+  return `<div class="code-board">${order.map((column) => {
+    const draftOf = column.login.startsWith("draft:") && column.login.slice(6);
+    const head = draftOf ? `${avatar(draftOf)}<b>${draftOf === ui.data.me ? "Your drafts" : `${escapeHtml(personName(draftOf))}'s drafts`}</b>` : column.login ? `${avatar(column.login)}<b>${escapeHtml(column.login === ui.data.me ? "You" : personName(column.login))}</b>` : `<b>Idle two weeks or more</b>`;
+    const sections = [...column.sections.entries()].sort(([a], [b]) => SECTIONS[a][1] - SECTIONS[b][1]).map(([section, stacks]) => {
+      const sorted = [...stacks].sort((a, b) => (b.length > 1) - (a.length > 1));
+      return `<section class="code-lane code-lane-${section}">${column.login && section !== "draft" ? `<h4>${SECTIONS[section][0]} <span>${stacks.reduce((sum, stack) => sum + stack.length, 0)}</span></h4>` : ""}${sorted.map((stack) => chainHtml(stack, column.login)).join("")}</section>`;
+    }).join("");
+    return `<section class="code-board-col"><h3>${head}<span>${column.count}</span></h3>${sections}</section>`;
   }).join("")}</div>`;
 }
 
@@ -2643,6 +2659,7 @@ function render({ animate = false } = {}) {
   hideTip();
   patch("toolbar", toolbar());
   patch("errors", ui.data.errors.map((error) => `<p class="work-warning">${escapeHtml(error)}</p>`).join(""));
+  host.querySelector(".code-surface").classList.toggle("is-board", ui.tab === "prs" && ui.prState !== "done" && ui.prLayout === "stacks");
   const list = patch("list", body);
   if (list && animate) fadeIn(list);
   patch("repos", repoBar());
@@ -2933,6 +2950,8 @@ async function handleClick(event) {
   if (!target) {
     if (!row) return;
     select(row.dataset.codeRow);
+    // The board has no inspector beside it, so a click opens the PR overview over the page.
+    if (row.matches(".code-chain-row")) { const { pr } = selectedItem(); if (pr) openPrOverlay(pr.slug, pr.number); }
     return;
   }
   if (target.matches("a")) return;

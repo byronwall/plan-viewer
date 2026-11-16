@@ -1436,14 +1436,21 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 /* the base is the one solid dot, so each stack visibly starts over even when two stacks sit back to back */
 .code-row .code-rail i.is-base { background: var(--action); color: #fff; }
 .code-rail i.is-wide { font-size: .56rem; letter-spacing: -.03em; }
-/* Stacks layout of the PR tab: lanes by who moves next, each stack a numbered chain, flowed into fixed-width columns. */
-.code-stacks { columns: 320px; column-gap: 28px; padding: 4px 2px 24px; }
-.code-lane { break-inside: avoid; margin: 0 0 18px; }
-.code-lane h3 { margin: 6px 0 4px; padding: 0 6px 4px; border-bottom: 1px solid var(--line); color: var(--label-text); font-size: .68rem; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; }
-.code-lane h3 span { color: var(--quiet-text); font-weight: 500; }
-.code-lane-merge h3 { color: var(--pass); }
-.code-lane-fix h3 { color: var(--dirty); }
-.code-lane-mine h3 { color: var(--mine); }
+/* Stacks layout of the PR tab: a board with one column per person who moves next, full width, no inspector. */
+.code-page:has(.code-surface.is-board) { max-width: none; }
+.code-surface.is-board .code-split { grid-template-columns: minmax(0, 1fr); }
+.code-surface.is-board .code-detail { display: none; }
+.code-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px 18px; align-items: start; padding: 0 2px 24px; }
+.code-board-col { min-width: 0; }
+.code-board-col > h3 { position: sticky; top: var(--code-bar-h, 0px); z-index: 3; display: flex; align-items: center; gap: 7px; margin: 0 0 2px; padding: 8px 6px 6px; background: var(--paper); border-bottom: 1px solid var(--line); font-size: .84rem; font-weight: 650; color: var(--ink); }
+.code-board-col > h3 .code-avatar { width: 22px; height: 22px; font-size: .58rem; vertical-align: 0; }
+.code-board-col > h3 > span { margin-left: auto; color: var(--quiet-text); font-weight: 500; font-variant-numeric: tabular-nums; }
+.code-lane { margin: 0 0 10px; }
+.code-lane h4 { margin: 8px 0 2px; padding: 0 6px; color: var(--label-text); font-size: .66rem; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; }
+.code-lane h4 span { color: var(--quiet-text); font-weight: 500; }
+.code-lane-merge h4 { color: var(--pass); }
+.code-lane-fix h4 { color: var(--dirty); }
+.code-chain-faces { display: inline-flex; gap: 2px; }
 .code-chain { position: relative; list-style: none; margin: 0 0 8px; padding: 0; break-inside: avoid; }
 .code-chain:not(.is-single)::before { content: ""; position: absolute; left: 14px; top: 30px; bottom: 16px; width: 2px; background: var(--action); opacity: .35; }
 .code-chain-head { padding: 4px 6px 2px 30px; color: var(--quiet-text); font-size: .72rem; }
