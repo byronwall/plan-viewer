@@ -22,6 +22,8 @@ const GUARDS = { off: 0, day: DAY, week: 7 * DAY };
 let cleanupGuard = storage.get("code-cleanup-guard", "day");
 ui.treeGroup = storage.get("code-tree-group", "changed");
 ui.prLayout = storage.get("code-pr-layout", "list") === "stacks" ? "stacks" : "list";
+ui.boardMove = "all";
+ui.stackedOnly = false;
 const level = (tree) => {
   const base = tree.cleanup?.level;
   return (base === "safe" || base === "review") && Date.now() - tree.activity < GUARDS[cleanupGuard] ? "fresh" : base;
@@ -466,9 +468,18 @@ function nextStep(pr) {
   return ["none", "No reviewer yet"];
 }
 // A stack sits in the column of whoever moves its bottom PR next: the reviewer it waits on, else its author.
-// Stacks untouched for two weeks get their own column, so parked work doesn't crowd the people who need to act.
+// Stacks untouched for two weeks leave the board for the Idle strip under it, so parked work doesn't crowd today's moves.
 const IDLE = 14 * DAY;
-const SECTIONS = { review: ["Review", 0], merge: ["Merge", 1], fix: ["Fix first", 2], none: ["Pick a reviewer", 3], draft: ["Drafts", 4], idle: ["Idle", 5] };
+// Each move: label, glyph, the button that drafts it for the whole section, and the prompt's ask. Order is board order.
+const MOVES = {
+  review: { label: "Review", glyph: "eye", verb: "Nudge", ask: (who) => who === ui.data.me ? "Review each of these PRs; my review is requested on all of them. Start with the bottom of any stack." : `These PRs wait on review from ${personName(who)}. For each, say how long the request has waited, and draft a short nudge to them or propose another reviewer who knows the touched files. Send nothing.` },
+  merge: { label: "Merge", glyph: "circle-check", verb: "Check & merge", ask: () => "These PRs are approved. For each, confirm it is still mergeable with green checks and up to date with its base, then list them in merge order, bottom of each stack first. Do not merge anything." },
+  fix: { label: "Fix first", glyph: "triangle-alert", verb: "Fix all", ask: () => "Each of these PRs needs a fix before anyone can review or merge it; the step is on its line. Do each step in the PR's worktree (merge its base in, fix the failing checks, or answer the requested changes), push, and report what changed. Stop and ask when a conflict needs a judgment call." },
+  none: { label: "Pick a reviewer", glyph: "user", verb: "Pick reviewers", ask: () => "None of these PRs has a human reviewer. For each, propose one reviewer with a one-line reason, from the repository's code owners and the people who recently reviewed or changed the touched files. Draft the review requests; request nothing yet." },
+  draft: { label: "Drafts", glyph: "pen-line", verb: "Triage drafts", ask: () => "These PRs are still drafts. For each, say what stands between it and review (failing checks, conflicts, unfinished work in the description), and recommend one of: mark ready with a reviewer, run a shakedown first, or park it." },
+  idle: { label: "Idle two weeks or more", glyph: "clock", verb: "Triage idle", ask: () => "These PRs have had no activity for two weeks or more. For each, recommend close, fold into another PR, or revive, with one line why. Close nothing; I close PRs myself." },
+};
+const glyph = (name) => `<svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true">${GLYPHS[name]}</svg>`;
 function placeOf(stack) {
   const pr = stack[0];
   if (stack.every((item) => Date.now() - Date.parse(prWhen(item)) > IDLE)) return ["", "idle"];
@@ -479,6 +490,16 @@ function placeOf(stack) {
   return [pr.author, tone];
 }
 
+// Lines changed on a log scale, so a 20-line fix and a 2,000-line refactor both read at a glance; the fill splits
+// green and red by lines added and removed. Exact counts sit in the hover text.
+const sizeBar = (pr) => {
+  const lines = pr.additions + pr.deletions;
+  const width = Math.min(100, Math.round((Math.log10(lines + 1) / 4) * 100));
+  const added = lines ? Math.round((pr.additions / lines) * 100) : 0;
+  const files = pr.changedFiles ? ` in ${pr.changedFiles} file${pr.changedFiles === 1 ? "" : "s"}` : "";
+  return `<span class="code-chain-size" data-tip="${escapeHtml(`+${pr.additions.toLocaleString()} −${pr.deletions.toLocaleString()} lines${files}`)}"><i style="--w:${width}%;--add:${added}%"></i><b>${compact.format(lines)}</b>${pr.changedFiles ? `<em>${pr.changedFiles}f</em>` : ""}</span>`;
+};
+
 function stackRow(pr, position, column) {
   const key = `pr:${pr.slug}#${pr.number}`;
   const [tone, text] = nextStep(pr);
@@ -486,43 +507,114 @@ function stackRow(pr, position, column) {
   // In the reviewer's own column "Waiting on them" says nothing new.
   const step = tone === "wait" && people[0] === column ? (people.length > 1 ? `Also ${people.slice(1).map(personName).join(", ")}` : "") : text;
   const faces = [pr.author, ...people.filter((login) => login !== pr.author)].map((login) => `<span data-tip="${escapeHtml(`${login === pr.author ? "Author" : "Reviewer"}: ${personName(login)}`)}">${avatar(login)}</span>`).join("");
-  return `<li class="code-chain-row" data-code-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">${position ? `<i class="code-chain-n${position === 1 ? " is-base" : ""}">${position}</i>` : ""}
-    <div class="code-chain-line"><a class="code-pr-link" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">${ciBadge(pr)}#${pr.number}</a> <span class="code-chain-title">${escapeHtml(pr.title)}</span></div>
-    <div class="code-chain-sub"><span class="code-chain-faces">${faces}</span>${step ? `<span class="code-next code-next-${tone}">${escapeHtml(step)}</span>` : ""}${repoHead().length ? `<span>${escapeHtml(repoName(pr.repo))}</span>` : ""}${when(prWhen(pr))}</div></li>`;
+  const tree = worktreeFor(pr);
+  return `<li class="code-chain-row" data-code-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">${position ? `<i class="code-chain-n${position === 1 ? " is-base" : ""}">${position}</i>` : `<i class="code-chain-dot"></i>`}
+    <div class="code-chain-line"><span class="code-chain-faces">${faces}</span><span><a class="code-pr-link" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">${ciBadge(pr)}#${pr.number}</a> <span class="code-chain-title">${escapeHtml(pr.title)}</span></span></div>
+    <div class="code-chain-sub"><span class="code-next code-next-${tone}">${escapeHtml(step)}</span>${sizeBar(pr)}<span class="code-chain-age">${when(prWhen(pr))}</span></div>
+    <span class="code-chain-tools">${skillButtons(pr, tree?.path || pr.repo, tree)}</span></li>`;
 }
 
 const chainHtml = (stack, column) => stack.length > 1
   ? `<ol class="code-chain"><li class="code-chain-head">Stack of ${stack.length} · on ${escapeHtml(stack[0].base)}</li>${stack.map((pr, index) => stackRow(pr, index + 1, column)).join("")}</ol>`
   : `<ol class="code-chain is-single">${stackRow(stack[0], 0, column)}</ol>`;
 
-function stacksBody(prs) {
+// One section's header: its move, count and the button that drafts the move for every PR in it.
+const moveHead = (move, stacks, column) => {
+  const count = stacks.reduce((sum, stack) => sum + stack.length, 0);
+  return `<h4>${glyph(MOVES[move].glyph)}<span class="code-lane-label">${MOVES[move].label}</span><span class="code-lane-count">${count}</span><button type="button" class="code-lane-move" data-board-move="${move}" data-board-column="${escapeHtml(column)}">${MOVES[move].verb}</button></h4>`;
+};
+
+// Stacks grouped by column and move; the move filter and "stacked only" narrow it, the sort orders stacks inside sections.
+function boardGroups(prs) {
   const visible = new Set(prs);
   const seen = new Set();
   const columns = new Map();
+  const moves = Object.fromEntries(Object.keys(MOVES).map((move) => [move, 0]));
   for (const pr of prs) {
     if (seen.has(pr)) continue;
     const stack = stackOf(pr).filter((item) => visible.has(item));
     stack.forEach((item) => seen.add(item));
-    const [login, section] = placeOf(stack);
+    const [login, move] = placeOf(stack);
+    moves[move] += stack.length;
+    if (ui.boardMove !== "all" && ui.boardMove !== move) continue;
+    if (ui.stackedOnly && stack.length < 2) continue;
     if (!columns.has(login)) columns.set(login, { login, count: 0, sections: new Map() });
     const column = columns.get(login);
     column.count += stack.length;
-    if (!column.sections.has(section)) column.sections.set(section, []);
-    column.sections.get(section).push(stack);
+    if (!column.sections.has(move)) column.sections.set(move, []);
+    column.sections.get(move).push(stack);
   }
-  // You first, then whoever has the most to move, idle work last.
-  // Drafts get a column of their own beside the people who act, so a long draft list doesn't bury today's moves.
-  const rank = (column) => column.login === ui.data.me ? 0 : !column.login ? 4 : column.login.startsWith("draft:") ? 3 : 1;
+  return { columns, moves };
+}
+
+// The PRs a section's move button acts on, read back from the board as drawn.
+function boardSection(move, login) {
+  const { columns } = boardGroups(visiblePrs());
+  return (columns.get(login)?.sections.get(move) || []).flat();
+}
+
+function stacksBody(prs) {
+  const { columns } = boardGroups(prs);
+  const idle = columns.get("");
+  columns.delete("");
+  // You first, then whoever has the most to move, then drafts.
+  const rank = (column) => column.login === ui.data.me ? 0 : column.login.startsWith("draft:") ? 2 : 1;
   const order = [...columns.values()].sort((a, b) => rank(a) - rank(b) || b.count - a.count || personName(a.login).localeCompare(personName(b.login)));
-  return `<div class="code-board">${order.map((column) => {
+  const moveOrder = Object.keys(MOVES);
+  const board = order.map((column) => {
     const draftOf = column.login.startsWith("draft:") && column.login.slice(6);
-    const head = draftOf ? `${avatar(draftOf)}<b>${draftOf === ui.data.me ? "Your drafts" : `${escapeHtml(personName(draftOf))}'s drafts`}</b>` : column.login ? `${avatar(column.login)}<b>${escapeHtml(column.login === ui.data.me ? "You" : personName(column.login))}</b>` : `<b>Idle two weeks or more</b>`;
-    const sections = [...column.sections.entries()].sort(([a], [b]) => SECTIONS[a][1] - SECTIONS[b][1]).map(([section, stacks]) => {
-      const sorted = [...stacks].sort((a, b) => (b.length > 1) - (a.length > 1));
-      return `<section class="code-lane code-lane-${section}">${column.login && section !== "draft" ? `<h4>${SECTIONS[section][0]} <span>${stacks.reduce((sum, stack) => sum + stack.length, 0)}</span></h4>` : ""}${sorted.map((stack) => chainHtml(stack, column.login)).join("")}</section>`;
-    }).join("");
-    return `<section class="code-board-col"><h3>${head}<span>${column.count}</span></h3>${sections}</section>`;
-  }).join("")}</div>`;
+    const who = draftOf || column.login;
+    const name = draftOf ? (draftOf === ui.data.me ? "Your drafts" : `${personName(draftOf)}'s drafts`) : column.login === ui.data.me ? "You" : personName(column.login);
+    const sections = [...column.sections.entries()].sort(([a], [b]) => moveOrder.indexOf(a) - moveOrder.indexOf(b))
+      .map(([move, stacks]) => `<section class="code-lane" data-move="${move}">${moveHead(move, stacks, column.login)}${stacks.map((stack) => chainHtml(stack, column.login)).join("")}</section>`).join("");
+    return `<section class="code-board-col"><h3>${avatar(who)}<b>${escapeHtml(name)}</b><span>${column.count}</span></h3>${sections}</section>`;
+  }).join("");
+  const strip = idle ? `<section class="code-idle" data-move="idle">${moveHead("idle", idle.sections.get("idle"), "")}<div class="code-idle-grid">${idle.sections.get("idle").map((stack) => chainHtml(stack, "")).join("")}</div></section>` : "";
+  if (!board && !strip) return emptyState("pull requests for this move");
+  return `<div class="code-board">${board}</div>${strip}`;
+}
+
+// The move popover: what the section's agent prompt will ask, room for a note, and draft / save note / copy.
+function movePrompt(move, login, note) {
+  const prs = boardSection(move, login);
+  const lines = prs.map((pr) => {
+    const parent = stackParent(pr);
+    const files = pr.changedFiles ? `, ${pr.changedFiles} files` : "";
+    return `- ${pr.url} — ${pr.title} (${nextStep(pr)[1]}; +${pr.additions} −${pr.deletions}${files}; author ${personName(pr.author)}${parent ? `; stacked on #${parent.number}` : ""})`;
+  });
+  return { prs, title: `${MOVES[move].verb}: ${prs.length} PR${prs.length === 1 ? "" : "s"}`, prompt: `${MOVES[move].ask(login)}\n\n${lines.join("\n")}${note.trim() ? `\n\nNote: ${note.trim()}` : ""}\n` };
+}
+
+function openMovePop(button) {
+  const pop = host.querySelector("#code-move");
+  const { move, column } = { move: button.dataset.boardMove, column: button.dataset.boardColumn };
+  const { prs } = movePrompt(move, column, "");
+  host.querySelectorAll(".code-lane h4, .code-idle h4").forEach((item) => { item.style.removeProperty("anchor-name"); item.classList.remove("is-open"); });
+  const head = button.closest("h4");
+  head.style.setProperty("anchor-name", "--code-move");
+  head.classList.add("is-open");
+  pop.ontoggle = (event) => { if (event.newState === "closed") head.classList.remove("is-open"); };
+  pop.dataset.move = move;
+  pop.dataset.column = column;
+  pop.innerHTML = `<header>${glyph(MOVES[move].glyph)}<b>${MOVES[move].verb}</b><span>${prs.length} PR${prs.length === 1 ? "" : "s"}</span></header>
+    <p class="code-move-ask">${escapeHtml(MOVES[move].ask(column))}</p>
+    <p class="code-move-prs">${prs.map((pr) => `#${pr.number}`).join(" ")}</p>
+    <textarea data-move-note rows="2" placeholder="Add a note for the agent (optional)" spellcheck="true"></textarea>
+    <div class="code-move-actions"><button type="button" class="code-bar-button is-primary" data-move-send="draft">Draft in ${escapeHtml(appName())}</button><button type="button" class="code-bar-button" data-move-send="note">Save as note</button><button type="button" class="code-bar-button" data-move-send="copy">Copy prompt</button><span class="code-spacer"></span><kbd>Esc</kbd></div>`;
+  pop.dataset.tone = move;
+  pop.showPopover();
+  pop.querySelector("[data-move-note]").focus();
+}
+
+async function sendMove(kind, button) {
+  const pop = host.querySelector("#code-move");
+  const note = pop.querySelector("[data-move-note]").value;
+  if (kind === "note" && !note.trim()) { pop.querySelector("[data-move-note]").focus(); return notify("Write the note first; it becomes the note's title in Up next."); }
+  const { title, prompt } = movePrompt(pop.dataset.move, pop.dataset.column, note);
+  if (kind === "copy") return copyPrompt(post("group-move", { title, prompt, copy: true }), button);
+  const result = await post("group-move", { title, prompt, app: agentApp(), note: kind === "note", commentary: note });
+  pop.hidePopover();
+  notify(kind === "note" ? `Saved a note for Up next: ${result.note}` : `Drafted "${title}" in ${appName()}. Review it and press Enter to send.`);
 }
 
 // ---------- commits ----------
@@ -2608,6 +2700,7 @@ function toolbar() {
     }))
     + authorTrigger()
     + (done ? "" : segment("data-code-pr-layout", ui.prLayout, { list: "List", stacks: "Stacks" }))
+    + (done || ui.prLayout !== "stacks" ? "" : boardControls())
     + segment("data-code-sort", ui.prSort, { updated: done ? "Closed" : "Updated", created: "Oldest", size: "Largest" })
     + (done ? "" : `<label class="code-check"><input type="checkbox" data-code-drafts ${ui.hideDrafts ? "checked" : ""}> No drafts</label><label class="code-check"><input type="checkbox" data-code-failing ${ui.failingOnly ? "checked" : ""}> Failing CI${count(ui.data.prs.filter((pr) => ["FAILURE", "ERROR"].includes(pr.ci)).length)}</label>`);
   if (ui.tab === "commits") controls = commitControls();
@@ -2615,6 +2708,14 @@ function toolbar() {
   controls = repoTrigger() + controls;
   // Tabs and the filter on top, this tab's controls below; scanning shows as the spinning refresh icon, so nothing shifts.
   return `<div class="code-toolbar"><div class="code-toolbar-row">${tabs}<label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-code-filter placeholder="Filter  (F)" value="${escapeHtml(ui.filter)}" spellcheck="false"></label><span class="code-spacer"></span>${iconButton("refresh", ui.data.scanning ? "Scanning worktrees, CI, and PR history…" : "Refresh everything  (R)", `data-code-refresh class="code-icon-button${ui.data.scanning ? " is-spinning" : ""}"`)}${iconButton("settings", `Tracked repositories (${ui.data.repos.length})`, 'popovertarget="code-settings" data-code-settings')}</div><div class="code-controls">${controls}</div></div>`;
+}
+
+// The board's own filter: one move at a time (counts are before the filter), and stacks of two or more only.
+function boardControls() {
+  const { moves } = boardGroups(visiblePrs());
+  const total = Object.values(moves).reduce((sum, count) => sum + count, 0);
+  const options = [["all", "All moves", total], ...Object.entries(MOVES).map(([move, { label }]) => [move, move === "idle" ? "Idle" : label, moves[move]])];
+  return `<div class="code-segment code-move-filter">${options.map(([id, label, count]) => `<button type="button" data-board-filter="${id}" data-move="${id}" aria-pressed="${ui.boardMove === id}" data-tip="${escapeHtml(id === "all" ? "Every move" : `Only ${label}`)}" aria-label="${escapeHtml(label)}" ${count || id === "all" ? "" : "disabled"}>${id === "all" ? "All" : glyph(MOVES[id].glyph)}<span class="code-count">${count}</span></button>`).join("")}</div><label class="code-check"><input type="checkbox" data-board-stacked ${ui.stackedOnly ? "checked" : ""}> Stacked only</label>`;
 }
 
 // Tracked repositories live in a settings popover opened from the toolbar gear.
@@ -2646,7 +2747,7 @@ function patch(region, html) {
 function render({ animate = false } = {}) {
   if (!host || !ui.data || !host.querySelector(".code-surface, .code-loading")) return;
   if (!host.querySelector(".code-surface")) {
-    host.innerHTML = `<section class="code-surface" aria-label="Code dashboard"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="code-settings" class="code-settings" popover data-region="repos" aria-label="Code dashboard settings"></div><div id="code-branches" class="code-settings code-branch-pop" popover aria-label="Filter by branch"><label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-branch-query placeholder="Find a branch" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list" data-branch-list></ul><div class="code-branch-actions" data-branch-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only this · <kbd>Esc</kbd> close</p></div><div id="code-authors" class="code-settings code-branch-pop code-author-pop" popover aria-label="Filter by author"><label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-author-query placeholder="Find an author" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list code-author-list" data-author-list></ul><div class="code-branch-actions" data-author-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only · <kbd>Esc</kbd> close</p></div><div id="code-repos" class="code-settings code-branch-pop code-repo-pop" popover tabindex="-1" aria-label="Filter by repository"><ul class="code-branch-list code-repo-list-pick" data-repo-list></ul><div class="code-branch-actions" data-repo-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only · <kbd>Esc</kbd> close</p></div></section>`;
+    host.innerHTML = `<section class="code-surface" aria-label="Code dashboard"><div data-region="toolbar"></div><div data-region="errors"></div><div class="code-split"><div class="code-list" data-region="list"></div><aside class="code-detail" data-region="detail" aria-live="polite"></aside></div><div id="code-settings" class="code-settings" popover data-region="repos" aria-label="Code dashboard settings"></div><div id="code-move" class="code-settings code-move-pop" popover="manual" aria-label="Draft a section's next move"></div><div id="code-branches" class="code-settings code-branch-pop" popover aria-label="Filter by branch"><label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-branch-query placeholder="Find a branch" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list" data-branch-list></ul><div class="code-branch-actions" data-branch-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only this · <kbd>Esc</kbd> close</p></div><div id="code-authors" class="code-settings code-branch-pop code-author-pop" popover aria-label="Filter by author"><label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-author-query placeholder="Find an author" spellcheck="false" autocomplete="off"></label><ul class="code-branch-list code-author-list" data-author-list></ul><div class="code-branch-actions" data-author-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only · <kbd>Esc</kbd> close</p></div><div id="code-repos" class="code-settings code-branch-pop code-repo-pop" popover tabindex="-1" aria-label="Filter by repository"><ul class="code-branch-list code-repo-list-pick" data-repo-list></ul><div class="code-branch-actions" data-repo-actions></div><p class="code-muted"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>Enter</kbd> toggle · <kbd>Shift</kbd>+<kbd>Enter</kbd> only · <kbd>Esc</kbd> close</p></div></section>`;
     animate = true;
     // The toolbar stays stuck at the top; table headers and the inspector stick just below its live height.
     new ResizeObserver(([entry]) => host.style.setProperty("--code-bar-h", `${Math.ceil(entry.borderBoxSize[0].blockSize)}px`)).observe(host.querySelector('[data-region="toolbar"]'));
@@ -2850,7 +2951,7 @@ function renderServers() {
 
 function syncUrl() {
   const url = new URL(location.href);
-  url.search = new URLSearchParams({ view: "code", ...(ui.tab === "prs" ? (ui.prLayout === "stacks" ? { layout: "stacks" } : {}) : { tab: ui.tab }), ...(ui.authors.size ? { author: [...ui.authors].join(",") } : {}), ...(ui.repos.size ? { repo: [...ui.repos].join(",") } : {}) });
+  url.search = new URLSearchParams({ view: "code", ...(ui.tab === "prs" ? (ui.prLayout === "stacks" ? { layout: "stacks", ...(ui.boardMove !== "all" ? { move: ui.boardMove } : {}), ...(ui.stackedOnly ? { stacked: "1" } : {}) } : {}) : { tab: ui.tab }), ...(ui.authors.size ? { author: [...ui.authors].join(",") } : {}), ...(ui.repos.size ? { repo: [...ui.repos].join(",") } : {}) });
   history.replaceState(null, "", url);
 }
 
@@ -2996,6 +3097,10 @@ async function handleClick(event) {
     if (dataset.codeRowDiff) { select(dataset.codeRowDiff); return openDiff(); }
     if (dataset.codePrState) { ui.prState = dataset.codePrState; return render({ animate: true }); }
     if (dataset.codeScope) { ui.prScope = dataset.codeScope; return render({ animate: true }); }
+    if (dataset.boardMove) return openMovePop(target);
+    if (dataset.moveSend) return sendMove(dataset.moveSend, target).catch((error) => notify(error.message));
+    if (dataset.boardFilter) { ui.boardMove = dataset.boardFilter; syncUrl(); return render({ animate: true }); }
+    if ("boardStacked" in dataset) { ui.stackedOnly = target.checked; syncUrl(); return render({ animate: true }); }
     if (dataset.codePrLayout) { ui.prLayout = dataset.codePrLayout; storage.set("code-pr-layout", ui.prLayout); syncUrl(); return render({ animate: true }); }
     if (dataset.codeSort) { ui.prSort = dataset.codeSort; return render({ animate: true }); }
     if ("codeDrafts" in dataset) { ui.hideDrafts = target.checked; return render({ animate: true }); }
@@ -3282,6 +3387,15 @@ export function renderCodePage(container, { tab, showNotice }) {
     ui.repos = new Set((new URLSearchParams(location.search).get("repo") || "").split(",").filter(Boolean));
     const layout = new URLSearchParams(location.search).get("layout");
     if (layout) ui.prLayout = layout === "stacks" ? "stacks" : "list";
+    const move = new URLSearchParams(location.search).get("move");
+    ui.boardMove = move in MOVES ? move : "all";
+    ui.stackedOnly = new URLSearchParams(location.search).get("stacked") === "1";
+    // The move popover holds typed text, so only Esc, its own buttons, or an outside click while it is empty close it.
+    container.addEventListener("keydown", (event) => { if (event.key === "Escape" && event.target.closest?.("#code-move")) { event.preventDefault(); container.querySelector("#code-move")?.hidePopover(); } });
+    document.addEventListener("pointerdown", (event) => {
+      const pop = container.querySelector("#code-move:popover-open");
+      if (pop && !event.target.closest("#code-move, [data-board-move]") && !pop.querySelector("[data-move-note]").value.trim()) pop.hidePopover();
+    });
     container.addEventListener("click", (event) => { if (container.querySelector(".code-surface")) handleClick(event); });
     // Double-click a row to open what Enter opens: the PR or worktree overview, or a commit's diff.
     container.addEventListener("dblclick", (event) => {

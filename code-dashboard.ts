@@ -251,7 +251,7 @@ export function createCodeDashboard(root: string) {
   }
 
   async function listPrs(repo: string, slug: string) {
-    const fields = "number,title,author,headRefName,baseRefName,isDraft,reviewDecision,updatedAt,createdAt,url,additions,deletions,reviewRequests";
+    const fields = "number,title,author,headRefName,baseRefName,isDraft,reviewDecision,updatedAt,createdAt,url,additions,deletions,changedFiles,reviewRequests";
     const [all, requested, closed, repoInfo] = await Promise.all([
       exec("gh", ["pr", "list", "-R", slug, "--state", "open", "--limit", "500", "--json", fields], { maxBuffer: 32 << 20 }),
       exec("gh", ["pr", "list", "-R", slug, "--state", "open", "--limit", "500", "--search", "review-requested:@me", "--json", "number"]),
@@ -265,7 +265,7 @@ export function createCodeDashboard(root: string) {
     const shape = (pr: any) => ({
       repo, slug, number: pr.number, title: pr.title, url: pr.url, author: pr.author?.login || "", branch: pr.headRefName, base: pr.baseRefName,
       fromDefault: !!defaultBranch && pr.headRefName === defaultBranch, draft: pr.isDraft, reviewDecision: pr.reviewDecision || "", updatedAt: pr.updatedAt, createdAt: pr.createdAt,
-      additions: pr.additions, deletions: pr.deletions, requestedOfMe: requestedOfMe.has(pr.number),
+      additions: pr.additions, deletions: pr.deletions, changedFiles: pr.changedFiles || 0, requestedOfMe: requestedOfMe.has(pr.number),
       reviewers: (pr.reviewRequests || []).map((request: any) => request.login || request.name || request.slug).filter(Boolean),
     });
     return {

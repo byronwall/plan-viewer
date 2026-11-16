@@ -1088,6 +1088,21 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       if (action === "cleanup-prompt") return json(response, 200, codeDashboard.cleanupPrompt(paths));
       if (action === "cleanup-agent") return json(response, 200, await codeDashboard.launchCleanup(String(body.app || ""), paths, body.copy === true).then((copied) => copied || { opened: true }));
       if (action === "session") return json(response, 200, await codeDashboard.launchSession(String(body.app || ""), String(body.path || "")).then(() => ({ opened: true })));
+      // The Stacks board's section moves: a prompt the page built from the PRs on screen, drafted in the agent app,
+      // copied, or saved as an Up next note. Like every draft, nothing runs until the user sends it.
+      if (action === "group-move") {
+        const prompt = String(body.prompt || "").slice(0, 40_000);
+        const title = String(body.title || "PR group").slice(0, 90);
+        if (!prompt.trim()) throw new Error("Nothing to send.");
+        if (body.copy === true) return json(response, 200, { prompt });
+        if (body.note === true) {
+          const saved = await saveNote(ROOT, { commentary: String(body.commentary || title), prompt });
+          viewerWrites.add(saved.path);
+          return json(response, 200, { note: saved.path });
+        }
+        if (process.env.PLAN_VIEWER_DRY_RUN === "1") return json(response, 200, { opened: true, dryRun: true, prompt });
+        return json(response, 200, { opened: true, ...(await getCodexApp().openDraft(ROOT, title, prompt, String(body.app || "codex"), [])) });
+      }
       if (action === "agent") return json(response, 200, await codeDashboard.launchAgent(String(body.app || ""), String(body.skill || ""), String(body.url || ""), String(body.path || ""), String(body.comment || ""), body.copy === true).then((copied) => copied || { opened: true }));
     }
     if (request.method === "GET" && url.pathname === "/api/issues") return json(response, 200, await issueTracker.load(url.searchParams.has("refresh")));
