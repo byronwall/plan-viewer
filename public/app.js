@@ -15,7 +15,7 @@ import { installBrief } from "./brief.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { bindOutbound, outboundPanel } from "./outbound.js";
-import { MOVE_FILTERS, KIND_FILTERS, moveCounts, movePill, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, scheduledTasks, stepListHtml, stepRowHtml, stepTitleText, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, taskStepsHtml, visibleSteps } from "./steps-page.js";
+import { MOVE_FILTERS, KIND_FILTERS, moveCounts, movePill, promptHtml, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, scheduledTasks, stepListHtml, stepRowHtml, stepTitleText, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, taskStepsHtml, visibleSteps } from "./steps-page.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planForLink, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
@@ -1421,7 +1421,9 @@ function workMentions(doc, id, own) {
       const entry = updates && line.match(/^[-*]\s+\*\*(?:(\d{4}-\d{2}-\d{2})\s*[—–-]\s*)?(.+?):?\*\*/);
       if (entry) { source = entry[2]; skip = own.some((note) => note.startsWith(line.trim())); }
       if (skip || !token.test(line) || /^\s*Work item:/i.test(line)) continue;
-      const text = line.replace(/^\s*(?:[-*]|\d+\.|#{1,6})\s+/, "").replace(/^\*\*[^*]+\*\*:?\s*/, "");
+      // A table row reads as its cells joined, not as raw pipes.
+      const text = /^\s*\|/.test(line) ? line.split("|").map((cell) => cell.trim()).filter(Boolean).join(" · ")
+        : line.replace(/^\s*(?:[-*]|\d+\.|#{1,6})\s+/, "").replace(/^\*\*[^*]+\*\*:?\s*/, "");
       const sentences = text.split(/(?<=[.;!?])\s+(?=[A-Z(`])/).filter((sentence) => token.test(sentence));
       const group = mentions.find((m) => m.source === source && m.chunkId === chunk.id) || mentions[mentions.push({ source, chunkId: chunk.id, date: entry?.[1] || mentions.at(-1)?.date || "", lines: [] }) - 1];
       group.lines.push(...sentences);
@@ -1500,7 +1502,9 @@ function openWorkItem(id, doc = state.document) {
   const path = doc.path;
   const byId = new Map(nodes.map(n => [n.id, n]));
   const updates = workUpdates(doc), notes = updates.get(id) || [];
-  const mentions = workMentions(doc, id, notes);
+  // The item's own Next actions line only repeats the Prompt section's title.
+  const action = doc.nextActions.find(a => a.workItem === id);
+  const mentions = workMentions(doc, id, notes).filter(m => !(action && /^next actions$/i.test(m.source)));
   const kids = (parent) => nodes.filter(n => n.parent === parent);
   const depthOf = (n) => { let d = 0; for (let p = byId.get(n.parent); p; p = byId.get(p.parent)) d++; return d; };
   const leaves = nodes.filter(n => !kids(n.id).length);
@@ -1514,15 +1518,14 @@ function openWorkItem(id, doc = state.document) {
   const railNodes = railMove === "all" ? nodes : nodes.filter(n => MOVE_FILTERS[railMove].includes(dialogStep(doc, n.id)?.move));
   const rail = railNodes.length ? railNodes.map(n => `<li><button type="button" class="work-item-rail-row${n === node ? " is-current" : ""}${isSettled(n.status) ? " is-settled" : ""}${railMove === "all" && kids(n.id).length ? " is-parent" : ""}" style="--depth:${railMove === "all" ? depthOf(n) : 0}" data-work-item="${escapeHtml(n.id)}"${n === node ? ' aria-current="true"' : ' tabindex="-1"'}><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${noteCount(n)}</button></li>`).join("")
     : `<li class="work-item-empty">No steps wait on ${railMove === "you" ? "you" : "an agent"}.</li>`;
-  const chip = (n, current = false) => `<button type="button" class="work-item-chip${current ? " is-current" : ""}" data-work-item="${escapeHtml(n.id)}" title="${escapeHtml(`${n.id} · ${n.title}`)}">${workStatusIcon(n, nodes)}<code>${escapeHtml(n.id)}</code></button>`;
+  // Every related item (waits on, unblocks, contains) is the same full-title row, so the facts read as one list.
+  const ref = (n) => `<button type="button" class="work-item-ref" data-work-item="${escapeHtml(n.id)}"><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${noteCount(n)}</button>`;
   const waitsOn = node.deps.map(dep => byId.get(dep)).filter(Boolean), unblocks = nodes.filter(n => n.deps.includes(id));
-  const arrow = `<span class="work-item-strip-arrow" aria-hidden="true">→</span>`;
-  const strip = waitsOn.length || unblocks.length ? `<p class="work-item-strip" aria-label="Dependencies">${waitsOn.length ? `<span class="work-item-strip-label">Waits on</span>${waitsOn.map(n => chip(n)).join("")}${arrow}` : ""}${chip(node, true)}${unblocks.length ? `${arrow}<span class="work-item-strip-label">Unblocks</span>${unblocks.map(n => chip(n)).join("")}` : ""}</p>` : "";
   const contained = kids(id);
-  const action = doc.nextActions.find(a => a.workItem === id);
   const task = doc.task;
   const label = workStatusLabel(node, nodes);
-  const frontier = node.ready ? "" : " is-off-frontier";
+  // A settled item has no frontier to be off; only open work that isn't ready yet warns before it goes to an agent.
+  const frontier = node.ready || isSettled(node.status) ? "" : " is-off-frontier";
   const offFrontier = node.ready ? "" : ` title="${escapeHtml(`${id} is ${label.toLowerCase()}, not ready: the draft says what it still waits on`)}"`;
   const parent = byId.get(node.parent);
   // The step's own action (Mark decided, Start, Approve and run, Apply) leads; Send to agent follows; Update is quiet.
@@ -1530,9 +1533,27 @@ function openWorkItem(id, doc = state.document) {
   // A reason that only restates the pill ("decide", "ready") says nothing; friction and longer reasons do.
   // A reason that only restates the pill or the strip says nothing ("decide", "ready", "after W1.2"); "approve",
   // "pick one", "retry or send back", "apply a rule", a draft's state and friction's why and fix do.
-  const said = new Set(["decide", "ready", "in progress", "running", "waiting", "watching", "no kind or prompt"]);
-  const why = !step || step.move === "blocked" || said.has(step.reason) ? "" : step.move.startsWith("you") ? `${step.move === "you-act" ? "Friction" : "Why it's yours"}: ${step.reason}${step.fix ? `. Fix: ${step.fix}` : ""}` : step.move === "agent" ? `Agent: ${step.running ? "running" : step.reason}` : step.move === "others" ? `With others: ${step.reason}` : step.move === "blocked" ? `Blocked: ${step.reason}` : "";
-  const mentionHtml = mentions.map(m => `<li><button type="button" class="work-item-mention-source" data-work-jump="${escapeHtml(m.chunkId)}">${escapeHtml(m.source)}</button>${m.date ? `<time datetime="${m.date}">${escapeHtml(formatDate(m.date))}</time>` : ""}${m.lines.map(line => `<p>${markId(inlineMarkdown(line, path), id)}</p>`).join("")}</li>`).join("");
+  // "pick one" and "pick any" are said by the choice's own heading; a blocked step's reason by its Waits on row.
+  const said = new Set(["decide", "ready", "in progress", "running", "waiting", "watching", "no kind or prompt", "pick one", "pick any"]);
+  const reason = !step || step.move === "blocked" || said.has(step.reason) ? "" : step.running ? "running" : step.reason;
+  // An outgoing draft's panel says its own fix beside its buttons.
+  const fix = step?.move === "you-act" && step.fix && !step.draft ? `<span class="work-item-fix">Fix: ${escapeHtml(step.fix)}</span>` : "";
+  const bodyTitle = step?.options ? (step.kind === "pick-any" ? "Pick any" : "Pick one") : step?.draft ? "Outgoing draft" : step?.machinery ? "To run" : step?.notes?.length ? "Notes for an agent" : "";
+  // A body with no heading of its own (an untyped step's how-to) is the reason, so it sits in the Next move row.
+  const body = step ? stepBodyHtml(step) : "", aside = bodyTitle ? "" : body.replace(/^<p class="outbound-note">|<\/p>$/g, "");
+  // The facts: who moves next and why, then the items around this one. One label column, one row style, no rules between.
+  const fact = (label, html) => `<dt>${label}</dt><dd>${html}</dd>`;
+  const facts = [
+    step ? fact("Next move", `<span class="work-item-move">${movePill(step)}${reason ? `<span>${escapeHtml(reason[0].toUpperCase() + reason.slice(1))}</span>` : ""}${fix}${aside ? `<span>${aside}</span>` : ""}</span>`) : "",
+    waitsOn.length ? fact("Waits on", waitsOn.map(ref).join("")) : "",
+    unblocks.length ? fact("Unblocks", unblocks.map(ref).join("")) : "",
+    // A choice's children are its options, listed in the choice below.
+    contained.length && !step?.options ? fact("Contains", contained.map(ref).join("")) : "",
+  ].join("");
+  // Each section has the same heading and the same hairline above it, so the pane reads top to bottom as one rhythm.
+  const section = (title, count, body, className = "") => `<section class="work-item-section${className}"><h3>${title}${count === "" ? "" : ` <span>${count}</span>`}</h3>${body}</section>`;
+  const mentionCount = mentions.reduce((sum, m) => sum + m.lines.length, 0);
+  const mentionHtml = mentions.map(m => `<li><header><button type="button" class="work-item-mention-source" data-work-jump="${escapeHtml(m.chunkId)}">${escapeHtml(m.source)}</button>${m.date ? `<time datetime="${m.date}">${escapeHtml(formatDate(m.date))}</time>` : ""}</header>${m.lines.map(line => `<p>${markId(inlineMarkdown(line, path), id)}</p>`).join("")}</li>`).join("");
   workItemDialog.dataset.item = id;
   // ← → step through the items with updates from the keyboard; the rail's footer names the keys.
   workItemDialog.dataset.prev = neighbors.prev?.id || "";
@@ -1547,23 +1568,20 @@ function openWorkItem(id, doc = state.document) {
     <nav class="work-item-rail" aria-label="Steps">${task ? `<div class="work-item-rail-head">${stepToggleHtml(railMove, null, ["you", "agent", "all"])}</div>` : ""}<ol>${rail}</ol><p><span><kbd>J</kbd><kbd>K</kbd> steps</span><span><kbd>←</kbd><kbd>→</kbd> updates</span><span><kbd>G</kbd> graph</span></p></nav>
     ${workItemView === "graph" ? `<div class="work-item-main is-graph" tabindex="-1"><div class="work-item-graph" tabindex="0" aria-label="Work stream graph">${workItemGraph(doc, id, (key) => updates.get(key)?.length || 0)}</div>${workGraphTools}</div>` : `<div class="work-item-main" tabindex="-1">
       <header class="work-item-heading">
-        <div class="work-item-headline">
-          <p class="work-item-kicker"><code>${escapeHtml(node.id)}</code>${workStatusIcon(node, nodes)}${step ? movePill(step) : `<span>${escapeHtml(label)}</span>`}${parent ? `<span class="work-item-in">in</span><button type="button" class="work-item-parent" data-work-item="${escapeHtml(parent.id)}" title="${escapeHtml(`${parent.id} · ${parent.title}`)}">${escapeHtml(parent.id)} ${escapeHtml(parent.title)}</button>` : ""}</p>
-          <div class="work-item-agent">
-            ${own}
-            <button type="button" class="work-item-agent-button${own ? " is-secondary" : ""}${frontier}" data-work-agent="run"${offFrontier}>${glyph("play")}Send to agent</button>
-            <button type="button" class="work-item-agent-button is-quiet" data-work-agent="update" title="Draft a revision of this item in the task file, without doing the work">${glyph("pen-line")}Update</button>
-          </div>
-        </div>
+        <p class="work-item-kicker"><code>${escapeHtml(node.id)}</code>${workStatusIcon(node, nodes)}<span class="work-item-status is-${label.toLowerCase()}">${escapeHtml(label)}</span>${parent ? `<span class="work-item-in">in</span><button type="button" class="work-item-parent" data-work-item="${escapeHtml(parent.id)}" title="${escapeHtml(`${parent.id} · ${parent.title}`)}"><code>${escapeHtml(parent.id)}</code> ${escapeHtml(parent.title)}</button>` : ""}</p>
         <h2 id="work-item-title">${escapeHtml(node.title)}</h2>
-        ${why ? `<p class="work-item-why">${escapeHtml(why)}</p>` : ""}
+        <div class="work-item-actions">
+          ${own}
+          <button type="button" class="work-item-agent-button${own || isSettled(node.status) ? " is-secondary" : ""}${frontier}" data-work-agent="run"${offFrontier}>${glyph("play")}Send to agent</button>
+          <button type="button" class="work-item-agent-button is-quiet" data-work-agent="update" title="Draft a revision of this item in the task file, without doing the work">${glyph("pen-line")}Update</button>
+        </div>
       </header>
-      ${strip}
-      ${contained.length ? `<dl class="work-item-relations"><dt>Contains</dt><dd>${contained.map(n => `<button type="button" class="work-item-ref" data-work-item="${escapeHtml(n.id)}"><code>${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}<span>${escapeHtml(n.title)}</span>${noteCount(n)}</button>`).join("")}</dd></dl>` : ""}
-      ${step ? `<div class="work-item-step-body">${stepBodyHtml(step)}</div>` : ""}
-      ${action ? `<section class="work-item-section"><h3>Prompt <span class="step-action-title">${escapeHtml(action.title)}</span></h3><pre class="step-prompt">${escapeHtml(action.prompt)}</pre></section>` : ""}
-      <section class="work-item-section"><h3>Updates <span>${notes.length}</span></h3>${notes.length ? notes.map(entry => workItemNote(entry, path)).join("") : `<p class="work-item-empty">None filed yet. An update titled “… (${escapeHtml(id)}):” lands here.</p>`}</section>
-      ${mentions.length ? `<section class="work-item-section"><h3>Also mentioned <span>${mentions.reduce((sum, m) => sum + m.lines.length, 0)}</span></h3><ul class="work-item-mentions">${mentionHtml}</ul></section>` : ""}
+      ${facts ? `<dl class="work-item-facts">${facts}</dl>` : ""}
+      ${bodyTitle ? section(bodyTitle, "", body, " is-move") : ""}
+      ${notes.length ? section("Updates", notes.length, notes.map(entry => workItemNote(entry, path)).join("")) : ""}
+      ${action ? section(`Prompt <span class="step-action-title">${escapeHtml(action.title)}</span>`, "", promptHtml(action.prompt, path)) : ""}
+      ${mentions.length ? section("Mentioned elsewhere", mentionCount, `<ul class="work-item-mentions">${mentionHtml}</ul>`) : ""}
+      ${!notes.length && !mentions.length && !action && !bodyTitle ? `<p class="work-item-empty">No updates, prompt or mentions yet. An update titled “… (${escapeHtml(id)}):” shows up here.</p>` : ""}
     </div>`}`;
   const main = workItemDialog.querySelector(".work-item-main");
   main.scrollTop = 0;

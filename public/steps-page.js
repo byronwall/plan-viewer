@@ -2,7 +2,7 @@
 // inspector for the selected step. The Outbox is the same page filtered to outbound kinds (`&kind=outbound`).
 import { isSettled, renderWorkGraph, settledWork, showDoneToggle, workStatusIcon } from "./actions.js";
 import { GLYPHS } from "./icons.js";
-import { escapeHtml, inlineMarkdown } from "./markdown.js";
+import { escapeHtml, inlineMarkdown, renderMarkdown } from "./markdown.js";
 
 // A step title for a list row, where the row is the button and links can't be real: the text before " — ", a Markdown
 // link reads as its label (a file name loses its folder and `.md`), a parenthetical that is only a link goes, and code
@@ -212,6 +212,11 @@ function optionsHtml(step) {
   </form>`;
 }
 
+// An agent prompt is prose, so it renders as Markdown on a tinted surface (the step dialog and the Steps inspector share it).
+export const promptHtml = (prompt, path = "") => `<div class="step-prompt"><div class="markdown">${renderMarkdown(prompt, path)}</div></div>`;
+// A statement or rule is code: a highlighted code block, not raw text in a box.
+const codeHtml = (code, language = "") => `<div class="markdown">${renderMarkdown(`\`\`\`${language}\n${code}\n\`\`\``)}</div>`;
+
 const READ_ONLY = /^\s*\(*\s*(select|with|show|describe|desc)\b/i;
 const readOnly = (sql) => READ_ONLY.test(sql) && !sql.trim().replace(/;\s*$/, "").includes(";");
 const button = (action, label, primary = false, disabled = "") => `<button type="button" class="${primary ? "outbound-primary" : "outbound-secondary"}" data-step-action="${action}"${disabled ? ` disabled title="${escapeHtml(disabled)}"` : ""}>${label}</button>`;
@@ -247,7 +252,7 @@ function ownActionsHtml(step, { startConfigured = false, runConfigured = false, 
 
 function machineryHtml(step) {
   const f = step.machinery?.fields || {};
-  return `${f.apply ? `<div class="step-run"><h5>Allow rule</h5><pre><code>${escapeHtml(f.apply)}</code></pre></div>` : ""}${f.run ? `<div class="step-run"><h5>Statement${readOnly(f.run) ? " · read-only" : " · changes data"}</h5><pre><code>${escapeHtml(f.run)}</code></pre>${f.target ? `<p class="outbound-note">Runs as ${escapeHtml(f.target)}${f.undo ? ` · undo: <code>${escapeHtml(f.undo)}</code>` : ""}</p>` : ""}</div>` : ""}
+  return `${f.apply ? `<div class="step-run"><h5>Allow rule</h5>${codeHtml(f.apply)}</div>` : ""}${f.run ? `<div class="step-run"><h5>Statement${readOnly(f.run) ? " · read-only" : " · changes data"}</h5>${codeHtml(f.run, "sql")}${f.target ? `<p class="outbound-note">Runs as ${escapeHtml(f.target)}${f.undo ? ` · undo: <code>${escapeHtml(f.undo)}</code>` : ""}</p>` : ""}</div>` : ""}
     ${step.machinery ? `<p class="outbound-note"><a class="markdown-document-link" href="?path=${encodeURIComponent(step.machinery.path)}" data-document-path="${escapeHtml(step.machinery.path)}" data-document-anchor="">Open ${escapeHtml(step.machinery.path.split("/").pop())}</a></p>` : ""}`;
 }
 
@@ -256,7 +261,7 @@ function machineryHtml(step) {
 export function stepBodyHtml(step) {
   const untyped = step.move === "unclassified" ? `<p class="outbound-note">No kind and no prompt: add <code>{kind, size}</code> to its line, or a prompt under Next actions with <code>Work item: ${escapeHtml(step.id)}</code>.</p>` : "";
   const body = step.options ? optionsHtml(step)
-    : step.draft ? outboundPanel(step.draft, { showBody: true })
+    : step.draft ? outboundPanel(step.draft, { showBody: true, showStep: false })
     : step.machinery ? machineryHtml(step)
     : "";
   const notes = step.notes?.length ? `<section class="step-notes"><h5>Waiting for an agent</h5><ul>${step.notes.map((note) => `<li><a class="markdown-document-link" href="?path=${encodeURIComponent(note.path)}" data-document-path="${escapeHtml(note.path)}" data-document-anchor="">${escapeHtml(note.title)}</a></li>`).join("")}</ul><p class="outbound-note">An agent records ${step.notes.length === 1 ? "this note" : "these notes"} and sets what comes next; the step stays open until then.</p></section>` : "";
@@ -271,6 +276,6 @@ export function stepInspectorHtml(step, extra = "", context = {}) {
     <p class="task-detail-meta"><span>${escapeHtml(kindLabel(step.kind))}</span><span>${step.size ? `Size ${escapeHtml(step.size)}` : "No size yet"}</span><span>${escapeHtml(step.status)}</span><span>${escapeHtml(step.taskTitle)}</span></p>`;
   const friction = step.move === "you-act" && !step.draft ? `<p class="step-friction"><strong>Friction:</strong> ${escapeHtml(step.reason)}.${step.fix ? ` <strong>Fix:</strong> ${escapeHtml(step.fix)}.` : ""}</p>` : "";
   const blocked = step.move === "blocked" ? `<p class="outbound-note">Waits on ${escapeHtml(step.reason.replace(/^after /, ""))} in ${escapeHtml(step.task)}.</p>` : "";
-  const prompt = step.prompt ? `<section class="task-detail-section"><h4>Prompt${step.actionTitle ? ` <span class="step-action-title">${escapeHtml(step.actionTitle)}</span>` : ""}</h4><pre class="step-prompt">${escapeHtml(step.prompt)}</pre></section>` : "";
+  const prompt = step.prompt ? `<section class="task-detail-section"><h4>Prompt${step.actionTitle ? ` <span class="step-action-title">${escapeHtml(step.actionTitle)}</span>` : ""}</h4>${promptHtml(step.prompt, step.path)}</section>` : "";
   return `${head}${friction}${blocked}${extra}${stepBodyHtml(step)}${stepActionsHtml(step, context)}${prompt}`;
 }

@@ -30,7 +30,8 @@ test("the dialog's compact actions drop the notes beside the buttons", () => {
 
 test('an allow rule shows once, in the body, not again beside Apply', () => {
   const rule = step({ move: 'you-decide', kind: '', machinery: { path: 'tasks/TASK-0101-assets/allow.md', fields: { apply: 'Bash(git status)' } } });
-  assert.equal((stepBodyHtml(rule) + stepActionsHtml(rule)).split('Bash(git status)').length - 1, 1);
+  // Counted as visible text: the code block's copy button keeps its source in an attribute.
+  assert.equal((stepBodyHtml(rule) + stepActionsHtml(rule)).split('>Bash(git status)<').length - 1, 1);
 });
 
 test("a task's Steps group rows under workstreams, pill only what waits on you, and hide settled steps", () => {

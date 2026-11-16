@@ -53,14 +53,14 @@ function note(draft) {
 }
 
 // `showBody` adds the exact text that will go (the Steps inspector); the draft page shows it in its own sections.
-export function outboundPanel(draft, { showBody = false } = {}) {
+export function outboundPanel(draft, { showBody = false, showStep = true } = {}) {
   const f = draft.fields;
   const [label, tone] = STATUS[f.status] || [f.status || "No status", "open"];
   return `<section class="outbound-panel" data-outbound-path="${escapeHtml(draft.path)}" data-outbound-sha="${escapeHtml(draft.sha)}" data-outbound-status="${escapeHtml(f.status || "")}">
     <div class="outbound-head">
       <span class="outbound-kind">${outboundIcon(f.outbound)}${escapeHtml(outboundKindLabel(f.outbound))}</span>
       <span class="outbound-target">to ${targetHtml(f.target, draft.path)}</span>
-      ${f.step ? `<span class="outbound-meta">step ${stepHtml(f.step, draft.path)}</span>` : ""}
+      ${f.step && showStep ? `<span class="outbound-meta">step ${stepHtml(f.step, draft.path)}</span>` : ""}
       ${f.dry_run === "true" ? `<span class="outbound-meta outbound-dry-run" title="dry_run: true in its front matter; sending only converts and checks">dry run</span>` : ""}
       <span class="outbound-meta" title="Hash of the text below and its send line; any edit needs a new approval">sha ${escapeHtml(draft.sha.slice(0, 8))}</span>
       <span class="task-status outbound-status outbound-status-${tone}">${escapeHtml(label)}</span>

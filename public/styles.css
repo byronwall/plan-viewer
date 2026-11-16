@@ -2594,65 +2594,95 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 .work-item-dialog .work-status-icon svg { width: 14px; height: 14px; }
 .work-item-notes-count { display: inline-flex; align-items: center; gap: 2px; color: var(--action-ink); font-size: .7rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .work-item-dialog .work-item-notes-count svg { width: 11px; height: 11px; }
-.work-item-main { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px 28px 28px; scrollbar-width: thin; }
-.work-item-main > * { max-width: 78ch; }
-.work-item-kicker { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0; color: var(--muted); font-size: .76rem; font-weight: 600; }
-.work-item-kicker code { color: var(--ink); font: 650 .78rem/1.2 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; }
-.work-item-in { font-weight: 400; }
-.work-item-parent { min-width: 0; overflow: hidden; border: 0; background: transparent; padding: 0; color: var(--action-ink); font: inherit; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-.work-item-parent:hover { color: var(--action-deep); }
+/* The item pane, top to bottom: identity line, title, actions, a facts grid, then sections that share one heading and one
+   hairline. Type scale: title 1.3rem; body .86rem; labels and meta .74–.78rem; section heads .68rem small caps. */
+.work-item-main { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 32px 40px; scrollbar-width: thin; }
+.work-item-main > * { max-width: 780px; }
+.work-item-kicker { display: flex; align-items: center; gap: 6px; min-width: 0; height: 20px; margin: 0; color: var(--muted); font-size: .76rem; }
+.work-item-kicker > code { color: var(--ink); font: 650 .78rem/1 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; }
+.work-item-kicker .work-status-icon { margin: 0 -3px 0 -1px; }
+.work-item-status { font-weight: 600; }
+.work-item-status.is-ready, .work-item-status.is-active { color: var(--action-ink); }
+.work-item-status.is-blocked, .work-item-status.is-waiting { color: var(--status-waiting-ink); }
+.work-item-status.is-completed { color: var(--success-ink); }
+.work-item-in { margin-left: 4px; }
+.work-item-parent { min-width: 0; overflow: hidden; border: 0; border-radius: 4px; background: transparent; padding: 0; color: var(--action-ink); font: inherit; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; transition: color 140ms ease-out; }
+.work-item-parent code { font: 600 .74rem/1 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; }
+@media (hover: hover) { .work-item-parent:hover { color: var(--action-deep); } }
 .work-item-rail-head { border-bottom: 1px solid var(--line); padding: 6px 8px; }
 .work-item-rail ol > .work-item-empty { padding: 6px; }
-.work-item-headline { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; }
-.work-item-agent { justify-content: flex-end; }
-.work-item-agent .step-actions { display: contents; }
-.work-item-why { margin: -4px 0 0; color: var(--muted); font-size: .84rem; line-height: 1.45; }
-.work-item-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 14px 0 0; }
-.work-item-strip-label { color: var(--muted); font-size: .7rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
-.work-item-strip-arrow { color: var(--muted); }
-.work-item-chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); padding: 0 7px 0 5px; color: var(--ink); font: inherit; cursor: pointer; transition: background-color 140ms ease-out, border-color 140ms ease-out; }
-.work-item-chip code { font: 650 .72rem/1 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; }
-.work-item-chip.is-current { border-color: var(--action-ink); background: var(--selected); cursor: default; }
-.work-item-step-body:not(:empty) { margin-top: 16px; }
-.work-item-step-body .outbound-panel { border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: 10px 0 0; }
-.work-item-section .step-action-title { font-weight: 550; letter-spacing: 0; text-transform: none; }
-.work-item-heading h2 { margin: 4px 0 10px; font-size: 1.15rem; line-height: 1.35; letter-spacing: -.01em; text-wrap: balance; }
-.work-item-agent { display: flex; flex-wrap: wrap; gap: 8px; }
-.work-item-agent-button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--action-ink); border-radius: 6px; background: var(--action-ink); padding: 5px 11px; color: var(--paper); font: inherit; font-size: .8rem; font-weight: 650; cursor: pointer; transition: background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out; }
-.work-item-agent-button:hover { background: var(--action-deep); border-color: var(--action-deep); }
-.work-item-agent-button.is-secondary { border-color: var(--line-strong); background: var(--paper); color: var(--action-ink); }
-.work-item-agent-button.is-secondary:hover { background: var(--selected); }
-/* Not on the frontier (blocked, waiting, deferred or done): still sendable, in the waiting color so that is never missed. */
-.work-item-agent-button.is-off-frontier { border-color: var(--status-waiting-ink); background: var(--status-waiting-field); color: var(--status-waiting-ink); }
-.work-item-agent-button.is-off-frontier:hover { background: color-mix(in srgb, var(--status-waiting-field) 70%, var(--status-waiting-ink)); border-color: var(--status-waiting-ink); }
-.work-item-agent-button.is-off-frontier.is-secondary { background: var(--paper); }
-.work-item-agent-button.is-off-frontier.is-secondary:hover { background: var(--status-waiting-field); }
+.work-item-heading h2 { margin: 6px 0 0; color: var(--ink); font-size: 1.3rem; font-weight: 650; line-height: 1.3; letter-spacing: -.015em; text-wrap: balance; }
+
+/* Actions: one row under the title, aligned with it. Every button is 28px; the step's own action leads, filled. */
+.work-item-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; }
+.work-item-actions .step-actions { display: contents; }
+.work-item-actions .outbound-note { margin-right: 4px; }
+.work-item-actions :is(.outbound-primary, .outbound-secondary), .work-item-agent-button { display: inline-flex; align-items: center; gap: 6px; height: 28px; border-radius: 6px; padding: 0 11px; font: inherit; font-size: .78rem; font-weight: 650; }
+.work-item-agent-button { border: 1px solid var(--action); background: var(--action); color: var(--paper); cursor: pointer; transition: background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out; }
+.work-item-dialog .work-item-agent-button svg { width: 13px; height: 13px; }
+@media (hover: hover) { .work-item-agent-button:hover { background: var(--action-deep); border-color: var(--action-deep); } }
+.work-item-agent-button.is-secondary { border-color: var(--line-strong); background: var(--paper); color: var(--control-ink, #344057); }
+@media (hover: hover) { .work-item-agent-button.is-secondary:hover { border-color: #aeb8ca; background: var(--hover-field); } }
+/* Open but not ready (blocked or waiting): still sendable, in the waiting color so that is never missed. */
+.work-item-agent-button.is-off-frontier { border-color: color-mix(in srgb, var(--status-waiting-ink) 45%, var(--paper)); background: var(--paper); color: var(--status-waiting-ink); }
+@media (hover: hover) { .work-item-agent-button.is-off-frontier:hover { border-color: color-mix(in srgb, var(--status-waiting-ink) 60%, var(--paper)); background: var(--status-waiting-field); } }
 /* Update revises the item rather than doing it, so it sits back as a plain text button. */
 .work-item-agent-button.is-quiet { border-color: transparent; background: transparent; padding-inline: 8px; color: var(--muted); }
 @media (hover: hover) { .work-item-agent-button.is-quiet:hover { border-color: transparent; background: var(--quiet-field); color: var(--ink); } }
-.work-item-agent-button:focus-visible { outline: 3px solid rgba(49, 87, 213, .26); outline-offset: 2px; }
-.work-item-relations { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; margin: 16px 0 0; }
-.work-item-relations dt { padding-top: 3px; color: var(--muted); font-size: .7rem; font-weight: 650; letter-spacing: .04em; line-height: 18px; text-transform: uppercase; }
-.work-item-relations dd { margin: 0 0 0 -6px; }
-.work-item-relations .work-item-ref { width: auto; max-width: 100%; }
-.work-item-section { margin-top: 20px; }
-.work-item-section > h3 { display: flex; align-items: baseline; gap: 6px; margin: 0 0 4px; color: var(--muted); font-size: .7rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
-.work-item-section > h3 > span { font-variant-numeric: tabular-nums; }
+.work-item-agent-button:active, .work-item-actions :is(.outbound-primary, .outbound-secondary):active:not(:disabled) { transform: scale(.97); }
+
+/* Facts: a label column and full-title rows. Labels are sentence case so they read as fields, not as section heads. */
+.work-item-facts { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 2px 14px; margin: 20px 0 0; }
+.work-item-facts dt { color: var(--muted); font-size: .76rem; line-height: 24px; }
+.work-item-facts dd { display: grid; justify-items: start; min-width: 0; margin: 0 0 0 -6px; }
+.work-item-facts dt:not(:first-child), .work-item-facts dt:not(:first-child) + dd { margin-top: 6px; }
+/* Pill, reason and fix flow as one sentence, so a long reason wraps under itself instead of dropping below the pill. */
+.work-item-move { padding: 2px 0 2px 6px; color: var(--body-ink); font-size: .84rem; line-height: 20px; }
+.work-item-move > .step-move { margin-right: 8px; vertical-align: 1px; }
+.work-item-move > span + span { margin-left: 8px; }
+.work-item-move code, .work-item-mentions code { border-radius: 3px; background: var(--quiet-field); padding: 1px 4px; font: .76rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+.work-item-fix { color: var(--status-waiting-ink); }
+.work-item-facts .work-item-ref { width: auto; max-width: 100%; font-size: .82rem; }
+
+/* Sections: same heading, same hairline above, same spacing. */
+.work-item-section { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 14px; }
+.work-item-section > h3 { display: flex; align-items: baseline; gap: 6px; margin: 0 0 10px; color: var(--label-text); font-size: .68rem; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; }
+.work-item-section > h3 > span { color: var(--quiet-text); font-variant-numeric: tabular-nums; }
+.work-item-section .step-action-title { overflow: hidden; color: var(--muted); font-weight: 500; letter-spacing: 0; text-overflow: ellipsis; text-transform: none; white-space: nowrap; }
+.work-item-main > .work-item-empty { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 14px; }
 .work-item-empty { margin: 4px 0; color: var(--muted); font-size: .82rem; }
-.work-item-note { padding: 8px 0 12px; }
-.work-item-note + .work-item-note { border-top: 1px solid var(--line); padding-top: 12px; }
+
+/* The move: a choice's options, an outgoing draft, a statement to run, notes waiting for an agent. */
+.work-item-section .step-choice { gap: 2px; border: 0; padding: 0; }
+.work-item-section .step-option { margin: 0 -8px; border: 0; border-radius: 6px; padding: 7px 8px; transition: background-color 140ms ease-out; }
+.work-item-section .step-option:has(input:checked) { background: var(--selected); }
+@media (hover: hover) { .work-item-section .step-option:not(:has(input:checked)):hover { background: var(--hover-field); } }
+.work-item-section .step-option strong { font-size: .86rem; font-weight: 600; }
+.work-item-section .step-option span span { margin-top: 1px; font-size: .8rem; line-height: 1.45; }
+.work-item-section .step-choice > .outbound-actions { margin-top: 10px; }
+.work-item-section .outbound-panel { gap: 10px; border: 0; border-radius: 0; padding: 0; }
+.work-item-section .outbound-head { font-size: .8rem; }
+.work-item-section .outbound-body { border: 0; border-radius: 8px; background: var(--hover-field); padding: 12px 16px; }
+.work-item-section .outbound-body .markdown { font-size: .86rem; line-height: 1.55; }
+.work-item-section .step-notes h5 { display: none; }
+.work-item-section .step-run:first-child h5 { margin-top: 0; }
+
+/* Updates and mentions: whitespace between entries, no rules. */
+.work-item-note + .work-item-note { margin-top: 18px; }
 .work-item-note > header { display: flex; align-items: baseline; gap: 12px; }
-.work-item-note h4 { margin: 0; font-size: .95rem; font-weight: 650; line-height: 1.4; }
-.work-item-note time, .work-item-mentions time { flex: none; margin-left: auto; color: var(--muted); font-size: .74rem; white-space: nowrap; }
-.work-item-note .markdown { margin: 0; font-size: .88rem; line-height: 1.55; }
+.work-item-note h4 { margin: 0; color: var(--ink); font-size: .9rem; font-weight: 650; line-height: 1.4; }
+.work-item-note time, .work-item-mentions time { flex: none; margin-left: auto; color: var(--muted); font-size: .74rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.work-item-note .markdown { margin: 0; color: var(--body-ink); font-size: .86rem; line-height: 1.55; }
 .work-item-note .markdown > :first-child { margin-top: 4px; }
 .work-item-note .markdown > :last-child { margin-bottom: 0; }
-.work-item-mentions { display: grid; gap: 10px; margin: 6px 0 0; padding: 0; list-style: none; }
-.work-item-mentions li { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; }
-.work-item-mentions p { grid-column: 1 / -1; margin: 2px 0 0; color: var(--body-ink, var(--ink)); font-size: .84rem; line-height: 1.5; }
+.work-item-mentions { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.work-item-mentions header { display: flex; align-items: baseline; gap: 12px; }
+.work-item-mentions p { margin: 3px 0 0; color: var(--body-ink); font-size: .84rem; line-height: 1.5; }
+.work-item-mentions a, .work-item-move a { color: var(--action-ink); text-decoration: none; }
+@media (hover: hover) { .work-item-mentions a:hover, .work-item-move a:hover { color: var(--action-deep); } }
 .work-item-mentions mark { border-radius: 3px; background: var(--status-waiting-field); padding: 0 2px; color: inherit; }
-.work-item-mention-source { justify-self: start; border: 0; background: transparent; padding: 0; color: var(--action-ink); font: inherit; font-size: .8rem; font-weight: 650; text-align: left; cursor: pointer; }
-.work-item-mention-source:hover { color: var(--action-deep); }
+.work-item-mention-source { min-width: 0; border: 0; background: transparent; padding: 0; color: var(--action-ink); font: inherit; font-size: .84rem; font-weight: 600; text-align: left; cursor: pointer; transition: color 140ms ease-out; }
+@media (hover: hover) { .work-item-mention-source:hover { color: var(--action-deep); } }
 @media (max-width: 860px) {
   .work-item-dialog[open] { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
   .work-item-rail { max-height: 132px; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -3238,7 +3268,11 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .step-col-age { white-space: nowrap; color: var(--muted); font-size: .78rem; text-align: right; }
 .step-detail .outbound-panel { padding: 10px 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
 .step-friction { margin: 8px 0; color: var(--status-waiting-ink); font-size: .82rem; }
-.step-prompt { max-height: 340px; overflow: auto; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; background: #f6f7fa; border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; color: #2c3e69; font: .76rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* An agent prompt: rendered Markdown on a pale blue surface, so it reads as "what the agent gets" and not as page text. */
+.step-prompt { max-height: 320px; overflow: auto; overscroll-behavior: contain; border-radius: 8px; background: #f3f6fd; padding: 12px 16px; overflow-wrap: anywhere; scrollbar-width: thin; }
+.step-prompt .markdown { margin: 0; padding: 0; color: var(--body-ink); font-size: .84rem; line-height: 1.55; }
+.step-prompt .markdown > :first-child { margin-top: 0; }
+.step-prompt .markdown > :last-child { margin-bottom: 0; }
 .step-action-title { color: var(--muted); font-weight: 550; }
 .step-choice { display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
 .step-option { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 6px 4px; border-bottom: 1px solid var(--line); cursor: pointer; }
@@ -3248,7 +3282,8 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .step-option span span { display: block; color: var(--muted); font-size: .78rem; }
 .step-recommended { margin-left: 8px; border: 1px solid var(--success); border-radius: 999px; padding: 1px 6px; color: var(--success-ink); font-size: .64rem; font-style: normal; font-weight: 700; }
 .step-choice-note { color: var(--muted); font-size: .76rem; }
-.step-run pre { margin: 4px 0; white-space: pre-wrap; background: #f6f7fa; border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; font-size: .78rem; }
+.step-run .markdown { margin: 4px 0; padding: 0; }
+.step-run .markdown pre { margin: 0; white-space: pre-wrap; }
 .step-run h5 { margin: 10px 0 0; color: var(--label-text); font: 650 .66rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .035em; text-transform: uppercase; }
 .outbound-body, .step-detail { min-width: 0; overflow-wrap: anywhere; }
 .step-detail .task-detail-badges { flex-wrap: wrap; }
