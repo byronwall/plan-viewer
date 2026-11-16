@@ -5,7 +5,7 @@ import { escapeHtml, inlineMarkdown, renderMarkdown, SERVICE_ICONS } from "./mar
 
 export const OUTBOUND_KINDS = {
   "jira-issue": ["New Jira issue", "jira"], "jira-comment": ["Jira comment", "jira"], "jira-edit": ["Jira description", "jira"],
-  "jira-transition": ["Jira transition", "jira"], slack: ["Slack message", "slack"], "pr-comment": ["PR comment", "github"],
+  "jira-transition": ["Jira transition", "jira"], "it-ticket": ["New IT ticket", "jira"], slack: ["Slack message", "slack"], "pr-comment": ["PR comment", "github"],
   "review-request": ["Review request", "github"], pr: ["Pull request", "github"], email: ["Email", ""],
 };
 const STATUS = {
@@ -44,6 +44,7 @@ function note(draft) {
   const f = draft.fields;
   if (f.status === "failed" && f.error) return `<p class="outbound-note is-error">${escapeHtml(f.error)}</p>`;
   if (f.status === "ready" && f.error) return `<p class="outbound-note is-error">${escapeHtml(f.error)}</p>`;
+  if (f.status === "ready" && draft.fields.outbound === "it-ticket") return `<p class="outbound-note">To the RAI Help Desk (ITSM). Next: file it with the create-it-ticket skill in a Codex desktop app task (terminal codex has no browser host), then mark it sent.</p>`;
   if (f.status === "ready" && isManual(draft)) return `<p class="outbound-note is-friction">You send this by hand. Fix: add a Slack user token with chat:write so it can send on approval.</p>`;
   if (f.status === "draft" && f.waits) return `<p class="outbound-note">Waits on ${escapeHtml(f.waits)}</p>`;
   if (f.status === "revise") return `<p class="outbound-note">Sent back with your feedback; an agent is revising it and it comes back here.</p>`;

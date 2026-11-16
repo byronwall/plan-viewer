@@ -9,7 +9,7 @@ import { parseActions, parseWorkBreakdown, STEP_FLAGS, STEP_SIZES } from "./publ
 import { config, withNote } from "./public/config.js";
 import { draftFromText, outboundFields, type OutboundDraft } from "./outbound.ts";
 
-export const OUTBOUND_KINDS = new Set(["jira-issue", "jira-comment", "jira-edit", "jira-transition", "slack", "pr", "pr-comment", "review-request", "email"]);
+export const OUTBOUND_KINDS = new Set(["jira-issue", "jira-comment", "jira-edit", "jira-transition", "it-ticket", "slack", "pr", "pr-comment", "review-request", "email"]);
 const CHOICES = new Set(["pick-one", "pick-any"]);
 export type Priority = "p1" | "p2" | "p3";
 export type Move = "you-decide" | "you-act" | "agent" | "others" | "blocked" | "unclassified" | "flags";
@@ -166,6 +166,7 @@ function nextMove(step: Step, blockedBy: string[]): [Move, string, string?] | [n
     const status = draft?.fields.status;
     if (!draft) return ["agent", "draft it"];
     if (status === "sent" || status === "dropped") return [null, ""];
+    if (status === "ready" && kind === "it-ticket") return ["agent", "file via create-it-ticket", "File it with the create-it-ticket skill in a Codex desktop app task (terminal codex has no browser host)"];
     if (status === "ready" && draft.fields.send === "manual") return ["you-act", "send by hand", "Add a Slack user token with chat:write so it sends on approval"];
     if (status === "ready") return ["you-decide", "approve"];
     if (status === "failed") return ["you-decide", "retry or send back"];

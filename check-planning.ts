@@ -9,7 +9,7 @@ import { isViewableDocumentPath, parseChunks, parseTaskDocument, ROOT } from "./
 import { config } from "./public/config.js";
 import { outboundFields } from "./outbound.ts";
 
-const STEP_KINDS = new Set(["agent", "check-in", "decision", "byron", "pick-one", "pick-any", "do-all", "jira-issue", "jira-comment", "jira-edit", "jira-transition", "slack", "pr", "pr-comment", "review-request", "email"]);
+const STEP_KINDS = new Set(["agent", "check-in", "decision", "byron", "pick-one", "pick-any", "do-all", "jira-issue", "jira-comment", "jira-edit", "jira-transition", "it-ticket", "slack", "pr", "pr-comment", "review-request", "email"]);
 const YOURS = new Set(["decision", "byron", "pick-one", "pick-any"]);
 const DRAFT_STATUSES = new Set(["draft", "ready", "revise", "approved", "sent", "failed", "dropped"]);
 // The PR targets the workspace's outbound.py sender can parse (repo_pr): #2233, PyRel#3929, Owner/repo#1, or a PR URL.

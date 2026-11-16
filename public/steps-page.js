@@ -26,7 +26,7 @@ export const MOVES = {
 };
 const ORDER = ["you-decide", "you-act", "agent", "others", "blocked", "unclassified"];
 const HIDDEN = new Set(["blocked", "unclassified"]);
-const OUTBOUND = new Set(["jira-issue", "jira-comment", "jira-edit", "jira-transition", "slack", "pr", "pr-comment", "review-request", "email"]);
+const OUTBOUND = new Set(["jira-issue", "jira-comment", "jira-edit", "jira-transition", "it-ticket", "slack", "pr", "pr-comment", "review-request", "email"]);
 // Agent friction flags (scripts/flag) have their own segment and stay out of All and Up next: the daily retro works them.
 export const MOVE_FILTERS = { you: ["you-decide", "you-act"], agent: ["agent"], others: ["others"], flags: ["flags"], all: ORDER };
 export const KIND_FILTERS = {
