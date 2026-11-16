@@ -141,6 +141,9 @@ export const config = () => current;
 // The Issues page shows when any source is configured: a Jira scope, Linear teams, or GitHub issues.
 export const issuesOn = () => Boolean(current.issues.jql || current.issues.linear?.teams?.length || current.issues.github);
 
+// A comment typed into a launch button's note popover rides on top of the prompt it goes with, the same way whether the
+// prompt is saved as an Up next note, copied, or opened in the agent app.
+export const withNote = (prompt, note = "", user = current.user) => note.trim() ? `${user}'s note: ${note.trim()}\n\n${prompt}`.trim() : prompt;
 export const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // Lookup tables and regex sources for document references, rebuilt when the config changes.

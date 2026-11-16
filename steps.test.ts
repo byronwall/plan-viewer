@@ -121,21 +121,19 @@ test("a saved note keeps its prompt and images, waits under Up next, and leaves 
   await assert.rejects(closeNote(root, "tasks/TASK-0001.md", "Pat", "2026-11-14"), /Not a note/);
 });
 
-test("a launch button saves its prompt as an Up next note, with the comment on top and the task from its source", async (t) => {
+test("a launch button saves its prompt as an Up next note, with the popover's comment on top", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "launch-notes-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const now = new Date(2026, 10, 16, 9, 30, 0);
-  const pr = await saveLaunchNote(root, { title: "Shakedown #42 Retry invites", prompt: "Run /shakedown on https://github.com/acme/app/pull/42.", comment: "Focus on the retry path", source: "https://github.com/acme/app/pull/42" }, "Pat", now);
+  const pr = await saveLaunchNote(root, { title: "Shakedown #42 Retry invites", prompt: "Run /shakedown on https://github.com/acme/app/pull/42.", comment: "  Focus on the retry path " }, "Pat", now);
   assert.equal(pr.path, "reference/notes/2026-11-16-093000-shakedown-42-retry-invites.md");
   const text = await readFile(join(root, pr.path), "utf8");
-  assert.doesNotMatch(text, /^source:/m);
+  assert.match(text, /^note: open$/m);
+  assert.doesNotMatch(text, /^(source|task|step):/m);
   assert.match(text, /# Shakedown #42 Retry invites\n\nPat's note: Focus on the retry path\n\nRun \/shakedown/);
-  const step = await saveLaunchNote(root, { title: "Start W2", prompt: "Do W2", source: "tasks/TASK-0001.md", step: "TASK-0001 W2" }, "Pat", now);
-  assert.match(step.path, /^tasks\/TASK-0001-assets\/notes\//);
-  assert.match(await readFile(join(root, step.path), "utf8"), /^task: TASK-0001\nstep: TASK-0001 W2$/m);
-  const foreign = await saveLaunchNote(root, { title: "Odd step", prompt: "x", task: "TASK-0001", step: "TASK-0002 W1" }, "Pat", new Date(2026, 10, 16, 9, 31, 0));
-  assert.doesNotMatch(await readFile(join(root, foreign.path), "utf8"), /^step:/m);
-  await assert.rejects(saveLaunchNote(root, { title: "Empty" }, "Pat", now), /Nothing to save/);
+  const bare = await saveLaunchNote(root, { title: "Work in app", comment: "Bisect the flaky login test" }, "Pat", new Date(2026, 10, 16, 9, 31, 0));
+  assert.match(await readFile(join(root, bare.path), "utf8"), /# Work in app\n\nPat's note: Bisect the flaky login test\n$/);
+  await assert.rejects(saveLaunchNote(root, { title: "Empty", comment: "  " }, "Pat", now), /Nothing to save/);
 });
 
 test("Pick completes the choice, defers the options not picked, and records the pick", async (t) => {

@@ -292,15 +292,17 @@ function copyDiscussPrompt(button) {
 async function discuss(open = false) {
   if (!current?.thread) return;
   const box = dialog.querySelector(".slack-composer textarea");
-  const button = dialog.querySelector(open ? "[data-slack-discuss]" : ".slack-composer [type=submit]");
-  button.disabled = true;
+  if (dialog.querySelector(".slack-composer button:disabled")) return; // a save or draft is already on its way
+  // A note is the ask itself, so it needs words; a draft can open empty and be written in the agent app.
+  if (!open && !box.value.trim()) { box.focus(); return hint("Write what to ask first; a note with no ask says nothing.", true); }
+  for (const control of dialog.querySelectorAll(".slack-composer button")) control.disabled = true;
   hint(open ? `Opening a draft in ${agentName()}…` : "Saving a note…");
   let saved;
   try {
     if (open) await requestDiscuss(box.value);
     else {
       const { prompt } = await requestDiscuss(box.value, true);
-      const title = `Slack thread${current.thread.channelName ? ` in ${current.thread.channelName}` : ""}: ${box.value.trim().split("\n")[0] || "discuss"}`;
+      const title = `Slack thread${current.thread.channelName ? ` in ${current.thread.channelName}` : ""}: ${box.value.trim().split("\n")[0]}`;
       saved = await saveUpNextNote({ title, prompt });
     }
     box.value = "";
@@ -310,7 +312,7 @@ async function discuss(open = false) {
   } catch (error) {
     hint(error.message, true);
   } finally {
-    button.disabled = false;
+    for (const control of dialog.querySelectorAll(".slack-composer button")) control.disabled = false;
   }
 }
 

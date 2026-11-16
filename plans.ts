@@ -426,7 +426,7 @@ export function createPlans(root: string, deps: { repos: () => Promise<string[]>
 
   // The prompt names the skill (`code.planSkill`), the initiative's files, and where it lives, and ends with a "---"
   // line for the user's own words. The draft opens in the repo's main checkout, which may sit on another branch.
-  async function prompt(app: string, id: string, kind: string, open: string) {
+  async function prompt(app: string, id: string, kind: string, open: string, note = "") {
     const item = (await load(false, id.includes("@/"))).initiatives.find((candidate) => candidate.id === id);
     if (!item) throw new Error("Unknown initiative.");
     const skill = config().code.planSkill;
@@ -443,14 +443,14 @@ export function createPlans(root: string, deps: { repos: () => Promise<string[]>
     const ask = kind === "retire"
       ? `${use ? use : "Please "}retire the initiative "${item.title}" in ${item.repo}. It is ${item.status}, and I approve retiring it: reconcile the code with its intent, move anything durable into the repository's docs, and remove the planning artifacts.`
       : `${use ? use : "Please "}update the initiative "${item.title}" in ${item.repo}.`;
-    const draft = `${ask} ${where}\n\n${files.join("\n")}\n\n---\n\n`;
+    const draft = `${ask} ${where}\n\n${files.join("\n")}\n\n---\n\n${note.trim() ? `${note.trim()}\n` : ""}`;
     if (app !== "claude" && app !== "codex") throw new Error("Unknown agent app.");
     return { repo: item.repo, draft, url: app === "claude" ? claudeUrl(item.repo, draft) : codexNewTaskUrl(draft, item.repo) };
   }
 
-  async function launch(app: string, id: string, kind: string, open: string) {
+  async function launch(app: string, id: string, kind: string, open: string, note = "") {
     if (open) cleanPath(open);
-    const { url } = await prompt(app, id, kind, open);
+    const { url } = await prompt(app, id, kind, open, note);
     await exec("/usr/bin/open", [url]);
   }
 

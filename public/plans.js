@@ -4,10 +4,10 @@ import { termMatch } from "./search.js";
 import { ago, copied, fadeIn, hideTip, iconButton, isSummonKey, openPrOverlay, repoBadge, showTip, sideFacts, when, heat } from "./code.js";
 import { GLYPHS } from "./icons.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
-import { openNotePopover, saveUpNextNote } from "./note-popover.js";
+import { openNotePopover } from "./note-popover.js";
 
 // The Plans page and the initiative reader: initiatives on each tracked repo's origin/main (and proposed in open PRs,
-// and changed in the repo root), as a rail, an overview table, and a reader on the page or in a peek modal. Read-only; Update and Retire open agent drafts. docs/plans-plan.md has the why.
+// and changed in the repo root), as a rail, an overview table, and a reader on the page or in a peek modal. Read-only; Update and Retire save an Up next note (the agent draft is one click further). docs/plans-plan.md has the why.
 const FINISHED = new Set(["completed", "cancelled"]);
 // The repo root's uncommitted or unpushed copy of an initiative replaces main's; worktree copies stay out of the list.
 const ps = { data: null, error: "", loading: null, root: true, worktrees: false, maps: new Map(), docs: new Map() };
@@ -190,7 +190,7 @@ function linkRows(items) {
 // Update, Retire (finished work only), and copy-prompt, in the header beside the title.
 export function planActions(item) {
   const finished = FINISHED.has(item.status) && !item.error;
-  return `${iconButton("draft", `Draft an update in ${appName()} (U)`, `data-plan-agent="update" data-id="${escapeHtml(item.id)}"`)}${finished ? iconButton("trash", `Draft retirement in ${appName()} (Shift+U)`, `data-plan-agent="retire" data-id="${escapeHtml(item.id)}"`) : ""}${iconButton("copy", "Copy the update prompt", `data-plan-copy-prompt="update" data-id="${escapeHtml(item.id)}"`)}`;
+  return `${iconButton("draft", `Update: save a note, or draft it in ${appName()} (U)`, `data-plan-agent="update" data-id="${escapeHtml(item.id)}"`)}${finished ? iconButton("trash", `Retire: save a note, or draft it in ${appName()} (Shift+U)`, `data-plan-agent="retire" data-id="${escapeHtml(item.id)}"`) : ""}${iconButton("copy", "Copy the update prompt", `data-plan-copy-prompt="update" data-id="${escapeHtml(item.id)}"`)}`;
 }
 
 function planFacts(item) {
@@ -297,8 +297,9 @@ function planPanel(item, { reader = false } = {}) {
 // ---------- agent drafts ----------
 
 // Update and Retire open the note popover: Enter saves the prompt as an Up next note; the draft is its quiet button.
-async function planRequest(route, kind, id, doc) {
-  const response = await fetch(`/api/code/${route}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app: agentApp(), id, kind, doc }) });
+// A comment typed there lands under the prompt's "---" line, where the draft asks for your own words.
+async function planRequest(route, kind, id, doc, note = "") {
+  const response = await fetch(`/api/code/${route}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app: agentApp(), id, kind, doc, note }) });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || "Could not build the prompt.");
   return body;
@@ -306,20 +307,15 @@ async function planRequest(route, kind, id, doc) {
 async function draft(kind, id, doc = "", anchor) {
   const scope = [...document.querySelectorAll("dialog[open]")].pop() || document;
   anchor ||= scope.querySelector(`[data-plan-agent="${kind}"][data-id="${CSS.escape(id)}"]`) || scope.querySelector(`[data-plan-agent][data-id="${CSS.escape(id)}"]`) || scope.querySelector("[aria-selected=true]") || document.body;
-  const title = `${kind === "retire" ? "Retire" : "Update"} initiative ${id}${doc ? ` (${doc})` : ""}`;
   openNotePopover(anchor, {
-    heading: title,
-    save: async (comment) => { const { note } = await saveUpNextNote({ title, comment, prompt: (await planRequest("plan-prompt", kind, id, doc)).draft }); notify(`Saved a note for Up next: ${note}`); },
-    send: { label: `Draft in ${appName()}`, run: async () => { await planRequest("plan-agent", kind, id, doc); notify(`Drafted ${kind === "retire" ? "a retirement" : "an update"} in ${appName()}. Add your notes under the --- line, then send.`); } },
-    copy: async () => (await planRequest("plan-prompt", kind, id, doc)).draft,
+    heading: `${kind === "retire" ? "Retire" : "Update"} the initiative ${byId(id)?.title || id}${doc ? ` (${doc})` : ""}`, notify,
+    prompt: async (note) => (await planRequest("plan-prompt", kind, id, doc, note)).draft,
+    send: { label: `Draft in ${appName()}`, run: async (note) => { await planRequest("plan-agent", kind, id, doc, note); notify(`Drafted ${kind === "retire" ? "a retirement" : "an update"} in ${appName()}. Add your notes under the --- line, then send.`); } },
   });
 }
 
 async function copyPrompt(button, kind, id, doc = "") {
-  const response = await fetch("/api/code/plan-prompt", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app: agentApp(), id, kind, doc }) });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error || "Could not build the prompt.");
-  await navigator.clipboard.writeText(body.draft);
+  await navigator.clipboard.writeText((await planRequest("plan-prompt", kind, id, doc)).draft);
   copied(button);
 }
 

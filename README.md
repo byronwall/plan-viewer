@@ -12,7 +12,7 @@ The viewer never edits your files. Your Markdown stays the source of truth, read
 
 **Plans that read as work.** The viewer opens today's plan. Each milestone or section is a card, and scheduled tasks show how many of their steps wait on you, an agent or someone else. Tasks, PRs, commits, and Linear or Jira keys become links that show live titles and states.
 
-**Hand any piece of work to an agent.** Every card and step opens as an editable draft in Codex or Claude Desktop, with the source context attached. You add a note, review the prompt, and send it yourself. Nothing runs until you do.
+**Hand any piece of work to an agent.** Every card, step and agent button saves its prompt, with the source context and a note you add, to an Up next queue that an orchestrating agent thread works through. Opening it as a draft in Codex or Claude Desktop is one click further, and nothing runs until you send it.
 
 ![A step, with what it waits on and its prompt, ready for an agent](docs/images/action.png)
 

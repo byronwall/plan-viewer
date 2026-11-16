@@ -6,7 +6,7 @@ import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promi
 import { basename, dirname, extname, join, posix, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { parseActions, parseWorkBreakdown, STEP_FLAGS, STEP_SIZES } from "./public/actions.js";
-import { config } from "./public/config.js";
+import { config, withNote } from "./public/config.js";
 import { draftFromText, outboundFields, type OutboundDraft } from "./outbound.ts";
 
 export const OUTBOUND_KINDS = new Set(["jira-issue", "jira-comment", "jira-edit", "jira-transition", "slack", "pr", "pr-comment", "review-request", "email"]);
@@ -412,13 +412,13 @@ export async function applyRule(root: string, path: string, user: string, today:
 const runs = new Map<string, { started: number; pid: number }>();
 export const activeRuns = () => [...runs].map(([key, run]) => ({ key, ...run }));
 
-export async function startStep(root: string, step: Step, today: string, next?: () => Promise<Step | undefined>): Promise<{ started: boolean; key: string; pid?: number }> {
+export async function startStep(root: string, step: Step, today: string, next?: () => Promise<Step | undefined>, note = ""): Promise<{ started: boolean; key: string; pid?: number }> {
   const command = config().steps.start || [];
   if (!command.length) throw new Error("No agent command is configured: set steps.start in viewer.config.json.");
   if (step.move !== "agent" || step.running) throw new Error(`${step.task} ${step.id} isn't ready for an agent.`);
   if (runs.has(step.key)) throw new Error(`${step.key} is already running.`);
   if (runs.size >= config().steps.slots) throw new Error(`All ${config().steps.slots} agent slots are in use.`);
-  const prompt = step.prompt || `In ${root}, work on ${step.task} ${step.id}: ${step.title}. Read the task first, do only this step, record a dated update, and commit only the files you changed with git commit --only. Send, post or file nothing.`;
+  const prompt = withNote(step.prompt || `In ${root}, work on ${step.task} ${step.id}: ${step.title}. Read the task first, do only this step, record a dated update, and commit only the files you changed with git commit --only. Send, post or file nothing.`, note);
   const values: Record<string, string> = { prompt, task: step.task, step: step.id, title: step.title };
   const [file, ...args] = command.map((part: string) => part.replace(/\{(\w+)\}/g, (all, key) => values[key] ?? all));
   const absolute = taskFile(root, step.path);
@@ -448,21 +448,18 @@ export const relinkFrom = (text: string, source: string, note: string) => !sourc
   /^[a-z][\w+.-]*:/i.test(link) || link.startsWith("/") || /^(daily|tasks|plans|reference)\//.test(link) ? match
     : open + posix.relative(posix.dirname(note), posix.join(posix.dirname(source), link)));
 
-// `step` (`TASK-0101 W2.1`) ties the note to a step: a decision voiced over, or direction for one step. While the note
-// is open it stands in for that step, so the step leaves its mover's list.
-// A launch button's prompt (Shakedown, Start, Discuss…) saved as an Up next note instead of opened as an agent chat
-// (`/api/notes`). The person's comment goes at the top; the task comes from the body or a task-file source.
+// A launch button's prompt (Shakedown, Discuss, a cleanup review…) saved as an Up next note instead of opened as an
+// agent chat (`/api/notes`). The comment typed in the popover goes on top (`withNote`); these notes aren't tied to a
+// task, so they land in reference/notes/. Steps, the composer and diagrams save through /api/dispatch, which ties them.
 export async function saveLaunchNote(root: string, body: Record<string, unknown>, user: string, now = new Date()) {
-  const title = String(body.title || "").slice(0, 200), comment = String(body.comment || "").trim().slice(0, 12_000);
-  let prompt = String(body.prompt || "").slice(0, 60_000);
-  if (!prompt.trim() && !comment) throw new Error("Nothing to save.");
-  if (comment) prompt = `${user}'s note: ${comment}\n\n${prompt}`.trim();
-  const source = /^[\w./-]+\.md$/.test(String(body.source || "")) ? String(body.source) : "";
-  const task = String(body.task || "").match(/^TASK-\d{4}$/)?.[0] || source.match(/^tasks\/(TASK-\d{4})/)?.[1] || "";
-  const step = new RegExp(`^${task} W[\\d.]+$`).test(String(body.step || "")) && task ? String(body.step) : "";
-  return saveNote(root, { commentary: title || comment || "Note", prompt, source, task, step }, now);
+  const title = String(body.title || "").slice(0, 200), comment = String(body.comment || "").slice(0, 12_000);
+  const prompt = withNote(String(body.prompt || "").slice(0, 60_000), comment, user);
+  if (!prompt.trim()) throw new Error("Nothing to save.");
+  return saveNote(root, { commentary: title || comment || "Note", prompt }, now);
 }
 
+// `step` (`TASK-0101 W2.1`) ties the note to a step: a decision voiced over, or direction for one step. While the note
+// is open it stands in for that step, so the step leaves its mover's list.
 export async function saveNote(root: string, { commentary, prompt, source = "", task = "", step = "", images = [] as string[] }, now = new Date()) {
   const title = commentary.trim().split("\n")[0].replace(/\s+/g, " ").slice(0, 90) || "Note";
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "note";

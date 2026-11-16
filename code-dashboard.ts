@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { claudeNewSessionUrl as claudeUrl, codexNewTaskUrl } from "./codex-desktop.ts";
 import { createLocalRuns } from "./local-runs.ts";
 import { createPrNotes } from "./pr-notes.ts";
-import { config } from "./public/config.js";
+import { config, withNote } from "./public/config.js";
 
 const exec = promisify(execFile);
 const STATUS_TTL_MS = 3 * 60_000;
@@ -570,12 +570,13 @@ export function createCodeDashboard(root: string) {
   }
 
   // A blank session rooted in the worktree; Codex needs some prompt text, so it gets the branch as context.
-  async function launchSession(app: string, path: string) {
+  // A note typed in the launch popover becomes the session's first prompt.
+  async function launchSession(app: string, path: string, note = "") {
     await knownWorktree(path);
     const tree = lastWorktrees.find((candidate) => candidate.path === path);
     const url = app === "claude"
-      ? claudeUrl(path)
-      : codexNewTaskUrl(`Working in ${path} on branch ${tree?.branch || "(unknown)"}. `, path);
+      ? claudeUrl(path, note.trim())
+      : codexNewTaskUrl(`Working in ${path} on branch ${tree?.branch || "(unknown)"}. ${note.trim()}`, path);
     await exec("/usr/bin/open", [url]);
   }
 
@@ -594,7 +595,7 @@ export function createCodeDashboard(root: string) {
 
   // Both desktop apps take a prefilled draft and wait for Enter, so the user can edit before sending.
   // `copy` returns the prompt instead of opening the app (⌥-click), for pasting into a chat already open.
-  async function launchAgent(app: string, skill: string, prUrl: string, workspace: string, commentId = "", copy = false) {
+  async function launchAgent(app: string, skill: string, prUrl: string, workspace: string, commentId = "", copy = false, note = "") {
     await knownWorktree(workspace);
     if (!prSkills().some((candidate) => candidate.id === skill) && !Object.hasOwn(NOTE_PROMPTS, skill) && skill !== "discuss-comment") throw new Error("Unknown skill.");
     const pull = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)$/.exec(prUrl);
@@ -624,6 +625,7 @@ export function createCodeDashboard(root: string) {
       if (!file) throw new Error(`No ${skill} skill under ${root}/.claude/skills or ~/.agents/skills.`);
       draft = `Read and follow the ${skill} skill at ${file} for this pull request: ${prUrl}.${where}`;
     } else throw new Error("Unknown agent app.");
+    draft = withNote(draft, note);
     if (copy) return { prompt: draft };
     await exec("/usr/bin/open", [app === "claude" ? claudeUrl(root, draft) : codexNewTaskUrl(draft, root)]);
   }
@@ -656,8 +658,9 @@ export function createCodeDashboard(root: string) {
     return { repo, prompt: `Help me clean up old git worktrees in ${repo}. I have far too many and want to remove the ones that hold nothing I need.\n\nCandidates:\n${lines.join("\n")}\n\nFor each candidate, check for uncommitted or untracked changes, commits not on any remote branch (\`git log <branch> --not --remotes\`), stashes, and ignored local files that look hand-made rather than generated (notes, .env overrides, scratch scripts). Follow this repository's own worktree instructions if it has any. Remove a worktree with \`git worktree remove <path>\` (never --force) only when it holds nothing unique; keep its branch. Do not delete branches or push anything. Finish with \`git worktree prune\` and a short table: removed, kept (with the reason), and anything you need me to decide.` };
   }
 
-  async function launchCleanup(app: string, paths: string[], copy = false) {
-    const { repo, prompt } = cleanupPrompt(paths);
+  async function launchCleanup(app: string, paths: string[], copy = false, note = "") {
+    const { repo, prompt: base } = cleanupPrompt(paths);
+    const prompt = withNote(base, note);
     if (copy) return { prompt };
     const url = app === "claude" ? claudeUrl(repo, prompt) : codexNewTaskUrl(prompt, repo);
     await exec("/usr/bin/open", [url]);

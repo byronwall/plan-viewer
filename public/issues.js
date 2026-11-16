@@ -3,7 +3,7 @@ import { GLYPHS } from "./icons.js";
 import { agentApp, agentName as appName, config, escapeRegExp } from "./config.js";
 import { ago, altKey, avatar, planning, planningSection, ciBadge, copied, copyPrompt, fadeIn, heat, hideTip, icon, iconButton, isSummonKey, openPrOverlay, openWorktreeOverlay, showTip, sideFacts, sideHead, sideStatus, when } from "./code.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
-import { openNotePopover, saveUpNextNote } from "./note-popover.js";
+import { openNotePopover } from "./note-popover.js";
 
 // Issues page: Jira, Linear and GitHub issues in the configured scope (viewer.config.json `issues`), laid out like the Code page:
 // a dense list newest first, an inspector for the selected row, and a full overview on Enter. Read-only; changes go
@@ -349,14 +349,14 @@ function skillList(keys, scope = "") {
   return `<ul class="issue-skill-list code-side-skills">${(ui.data.skills || []).map((skill, index) => `<li><button type="button" class="issue-skill-row" ${attrs(skill)}>${icon(skill.icon || "review")}<span>${escapeHtml(skill.label)}</span>${scope || keys.length > 1 ? "" : `<kbd>${index + 1}</kbd>`}</button>${iconButton("copy", `Copy the ${skill.label}${what} prompt, to paste into an open chat`, `data-copy-prompt ${attrs(skill)}`)}</li>`).join("")}</ul>`;
 }
 // A row (or a repository header) carries one button; the menu it opens is the labeled list.
-const skillTrigger = (keys, scope = "") => ui.data.skills?.length ? iconButton("session", `Send ${scope ? `all ${keys.length} ${scope} issues` : keyLabel(keys[0])} to ${appName()}…`, `aria-haspopup="menu" aria-expanded="false" data-issue-skills="${escapeHtml(keys.join(","))}" data-scope="${escapeHtml(scope)}"`) : "";
+const skillTrigger = (keys, scope = "") => ui.data.skills?.length ? iconButton("session", `Agent skills for ${scope ? `all ${keys.length} ${scope} issues` : keyLabel(keys[0])}: save a note, or open ${appName()}…`, `aria-haspopup="menu" aria-expanded="false" data-issue-skills="${escapeHtml(keys.join(","))}" data-scope="${escapeHtml(scope)}"`) : "";
 // The selection's own bar: labeled drafts for every picked issue, then Clear.
 function bulkBar() {
   if (!ui.selected.size) return "";
   const keys = [...ui.selected];
   const repos = new Set(keys.map((key) => byKey().get(key)?.project));
   const where = repos.size === 1 ? ` in ${escapeHtml([...repos][0])}` : repos.size > 1 ? ` across ${repos.size} ${groupNoun(keys.map((key) => byKey().get(key)).filter(Boolean))}s` : "";
-  return `<span class="issue-bulk"><b>${keys.length} selected</b><span class="code-muted">${where}</span>${(ui.data.skills || []).map((skill) => `<button type="button" class="code-bar-button is-primary" data-issue-skill="${escapeHtml(skill.id)}" data-keys="${escapeHtml(keys.join(","))}" data-tip="${altKey}-click copies the prompt">${icon(skill.icon || "review")}${escapeHtml(skill.label)} in ${appName()}</button>`).join("")}<button type="button" class="code-bar-button" data-issue-select-none>Clear <kbd>Esc</kbd></button></span>`;
+  return `<span class="issue-bulk"><b>${keys.length} selected</b><span class="code-muted">${where}</span>${(ui.data.skills || []).map((skill) => `<button type="button" class="code-bar-button" data-issue-skill="${escapeHtml(skill.id)}" data-keys="${escapeHtml(keys.join(","))}" data-tip="Save a note, or open ${escapeHtml(appName())} · ${altKey}-click copies the prompt">${icon(skill.icon || "review")}${escapeHtml(skill.label)}</button>`).join("")}<button type="button" class="code-bar-button" data-issue-select-none>Clear <kbd>Esc</kbd></button></span>`;
 }
 
 function issueFacts(issue, overlay = false) {
@@ -829,22 +829,22 @@ function move(step) {
   select(keys[Math.max(0, Math.min(keys.length - 1, index < 0 ? 0 : index + step))], true);
 }
 
-const requestDraft = async (skill, keys, copy = false) => {
-  const response = await fetch("/api/issues/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app: agentApp(), skill, keys, copy }) });
+const requestDraft = async (skill, keys, copy = false, note = "") => {
+  const response = await fetch("/api/issues/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app: agentApp(), skill, keys, copy, note }) });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || "Could not open the draft.");
   return body;
 };
 // A skill on issues opens the note popover: Enter saves its prompt as an Up next note; the draft is its quiet button.
+// The note's title names each issue with its summary, so Up next reads without the IDs memorized.
 function draft(skill, keys, anchor) {
   const label = ui.data.skills.find((candidate) => candidate.id === skill)?.label || skill;
   const what = keys.length === 1 ? keyLabel(keys[0]) : `${keys.length} issues`;
-  const title = `${label} ${keys.length <= 3 ? keys.join(", ") : what}`;
+  const summary = keys.length === 1 ? byKey().get(keys[0])?.summary : "";
   openNotePopover(anchor || host, {
-    heading: title, detail: keys.length > 3 ? keys.join(", ") : "",
-    save: async (comment) => { const { note } = await saveUpNextNote({ title, comment, prompt: (await requestDraft(skill, keys, true)).prompt }); notify(`Saved a note for Up next: ${note}`); },
-    send: { label: `${label} in ${appName()}`, run: async () => { await requestDraft(skill, keys); notify(`Drafted ${label} for ${what} in ${appName()}. Review it and press Enter to send.`); } },
-    copy: async () => (await requestDraft(skill, keys, true)).prompt,
+    heading: `${label} ${keys.length <= 3 ? keys.map(keyLabel).join(", ") : what}${summary ? ` · ${summary}` : ""}`, detail: keys.length > 3 ? keys.map(keyLabel).join(", ") : "", notify,
+    prompt: async (note) => (await requestDraft(skill, keys, true, note)).prompt,
+    send: { label: `${label} in ${appName()}`, run: async (note) => { await requestDraft(skill, keys, false, note); notify(`Drafted ${label} for ${what} in ${appName()}. Review it and press Enter to send.`); } },
   });
 }
 

@@ -745,7 +745,7 @@ button.task-list-id:hover { text-decoration: underline; }
 .note-pop textarea:focus-visible { outline: 2px solid rgba(49, 87, 213, .26); border-color: var(--action); }
 .note-pop footer { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
 .note-pop-hint { flex: 1 1 auto; min-width: 0; overflow: hidden; margin-right: 2px; color: var(--quiet-text); font-size: .7rem; white-space: nowrap; text-overflow: ellipsis; }
-.note-pop-hint.is-error { color: var(--danger); white-space: normal; }
+.note-pop-hint.is-error { color: var(--danger); }
 .note-pop .note-pop-hint kbd, .code-move-actions .note-pop-hint kbd, .diagram-ask .note-pop-hint kbd { border: 0; background: none; padding: 0; color: inherit; font: 600 .66rem/1.3 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; }
 .note-pop-icon, .note-pop-send, .note-pop-save { display: inline-flex; flex: none; align-items: center; height: 24px; border: 0; border-radius: 6px; padding: 0 8px; font-size: .76rem; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
 .note-pop-icon, .note-pop-send { background: transparent; color: var(--muted); }
@@ -755,6 +755,7 @@ button.task-list-id:hover { text-decoration: underline; }
 .note-pop-save { background: var(--action); color: var(--paper); }
 @media (hover: hover) { .note-pop-icon:hover, .note-pop-send:hover { background: var(--quiet-field); color: var(--ink); } .note-pop-save:hover { background: var(--action-deep); } }
 .note-pop-icon:active, .note-pop-send:active, .note-pop-save:active { scale: .97; }
+.note-pop-icon:disabled, .note-pop-send:disabled, .note-pop-save:disabled { opacity: .45; cursor: not-allowed; scale: 1; }
 .note-pop-icon:focus-visible, .note-pop-send:focus-visible, .note-pop-save:focus-visible { outline: 2px solid rgba(49, 87, 213, .4); outline-offset: 2px; }
 .step-notes { margin: 0 0 10px; }
 .step-notes h5 { margin: 0 0 4px; font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
@@ -1543,7 +1544,6 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-move-prs { margin: 0 0 8px; color: var(--action-ink); font-size: .78rem; font-variant-numeric: tabular-nums; }
 .code-move-pop textarea { box-sizing: border-box; width: 100%; min-height: 52px; field-sizing: content; max-height: 220px; resize: none; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: .84rem; }
 .code-move-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
-.code-move-actions kbd { color: var(--quiet-text); }
 .code-sub-stack { flex: none; white-space: nowrap; color: var(--muted); }
 .code-sub-stack::before { content: "·"; margin-right: 6px; color: var(--quiet-text); }
 .code-sub-stack .code-pr-link { font-weight: inherit; }

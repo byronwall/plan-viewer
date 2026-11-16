@@ -1075,8 +1075,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request);
       const action = url.pathname.slice("/api/code/".length);
       if (action === "notes") return json(response, 200, await codeDashboard.notes.change(...checkedPr(body.slug, body.number), { op: body.op, id: String(body.id || ""), ids: Array.isArray(body.ids) ? body.ids.map(String) : undefined, title: String(body.title || ""), note: body.note || {} }));
-      if (action === "plan-agent") return json(response, 200, await plans.launch(String(body.app || ""), String(body.id || ""), String(body.kind || ""), String(body.doc || "")).then(() => ({ opened: true })));
-      if (action === "plan-prompt") return json(response, 200, await plans.prompt(String(body.app || ""), String(body.id || ""), String(body.kind || ""), String(body.doc || "")));
+      if (action === "plan-agent") return json(response, 200, await plans.launch(String(body.app || ""), String(body.id || ""), String(body.kind || ""), String(body.doc || ""), String(body.note || "")).then(() => ({ opened: true })));
+      if (action === "plan-prompt") return json(response, 200, await plans.prompt(String(body.app || ""), String(body.id || ""), String(body.kind || ""), String(body.doc || ""), String(body.note || "")));
       if (action === "add-repo") return json(response, 200, { repo: await codeDashboard.addRepo(String(body.path || "")) });
       if (action === "remove-repo") return json(response, 200, await codeDashboard.removeRepo(String(body.path || "")).then(() => ({ removed: true })));
       if (action === "preview") return json(response, 200, await codeDashboard.openPreview(String(body.repo || ""), String(body.number || "")).then(() => ({ opened: true })));
@@ -1088,8 +1088,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       if (action === "line-counts") return json(response, 200, await codeDashboard.lineCounts(new URLSearchParams(body.params || {}), paths));
       if (action === "remove-worktrees") return json(response, 200, { results: await codeDashboard.removeWorktrees(paths) });
       if (action === "cleanup-prompt") return json(response, 200, codeDashboard.cleanupPrompt(paths));
-      if (action === "cleanup-agent") return json(response, 200, await codeDashboard.launchCleanup(String(body.app || ""), paths, body.copy === true).then((copied) => copied || { opened: true }));
-      if (action === "session") return json(response, 200, await codeDashboard.launchSession(String(body.app || ""), String(body.path || "")).then(() => ({ opened: true })));
+      if (action === "cleanup-agent") return json(response, 200, await codeDashboard.launchCleanup(String(body.app || ""), paths, body.copy === true, String(body.note || "")).then((copied) => copied || { opened: true }));
+      if (action === "session") return json(response, 200, await codeDashboard.launchSession(String(body.app || ""), String(body.path || ""), String(body.note || "")).then(() => ({ opened: true })));
       // The Stacks board's section moves: a prompt the page built from the PRs on screen, drafted in the agent app,
       // copied, or saved as an Up next note. Like every draft, nothing runs until the user sends it.
       if (action === "group-move") {
@@ -1105,7 +1105,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         if (process.env.PLAN_VIEWER_DRY_RUN === "1") return json(response, 200, { opened: true, dryRun: true, prompt });
         return json(response, 200, { opened: true, ...(await getCodexApp().openDraft(ROOT, title, prompt, String(body.app || "codex"), [])) });
       }
-      if (action === "agent") return json(response, 200, await codeDashboard.launchAgent(String(body.app || ""), String(body.skill || ""), String(body.url || ""), String(body.path || ""), String(body.comment || ""), body.copy === true).then((copied) => copied || { opened: true }));
+      if (action === "agent") return json(response, 200, await codeDashboard.launchAgent(String(body.app || ""), String(body.skill || ""), String(body.url || ""), String(body.path || ""), String(body.comment || ""), body.copy === true, String(body.note || "")).then((copied) => copied || { opened: true }));
     }
     if (request.method === "GET" && url.pathname === "/api/issues") return json(response, 200, await issueTracker.load(url.searchParams.has("refresh")));
     if (request.method === "GET" && url.pathname === "/api/issues/issue") return json(response, 200, issueTracker.detail(url.searchParams.get("key") || ""));
@@ -1115,7 +1115,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
     if (request.method === "POST" && url.pathname === "/api/issues/agent") {
       const body = await readJson(request);
-      const copied = await issueTracker.launchAgent(String(body.app || ""), String(body.skill || ""), Array.isArray(body.keys) ? body.keys.map(String).slice(0, 50) : [], body.copy === true);
+      const copied = await issueTracker.launchAgent(String(body.app || ""), String(body.skill || ""), Array.isArray(body.keys) ? body.keys.map(String).slice(0, 50) : [], body.copy === true, String(body.note || ""));
       return json(response, 200, copied || { opened: true });
     }
     if (request.method === "POST" && url.pathname === "/api/link-metadata") {
@@ -1145,7 +1145,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       if (!step) throw new Error("That step isn't open any more.");
       viewerWrites.add(step.path);
       const next = async () => (await find()).find((candidate) => candidate.move === "agent" && !candidate.running && candidate.prompt);
-      return json(response, 200, await startStep(ROOT, step, todayDate(), next));
+      return json(response, 200, await startStep(ROOT, step, todayDate(), next, String(body.note || "")));
     }
     if (request.method === "POST" && url.pathname === "/api/steps/run") {
       const body = await readJson(request);

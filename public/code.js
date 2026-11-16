@@ -1,10 +1,10 @@
 import { documentHref, escapeHtml, renderMarkdown, renderMarkdownInRepo, SERVICE_ICONS } from "./markdown.js";
 import { GLYPHS } from "./icons.js";
-import { agentApp, agentName as appName, config, escapeRegExp } from "./config.js";
+import { agentApp, agentName as appName, config, escapeRegExp, withNote } from "./config.js";
 import { decorate, lineClasses, markWords } from "./word-diff.js";
 import { mapHtml, mapSvg, moveGroups, svgToPng, tileCard } from "./diff-map.js";
 import { anchorNote } from "./note-anchor.js";
-import { openNotePopover, saveUpNextNote } from "./note-popover.js";
+import { openNotePopover } from "./note-popover.js";
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 
 // Code dashboard: tracked repos' worktrees (most recent first), their open PRs, and worktree cleanup.
@@ -178,13 +178,13 @@ function treeActions(tree, keys = true) { // keys: the Code page shortcuts, whic
     + iconButton("vscode", `Open in VS Code${keys ? " (E)" : ""}`, `data-code-open="vscode" data-path="${escapeHtml(tree.path)}"`)
     + iconButton("terminal", `Open in ${config().code.terminal.label}${keys ? " (X)" : ""}`, `data-code-open="terminal" data-path="${escapeHtml(tree.path)}"`)
     + iconButton("folder", "Reveal in Finder", `data-code-open="finder" data-path="${escapeHtml(tree.path)}"`)
-    + iconButton("session", `New ${appName()} session here${keys ? " (S)" : ""}`, `data-code-session data-path="${escapeHtml(tree.path)}"`)
+    + iconButton("session", `Work here: save a note, or open ${appName()}${keys ? " (S)" : ""}`, `data-code-session data-path="${escapeHtml(tree.path)}"`)
     + (url ? `<a class="code-icon-button" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" aria-label="Branch on GitHub">${icon("external")}</a>` : `<span class="code-icon-button is-blank"></span>`);
 }
 
 // `copy` is the Copy row: the same skills, copying the prompt instead of opening a draft.
 function skillButtons(pr, workspace, tree, copy = false) {
-  return (meta().skills || []).map((skill, index) => iconButton(skill.icon || skill.id, copy ? `Copy the ${skill.label} prompt, to paste into an open chat` : `${skill.label} in ${appName()} · ${tree ? "worktree" : "main checkout"} (${index + 1}) · ${altKey}-click copies the prompt`, `${copy ? "data-copy-prompt " : ""}data-code-skill="${skill.id}" data-url="${escapeHtml(pr.url)}" data-path="${escapeHtml(workspace)}"`)).join("");
+  return (meta().skills || []).map((skill, index) => iconButton(skill.icon || skill.id, copy ? `Copy the ${skill.label} prompt, to paste into an open chat` : `${skill.label}: save a note, or open ${appName()} · ${tree ? "worktree" : "main checkout"} (${index + 1}) · ${altKey}-click copies the prompt`, `${copy ? "data-copy-prompt " : ""}data-code-skill="${skill.id}" data-url="${escapeHtml(pr.url)}" data-path="${escapeHtml(workspace)}"`)).join("");
 }
 
 // At most three digits (987, 1.23K, 87.4K) so the column stays tight; the tip has the exact counts.
@@ -2098,7 +2098,7 @@ function notesSection(pr, workspace) {
   const bar = stale ? `<div class="code-notes-bar">${diffSegment("data-note-filter", filter, { all: `All ${all.length}`, stale: `Stale ${stale}` })}<button type="button" class="code-notes-clear" data-note-clear data-tip="Delete every edited, outdated and file-changed note">Clear ${stale} stale</button></div>` : "";
   const file = diff.notes?.path && notes.length ? `<a class="code-icon-button" href="${escapeHtml(documentHref(diff.notes.path, ""))}" data-planning-path="${escapeHtml(diff.notes.path)}" data-tip="Open the notes file" aria-label="Open the notes file">${icon("external")}</a>` : "";
   const target = `data-url="${escapeHtml(pr.url || "")}" data-path="${escapeHtml(workspace)}"`;
-  const actions = drafts && pr.url ? iconButton("comment", `Post ${drafts} draft${drafts === 1 ? "" : "s"} as a pending GitHub review in ${appName()} · ${altKey}-click copies the prompt`, `data-code-skill="notes-post" ${target}`) + iconButton("discuss", `Work through the drafts in ${appName()} · ${altKey}-click copies the prompt`, `data-code-skill="notes-work" ${target}`) : "";
+  const actions = drafts && pr.url ? iconButton("comment", `Post ${drafts} draft${drafts === 1 ? "" : "s"} as a pending GitHub review: save a note, or open ${appName()} · ${altKey}-click copies the prompt`, `data-code-skill="notes-post" ${target}`) + iconButton("discuss", `Work through the drafts: save a note, or open ${appName()} · ${altKey}-click copies the prompt`, `data-code-skill="notes-work" ${target}`) : "";
   const meta = all.length ? `${drafts} draft${drafts === 1 ? "" : "s"}${all.length > drafts ? `, ${all.length - drafts} posted` : ""}` : "select code, press <kbd>C</kbd>";
   return `<section>${sideHead("Notes", meta, `<span class="code-side-tools">${actions}${file}</span>`)}${bar}${list ? `<ol class="code-diff-scopes code-notes-list">${list}</ol>` : ""}</section>`;
 }
@@ -2421,7 +2421,7 @@ function discussionHtml(pr, info) {
   const rows = shown.map((item) => `<article class="code-comment${item.bot ? " is-bot" : ""}"><header>${avatar(item.author)}<b>${escapeHtml(item.author)}</b>`
     + `${item.kind === "line" ? `<span class="code-muted" data-tip="${escapeHtml(item.path)}">${escapeHtml(item.path.split("/").pop())}${item.line ? `:${item.line}` : ""}</span>` : item.kind === "review" ? `<span class="code-muted">${escapeHtml({ APPROVED: "approved", CHANGES_REQUESTED: "requested changes", COMMENTED: "reviewed" }[item.state] || "reviewed")}</span>` : ""}`
     + `<a class="code-muted" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer" data-external data-tip="${escapeHtml(new Date(item.at).toLocaleString())}">${ago(new Date(item.at).getTime())} ago</a>`
-    + `${info.url && workspace ? iconButton("discuss", `Discuss with ${appName()} · ${altKey}-click copies the prompt`, `data-code-skill="discuss-comment" data-comment="${escapeHtml(item.id)}" data-url="${escapeHtml(info.url)}" data-path="${escapeHtml(workspace)}"`) : ""}</header>`
+    + `${info.url && workspace ? iconButton("discuss", `Discuss this comment: save a note, or open ${appName()} · ${altKey}-click copies the prompt`, `data-code-skill="discuss-comment" data-comment="${escapeHtml(item.id)}" data-url="${escapeHtml(info.url)}" data-path="${escapeHtml(workspace)}"`) : ""}</header>`
     + `<div class="markdown">${prBodyHtml(pr.slug, pr.number, item.body)}</div></article>`).join("");
   return `<section class="code-discussion"><h4>Comments <span class="code-muted">${shown.length}</span>${toggle}</h4>${rows || `<p class="code-muted">No comments from people yet.</p>`}</section>`;
 }
@@ -2507,7 +2507,7 @@ function cleanupControls() {
     <span class="code-spacer"></span>${progress}
     <button type="button" class="code-bar-button" data-code-select-level="safe">Select all safe</button>
     <button type="button" class="code-bar-button" data-code-select-none ${ui.selected.size ? "" : "disabled"}>Clear</button>
-    <button type="button" class="code-bar-button code-agent-review" data-code-cleanup-agent data-tip="Draft a prompt that checks each one for unpushed commits and hand-made files first · ${altKey}-click copies the prompt" ${ui.selected.size && !ui.removing ? "" : "disabled"}>${icon("session")}Agent review ${ui.selected.size || ""}</button>
+    <button type="button" class="code-bar-button code-agent-review" data-code-cleanup-agent data-tip="Save a note (or open a draft) asking an agent to check each one for unpushed commits and hand-made files first · ${altKey}-click copies the prompt" ${ui.selected.size && !ui.removing ? "" : "disabled"}>${icon("session")}Agent review ${ui.selected.size || ""}</button>
     <button type="button" class="code-bar-button code-danger" data-code-remove data-tip="git worktree remove: branches and commits stay, dirty worktrees are refused, ignored files such as node_modules are deleted" ${ui.selected.size && !ui.removing ? "" : "disabled"}>${icon("trash")}Remove ${ui.selected.size || ""}</button>`;
 }
 
@@ -3186,12 +3186,11 @@ async function handleClick(event) {
     }
     if ("codeCleanupAgent" in dataset && event.altKey) return copyPrompt(post("cleanup-agent", { app: agentApp(), paths: [...ui.selected], copy: true }), target);
     if ("codeCleanupAgent" in dataset) {
-      const paths = [...ui.selected], title = `Cleanup review of ${paths.length} worktree${paths.length === 1 ? "" : "s"}`;
+      const paths = [...ui.selected];
       return openNotePopover(target, {
-        heading: title, detail: paths.map(shortPath).join(", "),
-        save: async (comment) => { const { note } = await saveUpNextNote({ title, comment, prompt: (await post("cleanup-agent", { paths, copy: true })).prompt }); notify(`Saved a note for Up next: ${note}`); },
-        send: { label: `Draft in ${appName()}`, run: async (comment) => { await post("cleanup-agent", { app: agentApp(), paths }); notify(`Drafted a cleanup review of ${paths.length} worktrees in ${appName()}.`); } },
-        copy: async () => (await post("cleanup-agent", { paths, copy: true })).prompt,
+        heading: `Cleanup review of ${paths.length} worktree${paths.length === 1 ? "" : "s"}`, detail: paths.map(shortPath).join(", "), notify,
+        prompt: async (note) => (await post("cleanup-agent", { paths, note, copy: true })).prompt,
+        send: { label: `Draft in ${appName()}`, run: async (note) => { await post("cleanup-agent", { app: agentApp(), paths, note }); notify(`Drafted a cleanup review of ${paths.length} worktrees in ${appName()}.`); } },
       });
     }
     if ("codeRemove" in dataset) return removeSelected();
@@ -3201,25 +3200,24 @@ async function handleClick(event) {
 }
 
 // Launch buttons (a PR's skills, New session, Agent review) open the note popover: Enter saves the prompt they would
-// have sent as an Up next note; the old launch is its quiet secondary button, and ⌥-click still copies the prompt.
+// have sent as an Up next note; the launch itself is the popover's quiet button, and ⌥-click still copies the prompt.
+// The comment typed in the popover reaches the prompt as `note` either way.
+const SKILL_LABELS = { "notes-post": "Post review notes", "notes-work": "Work through review notes", "discuss-comment": "Discuss comment" };
 function skillNote(anchor, skillId, url, path, commentId = "") {
-  const skill = (meta().skills || []).find((candidate) => candidate.id === skillId) || { label: skillId };
+  const label = (meta().skills || []).find((candidate) => candidate.id === skillId)?.label || SKILL_LABELS[skillId] || skillId;
   const pr = [...(ui.data?.prs || []), ...(ui.data?.donePrs || [])].find((candidate) => candidate.url === url);
-  const title = `${skill.label} #${pr?.number || url.split("/").pop()}${pr ? ` ${pr.title}` : ""}`;
-  const request = (extra) => post("agent", { app: agentApp(), skill: skillId, url, path, comment: commentId, ...extra });
+  const body = { app: agentApp(), skill: skillId, url, path, comment: commentId };
   openNotePopover(anchor, {
-    heading: title, detail: shortPath(path),
-    save: async (comment) => { const { note } = await saveUpNextNote({ title, comment, prompt: (await request({ copy: true })).prompt }); notify(`Saved a note for Up next: ${note}`); },
-    send: { label: `${skill.label} in ${appName()}`, run: async () => { await request({}); notify(`Drafted ${skillId} in ${appName()}. Review it and press Enter to send.`); } },
-    copy: async () => (await request({ copy: true })).prompt,
+    heading: `${label} #${pr?.number || url.split("/").pop()}${pr ? ` ${pr.title}` : ""}`, detail: shortPath(path), notify,
+    prompt: async (note) => (await post("agent", { ...body, note, copy: true })).prompt,
+    send: { label: `${label} in ${appName()}`, run: async (note) => { await post("agent", { ...body, note }); notify(`Drafted ${label} in ${appName()}. Review it and press Enter to send.`); } },
   });
 }
 function sessionNote(anchor, path) {
-  const title = `Work in ${shortPath(path)}`;
   openNotePopover(anchor, {
-    heading: title, detail: path, placeholder: "What should the agent do there?", required: true,
-    save: async (comment) => { const { note } = await saveUpNextNote({ title, comment, prompt: `Work in \`${path}\`.` }); notify(`Saved a note for Up next: ${note}`); },
-    send: { label: `New ${appName()} session`, run: async () => { await post("session", { app: agentApp(), path }); notify(`Opened a ${appName()} session in ${shortPath(path)}.`); } },
+    heading: `Work in ${shortPath(path)}`, placeholder: "What should the agent do there?", required: true, notify,
+    prompt: async (note) => withNote(`Work in \`${path}\`.`, note),
+    send: { label: `New ${appName()} session`, run: async (note) => { await post("session", { app: agentApp(), path, note }); notify(`Opened a ${appName()} session in ${shortPath(path)}.`); } },
   });
 }
 

@@ -4,7 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { claudeNewSessionUrl, codexNewTaskUrl } from "./codex-desktop.ts";
-import { config } from "./public/config.js";
+import { config, withNote } from "./public/config.js";
 import { fetchGithub, githubLogin } from "./github.ts";
 import { fetchLinear, linearClient } from "./linear.ts";
 
@@ -440,7 +440,7 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
   }
 
   // One editable draft for one or more issues: the configured skill's instruction, then each issue as bullets.
-  async function launchAgent(app: string, skill: string, keys: string[], copy = false) {
+  async function launchAgent(app: string, skill: string, keys: string[], copy = false, note = "") {
     const chosen = issueSkills().find((candidate) => candidate.id === skill);
     if (!chosen) throw new Error("Unknown skill.");
     const issues = keys.map(detail);
@@ -449,9 +449,9 @@ export function createIssueTracker(root: string, codeIndex: () => Promise<{ prs:
     const list = issues.map((issue) => context(issue, code, pairs)).join("\n");
     const reading = [issues.some((issue) => issue.source === "jira") && "Jira issues with `acli jira workitem view <KEY> --json`", issues.some((issue) => issue.source === "linear") && "Linear issues with the Linear MCP", issues.some((issue) => issue.source === "github") && "GitHub issues with `gh issue view <URL> --comments`"].filter(Boolean).join(" and ");
     const noun = issues.length === 1 ? "this issue" : "these issues";
-    const draft = chosen.id === "discuss"
+    const draft = withNote(chosen.id === "discuss"
       ? `Let's talk through ${noun}. Read ${reading} first.\n\n${list}\n`
-      : `${chosen.prompt}\n\n${list}\n\nRead ${reading} in full first. Don't change anything in the issue tracker until I say which way to go.`;
+      : `${chosen.prompt}\n\n${list}\n\nRead ${reading} in full first. Don't change anything in the issue tracker until I say which way to go.`, note);
     const slugs = new Set(issues.map((issue) => issue.source === "github" ? issue.key.slice("github:".length).split("#")[0] : ""));
     const checkout = slugs.size === 1 ? checkouts.get([...slugs][0]) : "";
     const folder = (checkout || settings().workspace || root).replace(/^~(?=\/)/, process.env.HOME || "~");

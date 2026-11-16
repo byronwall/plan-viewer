@@ -841,12 +841,12 @@ function renderActivity() {
   renderActivityPage(elements.chunks, state.documents, { openDocument: (path, anchor) => selectDocument(path, { historyMode: "push", anchor }), openDiagram: (path) => openDiagram(path) });
 }
 
-const COMPOSER_HINT = "<kbd>Enter</kbd> save note · <kbd>⌘</kbd><kbd>Enter</kbd> open · <kbd>Esc</kbd> cancel";
+const COMPOSER_HINT = "<kbd>Enter</kbd> save note · <kbd>⌘</kbd><kbd>Enter</kbd> open";
 
 function composerTemplate(target) {
   const hint = `<p class="composer-hint">${COMPOSER_HINT}</p>`;
   // Save note is the default (Enter): notes batch up under Up next. Opening a draft now is ⌘Enter.
-  const actions = (open) => `<footer class="composer-actions">${hint}<button class="copy-prompt-button" type="button" title="Copy the prompt" aria-label="Copy the prompt"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.copy}</svg></button><button class="send-button" type="submit" title="Open it in ${agentName()} now (⌘Enter)">${open}</button><button class="note-button" type="button" title="Save it for an agent thread: it waits under Up next (Enter)">Save note</button></footer>`;
+  const actions = (open) => `<footer class="composer-actions">${hint}<button class="cancel-button" type="button">Cancel</button><button class="copy-prompt-button" type="button" title="Copy the prompt" aria-label="Copy the prompt"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.copy}</svg></button><button class="send-button" type="submit" title="Open it in ${agentName()} now (⌘Enter)">${open}</button><button class="note-button" type="button" title="Save it for an agent thread: it waits under Up next (Enter)">Save note</button></footer>`;
   const close = `<button class="popover-close" type="button" aria-label="Close dialog">×</button>`;
   const heading = (meta) => `<header class="composer-heading"><div><h3>${escapeHtml(target.title)}</h3>${meta ? `<p class="composer-meta">${meta}</p>` : ""}</div>${close}</header>`;
   if (target.scope === "work") {
@@ -1749,16 +1749,18 @@ function openStepNote(step, anchor, start = false) {
   openNotePopover(anchor, {
     heading: start ? `Start ${step.id}: ${step.title}` : decision ? "What did you decide?" : `Note on ${step.id} for the agent`,
     placeholder: start ? "Add a comment for the agent (optional)" : decision ? "What you chose, why, and anything it changes." : "Approve it, decide it, or say what to change.",
-    required: !start,
+    required: !start, notify: showNotice,
     save: async (commentary) => { await request({ commentary, note: true }); saved(); },
     ...(start ? {
-      send: { label: "Start agent now", run: async () => {
-        const response = await fetch("/api/steps/start", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: step.key }) });
+      prompt: async (commentary) => (await request({ commentary }, true)).prompt,
+      send: { label: "Start agent now", run: async (note) => {
+        const response = await fetch("/api/steps/start", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: step.key, note }) });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "The viewer couldn't start it.");
         showNotice(`Started an agent on ${step.task} ${step.id}.`);
+        if (workItemDialog.open) reloadStepDialog();
+        if (state.view === "steps") refreshSteps();
       } },
-      copy: async (commentary) => (await request({ commentary }, true)).prompt,
     } : {}),
   });
 }
