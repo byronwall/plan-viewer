@@ -160,8 +160,7 @@ export async function pickChoice(root: string, path: string, choiceId: string, p
   for (const option of options) if (!picked.includes(option.id)) rewrite(option.id, "deferred", "not picked");
   const names = picked.map((id) => `${id} (${splitOption(options.find((o: { id: string }) => o.id === id).title).title})`).join(", ") || "none of the options";
   const line = `- **${today} — Picked ${names} for ${choiceId} (${user}, in the viewer):** ${splitOption(choice.title).title}.\n`;
-  markdown = /^## Updates\s*\n\n/m.test(markdown) ? markdown.replace(/^## Updates\s*\n\n/m, (head) => head + line) : `${markdown.trimEnd()}\n\n## Updates\n\n${line}`;
-  markdown = markdown.replace(/^updated: .*$/m, `updated: ${today}`);
+  markdown = withUpdate(markdown, line).replace(/^updated: .*$/m, `updated: ${today}`);
   await writeFile(absolute, markdown);
   return { picked, choice: choiceId };
 }
@@ -188,9 +187,22 @@ export function withStepStatus(markdown: string, id: string, status: string, upd
   const next = markdown.replace(new RegExp(`^(\\s*-\\s+${id.replace(/\./g, "\\.")}:\\s.*?)\\[(open|active|waiting|deferred|completed)\\]`, "m"), `$1[${status}]`);
   if (next === markdown && !new RegExp(`^\\s*-\\s+${id.replace(/\./g, "\\.")}:.*\\[${status}\\]`, "m").test(markdown)) throw new Error(`${id} isn't in the work breakdown.`);
   if (!update) return next;
-  const line = `- **${today} — ${update}**\n`;
-  const dated = /^## Updates\s*\n\n/m.test(next) ? next.replace(/^## Updates\s*\n\n/m, (head) => head + line) : `${next.trimEnd()}\n\n## Updates\n\n${line}`;
+  const dated = withUpdate(next, `- **${today} — ${update}**\n`);
   return today ? dated.replace(/^updated: .*$/m, `updated: ${today}`) : dated;
+}
+
+// Adds a dated update line to `## Updates` in the order the task already uses: newest first under a bare heading, or
+// at the section's end when it opens with "Append dated events below". Mirrors add_update in the workspace's outbound.py.
+export function withUpdate(markdown: string, line: string) {
+  const heading = /^## Updates[ \t]*\n/m.exec(markdown);
+  if (!heading) return `${markdown.trimEnd()}\n\n## Updates\n\n${line}`;
+  const start = heading.index + heading[0].length;
+  const end = start + (/^## /m.exec(markdown.slice(start))?.index ?? markdown.length - start);
+  const body = markdown.slice(start, end), rest = markdown.slice(end);
+  const section = /^\n*Append dated events below/.test(body)
+    ? `${body.trimEnd()}\n${line}${rest ? "\n" : ""}`
+    : `\n${line}${body.replace(/^\n+/, "")}`;
+  return markdown.slice(0, start) + section + rest;
 }
 
 async function completeStep(root: string, step: string, update: string, today: string) {

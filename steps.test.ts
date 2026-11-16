@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { draftFromText } from "./outbound.ts";
-import { activeRuns, applyRule, closeNote, deriveSteps, followUpNote, listNotes, loadSteps, pickChoice, runStatement, saveNote, startStep, withStepFlag } from "./steps.ts";
+import { activeRuns, applyRule, closeNote, deriveSteps, followUpNote, listNotes, loadSteps, pickChoice, runStatement, saveNote, startStep, withStepFlag, withStepStatus, withUpdate } from "./steps.ts";
 import { setConfig } from "./public/config.js";
 
 const TASK = `---
@@ -221,4 +221,14 @@ test("with steps.followUp, a finished step leaves an open follow-through note ca
   assert.match(text, /\[the plan\]\(\.\.\/plan\.md\)/); // re-pointed from the draft's folder to the note's
   const [note] = await listNotes(root);
   assert.equal(note.noteFor, "TASK-0001 W1");
+});
+
+test("a dated update follows the task's own order and never adds a second Updates section", () => {
+  assert.equal(withUpdate("## Updates\n\n- old\n\n## Chats\n", "- new\n"), "## Updates\n\n- new\n- old\n\n## Chats\n");
+  const append = "## Updates\nAppend dated events below this line.\n\n- old\n";
+  assert.equal(withUpdate(append, "- new\n"), `${append}- new\n`);
+  assert.equal(withUpdate(`${append}\n## Chats\n`, "- new\n"), `${append}- new\n\n## Chats\n`);
+  assert.equal(withUpdate("# T\n", "- new\n"), "# T\n\n## Updates\n\n- new\n");
+  const task = `## Work breakdown\n\n- W1: Do it [open]\n\n${append}`;
+  assert.equal(withStepStatus(task, "W1", "completed", "W1 done.", "2026-11-16").match(/^## Updates/gm)?.length, 1);
 });
