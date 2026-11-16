@@ -1522,10 +1522,10 @@ function openWorkItem(id, doc = state.document) {
   workItemDialog.dataset.prev = neighbors.prev?.id || "";
   workItemDialog.dataset.next = neighbors.next?.id || "";
   workItemDialog.innerHTML = `<header class="work-item-task">
-      ${task ? `<span class="work-item-task-link" title="${escapeHtml(`${task.id} · ${task.title} · ${TASK_STATUS_LABELS[task.status] || task.status}`)}"><code>${escapeHtml(task.id)}</code><span>${escapeHtml(task.title)}</span></span>` : `<span class="work-item-task-link"><span>${escapeHtml(doc.title)}</span></span>`}
+      <button type="button" class="work-item-task-link" data-step-open-task title="${escapeHtml(task ? `Open ${task.id} · ${task.title} · ${TASK_STATUS_LABELS[task.status] || task.status}` : `Open ${doc.title}`)}">${task ? `<code>${escapeHtml(task.id)}</code>` : ""}<span>${escapeHtml(task ? task.title : doc.title)}</span></button>
       <span class="work-item-progress" title="${doneLeaves} of ${leaves.length} work items completed"><span style="--done:${leaves.length ? doneLeaves / leaves.length : 0}"></span>${doneLeaves}/${leaves.length} done</span>
       <span class="work-item-views" role="tablist" aria-label="View">${[["item", "Item"], ["graph", "Graph"]].map(([view, label]) => `<button type="button" role="tab" data-work-view="${view}" aria-selected="${workItemView === view}" title="${label} (G)">${label}</button>`).join("")}</span>
-      ${task ? `<span class="work-item-goto">${path === state.selectedPath && state.view === "document" && !document.querySelector("dialog.code-diff[open]") ? "" : `<button type="button" class="code-bar-button" data-step-open-task title="Open ${escapeHtml(task.id)} as the page">Open task</button>`}<button type="button" class="code-bar-button" data-step-world="${escapeHtml(task.id)}" title="Everything filed for ${escapeHtml(task.id)} on one timeline">World</button></span>` : ""}
+      ${task ? `<button type="button" class="code-bar-button" data-step-world="${escapeHtml(task.id)}" title="Everything filed for ${escapeHtml(task.id)} on one timeline">World</button>` : ""}
       <button type="button" class="work-item-icon-button" data-dialog-close aria-label="Close">${glyph("x")}</button>
     </header>
     <nav class="work-item-rail" aria-label="Steps">${task ? `<div class="work-item-rail-head">${stepToggleHtml(railMove, null, ["you", "agent", "all"])}</div>` : ""}<ol>${rail}</ol><p><span><kbd>J</kbd><kbd>K</kbd> steps</span><span><kbd>←</kbd><kbd>→</kbd> updates</span><span><kbd>G</kbd> graph</span></p></nav>
@@ -1771,6 +1771,8 @@ workItemDialog.addEventListener("click", async (event) => {
   if (event.target.closest("[data-step-open-task]")) {
     closeQuietly();
     closeOverview();
+    // Already the page: closing the dialog is enough, without a duplicate history entry or a scroll reset.
+    if (dialogDoc.path === state.selectedPath && state.view === "document") return;
     return selectDocument(dialogDoc.path, { historyMode: "push" });
   }
   const world = event.target.closest("[data-step-world]");

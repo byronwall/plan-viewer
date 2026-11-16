@@ -2530,7 +2530,8 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 .work-item-dialog[open] { display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
 .work-item-dialog svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .work-item-task { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; min-width: 0; border-bottom: 1px solid var(--line); padding: 8px 10px 8px 16px; font-size: .8rem; }
-.work-item-task-link { flex: 0 1 auto; display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 3px 0; color: var(--ink); font-weight: 650; }
+.work-item-task-link { flex: 0 1 auto; display: flex; align-items: baseline; gap: 8px; min-width: 0; border: 0; border-radius: 6px; background: transparent; min-height: 24px; margin-left: -6px; padding: 3px 6px; color: var(--action-ink); font: inherit; font-weight: 650; text-align: left; cursor: pointer; transition: background-color 140ms ease-out, color 140ms ease-out; }
+.work-item-task-link:hover { background: var(--quiet-field); color: var(--action-deep); }
 .work-item-task-link code { flex: none; color: var(--muted); font: 600 .74rem/1.2 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; }
 .work-item-task-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .work-item-progress { display: flex; flex: none; align-items: center; gap: 8px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -2567,7 +2568,6 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 .work-item-in { font-weight: 400; }
 .work-item-parent { min-width: 0; overflow: hidden; border: 0; background: transparent; padding: 0; color: var(--action-ink); font: inherit; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .work-item-parent:hover { color: var(--action-deep); }
-.work-item-goto { display: flex; flex: none; gap: 6px; }
 .work-item-rail-head { border-bottom: 1px solid var(--line); padding: 6px 8px; }
 .work-item-rail ol > .work-item-empty { padding: 6px; }
 .work-item-headline { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; }
