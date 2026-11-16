@@ -3899,17 +3899,24 @@ const PAGES = [
 const searchPages = (query) => { const terms = query.toLowerCase().split(/\s+/).filter(Boolean); return PAGES.filter((page) => (!page.issues || issuesOn()) && (!page.slack || config().slack.codex?.length) && terms.every((term) => termMatch(term, `${page.title} ${page.detail}`.toLowerCase()))).map((page) => ({ page })); };
 const renderPageResult = ({ page }, index) => resultRow({ icon: page.icon, title: escapeHtml(page.title), detail: escapeHtml(page.detail), side: "Page", attrs: searchAttrs(index) });
 
+const EXACT_ID = 1000;
 const LIVE_TASK = new Set(["open", "active"]);
 const SETTLED_TASK = new Set(["completed", "deferred"]);
 // Every source scored on one scale (textScore + contextScore), so a recent open task outranks an old closed issue.
 function rankedMatches(query, prs, me) {
   const terms = query.toLowerCase().replace(/^#/, "").split(/\s+/).filter(Boolean);
   const numeric = /^(?:[a-z][\w.-]*\s*)?#?\d+$/i.test(query);
+  // A bare number (`0138`, `#2270`, `task-0138`) is nearly always an ID to open: the task, PR or issue key it names
+  // exactly leads, above work items and documents that only mention it (`TASK-0138-assets/…`). A leading zero can only
+  // be a task number, so `0138` never matches PR #138.
+  const digits = query.trim().match(/^(?:task-?)?#?(\d{1,6})$/i)?.[1] || "";
+  const exactTask = digits.length <= 4 && digits ? `TASK-${digits.padStart(4, "0")}` : "";
+  const exactNumber = digits && !digits.startsWith("0") ? digits : "";
   const docs = searchDocuments(state.documents, query).map((doc) => {
     const task = doc.task;
     const text = textScore(terms, doc.title, task ? `${doc.path} ${task.summary} ${task.project} ${task.status} ${task.tags.join(" ")}` : doc.path, task?.id) || 1;
     const context = task ? contextScore({ live: LIVE_TASK.has(task.status), done: SETTLED_TASK.has(task.status), updated: task.updated, mine: true }) : contextScore({ updated: doc.date });
-    return { doc, group: task ? "Tasks" : "Documents", score: text + context };
+    return { doc, group: task ? "Tasks" : "Documents", score: text + context + (task && task.id === exactTask ? EXACT_ID : 0) };
   });
   const work = state.documents.flatMap((doc) => (doc.task?.work || []).map((work) => {
     const text = textScore(terms, work.title, "", work.id);
@@ -3919,8 +3926,9 @@ function rankedMatches(query, prs, me) {
   return [
     ...searchPages(query).map((item) => ({ ...item, group: "Pages", score: textScore(terms, item.page.title, item.page.detail) })),
     ...docs, ...work,
-    ...searchIssues(query, terms).map((item) => ({ ...item, group: "Issues" })),
+    ...searchIssues(query, terms).map((item) => ({ ...item, group: "Issues", score: item.score + (exactNumber && (item.issue.label || item.issue.key).endsWith(`-${exactNumber}`) ? EXACT_ID : 0) })),
     ...searchPrs(prs, query).map((pr, index) => ({ pr, group: "Pull requests", score: (numeric ? 80 - index * 5 : textScore(terms, pr.title || "", `${pr.branch} ${pr.author} ${pr.slug}`))
+      + (exactNumber && String(pr.number) === exactNumber ? EXACT_ID : 0)
       + contextScore({ live: pr.state === "OPEN", done: pr.state !== "OPEN", updated: pr.updatedAt, mine: pr.requestedOfMe || pr.author === me }) })),
     ...searchPlans(query).map((plan) => ({ plan, group: "Initiatives", score: (textScore(terms, plan.title, `${plan.slug} ${plan.summary}`) || 1)
       + contextScore({ live: plan.status === "active", done: ["completed", "retired"].includes(plan.status), updated: plan.edited }) })),
