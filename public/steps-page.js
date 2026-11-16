@@ -76,7 +76,7 @@ const fixesHtml = (list) => [...new Set(list.map((step) => step.fix).filter(Bool
 
 export function stepsTableHtml(steps, filters, selected) {
   const shown = visibleSteps(steps, filters);
-  if (!shown.length) return `<p class="task-empty">${filters.move === "next" ? "Nothing is up next. Press Up next on a step, or Save note (⌘Enter) in the composer." : filters.kind === "outbound" ? "Nothing waiting to go out." : "No open steps match."}</p>`;
+  if (!shown.length) return `<p class="task-empty">${filters.move === "next" ? "Nothing is up next. Press Up next on a step, or Save note (Enter) in the composer." : filters.kind === "outbound" ? "Nothing waiting to go out." : "No open steps match."}</p>`;
   const groups = ORDER.map((move) => [move, shown.filter((step) => step.move === move)]).filter(([, list]) => list.length);
   return `<table class="task-table step-table">
     <thead><tr><th scope="col">Step</th><th scope="col">Next move</th><th scope="col">Kind</th><th scope="col">Workstream</th><th scope="col">Size</th><th scope="col">Age</th></tr></thead>

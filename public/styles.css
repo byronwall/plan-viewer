@@ -749,11 +749,11 @@ button.task-list-id:hover { text-decoration: underline; }
 .composer-hint kbd { border: 1px solid var(--line); border-radius: 5px; background: var(--hover-field); padding: 1px 5px; color: var(--body-ink); font: 600 .68rem/1.4 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; }
 .composer-hint.draft-warning { color: var(--action-ink); font-weight: 650; }
 .send-button, .cancel-button, .copy-prompt-button, .note-button { flex: none; white-space: nowrap; border-radius: 8px; padding: 10px 14px; font-size: .82rem; font-weight: 650; }
-.send-button { border: 0; background: var(--action); color: var(--paper); }
-.send-button:hover { background: var(--action-deep); }
-.send-button:disabled { cursor: wait; opacity: .6; }
-.cancel-button, .copy-prompt-button, .note-button { border: 0; background: transparent; color: var(--muted); }
-.cancel-button:hover, .copy-prompt-button:hover, .note-button:hover { background: var(--quiet-field); color: var(--ink); }
+.note-button { border: 0; background: var(--action); color: var(--paper); }
+.note-button:hover { background: var(--action-deep); }
+.send-button:disabled, .note-button:disabled { cursor: wait; opacity: .6; }
+.cancel-button, .copy-prompt-button, .send-button { border: 0; background: transparent; color: var(--muted); }
+.cancel-button:hover, .copy-prompt-button:hover, .send-button:hover { background: var(--quiet-field); color: var(--ink); }
 @media (max-width: 560px) { .composer-hint { display: none; } .composer-actions { justify-content: flex-end; } }
 .card-drafted .chunk-index { background: var(--status-waiting-field); color: var(--status-waiting-ink); }
 

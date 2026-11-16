@@ -840,8 +840,12 @@ function renderActivity() {
   renderActivityPage(elements.chunks, state.documents, { openDocument: (path, anchor) => selectDocument(path, { historyMode: "push", anchor }), openDiagram: (path) => openDiagram(path) });
 }
 
+const COMPOSER_HINT = "<kbd>Enter</kbd> note · <kbd>⌘</kbd><kbd>Enter</kbd> open";
+
 function composerTemplate(target) {
-  const hint = `<p class="composer-hint"><kbd>Enter</kbd> open · <kbd>⌘</kbd><kbd>Enter</kbd> note</p>`;
+  const hint = `<p class="composer-hint">${COMPOSER_HINT}</p>`;
+  // Save note is the default (Enter): notes batch up under Up next. Opening a draft now is ⌘Enter.
+  const actions = (open) => `<footer class="composer-actions">${hint}<button class="cancel-button" type="button">Cancel</button><button class="copy-prompt-button" type="button">Copy prompt</button><button class="send-button" type="submit" title="Open it in ${agentName()} now (⌘Enter)">${open}</button><button class="note-button" type="button" title="Save it for an agent thread: it waits under Up next (Enter)">Save note</button></footer>`;
   const close = `<button class="popover-close" type="button" aria-label="Close dialog">×</button>`;
   const heading = (meta) => `<header class="composer-heading"><div><h3>${escapeHtml(target.title)}</h3>${meta ? `<p class="composer-meta">${meta}</p>` : ""}</div>${close}</header>`;
   if (target.scope === "work") {
@@ -857,7 +861,7 @@ function composerTemplate(target) {
     return `<form class="composer" data-composer-key="${escapeHtml(target.key)}" data-scope="work" data-source-path="${escapeHtml(path)}" data-work-item="${escapeHtml(node.id)}" data-work-mode="${mode}">
       ${heading(meta)}
       <div class="composer-body">${preview}<div class="composer-field">${field}<div class="composer-images" hidden></div></div></div>
-      <footer class="composer-actions">${hint}<button class="note-button" type="button" title="Save it for an agent thread: it waits under Up next (⌘Enter)">Save note</button><button class="copy-prompt-button" type="button">Copy prompt</button><button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open in ${agentName()}</button></footer>
+      ${actions(`Open in ${agentName()}`)}
     </form>`;
   }
   if (target.scope === "action") {
@@ -873,7 +877,7 @@ function composerTemplate(target) {
           <div class="composer-images" hidden></div>
         </div>
       </div>
-      <footer class="composer-actions">${hint}<button class="note-button" type="button" title="Save it for an agent thread: it waits under Up next (⌘Enter)">Save note</button><button class="copy-prompt-button" type="button">Copy prompt</button><button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open in ${agentName()}</button></footer>
+      ${actions(`Open in ${agentName()}`)}
     </form>`;
   }
   const context = target.scope === "chunk"
@@ -893,7 +897,7 @@ function composerTemplate(target) {
         <div class="composer-images" hidden></div>
       </div>
     </div>
-    <footer class="composer-actions">${hint}<button class="note-button" type="button" title="Save it for an agent thread: it waits under Up next (⌘Enter)">Save note</button><button class="copy-prompt-button" type="button">Copy prompt</button><button class="cancel-button" type="button">Cancel</button><button class="send-button" type="submit">Open draft in ${agentName()}</button></footer>
+    ${actions(`Open draft in ${agentName()}`)}
   </form>`;
 }
 
@@ -936,7 +940,7 @@ function syncComposerDraftState() {
   const hint = elements.handoffPopover.querySelector(".composer-hint");
   if (hint) {
     hint.classList.remove("draft-warning");
-    hint.innerHTML = "<kbd>Enter</kbd> open · <kbd>⌘</kbd><kbd>Enter</kbd> note";
+    hint.innerHTML = COMPOSER_HINT;
   }
 }
 
@@ -3495,6 +3499,8 @@ const shortcuts = [
   { group: "Find and keep", keys: ["⌘D", "Ctrl+D"], label: "Favorite what’s open", hint: "listed at the top of the sidebar" },
   { group: "Agent drafts", keys: ["C"], label: "Draft the hovered action or section", hint: "or the selected text; elsewhere a blank draft", run: openCursorComposer },
   { group: "Agent drafts", keys: ["D"], label: "Draft about the current file", run: openDocumentComposer },
+  { group: "Agent drafts", keys: ["Enter"], label: "In a draft: save it as a note", hint: "it waits under Up next" },
+  { group: "Agent drafts", keys: ["⌘Enter", "Ctrl+Enter"], label: "In a draft: open it now" },
   { group: "General", keys: ["?"], label: "This guide", run: openShortcutGuide },
   { group: "General", keys: ["Esc"], label: "Close the dialog or popover" },
 ];
@@ -4121,8 +4127,8 @@ elements.handoffPopover.addEventListener("keydown", (event) => {
   }
   if (event.target.matches("textarea") && event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
-    if (event.metaKey || event.ctrlKey) saveComposerNote(event.target.closest("form"));
-    else event.target.closest("form").requestSubmit();
+    if (event.metaKey || event.ctrlKey) event.target.closest("form").requestSubmit();
+    else saveComposerNote(event.target.closest("form"));
   }
   // Dictation apps paste with a synthetic ⌘V right after their Option hotkey. macOS ORs the still-held Option
   // into it, and Chrome has no ⌘⌥V binding, so the paste vanished. Treat it as a plain paste.
