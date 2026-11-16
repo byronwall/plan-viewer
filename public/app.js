@@ -16,7 +16,7 @@ import { openNotePopover } from "./note-popover.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { bindOutbound, outboundPanel } from "./outbound.js";
-import { MOVE_FILTERS, KIND_FILTERS, SORTS, attachScorePopover, moveCounts, movePill, promptHtml, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, scheduledTasks, stepListHtml, stepRowHtml, stepTitleText, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, taskStepsHtml, visibleSteps } from "./steps-page.js";
+import { MOVE_FILTERS, KIND_FILTERS, SORTS, GROUPS, attachScorePopover, moveCounts, movePill, promptHtml, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, scheduledTasks, stepListHtml, stepRowHtml, stepTitleText, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, taskStepsHtml, visibleSteps } from "./steps-page.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planForLink, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
@@ -2202,7 +2202,9 @@ attachScorePopover((key) => stepsData?.steps.find((step) => stepKey(step) === ke
 let stepsData = null;
 const stepsOutboundBody = (path) => stepsData?.drafts?.find((draft) => draft.path === path)?.body || "";
 const stepsParams = () => new URLSearchParams(location.search);
-const stepsFilters = { move: "you", kind: "any", hidden: false, sort: "priority" };
+// The Steps table's grouping is remembered per browser (a URL `&group=` wins), since it is a way of working, not a view of one moment.
+const savedStepsGroup = () => { try { return localStorage.getItem("plan-viewer:steps-group") || "none"; } catch { return "none"; } };
+const stepsFilters = { move: "you", kind: "any", hidden: false, sort: "priority", group: savedStepsGroup() };
 let selectedStep = "";
 
 async function loadSteps() {
@@ -2225,7 +2227,7 @@ async function refreshSteps() {
 function updateStepsUrl(historyMode) {
   if (historyMode === "none") return;
   const url = new URL(location.href);
-  url.search = new URLSearchParams({ view: "steps", ...(stepsFilters.move !== "you" ? { move: stepsFilters.move } : {}), ...(stepsFilters.kind !== "any" ? { kind: stepsFilters.kind } : {}), ...(stepsFilters.hidden ? { hidden: "1" } : {}), ...(stepsFilters.sort !== "priority" ? { sort: stepsFilters.sort } : {}), ...(selectedStep ? { select: selectedStep } : {}) });
+  url.search = new URLSearchParams({ view: "steps", ...(stepsFilters.move !== "you" ? { move: stepsFilters.move } : {}), ...(stepsFilters.kind !== "any" ? { kind: stepsFilters.kind } : {}), ...(stepsFilters.hidden ? { hidden: "1" } : {}), ...(stepsFilters.sort !== "priority" ? { sort: stepsFilters.sort } : {}), ...(stepsFilters.group !== "none" ? { group: stepsFilters.group } : {}), ...(selectedStep ? { select: selectedStep } : {}) });
   url.hash = "";
   history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
 }
@@ -2236,6 +2238,7 @@ function readStepsUrl() {
   stepsFilters.kind = params.get("kind") in KIND_FILTERS ? params.get("kind") : "any";
   stepsFilters.hidden = params.get("hidden") === "1";
   stepsFilters.sort = params.get("sort") in SORTS ? params.get("sort") : "priority";
+  stepsFilters.group = params.get("group") in GROUPS ? params.get("group") : params.get("sort") === "move" ? "move" : savedStepsGroup();
   selectedStep = params.get("select") || "";
 }
 
@@ -2284,13 +2287,75 @@ function renderStepsPage() {
   const shown = visibleSteps(steps, stepsFilters);
   const counts = moveCounts(steps, stepsFilters.kind);
   elements.count.textContent = `${counts.you} for you · ${plural(steps.length, "open step")}`;
-  if (!shown.some((step) => stepKey(step) === selectedStep)) selectedStep = taskPaneVisible() ? (shown[0] ? stepKey(shown[0]) : "") : "";
+  // The table is the page: nothing is selected until a row is clicked, so the table has the full width; the inspector
+  // opens beside it for the selected step and closes with × or Esc.
+  if (!shown.some((step) => stepKey(step) === selectedStep)) selectedStep = "";
   const step = steps.find((candidate) => stepKey(candidate) === selectedStep);
-  elements.chunks.innerHTML = `<section class="task-browser" aria-label="Open steps">
+  elements.chunks.innerHTML = `<section class="task-browser${step ? " has-detail" : ""}" aria-label="Open steps">
     <div class="task-index">${stepsToolbarHtml(steps, stepsFilters, stepsData.slots, stepsData.runs?.length || 0)}${stepsTableHtml(steps, stepsFilters, selectedStep)}</div>
-    <aside class="task-detail step-detail" id="task-detail" aria-live="polite">${stepInspectorHtml(step, "", stepContext())}</aside>
+    <aside class="task-detail step-detail" id="task-detail" aria-live="polite">${stepDetailHtml(step)}</aside>
   </section>`;
 }
+
+const stepDetailHtml = (step) => step ? `<button type="button" class="step-detail-close" data-step-close aria-label="Close the inspector" title="Close (Esc)">×</button>${stepInspectorHtml(step, "", stepContext())}` : "";
+function selectStepRow(key) {
+  selectedStep = key;
+  updateStepsUrl("replace");
+  for (const tr of elements.chunks.querySelectorAll("tr[data-select-step]")) tr.setAttribute("aria-selected", tr.dataset.selectStep === selectedStep);
+  const step = stepsData.steps.find((candidate) => stepKey(candidate) === selectedStep);
+  elements.chunks.querySelector(".task-browser")?.classList.toggle("has-detail", Boolean(step));
+  document.getElementById("task-detail").innerHTML = stepDetailHtml(step);
+}
+// Inline edits from the table: each posts one change for one step line, then the table redraws from the files.
+async function editStepInline(key, route, body, done) {
+  const step = stepsData?.steps.find((candidate) => stepKey(candidate) === key);
+  if (!step) return;
+  try {
+    const response = await fetch(`/api/steps/${route}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: step.path, id: step.id, ...body }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "The viewer couldn't save that.");
+    if (done) showNotice(done(step));
+  } catch (error) { showNotice(error.message, true); }
+  refreshSteps();
+}
+function editStepTitle(cell) {
+  const key = cell.closest("[data-select-step]")?.dataset.selectStep;
+  const step = stepsData?.steps.find((candidate) => stepKey(candidate) === key);
+  if (!step || cell.querySelector("input")) return;
+  const input = Object.assign(document.createElement("input"), { className: "step-title-input", value: step.title, ariaLabel: "Step title" });
+  cell.replaceChildren(input);
+  input.focus();
+  input.select();
+  let settled = false;
+  const finish = (save) => {
+    if (settled) return;
+    settled = true;
+    if (save && input.value.trim() && input.value.trim() !== step.title) editStepInline(key, "edit", { title: input.value.trim() });
+    else refreshSteps();
+  };
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") { event.preventDefault(); finish(true); }
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); finish(false); }
+  });
+  input.addEventListener("blur", () => finish(true));
+}
+elements.chunks.addEventListener("dblclick", (event) => {
+  const cell = state.view === "steps" && event.target.closest("[data-step-title-edit]");
+  if (cell) { event.preventDefault(); editStepTitle(cell); }
+});
+elements.chunks.addEventListener("keydown", (event) => {
+  // A focused row: Enter opens it in the inspector, F2 edits its title like a spreadsheet cell.
+  if (state.view !== "steps" || !event.target.matches?.("tr[data-select-step]")) return;
+  if (event.key === "Enter") { event.preventDefault(); return selectStepRow(event.target.dataset.selectStep); }
+  if (event.key !== "F2") return;
+  const cell = event.target.querySelector("[data-step-title-edit]");
+  if (cell) { event.preventDefault(); editStepTitle(cell); }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || state.view !== "steps" || !selectedStep || event.defaultPrevented || document.querySelector("dialog[open], :popover-open:not(.score-pop)")) return;
+  if (event.target.closest?.("input, textarea, select")) return;
+  selectStepRow("");
+});
 
 function showSteps({ historyMode = "push", kind } = {}) {
   if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
@@ -2328,13 +2393,15 @@ elements.chunks.addEventListener("click", (event) => {
   if (state.view !== "steps") return;
   const move = event.target.closest("[data-step-move]");
   if (move) { stepsFilters.move = move.dataset.stepMove; updateStepsUrl("replace"); renderStepsPage(); return; }
-  const row = !event.target.closest("[data-task-path], a, input, label, .outbound-panel, form") && event.target.closest("[data-select-step]");
+  if (event.target.closest("[data-step-close]")) return selectStepRow("");
+  const next = event.target.closest("[data-step-next]");
+  if (next) { const key = next.closest("[data-select-step]").dataset.selectStep; const on = next.getAttribute("aria-pressed") !== "true"; next.setAttribute("aria-pressed", String(on)); return editStepInline(key, "next", { on }); }
+  const priority = event.target.closest("[data-task-priority]");
+  if (priority) return editStepInline(stepsData.steps.find((step) => step.path === priority.dataset.path) && stepKey(stepsData.steps.find((step) => step.path === priority.dataset.path)), "priority", { priority: priority.dataset.taskPriority }, (step) => `${step.task} is ${priority.dataset.taskPriority.toUpperCase()} now.`);
+  const row = !event.target.closest("[data-task-path], a, input, label, select, .outbound-panel, form, [data-step-close]") && event.target.closest("[data-select-step]");
   if (!row) return;
-  selectedStep = row.dataset.selectStep;
-  updateStepsUrl("replace");
-  for (const tr of elements.chunks.querySelectorAll("tr[data-select-step]")) tr.setAttribute("aria-selected", tr.dataset.selectStep === selectedStep);
-  const step = stepsData.steps.find((candidate) => stepKey(candidate) === selectedStep);
-  document.getElementById("task-detail").innerHTML = stepInspectorHtml(step, "", stepContext());
+  if (!taskPaneVisible()) return openStep(row.dataset.selectStep); // no room for the inspector: the step dialog instead
+  selectStepRow(row.dataset.selectStep);
 });
 elements.chunks.addEventListener("click", async (event) => {
   const action = state.view === "steps" && event.target.closest("[data-step-action]");
@@ -2344,7 +2411,14 @@ elements.chunks.addEventListener("click", async (event) => {
 });
 elements.chunks.addEventListener("change", (event) => {
   if (state.view !== "steps") return;
+  const edit = event.target.closest("[data-step-edit]"), done = event.target.closest("[data-step-done]");
+  if (edit || done) {
+    const key = event.target.closest("[data-select-step]").dataset.selectStep;
+    if (done) return editStepInline(key, "done", {}, (step) => `Marked ${step.task} ${step.id} done.`);
+    return editStepInline(key, "edit", { [edit.dataset.stepEdit]: edit.value });
+  }
   if (event.target.matches("[data-step-kind]")) stepsFilters.kind = event.target.value;
+  else if (event.target.matches("[data-step-group]")) { stepsFilters.group = event.target.value; try { localStorage.setItem("plan-viewer:steps-group", stepsFilters.group); } catch {} }
   else if (event.target.matches("[data-step-sort]")) stepsFilters.sort = event.target.value;
   else if (event.target.matches("[data-step-hidden]")) stepsFilters.hidden = event.target.checked;
   else return;

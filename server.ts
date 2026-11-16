@@ -20,6 +20,7 @@ import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig } from "./public/config.js";
 import { applyRule, closeNote, followUpNote, saveLaunchNote, loadSteps, markStepDone, pickChoice, planMentions, runStatement, saveNote, setStepNext, setTaskPriority, startStep } from "./steps.ts";
+import { editStep } from "./steps.ts"; // the Steps table's inline edits
 import { approveOutbound, draftFromText, dropOutbound, listOutbound, markOutboundSent, outboundFields, sendBackOutbound, stripFrontMatter } from "./outbound.ts";
 
 // The planning workspace is the current directory (npm scripts run from the content repository); PLANNING_ROOT
@@ -1163,6 +1164,13 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       viewerWrites.add(String(body.path || ""));
       await setStepNext(ROOT, String(body.path || ""), String(body.id || ""), Boolean(body.on));
       return json(response, 200, { next: Boolean(body.on) });
+    }
+    if (request.method === "POST" && url.pathname === "/api/steps/edit") {
+      const body = await readJson(request);
+      viewerWrites.add(String(body.path || ""));
+      const edit = Object.fromEntries(["title", "status", "kind", "size"].filter((key) => typeof body[key] === "string").map((key) => [key, body[key] as string]));
+      await editStep(ROOT, String(body.path || ""), String(body.id || ""), edit);
+      return json(response, 200, { ok: true });
     }
     if (request.method === "POST" && url.pathname === "/api/steps/priority") {
       const body = await readJson(request);

@@ -5,7 +5,7 @@ import { execFile, spawn } from "node:child_process";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, posix, resolve, sep } from "node:path";
 import { promisify } from "node:util";
-import { parseActions, parseWorkBreakdown } from "./public/actions.js";
+import { parseActions, parseWorkBreakdown, STEP_FLAGS, STEP_SIZES } from "./public/actions.js";
 import { config } from "./public/config.js";
 import { draftFromText, outboundFields, type OutboundDraft } from "./outbound.ts";
 
@@ -333,6 +333,32 @@ export function withStepFlag(markdown: string, id: string, flag: string, on: boo
     if (on) parts.push(flag);
     return parts.length ? `${head} {${parts.join(", ")}}` : head;
   });
+}
+
+// Inline edits from the Steps table: a step line's title, status, kind or size, rewritten in place. Everything else on the
+// line (its ID, indent, `(after:)` and flags such as `next`) stays as written. Completing goes through markStepDone, which
+// also records an update; this refuses it.
+export const EDITABLE_KINDS = ["agent", "check-in", "decision", "byron", "pick-one", "pick-any", "do-all", ...OUTBOUND_KINDS];
+const STATUSES = ["open", "active", "waiting", "deferred"];
+export function withStepEdit(markdown: string, id: string, edit: { title?: string; status?: string; kind?: string; size?: string }) {
+  const line = new RegExp(`^(\\s*-\\s+${id.replace(/\./g, "\\.")}:\\s+)(.+?)((?:\\s+\\(after:[^)]*\\))?)\\s+\\[(open|active|waiting|deferred|completed)\\]((?:\\s+\\(after:[^)]*\\))?)(?:\\s+\\{([^}]*)\\})?[ \\t]*$`, "m");
+  if (!line.test(markdown)) throw new Error(`${id} isn't in the work breakdown.`);
+  if (edit.title !== undefined && (!edit.title.trim() || /[\r\n]/.test(edit.title) || /\[(open|active|waiting|deferred|completed)\]/.test(edit.title))) throw new Error("A step title is one line of text, without a [status].");
+  if (edit.status !== undefined && !STATUSES.includes(edit.status)) throw new Error(edit.status === "completed" ? "Use Mark done to complete a step." : `Unknown status ${edit.status}.`);
+  if (edit.kind !== undefined && edit.kind && !EDITABLE_KINDS.includes(edit.kind)) throw new Error(`Unknown kind ${edit.kind}.`);
+  if (edit.size !== undefined && edit.size && !["S", "M", "L"].includes(edit.size)) throw new Error(`Unknown size ${edit.size}.`);
+  return markdown.replace(line, (_all, head, title, afterFirst, status, afterLast, suffix = "") => {
+    const parts = suffix.split(",").map((part: string) => part.trim()).filter(Boolean);
+    const flags = parts.filter((part: string) => STEP_FLAGS.has(part));
+    const kind = edit.kind ?? parts.find((part: string) => !STEP_SIZES.has(part) && !STEP_FLAGS.has(part)) ?? "";
+    const size = edit.size ?? parts.find((part: string) => STEP_SIZES.has(part)) ?? "";
+    const next = [kind, size, ...flags].filter(Boolean);
+    return `${head}${edit.title?.trim() ?? title}${afterFirst} [${edit.status ?? status}]${afterLast}${next.length ? ` {${next.join(", ")}}` : ""}`;
+  });
+}
+export async function editStep(root: string, path: string, id: string, edit: { title?: string; status?: string; kind?: string; size?: string }) {
+  const absolute = taskFile(root, path);
+  await writeFile(absolute, withStepEdit(await readFile(absolute, "utf8"), id, edit));
 }
 
 export async function setStepNext(root: string, path: string, id: string, on: boolean) {

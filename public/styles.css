@@ -3345,9 +3345,56 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .step-score.is-low { color: var(--quiet-text); }
 .step-col-score { width: 44px; text-align: right; }
 .step-table th.step-col-score { padding-right: 8px; color: var(--label-text); font-size: .68rem; text-align: right; }
-.step-tier-top .step-col-title .task-row-select { font-weight: 680; color: var(--ink); }
-.step-tier-mid .step-col-title .task-row-select { font-weight: 560; }
-.step-tier-low .step-col-title .task-row-select { font-weight: 450; color: var(--body-ink); }
+.step-col-title .step-title-cell { color: var(--ink); font-weight: 560; }
+.step-tier-top .step-col-title .step-title-cell { font-weight: 680; }
+.step-tier-low .step-col-title .step-title-cell { font-weight: 450; color: var(--body-ink); }
+/* The Steps table edits in place: dense rows, and cells that read as plain text until hovered or focused, when they show
+   they are controls. Nothing changes size between states. */
+.step-table td { padding: 5px 6px; color: var(--body-ink); font-size: .82rem; }
+.step-table th { padding: 8px 6px 6px; color: var(--label-text); font-size: .68rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.step-table tr[data-select-step] { cursor: pointer; }
+.step-table tr[data-select-step]:focus-visible { outline: 2px solid rgba(49, 87, 213, .4); outline-offset: -2px; }
+.step-table .step-col-title { min-width: 260px; max-width: none; line-height: 1.35; }
+.step-table .step-col-done, .step-table .step-col-next { width: 24px; padding-left: 2px; padding-right: 2px; text-align: center; }
+.step-table .step-col-score { width: 34px; }
+.step-col-size, .step-col-status, .step-col-kind, .step-col-move { white-space: nowrap; }
+.step-done-box { width: 15px; height: 15px; margin: 0; accent-color: var(--success); cursor: pointer; vertical-align: middle; }
+.step-next-cell { display: inline-grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 5px; background: transparent; padding: 0; color: transparent; font-size: .7rem; cursor: pointer; transition: background-color 140ms ease-out, color 140ms ease-out; }
+@media (hover: hover) { tr:hover .step-next-cell { color: var(--line-strong); } }
+@media (hover: none) { .step-next-cell { color: var(--line-strong); } }
+.step-next-cell:focus-visible { color: var(--line-strong); outline: 2px solid rgba(49, 87, 213, .4); outline-offset: -2px; }
+.step-next-cell[aria-pressed="true"], tr:hover .step-next-cell[aria-pressed="true"] { color: var(--action); }
+@media (hover: hover) { .step-next-cell:hover { background: var(--quiet-field); color: var(--action-ink); } }
+.step-cell-edit { height: 24px; max-width: 150px; border: 1px solid transparent; border-radius: 5px; background: transparent; padding: 0 4px; color: var(--body-ink); font: inherit; font-size: .8rem; cursor: pointer; appearance: none; -webkit-appearance: none; transition: background-color 140ms ease-out, border-color 140ms ease-out; }
+@media (hover: hover) { tr:hover .step-cell-edit { border-color: var(--line); } .step-cell-edit:hover { background: var(--paper); border-color: var(--line-strong); } }
+.step-cell-edit:focus-visible { outline: 2px solid rgba(49, 87, 213, .4); outline-offset: 1px; }
+.step-title-input { width: 100%; height: 26px; box-sizing: border-box; border: 1px solid var(--action); border-radius: 5px; padding: 0 6px; color: var(--ink); font: inherit; font-size: .82rem; font-weight: 560; box-shadow: 0 0 0 3px rgba(49, 87, 213, .12); }
+.step-table .step-col-work { max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step-task-name { margin-left: 6px; color: var(--muted); font-size: .76rem; }
+.step-table .step-col-age { width: 34px; color: var(--muted); font-size: .76rem; text-align: right; white-space: nowrap; }
+.step-table.is-grouped .step-group th { padding: 14px 6px 5px; color: var(--ink); font: 650 .84rem/1.3 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: 0; text-transform: none; }
+.step-table.is-grouped .step-group th span { margin-left: 0; color: inherit; }
+.step-table.is-grouped .step-group th .step-group-count { color: var(--muted); }
+.step-table.is-grouped .step-group th .step-group-priority { margin-left: auto; }
+.step-group-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-height: 24px; }
+.step-table .step-group th { white-space: normal; }
+.step-detail .task-detail-head { padding-right: 26px; }
+.step-group-name { min-width: 0; }
+.step-group-count { color: var(--muted); font-size: .74rem; font-weight: 450; }
+.step-group-priority { margin-left: auto; }
+.step-table .step-group th .step-group-priority button { display: inline-block; height: 20px; padding: 0 7px; color: var(--muted); font-size: .7rem; letter-spacing: 0; text-transform: none; }
+.step-table .step-group th .step-group-priority button[aria-pressed="true"] { color: var(--ink); }
+.step-table .step-group th .task-list-id { display: inline; padding: 0; text-transform: none; }
+/* When the inspector narrows the table, the read-only columns go first so the editable ones stay in view. */
+.steps-page .task-index { container-type: inline-size; }
+@container (max-width: 860px) { .step-table .step-col-move, .step-table .step-col-age { display: none; } }
+@container (max-width: 1000px) { .step-table .step-col-work, .step-table th.step-col-work { display: none; } }
+/* The inspector opens only for a selected row; until then the table takes the whole width. */
+.steps-page .task-browser:not(.has-detail) { grid-template-columns: minmax(0, 1fr); }
+.steps-page .task-browser:not(.has-detail) .task-detail { display: none; }
+.step-detail { position: relative; }
+.step-detail-close { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 1.1rem; line-height: 1; cursor: pointer; }
+@media (hover: hover) { .step-detail-close:hover { background: var(--quiet-field); color: var(--ink); } }
 .step-priority { display: flex; align-items: center; gap: 10px; margin: 6px 0 4px; }
 .step-priority-why { flex: 1; min-width: 0; color: var(--muted); font-size: .78rem; text-align: right; }
 .step-score { cursor: default; border-radius: 4px; transition: background-color 140ms ease-out; }

@@ -102,7 +102,16 @@ export const SORTS = {
   unblocks: ["Unblocks most", (a, b) => (b.unblocks || 0) - (a.unblocks || 0)],
   small: ["Smallest first", (a, b) => ("SML".indexOf(a.size || "M") - "SML".indexOf(b.size || "M"))],
   oldest: ["Oldest first", (a, b) => b.age - a.age],
-  move: ["Grouped by next move", () => 0],
+};
+// Groups for the Steps table. Groups appear in the order of their highest-ranked step, except status and next move,
+// which keep their own order; rows inside a group keep the sort.
+const STATUS_ORDER = ["active", "open", "waiting", "deferred"];
+export const GROUPS = {
+  none: ["No grouping", null],
+  task: ["Task", (step) => step.task || "Notes"],
+  move: ["Next move", (step) => step.move],
+  kind: ["Kind", (step) => step.kind || ""],
+  status: ["Status", (step) => step.status],
 };
 export const sortSteps = (steps, sort = "priority") => [...steps].sort((a, b) => pinNext(a, b) || (SORTS[sort] || SORTS.priority)[1](a, b) || (b.score || 0) - (a.score || 0));
 
@@ -127,28 +136,60 @@ const pill = (step) => {
   return `<span class="step-move step-move-${tone}" title="${escapeHtml(step.reason)}">${escapeHtml(text)}</span>`;
 };
 
-function row(step, selected) {
-  return `<tr class="step-tier-${tierOf(step.score)}" data-select-step="${escapeHtml(stepKey(step))}" aria-selected="${selected}">
+// One table row, editable in place: Done, Up next, the title (double-click), kind, size and status write the step's line
+// in its task file through /api/steps/edit, without selecting the row. A note or an outbound draft's step keeps what its
+// file owns read-only. The rest of the row selects the step for the inspector.
+const EDIT_KINDS = ["agent", "check-in", "decision", "byron", "pick-one", "pick-any", "do-all", ...OUTBOUND];
+const select = (field, value, options, label) => `<select class="step-cell-edit" data-step-edit="${field}" aria-label="${label}">${options.map(([v, text]) => `<option value="${escapeHtml(v)}"${v === value ? " selected" : ""}>${escapeHtml(text)}</option>`).join("")}</select>`;
+export function stepRowCells(step, { withTask = true } = {}) {
+  const note = step.kind === "note";
+  const kindCell = note ? "Note" : select("kind", step.kind, [["", "—"], ...EDIT_KINDS.map((k) => [k, kindLabel(k)])], "Kind");
+  const sizeCell = note ? "" : select("size", step.size, [["", "—"], ["S", "S"], ["M", "M"], ["L", "L"]], "Size");
+  const statusCell = note ? "" : select("status", step.status, STATUS_ORDER.map((st) => [st, st[0].toUpperCase() + st.slice(1)]), "Status");
+  const done = `<input type="checkbox" class="step-done-box" data-step-done aria-label="Mark ${escapeHtml(step.id)} done" title="Mark done">`;
+  const next = `<button type="button" class="step-next-cell" data-step-next aria-pressed="${Boolean(step.next)}" title="${step.next ? "On Up next: click to take it off" : "Queue it as Up next"}" aria-label="Up next">●</button>`;
+  return `<td class="step-col-done">${done}</td>
     <td class="step-col-score">${scoreHtml(step)}</td>
-    <td class="step-col-title"><button class="task-row-select" type="button" data-select-step="${escapeHtml(stepKey(step))}">${step.next ? '<span class="step-next-mark" aria-label="Up next" title="Up next">●</span>' : ""}${stepTitleHtml(step.title)}</button></td>
-    <td class="step-col-move">${pill(step)}</td>
-    <td class="step-col-kind">${OUTBOUND.has(step.kind) ? outboundIcon(step.kind) : ""}${escapeHtml(kindLabel(step.kind))}</td>
-    <td class="step-col-work"><button class="task-list-id" type="button" data-task-path="${escapeHtml(step.path)}" title="${escapeHtml(step.taskTitle)}">${escapeHtml(step.task || "Note")}</button> <span class="step-id">${escapeHtml(step.id)}</span></td>
-  </tr>`;
+    <td class="step-col-title"><span class="step-title-cell"${note ? "" : ' data-step-title-edit title="Double-click to edit the title"'}>${stepTitleHtml(step.title)}</span></td>
+    <td class="step-col-next">${note ? "" : next}</td>
+    <td class="step-col-move">${movePill(step)}</td>
+    <td class="step-col-kind">${kindCell}</td>
+    <td class="step-col-size">${sizeCell}</td>
+    <td class="step-col-status">${statusCell}</td>
+    ${withTask ? `<td class="step-col-work"><button class="task-list-id" type="button" data-task-path="${escapeHtml(step.path)}">${escapeHtml(step.task || "Note")}</button><span class="step-task-name">${escapeHtml(step.taskTitle)}</span></td>` : ""}
+    <td class="step-col-age">${step.running ? "running" : step.age ? `${step.age}d` : "new"}</td>`;
+}
+function row(step, selected, withTask) {
+  return `<tr class="step-tier-${tierOf(step.score)}" data-select-step="${escapeHtml(stepKey(step))}" aria-selected="${selected}" tabindex="0">${stepRowCells(step, { withTask })}</tr>`;
 }
 
 // A friction group's fixes, once each in its header instead of under every row.
 const fixesHtml = (list) => [...new Set(list.map((step) => step.fix).filter(Boolean))].map((fix) => `<em class="step-group-fix">fix: ${escapeHtml(fix)}</em>`).join("");
 
+// A group's header: its name, count and top score; a task group also names the task and sets its priority in place.
+function groupHead(group, key, list, columns) {
+  const first = list[0];
+  const name = group === "task" ? `<button class="task-list-id" type="button" data-task-path="${escapeHtml(first.path)}">${escapeHtml(first.task || "Notes")}</button><span class="step-group-name">${escapeHtml(first.task ? first.taskTitle : "Saved notes")}</span>`
+    : group === "move" ? `<span class="step-group-name">${escapeHtml(MOVES[key]?.group || key)}</span>${fixesHtml(list)}`
+    : group === "kind" ? `<span class="step-group-name">${escapeHtml(key ? kindLabel(key) : "No kind yet")}</span>`
+    : `<span class="step-group-name">${escapeHtml(key[0].toUpperCase() + key.slice(1))}</span>`;
+  const priority = group === "task" && first.task ? `<span class="step-toggle step-group-priority" role="group" aria-label="${escapeHtml(first.task)} priority">${["p1", "p2", "p3"].map((p) => `<button type="button" data-task-priority="${p}" data-path="${escapeHtml(first.path)}" aria-pressed="${(first.priority || "p2") === p}">${p.toUpperCase()}</button>`).join("")}</span>` : "";
+  return `<tr class="step-group"><th colspan="${columns}" scope="rowgroup"><span class="step-group-line">${name}<span class="step-group-count">${list.length} ${list.length === 1 ? "step" : "steps"} · top ${Math.max(...list.map((step) => step.score || 0))}</span>${priority}</span></th></tr>`;
+}
+
 export function stepsTableHtml(steps, filters, selected) {
   const shown = visibleSteps(steps, filters);
   if (!shown.length) return `<p class="task-empty">${filters.move === "next" ? "Nothing is up next. Press Up next on a step, or Save note (Enter) in the composer." : filters.kind === "outbound" ? "Nothing waiting to go out." : "No open steps match."}</p>`;
   const sorted = sortSteps(shown, filters.sort);
-  // Grouped by next move is the old layout; every other sort is one ranked list, so the top of the table is the top step.
-  const groups = filters.sort === "move" ? ORDER.map((move) => [move, sorted.filter((step) => step.move === move)]).filter(([, list]) => list.length) : [["", sorted]];
-  return `<table class="task-table step-table">
-    <thead><tr><th scope="col" class="step-col-score">Priority</th><th scope="col">Step</th><th scope="col">Next move</th><th scope="col">Kind</th><th scope="col">Workstream</th></tr></thead>
-    ${groups.map(([move, list]) => `<tbody>${move ? `<tr class="step-group"><th colspan="5" scope="rowgroup">${escapeHtml(MOVES[move].group)} <span>${list.length}</span>${fixesHtml(list)}</th></tr>` : ""}${list.map((step) => row(step, stepKey(step) === selected)).join("")}</tbody>`).join("")}
+  const group = GROUPS[filters.group]?.[1] ? filters.group : "none";
+  const keyOf = GROUPS[group][1];
+  const keys = !keyOf ? [""] : group === "move" ? ORDER : group === "status" ? STATUS_ORDER : [...new Set(sorted.map(keyOf))];
+  const groups = keys.map((key) => [key, keyOf ? sorted.filter((step) => keyOf(step) === key) : sorted]).filter(([, list]) => list.length);
+  const withTask = group !== "task";
+  const columns = withTask ? 10 : 9;
+  return `<table class="task-table step-table${keyOf ? " is-grouped" : ""}">
+    <thead><tr><th scope="col" class="step-col-done" aria-label="Done"></th><th scope="col" class="step-col-score">Priority</th><th scope="col">Step</th><th scope="col" class="step-col-next" title="Up next">Next</th><th scope="col" class="step-col-move">Move</th><th scope="col">Kind</th><th scope="col">Size</th><th scope="col">Status</th>${withTask ? '<th scope="col" class="step-col-work">Task</th>' : ""}<th scope="col" class="step-col-age">Age</th></tr></thead>
+    ${groups.map(([key, list]) => `<tbody>${keyOf ? groupHead(group, key, list, columns) : ""}${list.map((step) => row(step, stepKey(step) === selected, withTask)).join("")}</tbody>`).join("")}
   </table>`;
 }
 
@@ -160,6 +201,7 @@ export function stepsToolbarHtml(steps, filters, slots, runs = 0) {
   return `<div class="task-index-tools step-tools">
     <span class="step-segs" role="group" aria-label="Next move">${seg("next", "Up next")}${seg("you", "Next move: You")}${seg("agent", "Agent")}${seg("others", "Others")}${seg("all", "All")}</span>
     <select class="step-kind" data-step-kind aria-label="Kind">${Object.entries(KIND_FILTERS).map(([key, [label]]) => `<option value="${key}"${filters.kind === key ? " selected" : ""}>${label}</option>`).join("")}</select>
+    <select class="step-kind" data-step-group aria-label="Group">${Object.entries(GROUPS).map(([key, [label]]) => `<option value="${key}"${(filters.group || "none") === key ? " selected" : ""}>${key === "none" ? "Group: none" : `Group: ${label.toLowerCase()}`}</option>`).join("")}</select>
     <select class="step-kind" data-step-sort aria-label="Sort">${Object.entries(SORTS).map(([key, [label]]) => `<option value="${key}"${(filters.sort || "priority") === key ? " selected" : ""}>Sort: ${label.toLowerCase()}</option>`).join("")}</select>
     ${filters.move === "all" && hiddenCount ? `<label class="show-done"><input type="checkbox" data-step-hidden${filters.hidden ? " checked" : ""}> Show ${hiddenCount} blocked or without a kind</label>` : ""}
     <span class="step-slots" title="Agent runs started from this page">${running} of ${slots} agent slots in use</span>

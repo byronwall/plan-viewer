@@ -104,3 +104,21 @@ test('every step but a note offers Note…, a decision words it as Decide…', (
   assert.equal(stepActionsHtml(step()).match(/data-step-action="note"/g).length, 1);
   assert.doesNotMatch(stepActionsHtml(step({ kind: 'note', move: 'agent' })), /data-step-action="note"/);
 });
+
+test('the Steps table edits in place and groups by task with the task priority in its header', async () => {
+  const { stepsTableHtml } = await import('./public/steps-page.js');
+  const rows = [
+    step({ key: 'TASK-0101 W1', task: 'TASK-0101', taskTitle: 'Roll out invites', path: 'tasks/TASK-0101.md', status: 'open', size: 'S', score: 80, priority: 'p1', age: 2 }),
+    step({ key: 'TASK-0102 W3', task: 'TASK-0102', id: 'W3', taskTitle: 'Billing fix', path: 'tasks/TASK-0102.md', status: 'active', size: 'M', score: 60, priority: 'p2', age: 0, move: 'agent', kind: 'agent', reason: 'ready' }),
+  ];
+  const flat = stepsTableHtml(rows, { move: 'all', group: 'none' }, '');
+  assert.match(flat, /data-step-edit="size"[\s\S]*?<option value="S" selected>/);
+  assert.match(flat, /data-step-edit="status"[\s\S]*?<option value="active" selected>/);
+  assert.match(flat, /data-step-done/);
+  assert.match(flat, /class="step-task-name">Roll out invites</);
+  const grouped = stepsTableHtml(rows, { move: 'all', group: 'task' }, '');
+  assert.equal((grouped.match(/class="step-group"/g) || []).length, 2);
+  assert.ok(grouped.indexOf('Roll out invites') < grouped.indexOf('Billing fix'), 'groups follow their top step');
+  assert.match(grouped, /data-task-priority="p1" data-path="tasks\/TASK-0101.md" aria-pressed="true"/);
+  assert.doesNotMatch(grouped, /step-task-name/);
+});

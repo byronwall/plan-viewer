@@ -282,3 +282,16 @@ test("priority ranks a planned step that unblocks others above a P2 leaf, and P1
   assert.match(p1, /^status: active\npriority: p1$/m);
   assert.equal(withTaskPriority(p1, "p2"), TASK);
 });
+
+test("an inline edit rewrites only the step line's title, status, kind or size", async () => {
+  const { withStepEdit } = await import("./steps.ts");
+  const md = "- W1: Scope [open]\n  - W1.2: Ship it [open] (after: W1.1) {agent, M, next}\n  - W1.3: Plain [waiting]\n";
+  assert.match(withStepEdit(md, "W1.2", { size: "S", kind: "decision" }), /W1\.2: Ship it \[open\] \(after: W1\.1\) \{decision, S, next\}/);
+  assert.match(withStepEdit(md, "W1.2", { title: "Ship it today", status: "active" }), /W1\.2: Ship it today \[active\] \(after: W1\.1\) \{agent, M, next\}/);
+  assert.match(withStepEdit(md, "W1.3", { kind: "agent", size: "S" }), /W1\.3: Plain \[waiting\] \{agent, S\}/);
+  assert.match(withStepEdit(md, "W1.2", { kind: "", size: "" }), /W1\.2: Ship it \[open\] \(after: W1\.1\) \{next\}$/m);
+  assert.equal(withStepEdit(md, "W1.2", {}), md);
+  assert.throws(() => withStepEdit(md, "W1.2", { status: "completed" }), /Mark done/);
+  assert.throws(() => withStepEdit(md, "W1.2", { title: "Two\nlines" }), /one line/);
+  assert.throws(() => withStepEdit(md, "W1.2", { kind: "lunch" }), /Unknown kind/);
+});
