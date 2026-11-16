@@ -495,8 +495,8 @@ function placeOf(stack) {
 
 // Lines changed on a log scale, so a 20-line fix and a 2,000-line refactor both read at a glance; the fill splits
 // green and red by lines added and removed. Exact counts sit in the hover text.
-const sizeBar = (pr) => {
 const short = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
+const sizeBar = (pr) => {
   const lines = pr.additions + pr.deletions;
   const width = Math.min(100, Math.round((Math.log10(lines + 1) / 4) * 100));
   const added = lines ? Math.round((pr.additions / lines) * 100) : 0;
@@ -582,7 +582,6 @@ function boardSection(move, login) {
   return (columns.get(login)?.sections.get(move) || []).flat();
 }
 
-function stacksBody(prs) {
 // One line under a column's name that says the relationship: whose PRs this person reviews, and their own moves.
 function columnRelation(column) {
   const prs = (section) => (column.sections.get(section) || []).flat();
@@ -596,6 +595,7 @@ function columnRelation(column) {
   return parts.join(" · ");
 }
 
+function stacksBody(prs) {
   const { columns } = boardGroups(prs);
   const idle = columns.get("");
   columns.delete("");

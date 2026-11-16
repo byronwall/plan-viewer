@@ -1488,6 +1488,7 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-chain:not(.is-single) .code-chain-row:first-child::before { top: 16px; }
 .code-chain:not(.is-single) .code-chain-row:last-child::before { bottom: auto; height: 16px; }
 .code-chain-row { position: relative; padding: 6px 8px 6px 32px; border-radius: 6px; cursor: pointer; transition: background-color 140ms ease-out; }
+.code-chain.is-single .code-chain-row { padding-left: 8px; }
 @media (hover: hover) { .code-chain-row:hover { background: var(--hover-field); } }
 .code-chain-row[aria-selected="true"] { background: var(--selected); }
 .code-chain-n { position: absolute; z-index: 2; left: 6px; top: 7px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--action); background: var(--paper); box-sizing: border-box; color: var(--action-ink); font: 700 .66rem/1 ui-sans-serif, system-ui, sans-serif; font-style: normal; font-variant-numeric: tabular-nums; }
@@ -1503,11 +1504,15 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-chain-reviewers { display: inline-flex; }
 .code-chain-reviewers > span + span { margin-left: -7px; }
 .code-chain-faces .code-avatar { width: 20px; height: 20px; box-shadow: 0 0 0 1.5px var(--paper); vertical-align: 0; }
+/* The face that moves next gets a ring in the accent; the others step back. */
+.code-chain-faces:has(.is-actor) .code-face:not(.is-actor) .code-avatar { opacity: .6; filter: saturate(.5); }
+.code-chain-faces .is-actor { position: relative; z-index: 1; }
+.code-chain-faces .is-actor .code-avatar { box-shadow: 0 0 0 1.5px var(--paper), 0 0 0 3px var(--action); }
+.code-chain-arrow { flex: none; width: 11px; height: 11px; margin: 0 1px; fill: none; stroke: var(--quiet-text); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
 .code-chain-age { text-align: right; font-variant-numeric: tabular-nums; }
 .code-next { min-width: 0; color: var(--muted); }
 .code-next-fix { color: #c2410c; font-weight: 600; }
 .code-next-merge { color: var(--pass); font-weight: 600; }
-.code-chain.is-single .code-chain-row { padding-left: 8px; }
 .code-next-mine { color: var(--mine); font-weight: 600; }
 .code-next-none { color: var(--requested); font-weight: 600; }
 .code-chain-size { display: inline-flex; align-items: center; gap: 5px; height: 18px; white-space: nowrap; font-size: .72rem; font-variant-numeric: tabular-nums; }
@@ -1522,11 +1527,6 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-chain-row[aria-selected="true"] .code-chain-tools { opacity: 1; pointer-events: auto; }
 @media (hover: none) { .code-chain-tools { position: static; opacity: 1; pointer-events: auto; background: none; padding: 4px 0 0; } }
 /* Idle stacks leave the board for a full-width strip of columns underneath. */
-/* The face that moves next gets a ring in the accent; the others step back. */
-.code-chain-faces:has(.is-actor) .code-face:not(.is-actor) .code-avatar { opacity: .6; filter: saturate(.5); }
-.code-chain-faces .is-actor { position: relative; z-index: 1; }
-.code-chain-faces .is-actor .code-avatar { box-shadow: 0 0 0 1.5px var(--paper), 0 0 0 3px var(--action); }
-.code-chain-arrow { flex: none; width: 11px; height: 11px; margin: 0 1px; fill: none; stroke: var(--quiet-text); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
 .code-idle { margin: 8px 2px 24px; padding-top: 6px; border-top: 1px solid var(--line); }
 .code-idle-grid { columns: 300px; column-gap: 22px; }
 .code-idle .code-chain-line { font-size: .82rem; }
@@ -3390,6 +3390,9 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 @container (max-width: 860px) { .step-table .step-col-move, .step-table .step-col-age { display: none; } }
 @container (max-width: 1000px) { .step-table .step-col-work, .step-table th.step-col-work { display: none; } }
 /* The inspector opens only for a selected row; until then the table takes the whole width. */
+/* On a wide screen the Steps page uses all of it: the table at full width with the inspector beside it. */
+.tasks-page.steps-page { max-width: none; }
+@container (min-width: 1600px) { .steps-page .task-browser.has-detail { grid-template-columns: minmax(0, 1fr) minmax(420px, 520px); } }
 .steps-page .task-browser:not(.has-detail) { grid-template-columns: minmax(0, 1fr); }
 .steps-page .task-browser:not(.has-detail) .task-detail { display: none; }
 .step-detail { position: relative; }
