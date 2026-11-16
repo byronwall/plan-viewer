@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { draftFromText } from "./outbound.ts";
-import { activeRuns, applyRule, closeNote, deriveSteps, listNotes, loadSteps, pickChoice, runStatement, saveNote, startStep, withStepFlag } from "./steps.ts";
+import { activeRuns, applyRule, closeNote, deriveSteps, followUpNote, listNotes, loadSteps, pickChoice, runStatement, saveNote, startStep, withStepFlag } from "./steps.ts";
 import { setConfig } from "./public/config.js";
 
 const TASK = `---
@@ -198,4 +198,27 @@ test("a saved note re-points the copied chunk's relative links and images from i
   const saved = await saveNote(root, { commentary: "Links", prompt, source: "tasks/TASK-0001.md", task: "TASK-0001" }, new Date(2026, 10, 13, 9, 0, 0));
   const text = await readFile(join(root, saved.path), "utf8");
   assert.ok(text.includes("[audit](../audit.md) ![map](../diagrams/1-map.draft) [plan](../../../plans/acme/README.md#goals) [other](../../TASK-0002.md) [web](https://acme.test/x) [here](#retry) [rooted](tasks/TASK-0003.md) `TASK-0001-assets/audit.md`"), text);
+});
+
+test("with steps.followUp, a finished step leaves an open follow-through note carrying the draft's own list", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "steps-follow-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "tasks", "TASK-0001-assets"), { recursive: true });
+  await writeFile(join(root, "tasks", "TASK-0001.md"), "---\ntitle: Ship it\n---\n\n## Work breakdown\n\n- W1: Reply on the PR [completed] {pr-comment, S}\n");
+  await writeFile(join(root, "tasks", "TASK-0001-assets", "reply.md"), "---\noutbound: pr-comment\nstep: TASK-0001 W1\n---\n\n# Reply\n\n## After it's sent\n\n- Resolve the review thread\n- See [the plan](plan.md)\n");
+  const step = { step: "TASK-0001 W1", did: "approved and sent the pr-comment to #7", source: "tasks/TASK-0001-assets/reply.md", result: "https://github.com/acme/app/pull/7#c1" };
+  assert.equal(await followUpNote(root, step), null); // off by default
+  setConfig({ user: "Pat", steps: { followUp: true } });
+  t.after(() => setConfig({}));
+  const saved = await followUpNote(root, step);
+  assert.equal(saved?.title, "Follow through on W1 · Reply on the PR");
+  const text = await readFile(join(root, saved!.path), "utf8");
+  assert.match(text, /^note: open$/m);
+  assert.match(text, /^step: TASK-0001 W1$/m);
+  assert.match(text, /Pat approved and sent the pr-comment to #7 in the viewer, which completed W1/);
+  assert.match(text, /Result: https:\/\/github\.com\/acme\/app\/pull\/7#c1/);
+  assert.match(text, /- Resolve the review thread/);
+  assert.match(text, /\[the plan\]\(\.\.\/plan\.md\)/); // re-pointed from the draft's folder to the note's
+  const [note] = await listNotes(root);
+  assert.equal(note.noteFor, "TASK-0001 W1");
 });

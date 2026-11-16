@@ -19,8 +19,8 @@ import { createPlans } from "./plans.ts";
 import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig } from "./public/config.js";
-import { applyRule, closeNote, loadSteps, markStepDone, pickChoice, runStatement, saveNote, setStepNext, startStep } from "./steps.ts";
-import { approveOutbound, draftFromText, dropOutbound, listOutbound, markOutboundSent, sendBackOutbound, stripFrontMatter } from "./outbound.ts";
+import { applyRule, closeNote, followUpNote, loadSteps, markStepDone, pickChoice, runStatement, saveNote, setStepNext, startStep } from "./steps.ts";
+import { approveOutbound, draftFromText, dropOutbound, listOutbound, markOutboundSent, outboundFields, sendBackOutbound, stripFrontMatter } from "./outbound.ts";
 
 // The planning workspace is the current directory (npm scripts run from the content repository); PLANNING_ROOT
 // overrides it, and points tests at fixtures/planning so they never read live planning files.
@@ -298,6 +298,21 @@ export function waitingSignals(task: TaskSummary, metadata: Record<string, { tit
 function todayDate() {
   return todayPath().slice("daily/".length, -"/plan.md".length).replaceAll("/", "-");
 }
+
+// `steps.followUp`: a click that finished a step leaves an open note for an agent to reconcile the ripple. Writing the
+// note never fails the click itself.
+async function followThroughStep(step: string, did: string, source = "", result = "") {
+  try { await followUpNote(ROOT, { step, did, source, result }); }
+  catch (error) { console.warn(`follow-through note for ${step}: ${(error as Error).message}`); }
+}
+const followThrough = (taskPath: string, id: string, did: string) =>
+  followThroughStep(`${taskPath.match(/TASK-\d{4}/)?.[0] || ""} ${id}`, did);
+async function followThroughAsset(path: string, did: string) {
+  const fields = outboundFields(await readFile(join(ROOT, path), "utf8").catch(() => ""));
+  if (fields.step) await followThroughStep(fields.step, did, path);
+}
+const followThroughDraft = (path: string, fields: Record<string, string>, did: string) =>
+  fields.step ? followThroughStep(fields.step, did, path, fields.result || "") : Promise.resolve();
 
 // `extensions: null` takes every file (a task's assets folder for its world view).
 async function walkDocuments(directory: string, extensions: string[] | null = [".md", ".txt"]): Promise<string[]> {
@@ -1102,7 +1117,9 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (request.method === "POST" && url.pathname === "/api/steps/pick") {
       const body = await readJson(request);
       viewerWrites.add(String(body.path || ""));
-      return json(response, 200, await pickChoice(ROOT, String(body.path || ""), String(body.id || ""), Array.isArray(body.picked) ? body.picked.map(String) : [], config().user, todayDate()));
+      const picked = await pickChoice(ROOT, String(body.path || ""), String(body.id || ""), Array.isArray(body.picked) ? body.picked.map(String) : [], config().user, todayDate());
+      await followThrough(String(body.path || ""), String(body.id || ""), `picked ${picked.picked.join(", ") || "none of the options"}`);
+      return json(response, 200, picked);
     }
     if (request.method === "POST" && url.pathname === "/api/steps/start") {
       const body = await readJson(request);
@@ -1115,11 +1132,15 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
     if (request.method === "POST" && url.pathname === "/api/steps/run") {
       const body = await readJson(request);
-      return json(response, 200, await runStatement(ROOT, String(body.path || ""), config().user, todayDate()));
+      const ran = await runStatement(ROOT, String(body.path || ""), config().user, todayDate());
+      if (ran.ok) await followThroughAsset(String(body.path || ""), "approved and ran its read-only statement");
+      return json(response, 200, ran);
     }
     if (request.method === "POST" && url.pathname === "/api/steps/apply") {
       const body = await readJson(request);
-      return json(response, 200, await applyRule(ROOT, String(body.path || ""), config().user, todayDate()));
+      const applied = await applyRule(ROOT, String(body.path || ""), config().user, todayDate());
+      await followThroughAsset(String(body.path || ""), `applied the allow rule \`${applied.rule}\``);
+      return json(response, 200, applied);
     }
     if (request.method === "POST" && url.pathname === "/api/steps/next") {
       const body = await readJson(request);
@@ -1132,7 +1153,10 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       viewerWrites.add(String(body.path || ""));
       const path = String(body.path || "");
       if (/\/notes\/[^/]+\.md$/.test(path)) await closeNote(ROOT, path, config().user, todayDate());
-      else await markStepDone(ROOT, path, String(body.id || ""), config().user, todayDate());
+      else {
+        await markStepDone(ROOT, path, String(body.id || ""), config().user, todayDate());
+        await followThrough(path, String(body.id || ""), "marked it done");
+      }
       return json(response, 200, { done: true });
     }
     if (request.method === "GET" && url.pathname === "/api/outbound") return json(response, 200, { drafts: await listOutbound(ROOT), sendConfigured: Boolean(config().outbound.send.length) });
@@ -1141,10 +1165,19 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const path = String(body.path || "");
       viewerWrites.add(path);
       const action = url.pathname.slice("/api/outbound/".length);
-      if (action === "approve") return json(response, 200, await approveOutbound(ROOT, path, String(body.sha || "")));
+      if (action === "approve") {
+        const sent = await approveOutbound(ROOT, path, String(body.sha || ""));
+        const fields = sent.draft?.fields;
+        if (fields?.status === "sent" && fields.result !== "dry-run") await followThroughDraft(path, fields, `approved and sent the ${fields.outbound} to ${fields.target}`);
+        return json(response, 200, sent);
+      }
       if (action === "send-back") return json(response, 200, await sendBackOutbound(ROOT, path, String(body.feedback || "")));
       if (action === "drop") return json(response, 200, await dropOutbound(ROOT, path));
-      if (action === "mark-sent") return json(response, 200, await markOutboundSent(ROOT, path, String(body.result || "")));
+      if (action === "mark-sent") {
+        const marked = await markOutboundSent(ROOT, path, String(body.result || ""));
+        await followThroughDraft(path, marked.draft.fields, `sent the ${marked.draft.fields.outbound} to ${marked.draft.fields.target} by hand`);
+        return json(response, 200, marked);
+      }
       return json(response, 404, { error: "Unknown outbound action." });
     }
     if (request.method === "GET" && url.pathname === "/api/waiting") {

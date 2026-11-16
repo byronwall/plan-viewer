@@ -359,3 +359,39 @@ export async function closeNote(root: string, path: string, user: string, today:
   if (outboundFields(text).note !== "open") throw new Error("That note is already closed.");
   await writeFile(absolute, `${text.replace(/^note: open$/m, "note: done").trimEnd()}\n\n- **${today} — Marked done (${user}, in the viewer).**\n`);
 }
+
+// --- Follow-through: a click that finishes a step (Approve and send, Mark sent, Mark done, Pick, Approve and run, Apply)
+// does only that click. The ripple (the next action that named the step, steps waiting on it, a tracker to move, a
+// thread to resolve) needs an agent, so with `steps.followUp` each such click leaves an open note tied to the step,
+// and the step's draft or machinery can list what it already knows under `## After it's sent` (or `## After it's done`).
+const AFTER = /^## (?:After it's (?:sent|done)|Follow-through)\s*$([\s\S]*?)(?=^## |(?![\s\S]))/mi;
+
+export async function followUpNote(root: string, { step, did, source = "", result = "" }: { step: string; did: string; source?: string; result?: string }, now = new Date()) {
+  if (!config().steps.followUp) return null;
+  const [, task, id] = step.trim().match(/^(TASK-\d{4})\s+(\S+)$/) || [];
+  if (!task) return null;
+  const taskPath = `tasks/${task}.md`;
+  const markdown = await readFile(join(root, taskPath), "utf8").catch(() => "");
+  const node = parseWorkBreakdown(section(markdown, "Work breakdown")).nodes.find((n: { id: string }) => n.id === id);
+  const machinery = source && source !== taskPath ? await readFile(join(root, source), "utf8").catch(() => "") : "";
+  const known = machinery.match(AFTER)?.[1].trim() || "";
+  const prompt = [
+    `${config().user} ${did} in the viewer, which completed ${id}. The click did only that; reconcile what else should change now that it's done.`,
+    "",
+    `Planning workspace: ${resolve(root)}`,
+    `Task: ${task}${markdown.match(/^title:\s*(.+)$/m) ? ` · ${markdown.match(/^title:\s*(.+)$/m)![1].replace(/^["']|["']$/g, "")}` : ""} (${taskPath})`,
+    `Step: ${id}${node ? `: ${node.title}` : ""}`,
+    source && source !== taskPath ? `Draft or machinery: ${source}` : "",
+    result ? `Result: ${result}` : "",
+    "",
+    `Read the workspace AGENTS.md and the task first, then any task asset whose front matter names \`step: ${task} ${id}\`.`,
+    known ? `\nThe draft listed this follow-through; do each item:\n\n${known}\n` : "",
+    "Then check the ripple the click didn't touch:",
+    `- The task: a dated update says what happened and links the result; Next actions that named ${id} are removed or rewritten (an active task keeps one ready action); steps that waited on ${id} (\`after:\`) are ready; the task's status, waiting and check-in still fit.`,
+    "- Trackers, PRs and threads the step or its draft names: move or link what the workspace lets an agent change, and write anything that would leave the workspace as its own outbound draft instead of sending it.",
+    "- Today's plan lists only what is still open.",
+    "",
+    "Record what you changed as a dated update on the task (one line saying nothing needed changing is fine). Then close this note: set `note: done` in its front matter and add a dated line saying what you did.",
+  ].filter((line, index, all) => line !== "" || all[index - 1] !== "").join("\n");
+  return saveNote(root, { commentary: `Follow through on ${id}${node ? ` · ${node.title}` : ""}`, prompt, task, step: `${task} ${id}`, source: source || taskPath }, now);
+}

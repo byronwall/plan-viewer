@@ -96,6 +96,9 @@ export const DEFAULT_CONFIG = {
     run: [],
     // Settings file a drafted allow rule is added to on Apply (workspace-relative); empty hides Apply.
     settingsFile: "",
+    // A click that finishes a step (Approve and send, Mark sent, Mark done, Pick, Approve and run, Apply) also leaves an
+    // open follow-through note in Up next, so an agent reconciles what else the step's completion changes.
+    followUp: false,
     // Lint: open steps in tasks created on or after this date (YYYY-MM-DD) need a size; empty never requires one.
     requireSizeFrom: "",
     // Lint: words no Next action prompt may contain, such as a sign-in flow agents can't complete.
