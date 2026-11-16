@@ -15,7 +15,7 @@ import { installBrief } from "./brief.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { bindOutbound, outboundPanel } from "./outbound.js";
-import { MOVE_FILTERS, KIND_FILTERS, moveCounts, movePill, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, scheduledTasks, stepListHtml, stepRowHtml, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, taskStepsHtml, visibleSteps } from "./steps-page.js";
+import { MOVE_FILTERS, KIND_FILTERS, moveCounts, movePill, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, scheduledTasks, stepListHtml, stepRowHtml, stepTitleText, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, taskStepsHtml, visibleSteps } from "./steps-page.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planForLink, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
@@ -298,7 +298,7 @@ function navSummary(view) {
     const kind = view === "outbox" ? "outbound" : "any";
     const mine = visibleSteps(stepsData.steps, { move: "you", kind });
     const friction = mine.filter((step) => step.move === "you-act").length;
-    const rows = mine.slice(0, 8).map((step) => tipRow(step.move === "you-act" ? "Friction" : "You", step.title.split(" — ")[0], `${step.task} ${step.id} · ${step.reason}`, step.move === "you-act" ? "attention" : "", `doc:${step.machinery?.path || step.draft?.path || step.path}`));
+    const rows = mine.slice(0, 8).map((step) => tipRow(step.move === "you-act" ? "Friction" : "You", stepTitleText(step.title), `${step.task} ${step.id} · ${step.reason}`, step.move === "you-act" ? "attention" : "", `doc:${step.machinery?.path || step.draft?.path || step.path}`));
     return { count: mine.length ? `${mine.length} for you` : "", attention: mine.length > 0, card: tipHead(view === "steps" ? "Next move is yours" : "Ready to go out", [mine.length - friction && `${mine.length - friction} to decide`, friction && `${friction} friction`].filter(Boolean).join(" · ")) + (rows.join("") || tipEmpty("Nothing waits on you.")) };
   }
   if (view === "diagrams") {

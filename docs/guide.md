@@ -77,7 +77,7 @@ A plain link to an image in the workspace (`[Proposal gallery](TASK-0101-assets/
 
 ## Steps and the Outbox
 
-The Steps page (sidebar, `?view=steps`) lists every open step of every unfinished task, grouped by **Next move**: **You decide** (approvals, decisions and choices), **You act · friction** (something only you can do, each with why and the fix that would remove it), **Agent**, and **Others**, with **Blocked** (prerequisites not done) and **Needs a kind** behind a toggle in the All view. A step is a work-breakdown line; a leaf step, or a choice. It may end in `{kind, size}`:
+The Steps page (sidebar, `?view=steps`) lists every open step of every unfinished task, grouped by **Next move**: **You decide** (approvals, decisions and choices), **You act · friction** (something only you can do; the group header lists, once each, the fixes that would remove it), **Agent**, and **Others**, with **Blocked** (prerequisites not done) and **Needs a kind** behind a toggle in the All view. Step titles in lists read as plain text: a Markdown link shows its label (a file name without its folder or `.md`), and a parenthetical that is only a link is left out; the inspector's heading keeps the real links. A step is a work-breakdown line; a leaf step, or a choice. It may end in `{kind, size}`:
 
 ```markdown
 - W2.1: Comment on ABC-123 [open] (after: W1) {jira-comment, S}

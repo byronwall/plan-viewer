@@ -2,7 +2,17 @@
 // inspector for the selected step. The Outbox is the same page filtered to outbound kinds (`&kind=outbound`).
 import { isSettled, renderWorkGraph, settledWork, showDoneToggle, workStatusIcon } from "./actions.js";
 import { GLYPHS } from "./icons.js";
-import { escapeHtml } from "./markdown.js";
+import { escapeHtml, inlineMarkdown } from "./markdown.js";
+
+// A step title for a list row, where the row is the button and links can't be real: the text before " — ", a Markdown
+// link reads as its label (a file name loses its folder and `.md`), a parenthetical that is only a link goes, and code
+// spans stay code. The inspector and dialog render the full title with real links.
+const linkLabel = (label) => label.replace(/^.*\//, "").replace(/\.md$/, "");
+export const stepTitleText = (title = "") => title.split(" — ")[0]
+  .replace(/\s*\(\s*\[[^\]]*\]\([^)]*\)\s*\)/g, "")
+  .replace(/!?\[([^\]]*)\]\([^)]*\)/g, (_, label) => linkLabel(label))
+  .replace(/\*\*([^*]+)\*\*/g, "$1");
+export const stepTitleHtml = (title) => escapeHtml(stepTitleText(title)).replace(/`([^`]+)`/g, "<code>$1</code>");
 import { outboundIcon, outboundKindLabel, outboundPanel } from "./outbound.js";
 
 export const MOVES = {
@@ -51,9 +61,8 @@ const pill = (step) => {
 };
 
 function row(step, selected) {
-  const friction = step.move === "you-act" ? `<span class="step-friction-line">${escapeHtml(step.reason)}${step.fix ? ` · fix: ${escapeHtml(step.fix)}` : ""}</span>` : "";
   return `<tr data-select-step="${escapeHtml(stepKey(step))}" aria-selected="${selected}">
-    <td class="step-col-title"><button class="task-row-select" type="button" data-select-step="${escapeHtml(stepKey(step))}">${step.next ? '<span class="step-next-mark" aria-label="Up next" title="Up next">●</span>' : ""}${step.move === "you-act" ? '<span class="step-friction-mark" aria-label="Friction">▲</span>' : ""}${escapeHtml(step.title.split(" — ")[0])}</button>${friction}</td>
+    <td class="step-col-title"><button class="task-row-select" type="button" data-select-step="${escapeHtml(stepKey(step))}">${step.next ? '<span class="step-next-mark" aria-label="Up next" title="Up next">●</span>' : ""}${stepTitleHtml(step.title)}</button></td>
     <td class="step-col-move">${pill(step)}</td>
     <td class="step-col-kind">${OUTBOUND.has(step.kind) ? outboundIcon(step.kind) : ""}${escapeHtml(kindLabel(step.kind))}</td>
     <td class="step-col-work"><button class="task-list-id" type="button" data-task-path="${escapeHtml(step.path)}" title="${escapeHtml(step.taskTitle)}">${escapeHtml(step.task || "Note")}</button> <span class="step-id">${escapeHtml(step.id)}</span></td>
@@ -62,13 +71,16 @@ function row(step, selected) {
   </tr>`;
 }
 
+// A friction group's fixes, once each in its header instead of under every row.
+const fixesHtml = (list) => [...new Set(list.map((step) => step.fix).filter(Boolean))].map((fix) => `<em class="step-group-fix">fix: ${escapeHtml(fix)}</em>`).join("");
+
 export function stepsTableHtml(steps, filters, selected) {
   const shown = visibleSteps(steps, filters);
   if (!shown.length) return `<p class="task-empty">${filters.move === "next" ? "Nothing is up next. Press Up next on a step, or Save note (⌘Enter) in the composer." : filters.kind === "outbound" ? "Nothing waiting to go out." : "No open steps match."}</p>`;
   const groups = ORDER.map((move) => [move, shown.filter((step) => step.move === move)]).filter(([, list]) => list.length);
   return `<table class="task-table step-table">
     <thead><tr><th scope="col">Step</th><th scope="col">Next move</th><th scope="col">Kind</th><th scope="col">Workstream</th><th scope="col">Size</th><th scope="col">Age</th></tr></thead>
-    ${groups.map(([move, list]) => `<tbody><tr class="step-group"><th colspan="6" scope="rowgroup">${escapeHtml(MOVES[move].group)} <span>${list.length}</span></th></tr>${list.map((step) => row(step, stepKey(step) === selected)).join("")}</tbody>`).join("")}
+    ${groups.map(([move, list]) => `<tbody><tr class="step-group"><th colspan="6" scope="rowgroup">${escapeHtml(MOVES[move].group)} <span>${list.length}</span>${fixesHtml(list)}</th></tr>${list.map((step) => row(step, stepKey(step) === selected)).join("")}</tbody>`).join("")}
   </table>`;
 }
 
@@ -106,8 +118,8 @@ export function showStepLayer(panel, move) {
 }
 // With `noteHtml` (a note that holds links) the row is a div whose title is the button, so the links stay real links.
 export const stepRowHtml = ({ key, lead = "", pill = "", title, note = "", noteHtml = "", meta = "", className = "" }) => noteHtml
-  ? `<div class="step-row${className}" data-open-step="${escapeHtml(key)}"><span class="step-row-lead">${lead}</span><span class="step-row-title">${pill}<button type="button" class="step-row-open" data-open-step="${escapeHtml(key)}">${escapeHtml(title)}</button><span class="step-row-note">${noteHtml}</span></span><span class="step-row-meta">${meta}</span></div>`
-  : `<button type="button" class="step-row${className}" data-open-step="${escapeHtml(key)}"><span class="step-row-lead">${lead}</span><span class="step-row-title">${pill}${escapeHtml(title)}${note ? `<span class="step-row-note">${escapeHtml(note)}</span>` : ""}</span><span class="step-row-meta">${meta}</span></button>`;
+  ? `<div class="step-row${className}" data-open-step="${escapeHtml(key)}"><span class="step-row-lead">${lead}</span><span class="step-row-title">${pill}<button type="button" class="step-row-open" data-open-step="${escapeHtml(key)}">${stepTitleHtml(title)}</button><span class="step-row-note">${noteHtml}</span></span><span class="step-row-meta">${meta}</span></div>`
+  : `<button type="button" class="step-row${className}" data-open-step="${escapeHtml(key)}"><span class="step-row-lead">${lead}</span><span class="step-row-title">${pill}${stepTitleHtml(title)}${note ? `<span class="step-row-note">${escapeHtml(note)}</span>` : ""}</span><span class="step-row-meta">${meta}</span></button>`;
 
 // The segment a short step list opens on: the first mover with anything waiting, You first.
 export const firstMove = (counts) => ["you", "agent", "others"].find((move) => counts[move]) || "all";
@@ -118,7 +130,7 @@ export const firstMove = (counts) => ["you", "agent", "others"].find((move) => c
 export function stepListHtml(steps, { move = firstMove(moveCounts(steps)), cap = 8, withTask = false, more = () => "", only = false } = {}) {
   const layer = (name) => {
     const shown = visibleSteps(steps, { move: name });
-    const rows = shown.slice(0, cap).map((step) => stepRowHtml({ key: stepKey(step), lead: movePill(step), title: step.title.split(" — ")[0], meta: escapeHtml(withTask ? `${step.task} ${step.id}` : step.id) })).join("");
+    const rows = shown.slice(0, cap).map((step) => stepRowHtml({ key: stepKey(step), lead: movePill(step), title: step.title, meta: escapeHtml(withTask ? `${step.task} ${step.id}` : step.id) })).join("");
     return `<div class="step-rows">${rows || `<p class="step-rows-empty">${name === "you" ? "Nothing waits on you." : "No steps here."}</p>`}</div>${shown.length > cap ? more(name, shown.length) : ""}`;
   };
   if (only) return { toggle: "", stack: layer(move) };
@@ -172,7 +184,7 @@ export function taskStepsHtml({ taskId = "", work, steps = [], actions = [], not
     const html = nodes.filter((n) => !n.parent).map((top) => {
       const list = rows.filter((n) => topOf(n) === top && inLayer(n, name));
       if (!list.length) return "";
-      const head = isRow(top) ? "" : `<button type="button" class="step-group-head${settled.has(top.id) ? " is-settled" : ""}" data-open-step="${escapeHtml(key(top))}"><code>${escapeHtml(top.id)}</code><span>${escapeHtml(top.title)}</span></button>`;
+      const head = isRow(top) ? "" : `<button type="button" class="step-group-head${settled.has(top.id) ? " is-settled" : ""}" data-open-step="${escapeHtml(key(top))}"><code>${escapeHtml(top.id)}</code><span>${stepTitleHtml(top.title)}</span></button>`;
       return head + list.map(row).join("");
     }).join("");
     return `<div class="step-rows">${html || `<p class="step-rows-empty">No steps wait on ${name === "you" ? "you" : name === "agent" ? "an agent" : "others"}.</p>`}</div>`;
@@ -255,7 +267,7 @@ export function stepInspectorHtml(step, extra = "", context = {}) {
   if (!step) return `<p class="task-detail-empty">Select a step to see its draft, prompt or options.</p>`;
   const head = `<header class="task-detail-head"><div class="task-detail-badges"><button class="task-list-id" type="button" data-task-path="${escapeHtml(step.path)}">${escapeHtml(step.task)}</button><span class="step-id">${escapeHtml(step.id)}</span>${pill(step)}</div>
       <span class="task-detail-buttons"><button class="task-detail-open" type="button" data-task-path="${escapeHtml(step.path)}">Workstream <span aria-hidden="true">→</span></button></span></header>
-    <h3>${escapeHtml(step.title.split(" — ")[0])}</h3>
+    <h3>${inlineMarkdown(step.title.split(" — ")[0], step.path)}</h3>
     <p class="task-detail-meta"><span>${escapeHtml(kindLabel(step.kind))}</span><span>${step.size ? `Size ${escapeHtml(step.size)}` : "No size yet"}</span><span>${escapeHtml(step.status)}</span><span>${escapeHtml(step.taskTitle)}</span></p>`;
   const friction = step.move === "you-act" && !step.draft ? `<p class="step-friction"><strong>Friction:</strong> ${escapeHtml(step.reason)}.${step.fix ? ` <strong>Fix:</strong> ${escapeHtml(step.fix)}.` : ""}</p>` : "";
   const blocked = step.move === "blocked" ? `<p class="outbound-note">Waits on ${escapeHtml(step.reason.replace(/^after /, ""))} in ${escapeHtml(step.task)}.</p>` : "";
