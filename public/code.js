@@ -21,6 +21,7 @@ const storage = { get: (key, fallback) => { try { return localStorage.getItem(ke
 const GUARDS = { off: 0, day: DAY, week: 7 * DAY };
 let cleanupGuard = storage.get("code-cleanup-guard", "day");
 ui.treeGroup = storage.get("code-tree-group", "changed");
+ui.prLayout = storage.get("code-pr-layout", "list") === "stacks" ? "stacks" : "list";
 const level = (tree) => {
   const base = tree.cleanup?.level;
   return (base === "safe" || base === "review") && Date.now() - tree.activity < GUARDS[cleanupGuard] ? "fresh" : base;
@@ -437,8 +438,75 @@ const prFlags = (pr, tree) => flag("local", Boolean(tree), tree ? `Local worktre
 function prsBody() {
   const prs = visiblePrs();
   if (!prs.length) return emptyState("pull requests");
+  if (ui.prState !== "done" && ui.prLayout === "stacks") return stacksBody(prs);
   const rows = ui.prState === "done" ? prs.map((pr) => ({ pr, rail: null })) : stackOrder(prs);
   return `<table class="code-table">${tableHead([["code-col-stack", ""], ...repoHead(), ["code-col-num", "PR"], ["code-col-main", "Title · author · branch"], ["code-col-flags", "Flags"], ["code-col-labels", "Labels"], ["code-col-state", "State"], ["code-col-size", "Size"], ["code-col-when", ui.prState === "done" ? "Closed" : "Updated"], ["code-col-skills", `Send to ${appName()}`], ["code-col-actions", "Open"]])}<tbody>${rows.map(({ pr, rail }) => prRow(pr, rail)).join("")}</tbody></table>`;
+}
+
+// ---------- stacks layout ----------
+// Open PRs as stacks sorted into lanes by who moves next, like a hand-drawn "what lands this week" diagram.
+// A real name reads better than a handle: the person's name when it has a space, else their longest known full name.
+const personName = (login) => {
+  if (login === ui.data.me) return "you";
+  const person = personFor(login);
+  const full = (person?.keys || []).filter((key) => key.startsWith("n:") && key.includes(" ") && !key.includes("@")).map((key) => key.slice(2)).sort((a, b) => b.length - a.length)[0];
+  return person?.name?.includes(" ") ? person.name : full ? full.replace(/\b\p{L}/gu, (letter) => letter.toUpperCase()) : person?.name || login.replace(/^app\//, "");
+};
+// What a PR needs next, as [tone, text]; the first rule that holds wins. Only fix, merge and mine are colored.
+function nextStep(pr) {
+  const parent = stackParent(pr);
+  if (pr.mergeable === "CONFLICTING") return ["fix", parent ? `Merge #${parent.number}'s branch in` : `Merge ${pr.base} in`];
+  if (["FAILURE", "ERROR"].includes(pr.ci)) return ["fix", "Fix failing checks"];
+  if (pr.reviewDecision === "CHANGES_REQUESTED") return ["fix", "Address requested changes"];
+  if (pr.draft) return ["draft", "Draft: mark ready"];
+  if (pr.reviewDecision === "APPROVED") return parent ? ["wait", `Approved; lands after #${parent.number}`] : ["merge", "Approved: merge"];
+  if (pr.requestedOfMe) return ["mine", "Your review"];
+  const people = humanReviewers(pr);
+  if (people.length) return ["wait", `Waiting on ${people.map(personName).join(", ")}`];
+  return ["none", "No reviewer yet"];
+}
+// A stack's lane comes from its bottom PR, the one that has to move first. Drafts and stacks untouched for two
+// weeks get their own lanes, so parked work doesn't crowd the lanes that need a move today.
+const IDLE = 14 * DAY;
+function laneOf(stack) {
+  const pr = stack[0];
+  if (stack.every((item) => Date.now() - Date.parse(prWhen(item)) > IDLE)) return ["idle", "Idle two weeks or more", 6];
+  if (pr.draft) return ["draft", "Drafts", 5];
+  const [tone] = nextStep(pr);
+  if (tone === "wait") { const login = humanReviewers(pr)[0]; return [`r:${login}`, `Waiting on ${personName(login)}`, 3]; }
+  return { merge: ["merge", "Ready to merge", 0], fix: ["fix", "Fix first", 1], mine: ["mine", "Your review", 2], none: ["none", "No reviewer", 4], draft: ["draft", "Drafts", 5] }[tone];
+}
+
+function stackRow(pr, position) {
+  const key = `pr:${pr.slug}#${pr.number}`;
+  const [tone, text] = nextStep(pr);
+  return `<li class="code-chain-row" data-code-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">${position ? `<i class="code-chain-n${position === 1 ? " is-base" : ""}">${position}</i>` : ""}
+    <div class="code-chain-line"><a class="code-pr-link" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">${ciBadge(pr)}#${pr.number}</a> <span class="code-chain-title">${escapeHtml(pr.title)}</span></div>
+    <div class="code-chain-sub"><span class="code-next code-next-${tone}">${escapeHtml(text)}</span>${pr.author === ui.data.me ? "" : `<span>${escapeHtml(personName(pr.author))}</span>`}${repoHead().length ? `<span>${escapeHtml(repoName(pr.repo))}</span>` : ""}${when(prWhen(pr))}</div></li>`;
+}
+
+function stacksBody(prs) {
+  const visible = new Set(prs);
+  const seen = new Set();
+  const lanes = new Map();
+  for (const pr of prs) {
+    if (seen.has(pr)) continue;
+    const stack = stackOf(pr).filter((item) => visible.has(item));
+    stack.forEach((item) => seen.add(item));
+    const [key, label, rank] = laneOf(stack);
+    if (!lanes.has(key)) lanes.set(key, { key, label, rank, stacks: [], count: 0 });
+    const lane = lanes.get(key);
+    lane.stacks.push(stack);
+    lane.count += stack.length;
+  }
+  // Fixed lanes first, then reviewers with the most waiting; stacks above single PRs inside a lane.
+  const order = [...lanes.values()].sort((a, b) => a.rank - b.rank || b.count - a.count || a.label.localeCompare(b.label));
+  return `<div class="code-stacks">${order.map((lane) => {
+    const stacks = [...lane.stacks].sort((a, b) => (b.length > 1) - (a.length > 1));
+    return `<section class="code-lane code-lane-${lane.key.startsWith("r:") ? "wait" : lane.key}"><h3>${escapeHtml(lane.label)} <span>${lane.count}</span></h3>${stacks.map((stack) => stack.length > 1
+      ? `<ol class="code-chain"><li class="code-chain-head">Stack of ${stack.length} · on ${escapeHtml(stack[0].base)}</li>${stack.map((pr, index) => stackRow(pr, index + 1)).join("")}</ol>`
+      : `<ol class="code-chain is-single">${stackRow(stack[0], 0)}</ol>`).join("")}</section>`;
+  }).join("")}</div>`;
 }
 
 // ---------- commits ----------
@@ -2523,6 +2591,7 @@ function toolbar() {
       requested: `Review requested${count(ui.data.prs.filter((pr) => pr.requestedOfMe).length)}`,
     }))
     + authorTrigger()
+    + (done ? "" : segment("data-code-pr-layout", ui.prLayout, { list: "List", stacks: "Stacks" }))
     + segment("data-code-sort", ui.prSort, { updated: done ? "Closed" : "Updated", created: "Oldest", size: "Largest" })
     + (done ? "" : `<label class="code-check"><input type="checkbox" data-code-drafts ${ui.hideDrafts ? "checked" : ""}> No drafts</label><label class="code-check"><input type="checkbox" data-code-failing ${ui.failingOnly ? "checked" : ""}> Failing CI${count(ui.data.prs.filter((pr) => ["FAILURE", "ERROR"].includes(pr.ci)).length)}</label>`);
   if (ui.tab === "commits") controls = commitControls();
@@ -2764,7 +2833,7 @@ function renderServers() {
 
 function syncUrl() {
   const url = new URL(location.href);
-  url.search = new URLSearchParams({ view: "code", ...(ui.tab === "prs" ? {} : { tab: ui.tab }), ...(ui.authors.size ? { author: [...ui.authors].join(",") } : {}), ...(ui.repos.size ? { repo: [...ui.repos].join(",") } : {}) });
+  url.search = new URLSearchParams({ view: "code", ...(ui.tab === "prs" ? (ui.prLayout === "stacks" ? { layout: "stacks" } : {}) : { tab: ui.tab }), ...(ui.authors.size ? { author: [...ui.authors].join(",") } : {}), ...(ui.repos.size ? { repo: [...ui.repos].join(",") } : {}) });
   history.replaceState(null, "", url);
 }
 
@@ -2908,6 +2977,7 @@ async function handleClick(event) {
     if (dataset.codeRowDiff) { select(dataset.codeRowDiff); return openDiff(); }
     if (dataset.codePrState) { ui.prState = dataset.codePrState; return render({ animate: true }); }
     if (dataset.codeScope) { ui.prScope = dataset.codeScope; return render({ animate: true }); }
+    if (dataset.codePrLayout) { ui.prLayout = dataset.codePrLayout; storage.set("code-pr-layout", ui.prLayout); syncUrl(); return render({ animate: true }); }
     if (dataset.codeSort) { ui.prSort = dataset.codeSort; return render({ animate: true }); }
     if ("codeDrafts" in dataset) { ui.hideDrafts = target.checked; return render({ animate: true }); }
     if ("codeFailing" in dataset) { ui.failingOnly = target.checked; return render({ animate: true }); }
@@ -3191,6 +3261,8 @@ export function renderCodePage(container, { tab, showNotice }) {
     host = container;
     ui.authors = new Set((new URLSearchParams(location.search).get("author") || "").split(",").filter(Boolean));
     ui.repos = new Set((new URLSearchParams(location.search).get("repo") || "").split(",").filter(Boolean));
+    const layout = new URLSearchParams(location.search).get("layout");
+    if (layout) ui.prLayout = layout === "stacks" ? "stacks" : "list";
     container.addEventListener("click", (event) => { if (container.querySelector(".code-surface")) handleClick(event); });
     // Double-click a row to open what Enter opens: the PR or worktree overview, or a commit's diff.
     container.addEventListener("dblclick", (event) => {
