@@ -15,12 +15,44 @@ const DRAFT_STATUSES = new Set(["draft", "ready", "revise", "approved", "sent", 
 // The PR targets the workspace's outbound.py sender can parse (repo_pr): #2233, PyRel#3929, Owner/repo#1, or a PR URL.
 const PR_TARGET = /^(?:(?:[\w.-]+\/)?[\w.-]+)?#\d+$|^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+(?:[/?#].*)?$/;
 
-// Steps (work-breakdown lines with an optional {kind, size}): known kinds, waiting only on others, choices made of
-// options with one default, sizes on tasks created since steps.requireSizeFrom, no banned words in prompts.
-export function stepErrors(task: { created: string } | undefined, nodes: { id: string; status: string; kind: string; size: string; flags: string[]; parent: string }[], prompts: { title: string; prompt: string }[]): string[] {
+// References a reader has to look up: issue and task keys (ABC-123), PRs (#12, repo#12), steps (W1.2), commits (repo@sha).
+const REFERENCE = /\b[A-Z][A-Z0-9]+-\d+\b|(?:\b[\w.-]+)?#\d+\b|\bW\d+(?:\.\d+)*\b|\b[\w.-]+@[0-9a-f]{7,40}\b/g;
+const FILLER = new Set("a an and or the to of on in at by for from with is are be it its this that as once then now not".split(" "));
+
+// The references in a step title or diagram label that come without enough words to say what they are: fewer than two
+// words per reference, after dropping the references themselves, link targets and filler words. Empty when grounded.
+export function ungroundedReferences(text: string): string[] {
+  const plain = text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  const references = plain.match(REFERENCE) || [];
+  const words = plain.replace(REFERENCE, " ").match(/[A-Za-z][A-Za-z0-9'’-]*/g)?.filter(word => !FILLER.has(word.toLowerCase())) || [];
+  return words.length >= 2 * references.length ? [] : references;
+}
+
+const GROUNDING_HINT = "give each reference two or three words saying what it is (“#2282 lost Settings save reply”, “RAI-55557 · role can't read data”)";
+
+// Every title, subtitle, box, group, edge label and note in a .draft diagram says what its references are.
+export function diagramErrors(source: string): string[] {
   const errors: string[] = [];
-  const { requireSizeFrom = "", forbiddenInPrompts = [] } = config().steps;
+  source.split("\n").forEach((line, index) => {
+    const quoted = line.match(/^\s*[+\-~.]?(?:diagram|subtitle|node|group|edge|note|footnote)\b[^"]*("(?:[^"\\]|\\.)*")/)?.[1];
+    if (!quoted) return;
+    let label: string;
+    try { label = JSON.parse(quoted).replaceAll("\n", " "); } catch { return; }
+    const bare = ungroundedReferences(label);
+    if (bare.length) errors.push(`line ${index + 1}: “${label}” names ${bare.join(", ")} without saying what ${bare.length > 1 ? "they are" : "it is"}; ${GROUNDING_HINT}.`);
+  });
+  return errors;
+}
+
+// Steps (work-breakdown lines with an optional {kind, size}): known kinds, waiting only on others, choices made of
+// options with one default, sizes on tasks created since steps.requireSizeFrom, references that say what they are on
+// tasks created since steps.groundReferencesFrom, no banned words in prompts.
+export function stepErrors(task: { created: string } | undefined, nodes: { id: string; title: string; status: string; kind: string; size: string; flags: string[]; parent: string }[], prompts: { title: string; prompt: string }[]): string[] {
+  const errors: string[] = [];
+  const { requireSizeFrom = "", groundReferencesFrom = "", forbiddenInPrompts = [] } = config().steps;
   for (const node of nodes) {
+    const bare = groundReferencesFrom && task && task.created >= groundReferencesFrom ? ungroundedReferences(node.title) : [];
+    if (bare.length) errors.push(`${node.id}: “${node.title}” names ${bare.join(", ")} without saying what ${bare.length > 1 ? "they are" : "it is"}; ${GROUNDING_HINT}, so the step reads on its own.`);
     if (node.kind && !STEP_KINDS.has(node.kind)) errors.push(`${node.id}: unknown step kind “${node.kind}”. Use one of: ${[...STEP_KINDS].join(", ")}.`);
     if (node.status === "waiting" && YOURS.has(node.kind)) errors.push(`${node.id}: [waiting] means waiting on someone else; a ${node.kind} step waits on you, so write it [open].`);
     const children = nodes.filter((child) => child.parent === node.id);
@@ -90,8 +122,19 @@ export async function checkPlanning(args: string[], root = ROOT) {
     ? args.map(path => relative(root, resolve(root, path)).replaceAll("\\", "/"))
     : (await git(staged ? ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"] : ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])).split("\0").filter(Boolean);
   const paths = [...new Set(listed)].filter(path => path.endsWith(".md") && isViewableDocumentPath(path));
-  if (args.length && !staged && paths.length !== new Set(listed).size) throw new Error("Pass authored Markdown paths under daily/, tasks/, plans/ or reference/ (outside the folders viewer.config.json excludes).");
+  // Diagrams are checked when they are staged or named, so a diagram you touch gets grounded and old ones don't fail
+  // the full-corpus run.
+  const diagrams = (staged || args.length) && config().steps.groundReferencesFrom ? [...new Set(listed)].filter(path => path.endsWith(".draft")) : [];
+  if (args.length && !staged && paths.length + diagrams.length !== new Set(listed).size) throw new Error("Pass authored Markdown paths under daily/, tasks/, plans/ or reference/ (outside the folders viewer.config.json excludes).");
   const errors: string[] = [];
+  for (const path of diagrams) {
+    try {
+      const source = staged ? await git(["show", `:${path}`]) : await readFile(resolve(root, path), "utf8");
+      errors.push(...diagramErrors(source).map(error => `${path}: ${error}`));
+    } catch (error) {
+      errors.push(`${path}: ${(error as NodeJS.ErrnoException).code === "ENOENT" ? "file not found" : error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   for (const path of paths) {
     try {
       const markdown = staged ? await git(["show", `:${path}`]) : await readFile(resolve(root, path), "utf8");
@@ -107,14 +150,14 @@ export async function checkPlanning(args: string[], root = ROOT) {
       errors.push(`${path}: ${(error as NodeJS.ErrnoException).code === "ENOENT" ? "file not found" : error instanceof Error ? error.message : String(error)}`);
     }
   }
-  return { files: paths.length, errors };
+  return { files: paths.length + diagrams.length, errors };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const result = await checkPlanning(process.argv.slice(2));
     for (const error of result.errors) console.error(`error  ${error}`);
-    if (!result.errors.length) console.log(`ok     ${result.files} planning Markdown files, no task, work-breakdown or action-reference errors`);
+    if (!result.errors.length) console.log(`ok     ${result.files} planning files, no task, work-breakdown, action-reference or bare-reference errors`);
     process.exitCode = result.errors.length ? 1 : 0;
   } catch (error) {
     console.error(`error  ${error instanceof Error ? error.message : String(error)}`);

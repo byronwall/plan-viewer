@@ -89,7 +89,7 @@ test("planning lint and the commit hook check the index rather than the correcte
   await assert.rejects(run(hook, [], { cwd: root, env }), error => error.code === 1 && error.stderr.includes("Replace [done] with [completed]"));
   await git(["add", taskPath]);
   assert.deepEqual(await checkPlanning(["--staged"], root), { files: 1, errors: [] });
-  assert.match((await run(hook, [], { cwd: root, env })).stdout, /ok\s+1 planning Markdown files/);
+  assert.match((await run(hook, [], { cwd: root, env })).stdout, /ok\s+1 planning files/);
   // Links are checked in the index too: another session's unstaged assets folder must not block the commit.
   await mkdir(join(root, "tasks", "TASK-0099-assets"));
   await writeFile(join(root, "tasks", "TASK-0099-assets", "draft.sql"), "select 1;\n");
@@ -132,4 +132,24 @@ test("step lint: known kinds, waiting only on others, choices with one default, 
   const pr = (target: string) => `---\noutbound: pr-comment\ntarget: ${target}\nstatus: ready\nstep: TASK-0001 W1\n---\n\n# D\n`;
   for (const ok of ["#2233", "PyRel#3929", "https://github.com/acme/app/pull/2104", "https://github.com/acme/app/pull/7/files#diff-1"]) assert.deepEqual(draftErrors("tasks/TASK-0001-assets/d.md", pr(ok), task("open")), [], ok);
   for (const bad of ["2233", "https://github.com/acme/app/issues/1"]) assert.match(draftErrors("tasks/TASK-0001-assets/d.md", pr(bad), task("open"))[0], /isn't a PR the sender can parse/, bad);
+});
+
+test("reference lint: step titles on new tasks and diagram labels say what each reference is", async (t) => {
+  const { stepErrors, diagramErrors, ungroundedReferences } = await import("./check-planning.ts");
+  const { setConfig } = await import("./public/config.js");
+  const { parseWorkBreakdown } = await import("./public/actions.js");
+  setConfig({ steps: { groundReferencesFrom: "2026-11-16" } });
+  t.after(() => setConfig({}));
+  assert.deepEqual(ungroundedReferences("Merge #1954"), ["#1954"]);
+  assert.deepEqual(ungroundedReferences("Merge #1954, the stacked review PR"), []);
+  assert.deepEqual(ungroundedReferences("Decide whether W7.1 is done now that #2285 closed for #2288"), ["W7.1", "#2285", "#2288"]);
+  assert.deepEqual(ungroundedReferences("Name the role on the PyRel path ([Jira draft](TASK-0001-assets/a.md#x))"), []);
+  assert.deepEqual(ungroundedReferences("Retry acme@0123abc and PyRel#12"), ["acme@0123abc", "PyRel#12"]);
+  const nodes = parseWorkBreakdown("- W1: Merge #1954 [open] {agent, S}\n- W2: Merge #1954, the stacked review PR [open] {agent, S}").nodes;
+  assert.deepEqual(stepErrors({ created: "2026-11-16" }, nodes, []).map((e) => e.split(":")[0]), ["W1"]);
+  assert.deepEqual(stepErrors({ created: "2026-11-15" }, nodes, []), [], "older tasks are not checked");
+  const bad = 'diagram "What\'s left on TASK-0123" version=1\nnode a "RAI-55557\\n#2278, #2291"\nedge e1 a -> b "#2291 and #2281 on STAGING"\n';
+  assert.deepEqual(diagramErrors(bad).map((e) => e.split(":")[0]), ["line 2", "line 3"]);
+  const good = 'node a "RAI-55557 · role can\'t read data\\n#2278 names the role, #2291 error codes"\nedge e1 a -> b "error codes reach STAGING"\nlayout root flow\n';
+  assert.deepEqual(diagramErrors(good), []);
 });

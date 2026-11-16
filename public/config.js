@@ -101,6 +101,9 @@ export const DEFAULT_CONFIG = {
     followUp: false,
     // Lint: open steps in tasks created on or after this date (YYYY-MM-DD) need a size; empty never requires one.
     requireSizeFrom: "",
+    // Lint: step titles in tasks created on or after this date (YYYY-MM-DD), and every staged or named .draft diagram,
+    // give each reference (ABC-123, #12, W1.2) two words saying what it is; empty never checks.
+    groundReferencesFrom: "",
     // Lint: words no Next action prompt may contain, such as a sign-in flow agents can't complete.
     forbiddenInPrompts: [],
   },
