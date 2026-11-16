@@ -102,9 +102,9 @@ button { cursor: pointer; }
 .empty-library { padding: 18px 10px; color: var(--muted); font-size: .85rem; }
 
 .reading-pane { width: 100%; padding: 26px clamp(18px, 3vw, 40px) 80px; }
-.document-header { display: flex; align-items: flex-start; gap: 8px 24px; flex-wrap: wrap; margin-bottom: 16px; }
-.document-header > div:first-child { flex: 1 1 420px; min-width: 0; }
-.document-breadcrumb { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 16px; }
+.document-header { display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin-bottom: 16px; }
+.document-header > div:first-child { min-width: 0; }
+.document-breadcrumb { display: contents; }
 .document-meta { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--muted); font: 500 .8rem/1.2 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; }
 .document-meta:empty { display: none; }
 .document-meta > span { flex: none; white-space: nowrap; }
@@ -134,8 +134,8 @@ button { cursor: pointer; }
 .document-parent-link { color: inherit; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60ch; }
 .document-parent-link:hover { text-decoration: underline; }
 .document-header h1 { max-width: 820px; margin: 0; overflow-wrap: anywhere; font-size: clamp(1.5rem, 2.4vw, 2.1rem); line-height: 1.12; letter-spacing: -.025em; text-wrap: balance; }
-.task-document-path { min-width: 0; max-width: 100%; margin-left: auto; }
-.copy-task-path { max-width: 100%; min-height: 28px; display: flex; align-items: center; gap: 8px; border: 0; border-radius: 5px; background: transparent; padding: 4px 0 4px 6px; color: var(--muted); text-align: right; }
+.task-document-path { min-width: 0; max-width: 100%; }
+.copy-task-path { max-width: 100%; min-height: 28px; display: flex; align-items: center; gap: 8px; border: 0; border-radius: 5px; background: transparent; padding: 4px 6px 4px 0; color: var(--muted); text-align: left; }
 .copy-task-path code { min-width: 0; overflow-wrap: anywhere; font: .74rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; user-select: text; }
 .copy-task-path svg { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .path-copied-icon { display: none; }
@@ -146,7 +146,7 @@ button { cursor: pointer; }
 .copy-task-path.is-copied .path-copied-icon { display: inline; }
 .copy-task-path.copy-error { color: var(--danger); }
 @keyframes path-copy-confirmation { 0%, 45% { color: var(--success); background-color: var(--selected); } 100% { color: var(--muted); background-color: transparent; } }
-.document-tools { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: .3em; }
+.document-tools { order: -1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 4px 10px; }
 .chunk-count { color: var(--muted); font-size: .78rem; white-space: nowrap; }
 .chunk-count:empty { display: none; }
 .toaster { position: fixed; right: 16px; bottom: 56px; z-index: 60; width: min(360px, calc(100vw - 32px)); height: var(--front-height, 0); margin: 0; padding: 0; list-style: none; }
@@ -794,8 +794,6 @@ button.task-list-id:hover { text-decoration: underline; }
   .documents { max-height: 250px; }
   .view-navigation { grid-template-columns: 1fr 1fr; column-gap: 4px; }
   .reading-pane { padding: 34px 18px 72px; }
-  .document-header { align-items: start; }
-  .document-tools { flex-direction: column; align-items: flex-end; gap: 8px; }
   .chunk-heading { grid-template-columns: auto minmax(0, 1fr); }
   .chunk-actions { grid-column: 2; justify-self: start; }
   .markdown, .plain-text { margin-left: 0; }
