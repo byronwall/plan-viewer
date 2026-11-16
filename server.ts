@@ -19,7 +19,7 @@ import { createPlans } from "./plans.ts";
 import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig } from "./public/config.js";
-import { applyRule, closeNote, followUpNote, loadSteps, markStepDone, pickChoice, runStatement, saveNote, setStepNext, startStep } from "./steps.ts";
+import { applyRule, closeNote, followUpNote, loadSteps, markStepDone, pickChoice, planMentions, runStatement, saveNote, setStepNext, setTaskPriority, startStep } from "./steps.ts";
 import { approveOutbound, draftFromText, dropOutbound, listOutbound, markOutboundSent, outboundFields, sendBackOutbound, stripFrontMatter } from "./outbound.ts";
 
 // The planning workspace is the current directory (npm scripts run from the content repository); PLANNING_ROOT
@@ -954,7 +954,7 @@ export async function renderDiagram(requested: string, panels = "") {
 
 const escapeXml = (value: string) => value.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]!);
 
-// Every open step of every unfinished task, ordered by today's plan, then age (the Steps page and the Today lead).
+// Every open step of every unfinished task, highest priority first (the Steps page, the Today lead and `plan-viewer next`).
 export async function stepsIndex() {
   const files = (await readdir(join(ROOT, "tasks"))).filter((name) => /^TASK-\d{4}\.md$/.test(name));
   const tasks = (await Promise.all(files.map(async (name) => {
@@ -966,9 +966,10 @@ export async function stepsIndex() {
     } catch { return null; }
   }))).filter((task) => task !== null);
   const plan = await readFile(join(ROOT, todayPath()), "utf8").catch(() => "");
+  // Scheduled tasks lead the order when the plan has that section; every task and step the plan names counts as planned.
   const scheduled = plan.match(/^## Scheduled tasks\s*$([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] || "";
-  const order = [...new Set([...scheduled.matchAll(/TASK-\d{4}/g)].map((match) => match[0]))];
-  return { ...await loadSteps(ROOT, tasks, order), today: order, startConfigured: Boolean(config().steps.start.length) };
+  const order = [...new Set([...planMentions(scheduled), ...planMentions(plan)])];
+  return { ...await loadSteps(ROOT, tasks, order), today: order.filter((entry) => !entry.includes(" ")), startConfigured: Boolean(config().steps.start.length) };
 }
 
 export async function handleRequest(request: IncomingMessage, response: ServerResponse) {
@@ -1162,6 +1163,12 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       viewerWrites.add(String(body.path || ""));
       await setStepNext(ROOT, String(body.path || ""), String(body.id || ""), Boolean(body.on));
       return json(response, 200, { next: Boolean(body.on) });
+    }
+    if (request.method === "POST" && url.pathname === "/api/steps/priority") {
+      const body = await readJson(request);
+      viewerWrites.add(String(body.path || ""));
+      await setTaskPriority(ROOT, String(body.path || ""), String(body.priority || "") as "p1" | "p2" | "p3");
+      return json(response, 200, { priority: body.priority });
     }
     if (request.method === "POST" && url.pathname === "/api/steps/done") {
       const body = await readJson(request);

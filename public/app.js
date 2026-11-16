@@ -15,7 +15,7 @@ import { installBrief } from "./brief.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
 import { bindOutbound, outboundPanel } from "./outbound.js";
-import { MOVE_FILTERS, KIND_FILTERS, moveCounts, movePill, promptHtml, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, scheduledTasks, stepListHtml, stepRowHtml, stepTitleText, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, taskStepsHtml, visibleSteps } from "./steps-page.js";
+import { MOVE_FILTERS, KIND_FILTERS, SORTS, moveCounts, movePill, promptHtml, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, scheduledTasks, stepListHtml, stepRowHtml, stepTitleText, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, taskStepsHtml, visibleSteps } from "./steps-page.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planForLink, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
@@ -1730,6 +1730,7 @@ async function runStepAction(step, kind, action) {
     if (kind === "run") { const result = await post("run", { path: step.machinery.path }); showNotice(result.ok ? "Ran it; the output is in its file." : "The statement failed; the error is in its file.", !result.ok); }
     if (kind === "apply") { const result = await post("apply", { path: step.machinery.path }); showNotice(result.added ? `Added ${result.rule} to ${result.file}.` : `${result.file} already allows it.`); }
     if (kind === "done") { await post("done", { path: step.path, id: step.id }); showNotice(`Marked ${step.task} ${step.id} done.`); }
+    if (kind.startsWith("priority-")) { await post("priority", { path: step.path, priority: kind.slice(9) }); showNotice(`${step.task} is ${kind.slice(9).toUpperCase()} now.`); }
     if (kind === "next") { await post("next", { path: step.path, id: step.id, on: !step.next }); showNotice(step.next ? `Took ${step.task} ${step.id} off Up next.` : `Queued ${step.task} ${step.id} as Up next.`); }
   } catch (error) { showNotice(error.message, true); }
   return true;
@@ -2211,7 +2212,7 @@ function scrollToDocumentAnchor(anchor, behavior = "instant") {
 let stepsData = null;
 const stepsOutboundBody = (path) => stepsData?.drafts?.find((draft) => draft.path === path)?.body || "";
 const stepsParams = () => new URLSearchParams(location.search);
-const stepsFilters = { move: "you", kind: "any", hidden: false };
+const stepsFilters = { move: "you", kind: "any", hidden: false, sort: "priority" };
 let selectedStep = "";
 
 async function loadSteps() {
@@ -2234,7 +2235,7 @@ async function refreshSteps() {
 function updateStepsUrl(historyMode) {
   if (historyMode === "none") return;
   const url = new URL(location.href);
-  url.search = new URLSearchParams({ view: "steps", ...(stepsFilters.move !== "you" ? { move: stepsFilters.move } : {}), ...(stepsFilters.kind !== "any" ? { kind: stepsFilters.kind } : {}), ...(stepsFilters.hidden ? { hidden: "1" } : {}), ...(selectedStep ? { select: selectedStep } : {}) });
+  url.search = new URLSearchParams({ view: "steps", ...(stepsFilters.move !== "you" ? { move: stepsFilters.move } : {}), ...(stepsFilters.kind !== "any" ? { kind: stepsFilters.kind } : {}), ...(stepsFilters.hidden ? { hidden: "1" } : {}), ...(stepsFilters.sort !== "priority" ? { sort: stepsFilters.sort } : {}), ...(selectedStep ? { select: selectedStep } : {}) });
   url.hash = "";
   history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
 }
@@ -2244,13 +2245,14 @@ function readStepsUrl() {
   stepsFilters.move = params.get("move") in MOVE_FILTERS || params.get("move") === "next" ? params.get("move") : "you";
   stepsFilters.kind = params.get("kind") in KIND_FILTERS ? params.get("kind") : "any";
   stepsFilters.hidden = params.get("hidden") === "1";
+  stepsFilters.sort = params.get("sort") in SORTS ? params.get("sort") : "priority";
   selectedStep = params.get("select") || "";
 }
 
 // Today's plan opens with the steps that wait on a mover (You by default, `&move=` in the URL), eight at most, each
 // opening the step dialog over the plan. "All N on Steps →" is the one link that leaves the page.
 const LEAD_ROWS = 8;
-const leadMove = () => { const move = new URLSearchParams(location.search).get("move"); return move in MOVE_FILTERS ? move : "you"; };
+const leadMove = () => { const move = new URLSearchParams(location.search).get("move"); return move in MOVE_FILTERS || move === "next" ? move : "you"; };
 function todayLeadHtml() {
   if (!stepsData) {
     loadSteps().then(() => { if (state.view === "document" && state.document?.path === state.defaultPath) renderDocument(); });
@@ -2353,6 +2355,7 @@ elements.chunks.addEventListener("click", async (event) => {
 elements.chunks.addEventListener("change", (event) => {
   if (state.view !== "steps") return;
   if (event.target.matches("[data-step-kind]")) stepsFilters.kind = event.target.value;
+  else if (event.target.matches("[data-step-sort]")) stepsFilters.sort = event.target.value;
   else if (event.target.matches("[data-step-hidden]")) stepsFilters.hidden = event.target.checked;
   else return;
   updateStepsUrl("replace");

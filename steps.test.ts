@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { draftFromText } from "./outbound.ts";
-import { activeRuns, applyRule, closeNote, deriveSteps, followUpNote, listNotes, loadSteps, pickChoice, runStatement, saveNote, startStep, withStepFlag, withStepStatus, withUpdate } from "./steps.ts";
+import { activeRuns, applyRule, closeNote, deriveSteps, downstreamCount, followUpNote, planMentions, scoreStep, withTaskPriority, listNotes, loadSteps, pickChoice, runStatement, saveNote, startStep, withStepFlag, withStepStatus, withUpdate } from "./steps.ts";
 import { setConfig } from "./public/config.js";
 
 const TASK = `---
@@ -231,4 +231,31 @@ test("a dated update follows the task's own order and never adds a second Update
   assert.equal(withUpdate("# T\n", "- new\n"), "# T\n\n## Updates\n\n- new\n");
   const task = `## Work breakdown\n\n- W1: Do it [open]\n\n${append}`;
   assert.equal(withStepStatus(task, "W1", "completed", "W1 done.", "2026-11-16").match(/^## Updates/gm)?.length, 1);
+});
+
+test("priority ranks a planned step that unblocks others above a P2 leaf, and P1 lifts a whole task", () => {
+  const nodes = [
+    { id: "W1", parent: "", deps: [], status: "open" },
+    { id: "W2", parent: "", deps: ["W1"], status: "open" },
+    { id: "W2.1", parent: "W2", deps: [], status: "open" },
+    { id: "W2.2", parent: "W2", deps: [], status: "open" },
+    { id: "W3", parent: "", deps: ["W2.1"], status: "open" },
+    { id: "W4", parent: "", deps: ["W1"], status: "completed" },
+  ];
+  // W1 holds up W2's two children and, through W2.1, W3; the completed W4 doesn't count.
+  assert.equal(downstreamCount(nodes, "W1"), 3);
+  assert.equal(downstreamCount(nodes, "W2.1"), 1);
+  assert.equal(downstreamCount(nodes, "W3"), 0);
+  const base = { priority: "p2" as const, unblocks: 0, size: "S", age: 0, move: "agent" as const };
+  const planned = scoreStep({ ...base, unblocks: 3, move: "you-decide" }, "step");
+  assert.ok(planned > scoreStep(base), "a planned decision that unblocks three beats a plain agent step");
+  assert.ok(scoreStep({ ...base, priority: "p1" }) > scoreStep(base));
+  assert.ok(scoreStep({ ...base, priority: "p3" }) < scoreStep({ ...base, size: "L" }));
+  assert.ok(planned <= 99 && scoreStep({ ...base, priority: "p3", size: "L" }) >= 0);
+  assert.deepEqual(planMentions("- [TASK-0140](x) W3.2: who approves; W1.2: review\n- TASK-0143 and TASK-0140"), ["TASK-0140", "TASK-0140 W3.2", "TASK-0140 W1.2", "TASK-0143"]);
+  const steps = deriveSteps([{ path: "tasks/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: TASK }], [], ["TASK-0001 W6"], Date.parse("2026-11-12"));
+  assert.equal(steps.filter((step) => step.move !== "blocked")[0].id, "W6", "the step today's plan names, which unblocks W7, ranks first");
+  const p1 = withTaskPriority(TASK, "p1");
+  assert.match(p1, /^status: active\npriority: p1$/m);
+  assert.equal(withTaskPriority(p1, "p2"), TASK);
 });

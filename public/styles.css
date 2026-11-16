@@ -3309,9 +3309,23 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .step-col-kind { white-space: nowrap; color: var(--body-ink); font-size: .8rem; }
 .step-col-work { white-space: nowrap; }
 .step-id { font: 650 .72rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
-.step-size { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border: 1px solid var(--line-strong); border-radius: 4px; font: 650 .68rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--body-ink); }
-.step-size.is-none { border-color: transparent; color: var(--quiet-text); }
-.step-col-age { white-space: nowrap; color: var(--muted); font-size: .78rem; text-align: right; }
+/* Priority: a tabular score over a thin bar in a fixed-width column. The tier sets how loud a row is: top rows get the
+   accent and a heavier title, low rows recede to gray, so the most important step is the first thing read. */
+.step-score { display: inline-grid; grid-template-rows: auto 3px; gap: 2px; width: 26px; flex: none; color: var(--muted); font: 680 .8rem/1 ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; text-align: right; }
+.step-score-bar { grid-row: 2; position: relative; border-radius: 2px; background: var(--quiet-field); overflow: hidden; }
+.step-score-bar::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--score) * 100%); border-radius: 2px; background: var(--line-hover); }
+.step-score.is-top { color: var(--action-ink); }
+.step-score.is-top .step-score-bar::after { background: var(--action); }
+.step-score.is-mid { color: var(--ink); }
+.step-score.is-low { color: var(--quiet-text); }
+.step-col-score { width: 44px; text-align: right; }
+.step-table th.step-col-score { padding-right: 8px; color: var(--label-text); font-size: .68rem; text-align: right; }
+.step-tier-top .step-col-title .task-row-select { font-weight: 680; color: var(--ink); }
+.step-tier-mid .step-col-title .task-row-select { font-weight: 560; }
+.step-tier-low .step-col-title .task-row-select { font-weight: 450; color: var(--body-ink); }
+.step-col-why { display: block; margin-top: 2px; color: var(--muted); font-size: .74rem; font-weight: 450; font-variant-numeric: tabular-nums; }
+.step-priority { display: flex; align-items: center; gap: 10px; margin: 6px 0 4px; }
+.step-priority-why { flex: 1; min-width: 0; color: var(--muted); font-size: .78rem; }
 .step-detail .outbound-panel { padding: 10px 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
 .step-friction { margin: 8px 0; color: var(--status-waiting-ink); font-size: .82rem; }
 /* An agent prompt: rendered Markdown on a pale blue surface, so it reads as "what the agent gets" and not as page text. */
@@ -3358,6 +3372,12 @@ div.step-row { cursor: pointer; }
 .step-row-meta { color: var(--muted); font-size: .74rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 @media (hover: hover) { .step-row:hover { background: var(--hover-field); } }
 .step-row:focus-visible { outline: 2px solid rgba(49, 87, 213, .4); outline-offset: -2px; }
+.step-row.is-ranked { --step-lead: 118px; align-items: center; }
+.step-row.is-ranked .step-row-lead { gap: 10px; }
+.step-row-why { margin-right: 10px; }
+.step-row.step-tier-top .step-row-title { font-weight: 680; }
+.step-row.step-tier-mid .step-row-title { font-weight: 560; }
+.step-row.step-tier-low .step-row-title { font-weight: 450; color: var(--body-ink); }
 
 /* Today's plan opens with what waits on you. */
 .today-lead { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 10px clamp(14px, 2vw, 22px) 12px; }

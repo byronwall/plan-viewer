@@ -39,6 +39,30 @@ const KIND_LABELS = { agent: "Agent", "check-in": "Check-in", decision: "Decisio
 export const kindLabel = (kind) => KIND_LABELS[kind] || (OUTBOUND.has(kind) ? outboundKindLabel(kind) : kind || "—");
 export const stepKey = (step) => `${step.task}:${step.id}`;
 
+// Priority: the server scores every step (`scoreStep` in steps.ts) and sends them highest first. A row shows the score with
+// a thin bar, its tier sets how loud the row is (top rows read first, low ones recede), and a gray "why" names what
+// raised it: the task's P1 or P3, today's plan, what it unblocks, its size and its age.
+export const tierOf = (score = 0) => score >= 70 ? "top" : score >= 50 ? "mid" : "low";
+const SIZE_WORDS = { S: "small", M: "medium", L: "large" };
+export const whyText = (step) => [
+  step.priority === "p1" ? "P1" : step.priority === "p3" ? "P3" : "",
+  step.planned === "step" ? "in today's plan" : step.planned === "task" ? "task planned today" : "",
+  step.unblocks ? `unblocks ${step.unblocks}` : "",
+  SIZE_WORDS[step.size] || "",
+  step.age ? `${step.age}d` : "",
+].filter(Boolean).join(" · ");
+export const scoreHtml = (step) => `<span class="step-score is-${tierOf(step.score)}" title="Priority ${step.score ?? 0} of 99"><span class="step-score-bar" style="--score:${(step.score ?? 0) / 99}"></span>${step.score ?? 0}</span>`;
+// Sorts for the Steps page. Up next stays on top in all of them; Priority keeps the server's order.
+const pinNext = (a, b) => Number(b.next) - Number(a.next);
+export const SORTS = {
+  priority: ["Priority", () => 0],
+  unblocks: ["Unblocks most", (a, b) => (b.unblocks || 0) - (a.unblocks || 0)],
+  small: ["Smallest first", (a, b) => ("SML".indexOf(a.size || "M") - "SML".indexOf(b.size || "M"))],
+  oldest: ["Oldest first", (a, b) => b.age - a.age],
+  move: ["Grouped by next move", () => 0],
+};
+export const sortSteps = (steps, sort = "priority") => [...steps].sort((a, b) => pinNext(a, b) || (SORTS[sort] || SORTS.priority)[1](a, b) || (b.score || 0) - (a.score || 0));
+
 // `next` (Up next) is a filter across movers, not a mover: every step flagged `{next}`, blocked ones too.
 export function visibleSteps(steps, { move = "all", kind = "any", hidden = false } = {}) {
   const moves = MOVE_FILTERS[move] || ORDER;
@@ -61,13 +85,12 @@ const pill = (step) => {
 };
 
 function row(step, selected) {
-  return `<tr data-select-step="${escapeHtml(stepKey(step))}" aria-selected="${selected}">
-    <td class="step-col-title"><button class="task-row-select" type="button" data-select-step="${escapeHtml(stepKey(step))}">${step.next ? '<span class="step-next-mark" aria-label="Up next" title="Up next">●</span>' : ""}${stepTitleHtml(step.title)}</button></td>
+  return `<tr class="step-tier-${tierOf(step.score)}" data-select-step="${escapeHtml(stepKey(step))}" aria-selected="${selected}">
+    <td class="step-col-score">${scoreHtml(step)}</td>
+    <td class="step-col-title"><button class="task-row-select" type="button" data-select-step="${escapeHtml(stepKey(step))}">${step.next ? '<span class="step-next-mark" aria-label="Up next" title="Up next">●</span>' : ""}${stepTitleHtml(step.title)}</button><span class="step-col-why">${step.running ? "running · " : ""}${escapeHtml(whyText(step) || "new")}</span></td>
     <td class="step-col-move">${pill(step)}</td>
     <td class="step-col-kind">${OUTBOUND.has(step.kind) ? outboundIcon(step.kind) : ""}${escapeHtml(kindLabel(step.kind))}</td>
     <td class="step-col-work"><button class="task-list-id" type="button" data-task-path="${escapeHtml(step.path)}" title="${escapeHtml(step.taskTitle)}">${escapeHtml(step.task || "Note")}</button> <span class="step-id">${escapeHtml(step.id)}</span></td>
-    <td class="step-col-size">${step.size ? `<span class="step-size">${escapeHtml(step.size)}</span>` : '<span class="step-size is-none" title="No size yet">·</span>'}</td>
-    <td class="step-col-age">${step.running ? "running" : step.age ? `${step.age}d` : "today"}</td>
   </tr>`;
 }
 
@@ -77,10 +100,12 @@ const fixesHtml = (list) => [...new Set(list.map((step) => step.fix).filter(Bool
 export function stepsTableHtml(steps, filters, selected) {
   const shown = visibleSteps(steps, filters);
   if (!shown.length) return `<p class="task-empty">${filters.move === "next" ? "Nothing is up next. Press Up next on a step, or Save note (Enter) in the composer." : filters.kind === "outbound" ? "Nothing waiting to go out." : "No open steps match."}</p>`;
-  const groups = ORDER.map((move) => [move, shown.filter((step) => step.move === move)]).filter(([, list]) => list.length);
+  const sorted = sortSteps(shown, filters.sort);
+  // Grouped by next move is the old layout; every other sort is one ranked list, so the top of the table is the top step.
+  const groups = filters.sort === "move" ? ORDER.map((move) => [move, sorted.filter((step) => step.move === move)]).filter(([, list]) => list.length) : [["", sorted]];
   return `<table class="task-table step-table">
-    <thead><tr><th scope="col">Step</th><th scope="col">Next move</th><th scope="col">Kind</th><th scope="col">Workstream</th><th scope="col">Size</th><th scope="col">Age</th></tr></thead>
-    ${groups.map(([move, list]) => `<tbody><tr class="step-group"><th colspan="6" scope="rowgroup">${escapeHtml(MOVES[move].group)} <span>${list.length}</span>${fixesHtml(list)}</th></tr>${list.map((step) => row(step, stepKey(step) === selected)).join("")}</tbody>`).join("")}
+    <thead><tr><th scope="col" class="step-col-score">Priority</th><th scope="col">Step</th><th scope="col">Next move</th><th scope="col">Kind</th><th scope="col">Workstream</th></tr></thead>
+    ${groups.map(([move, list]) => `<tbody>${move ? `<tr class="step-group"><th colspan="5" scope="rowgroup">${escapeHtml(MOVES[move].group)} <span>${list.length}</span>${fixesHtml(list)}</th></tr>` : ""}${list.map((step) => row(step, stepKey(step) === selected)).join("")}</tbody>`).join("")}
   </table>`;
 }
 
@@ -92,6 +117,7 @@ export function stepsToolbarHtml(steps, filters, slots, runs = 0) {
   return `<div class="task-index-tools step-tools">
     <span class="step-segs" role="group" aria-label="Next move">${seg("next", "Up next")}${seg("you", "Next move: You")}${seg("agent", "Agent")}${seg("others", "Others")}${seg("all", "All")}</span>
     <select class="step-kind" data-step-kind aria-label="Kind">${Object.entries(KIND_FILTERS).map(([key, [label]]) => `<option value="${key}"${filters.kind === key ? " selected" : ""}>${label}</option>`).join("")}</select>
+    <select class="step-kind" data-step-sort aria-label="Sort">${Object.entries(SORTS).map(([key, [label]]) => `<option value="${key}"${(filters.sort || "priority") === key ? " selected" : ""}>Sort: ${label.toLowerCase()}</option>`).join("")}</select>
     ${filters.move === "all" && hiddenCount ? `<label class="show-done"><input type="checkbox" data-step-hidden${filters.hidden ? " checked" : ""}> Show ${hiddenCount} blocked or without a kind</label>` : ""}
     <span class="step-slots" title="Agent runs started from this page">${running} of ${slots} agent slots in use</span>
   </div>`;
@@ -105,9 +131,10 @@ export const movePill = (step) => {
   const [tone, label] = PILLS[step.move] || PILLS.unclassified;
   return `<span class="step-move step-move-${tone}" title="${escapeHtml(step.reason)}">${step.running ? "Running" : label}</span>`;
 };
-const TOGGLE_LABELS = { you: "You", agent: "Agent", others: "Others", all: "All" };
+const TOGGLE_LABELS = { next: "Up next", you: "You", agent: "Agent", others: "Others", all: "All" };
+const MOVER_KEYS = ["you", "agent", "others", "all"];
 // A thin segmented control; `counts` adds a number to each segment, `keys` picks the segments.
-export const stepToggleHtml = (move, counts = null, keys = Object.keys(TOGGLE_LABELS)) => `<span class="step-toggle" role="group" aria-label="Next move">${keys.map((key) => `<button type="button" data-step-list-move="${key}" aria-pressed="${move === key}">${TOGGLE_LABELS[key]}${counts && key !== "all" ? ` <span>${counts[key]}</span>` : ""}</button>`).join("")}</span>`;
+export const stepToggleHtml = (move, counts = null, keys = MOVER_KEYS) => `<span class="step-toggle" role="group" aria-label="Next move">${keys.map((key) => `<button type="button" data-step-list-move="${key}" aria-pressed="${move === key}">${TOGGLE_LABELS[key]}${counts && key !== "all" ? ` <span>${counts[key]}</span>` : ""}</button>`).join("")}</span>`;
 // Every segment's rows are rendered into one grid cell and only the chosen one is visible, so the panel is always as tall as
 // its fullest segment and switching never moves what follows it. `layers` maps a segment to its HTML.
 export const stepStackHtml = (move, layers) => `<div class="step-stack">${Object.entries(layers).map(([key, html]) => `<div class="step-layer" data-step-layer="${key}"${key === move ? "" : " inert"}>${html}</div>`).join("")}</div>`;
@@ -130,11 +157,13 @@ export const firstMove = (counts) => ["you", "agent", "others"].find((move) => c
 export function stepListHtml(steps, { move = firstMove(moveCounts(steps)), cap = 8, withTask = false, more = () => "", only = false } = {}) {
   const layer = (name) => {
     const shown = visibleSteps(steps, { move: name });
-    const rows = shown.slice(0, cap).map((step) => stepRowHtml({ key: stepKey(step), lead: movePill(step), title: step.title, meta: escapeHtml(withTask ? `${step.task} ${step.id}` : step.id) })).join("");
-    return `<div class="step-rows">${rows || `<p class="step-rows-empty">${name === "you" ? "Nothing waits on you." : "No steps here."}</p>`}</div>${shown.length > cap ? more(name, shown.length) : ""}`;
+    const rows = shown.slice(0, cap).map((step) => stepRowHtml({ key: stepKey(step), lead: `${scoreHtml(step)}${movePill(step)}`, title: step.title,
+      meta: `<span class="step-row-why">${escapeHtml(whyText(step))}</span>${escapeHtml(withTask ? `${step.task} ${step.id}` : step.id)}`, className: ` is-ranked step-tier-${tierOf(step.score)}` })).join("");
+    return `<div class="step-rows">${rows || `<p class="step-rows-empty">${name === "you" ? "Nothing waits on you." : name === "next" ? "Nothing is up next." : "No steps here."}</p>`}</div>${shown.length > cap ? more(name, shown.length) : ""}`;
   };
   if (only) return { toggle: "", stack: layer(move) };
-  return { toggle: stepToggleHtml(move, moveCounts(steps)), stack: stepStackHtml(move, Object.fromEntries(Object.keys(MOVE_FILTERS).map((name) => [name, layer(name)]))) };
+  const keys = ["next", ...MOVER_KEYS];
+  return { toggle: stepToggleHtml(move, moveCounts(steps), keys), stack: stepStackHtml(move, Object.fromEntries(keys.map((name) => [name, layer(name)]))) };
 }
 
 // A plan's Scheduled tasks section: one row per task bullet, keyed by the first task it names, with the plan's note for it
@@ -268,12 +297,17 @@ export function stepBodyHtml(step) {
   return `${notes}${untyped}${body}`;
 }
 
+// The inspector's priority line: the score, why, and the task's P1/P2/P3, which writes `priority:` to the task file.
+export const priorityHtml = (step) => step.kind === "note" ? "" : `<div class="step-priority">${scoreHtml(step)}<span class="step-priority-why">${escapeHtml(whyText(step) || "nothing raises it yet")}</span>
+  <span class="step-toggle" role="group" aria-label="Task priority" title="The whole task's priority: P1 raises every step in it, P3 lowers them">${["p1", "p2", "p3"].map((p) => `<button type="button" data-step-action="priority-${p}" aria-pressed="${(step.priority || "p2") === p}">${p.toUpperCase()}</button>`).join("")}</span></div>`;
+
 export function stepInspectorHtml(step, extra = "", context = {}) {
   if (!step) return `<p class="task-detail-empty">Select a step to see its draft, prompt or options.</p>`;
   const head = `<header class="task-detail-head"><div class="task-detail-badges"><button class="task-list-id" type="button" data-task-path="${escapeHtml(step.path)}">${escapeHtml(step.task)}</button><span class="step-id">${escapeHtml(step.id)}</span>${pill(step)}</div>
       <span class="task-detail-buttons"><button class="task-detail-open" type="button" data-task-path="${escapeHtml(step.path)}">Workstream <span aria-hidden="true">→</span></button></span></header>
     <h3>${inlineMarkdown(step.title.split(" — ")[0], step.path)}</h3>
-    <p class="task-detail-meta"><span>${escapeHtml(kindLabel(step.kind))}</span><span>${step.size ? `Size ${escapeHtml(step.size)}` : "No size yet"}</span><span>${escapeHtml(step.status)}</span><span>${escapeHtml(step.taskTitle)}</span></p>`;
+    <p class="task-detail-meta"><span>${escapeHtml(kindLabel(step.kind))}</span><span>${step.size ? `Size ${escapeHtml(step.size)}` : "No size yet"}</span><span>${escapeHtml(step.status)}</span><span>${escapeHtml(step.taskTitle)}</span></p>
+    ${priorityHtml(step)}`;
   const friction = step.move === "you-act" && !step.draft ? `<p class="step-friction"><strong>Friction:</strong> ${escapeHtml(step.reason)}.${step.fix ? ` <strong>Fix:</strong> ${escapeHtml(step.fix)}.` : ""}</p>` : "";
   const blocked = step.move === "blocked" ? `<p class="outbound-note">Waits on ${escapeHtml(step.reason.replace(/^after /, ""))} in ${escapeHtml(step.task)}.</p>` : "";
   const prompt = step.prompt ? `<section class="task-detail-section"><h4>Prompt${step.actionTitle ? ` <span class="step-action-title">${escapeHtml(step.actionTitle)}</span>` : ""}</h4>${promptHtml(step.prompt, step.path)}</section>` : "";

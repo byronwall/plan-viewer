@@ -11,6 +11,7 @@ import { draftFromText, outboundFields, type OutboundDraft } from "./outbound.ts
 
 export const OUTBOUND_KINDS = new Set(["jira-issue", "jira-comment", "jira-edit", "jira-transition", "slack", "pr", "pr-comment", "review-request", "email"]);
 const CHOICES = new Set(["pick-one", "pick-any"]);
+export type Priority = "p1" | "p2" | "p3";
 export type Move = "you-decide" | "you-act" | "agent" | "others" | "blocked" | "unclassified";
 
 export interface StepOption { id: string; title: string; tradeoff: string; recommended: boolean; status: string }
@@ -19,6 +20,7 @@ export interface Step {
   kind: string; size: string; deps: string[]; next: boolean; move: Move; reason: string; fix?: string; running?: boolean;
   prompt?: string; actionTitle?: string; draft?: OutboundDraft; machinery?: { path: string; fields: Record<string, string> };
   options?: StepOption[]; age: number; order: number;
+  priority: Priority; unblocks: number; score: number; planned?: "" | "task" | "step";
   noteFor?: string; notes?: { path: string; title: string }[];
 }
 
@@ -27,6 +29,67 @@ interface TaskInput { path: string; id: string; title: string; status: string; u
 const section = (markdown: string, name: string) => markdown.match(new RegExp(`^## ${name}\\s*$([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, "mi"))?.[1] || "";
 const daysSince = (date: string, now: number) => Math.max(0, Math.floor((now - Date.parse(date)) / 86_400_000));
 const splitOption = (title: string) => { const [head, ...rest] = title.split(" — "); return { title: head.trim(), tradeoff: rest.join(" — ").trim() }; };
+
+// Priority: one number per step, so the most important work sorts first everywhere steps are listed. The task's
+// `priority:` (p1, p2 or p3; p2 when absent) carries importance, and the rest is derived: a task named in today's plan,
+// how many open steps finishing this one unblocks (`after:` dependents, transitively, through scope parents), whether it
+// waits on the operator (the one mover who holds everyone else up), its size, and its age. `{next}` still pins a step
+// above every score. A step today's plan names by ID (`TASK-0140 W3.2`) counts more than a task it only mentions.
+export const PRIORITY_POINTS: Record<Priority, number> = { p1: 30, p2: 0, p3: -20 };
+const SIZE_POINTS: Record<string, number> = { S: 10, M: 4, L: 0, "": 4 };
+export function scoreStep(step: Pick<Step, "priority" | "unblocks" | "size" | "age" | "move">, today: "" | "task" | "step" = "") {
+  const parts = {
+    priority: PRIORITY_POINTS[step.priority] ?? 0,
+    today: today === "step" ? 25 : today === "task" ? 8 : 0,
+    unblocks: Math.round(10 * Math.log2(1 + step.unblocks)),
+    yours: step.move === "you-decide" || step.move === "you-act" ? 10 : 0,
+    size: SIZE_POINTS[step.size] ?? 4,
+    age: Math.min(step.age, 14),
+  };
+  return Math.max(0, Math.min(99, 20 + Object.values(parts).reduce((sum, value) => sum + value, 0)));
+}
+
+// Open steps that can't finish until this one does: work items whose `after:` names it or one of its scope parents,
+// then everything under those and everything after them in turn. Counts open leaves only, so scope isn't counted twice.
+export function downstreamCount(nodes: { id: string; parent: string; deps: string[]; status: string }[], id: string) {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const lineage = (x: string) => { const out: string[] = []; for (let n = byId.get(x); n; n = byId.get(n.parent)) out.push(n.id); return out; };
+  const under = (x: string) => nodes.filter((n) => n.id !== x && lineage(n.id).includes(x)).map((n) => n.id);
+  const live = (n: { status: string }) => !["completed", "deferred"].includes(n.status);
+  const seen = new Set<string>(), queue = [id];
+  while (queue.length) {
+    const from = lineage(queue.shift()!);
+    for (const n of nodes) {
+      if (seen.has(n.id) || !live(n) || !n.deps.some((dep) => from.includes(dep))) continue;
+      for (const y of [n.id, ...under(n.id)]) if (!seen.has(y)) { seen.add(y); queue.push(y); }
+    }
+  }
+  seen.delete(id);
+  return [...seen].filter((y) => live(byId.get(y)!) && !nodes.some((c) => c.parent === y)).length;
+}
+
+export const taskPriority = (markdown: string): Priority => {
+  const front = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || "";
+  return (front.match(/^priority:\s*["']?(p[123])["']?\s*$/mi)?.[1]?.toLowerCase() as Priority) || "p2";
+};
+
+// What today's plan names, in order of first mention: each task (`TASK-0140`) and each step written after it on the same
+// line (`TASK-0140 W3.2`, `W1.2`), as one list deriveSteps reads for both the plan bonus and the tie-break order.
+export function planMentions(markdown: string) {
+  const out: string[] = [];
+  for (const line of markdown.split("\n")) {
+    let task = "";
+    for (const [token] of line.matchAll(/TASK-\d{4}|\bW\d+(?:\.\d+)*\b/g)) {
+      if (token.startsWith("TASK-")) task = token;
+      const entry = token.startsWith("TASK-") ? token : task && `${task} ${token}`;
+      if (entry && !out.includes(entry)) out.push(entry);
+    }
+  }
+  return out;
+}
+
+// Priority first (Up next above all), then today's plan order, then key, so equal scores stay put between reloads.
+export const byPriority = (a: Step, b: Step) => Number(b.next) - Number(a.next) || b.score - a.score || a.order - b.order || a.key.localeCompare(b.key, undefined, { numeric: true });
 
 // The pure derivation, tested on its own: tasks and machinery files in, open steps with their next move out.
 export function deriveSteps(tasks: TaskInput[], machinery: { path: string; fields: Record<string, string>; draft?: OutboundDraft; modified: number }[], planOrder: string[] = [], now = Date.now()): Step[] {
@@ -38,6 +101,7 @@ export function deriveSteps(tasks: TaskInput[], machinery: { path: string; field
     const prompts = new Map(parseActions(section(task.markdown, "Next actions"), task.path).filter((a: { workItem: string }) => a.workItem).map((a: { workItem: string; title: string; prompt: string }) => [a.workItem, a]));
     const byId = new Map(nodes.map((n: { id: string }) => [n.id, n]));
     const live = (status: string) => !["completed", "deferred"].includes(status);
+    const priority = taskPriority(task.markdown);
     for (const node of nodes) {
       if (!live(node.status)) continue;
       const parent = byId.get(node.parent);
@@ -55,16 +119,19 @@ export function deriveSteps(tasks: TaskInput[], machinery: { path: string; field
         size: node.size, deps: node.deps, next: node.flags.includes("next"), move: "unclassified", reason: "", prompt: action?.prompt, actionTitle: action?.title,
         age: daysSince(m?.modified ? new Date(m.modified).toISOString() : task.updated, now),
         order: planOrder.includes(task.id) ? planOrder.indexOf(task.id) : planOrder.length + 1,
+        priority, unblocks: downstreamCount(nodes, node.id), score: 0,
       };
       if (m?.draft) step.draft = m.draft; else if (m) step.machinery = { path: m.path, fields: m.fields };
       if (choice) step.options = children.map((child: { id: string; title: string; flags: string[]; status: string }) => ({ id: child.id, ...splitOption(child.title), recommended: child.flags.includes("recommended"), status: child.status }));
       const [move, reason, fix] = nextMove(step, blockedBy);
       if (move === null) continue;
       Object.assign(step, { move, reason, ...(fix ? { fix } : {}), running: false });
+      step.planned = planOrder.includes(key) ? "step" : planOrder.includes(task.id) ? "task" : "";
+      step.score = scoreStep(step, step.planned);
       steps.push(step);
     }
   }
-  return steps.sort((a, b) => Number(b.next) - Number(a.next) || a.order - b.order || b.age - a.age || a.key.localeCompare(b.key, undefined, { numeric: true }));
+  return steps.sort(byPriority);
 }
 
 // [next move, why, the fix for friction]; null hides a step whose machinery says it's done.
@@ -123,8 +190,9 @@ export async function loadSteps(root: string, tasks: TaskInput[], planOrder: str
   for (const step of derived) {
     const tied = notes.filter((note) => note.noteFor === step.key);
     if (tied.length) Object.assign(step, { move: "agent", reason: "notes to process", next: true, notes: tied.map(({ path, title }) => ({ path, title })) });
+    if (tied.length) step.score = scoreStep(step, step.planned);
   }
-  derived.sort((a, b) => Number(b.next) - Number(a.next)); // stable: a step with notes rises with the other Up next ones
+  derived.sort(byPriority); // a step with notes rises with the other Up next ones
   const steps = [...notes.filter((note) => !note.noteFor || !keys.has(note.noteFor)), ...derived];
   for (const step of steps) if (runs.has(step.key)) Object.assign(step, { move: "agent", running: true, reason: "running" });
   return {
@@ -215,6 +283,20 @@ async function completeStep(root: string, step: string, update: string, today: s
 export async function markStepDone(root: string, path: string, id: string, user: string, today: string) {
   const absolute = taskFile(root, path);
   await writeFile(absolute, withStepStatus(await readFile(absolute, "utf8"), id, "completed", `${id} done (${user}, in the viewer).`, today));
+}
+
+// A task's `priority:` in its front matter: p1 and p3 are written after `status:`, p2 (the default) removes the line.
+export function withTaskPriority(markdown: string, priority: Priority) {
+  const front = markdown.match(/^---\r?\n[\s\S]*?\r?\n---/)?.[0];
+  if (!front) throw new Error("The task has no front matter.");
+  if (!(priority in PRIORITY_POINTS)) throw new Error(`Unknown priority ${priority}.`);
+  let next = front.replace(/^priority:.*\r?\n/m, "");
+  if (priority !== "p2") next = next.replace(/^(status:.*\r?\n)/m, `$1priority: ${priority}\n`);
+  return markdown.replace(front, next);
+}
+export async function setTaskPriority(root: string, path: string, priority: Priority) {
+  const absolute = taskFile(root, path);
+  await writeFile(absolute, withTaskPriority(await readFile(absolute, "utf8"), priority));
 }
 
 // Up next: adds or removes the `next` flag in a step's `{…}` suffix, leaving its kind and size as they are.
@@ -357,10 +439,11 @@ export async function listNotes(root: string): Promise<Step[]> {
       notes.push({
         key: `note ${path}`, task: fields.task || "", taskTitle: fields.source || "", path, id: fields.step?.split(" ")[1] || name.slice(0, 17), title, status: "open",
         kind: "note", size: "", deps: [], next: true, move: "agent", reason: "note", noteFor: fields.step?.trim().replace(/\s+/, " ") || undefined, prompt: text.replace(/^---\n[\s\S]*?\n---\n+/, "").replace(/^# .+\n+/, ""),
-        age: Math.max(0, Math.floor((Date.now() - created) / 86_400_000)), order: -1, running: false,
+        age: Math.max(0, Math.floor((Date.now() - created) / 86_400_000)), order: -1, running: false, priority: "p2", unblocks: 0, score: 0,
       });
     }
   }
+  for (const note of notes) note.score = scoreStep(note);
   return notes.sort((a, b) => a.id.localeCompare(b.id));
 }
 
