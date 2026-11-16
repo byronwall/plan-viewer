@@ -12,6 +12,8 @@ import { outboundFields } from "./outbound.ts";
 const STEP_KINDS = new Set(["agent", "check-in", "decision", "byron", "pick-one", "pick-any", "do-all", "jira-issue", "jira-comment", "jira-edit", "jira-transition", "slack", "pr", "pr-comment", "review-request", "email"]);
 const YOURS = new Set(["decision", "byron", "pick-one", "pick-any"]);
 const DRAFT_STATUSES = new Set(["draft", "ready", "revise", "approved", "sent", "failed", "dropped"]);
+// The PR targets the workspace's outbound.py sender can parse (repo_pr): #2233, PyRel#3929, Owner/repo#1, or a PR URL.
+const PR_TARGET = /^(?:(?:[\w.-]+\/)?[\w.-]+)?#\d+$|^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+(?:[/?#].*)?$/;
 
 // Steps (work-breakdown lines with an optional {kind, size}): known kinds, waiting only on others, choices made of
 // options with one default, sizes on tasks created since steps.requireSizeFrom, no banned words in prompts.
@@ -41,6 +43,7 @@ export function draftErrors(path: string, text: string, taskMarkdown: string | n
   const errors: string[] = [];
   if (!STEP_KINDS.has(fields.outbound) || YOURS.has(fields.outbound) || fields.outbound === "agent" || fields.outbound === "check-in") errors.push(`unknown outbound kind “${fields.outbound}”.`);
   if (!DRAFT_STATUSES.has(fields.status)) errors.push(`outbound status must be one of ${[...DRAFT_STATUSES].join(", ")}.`);
+  if (["pr-comment", "review-request"].includes(fields.outbound) && !PR_TARGET.test((fields.target || "").trim())) errors.push(`target “${fields.target || ""}” isn't a PR the sender can parse: #2233, PyRel#3929 or https://github.com/RelationalAI/modeler/pull/2233.`);
   const [, task, id] = (fields.step || "").match(/^(TASK-\d{4})\s+(\S+)$/) || [];
   if (!task) { errors.push("outbound drafts name their step: `step: TASK-0000 W1.2`."); return errors; }
   if (!path.startsWith(`tasks/${task}-assets/`)) errors.push(`its step ${task} ${id} belongs to another task's assets.`);

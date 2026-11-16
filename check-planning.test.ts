@@ -129,4 +129,7 @@ test("step lint: known kinds, waiting only on others, choices with one default, 
   assert.match(draftErrors("tasks/TASK-0001-assets/d.md", draft("ready"), task("completed"))[0], /completed but its draft is ready/);
   assert.match(draftErrors("tasks/TASK-0001-assets/d.md", draft("sent"), task("open"))[0], /sent but TASK-0001 W1 is open/);
   assert.match(draftErrors("tasks/TASK-0002-assets/d.md", draft("ready"), task("open"))[0], /another task's assets/);
+  const pr = (target: string) => `---\noutbound: pr-comment\ntarget: ${target}\nstatus: ready\nstep: TASK-0001 W1\n---\n\n# D\n`;
+  for (const ok of ["#2233", "PyRel#3929", "https://github.com/acme/app/pull/2104", "https://github.com/acme/app/pull/7/files#diff-1"]) assert.deepEqual(draftErrors("tasks/TASK-0001-assets/d.md", pr(ok), task("open")), [], ok);
+  for (const bad of ["2233", "https://github.com/acme/app/issues/1"]) assert.match(draftErrors("tasks/TASK-0001-assets/d.md", pr(bad), task("open"))[0], /isn't a PR the sender can parse/, bad);
 });
