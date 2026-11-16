@@ -1047,7 +1047,9 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 @container doc-dock (max-width: 820px) { .doc-dock-label { display: none; } .doc-dock-bar { gap: 8px; } }
 
 .doc-dock-panel { position: fixed; inset: auto; top: anchor(bottom); right: anchor(right); position-try-fallbacks: flip-inline, --dock-fit; width: min(540px, calc(100vw - 24px)); max-height: min(72vh, 680px); margin: 8px 0 0; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); padding: 0; color: var(--ink); box-shadow: 0 24px 56px -12px rgba(24, 33, 47, .28), 0 2px 6px rgba(24, 33, 47, .06); transform-origin: top right; transition: opacity 180ms var(--ease-out), transform 220ms var(--ease-out), overlay 220ms allow-discrete, display 220ms allow-discrete; }
-.doc-dock-panel-work { width: min(780px, calc(100vw - 24px)); }
+/* Work opens down and to the right of its button, so the eye stays where it clicked. Short of room, it slides left only as far as the viewport edge instead of flipping to the button's other side. */
+.doc-dock-panel-work { left: anchor(left); right: auto; position-try-fallbacks: --dock-slide, --dock-fit; width: min(780px, calc(100vw - 24px)); transform-origin: top left; }
+@position-try --dock-slide { top: anchor(bottom); left: auto; right: 12px; }
 .doc-dock-panel:not(:popover-open) { opacity: 0; transform: translateY(-4px) scale(.98); transition-duration: 120ms; }
 @starting-style { .doc-dock-panel:popover-open { opacity: 0; transform: translateY(-6px) scale(.97); } }
 /* When neither side of the button has room, span the viewport instead of running off it. */
