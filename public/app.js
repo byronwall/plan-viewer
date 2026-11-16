@@ -661,17 +661,27 @@ function renderDiagramsPage() {
     elements.chunks.innerHTML = `<section class="library-list"><p class="library-intro">Loading diagrams…</p></section>`;
     return;
   }
-  elements.chunks.innerHTML = diagramsPageHtml(state.diagrams, state.documents, query, ago, { by: params.get("by") || "", as: params.get("as") || "" });
+  elements.chunks.innerHTML = diagramsPageHtml(state.diagrams, state.documents, query, ago, { by: params.get("by") || "", as: params.get("as") || "", project: params.get("project") || "", fold: params.get("fold") || "" });
   if (query) filterDiagrams(elements.chunks, query);
 }
 
 elements.chunks.addEventListener("click", (event) => {
+  const fold = event.target.closest("[data-diagram-fold]");
+  if (fold && state.view === "diagrams") { const group = fold.closest(".diagram-group"); group.toggleAttribute("data-folded"); return; }
+  const all = event.target.closest("[data-diagrams-fold-all]");
+  if (all && state.view === "diagrams") { setOverlayParams({ fold: all.dataset.diagramsFoldAll }); renderDiagramsPage(); return; }
   const choice = event.target.closest("[data-diagrams-by], [data-diagrams-as]");
   if (!choice || state.view !== "diagrams") return;
   setOverlayParams("diagramsBy" in choice.dataset ? { by: choice.dataset.diagramsBy } : { as: choice.dataset.diagramsAs });
   const y = scrollY;
   renderDiagramsPage();
   window.scrollTo({ top: y, behavior: "instant" });
+});
+elements.chunks.addEventListener("change", (event) => {
+  const project = event.target.closest(".diagram-project");
+  if (!project || state.view !== "diagrams") return;
+  setOverlayParams({ project: project.value });
+  renderDiagramsPage();
 });
 elements.chunks.addEventListener("input", (event) => {
   const filter = event.target.closest(".diagram-filter");

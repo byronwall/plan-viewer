@@ -2856,6 +2856,7 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
   .diagram-group-meta { margin-left: 0; }
 }
 .library-page.diagrams-page { max-width: 1480px; }
+.diagram-index-bar .library-intro { white-space: nowrap; }
 .diagram-control { flex: none; display: flex; align-items: center; gap: 6px; }
 .diagram-control-label { color: var(--muted); font-size: .74rem; }
 .diagram-control .code-segment button[aria-pressed="true"] { font-weight: inherit; }
@@ -2869,6 +2870,18 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .diagram-card-text > .diagram-card-meta { display: block; margin-top: 2px; font-size: .72rem; }
 .diagram-card-meta code { font-size: .7rem; }
 .diagram-index .diagram-group { gap: 12px; }
+.diagram-project { height: 28px; max-width: 180px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 0 6px; color: var(--ink); font: .78rem/1 system-ui, sans-serif; }
+.diagram-project:hover { border-color: #aeb8ca; }
+.diagram-fold-all { flex: none; height: 28px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 0 10px; color: var(--muted); font: .78rem/1 system-ui, sans-serif; transition: background-color 140ms, color 140ms; }
+.diagram-fold-all:hover { background: var(--hover-field); color: var(--ink); }
+.diagram-fold-all:active { background: var(--quiet-field); }
+.diagram-fold { flex: none; align-self: center; width: 22px; height: 22px; margin-right: -8px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; position: relative; transition: background-color 140ms, color 140ms; }
+.diagram-fold::before { content: ""; position: absolute; left: 7px; top: 6px; width: 6px; height: 6px; border: solid currentColor; border-width: 0 1.6px 1.6px 0; transform: rotate(45deg); transition: transform 140ms ease; }
+.diagram-group[data-folded] .diagram-fold::before { transform: rotate(-45deg); top: 8px; }
+.diagram-fold:hover { background: var(--hover-field); color: var(--ink); }
+.diagram-group[data-folded] > :not(.diagram-group-head) { display: none; }
+.diagram-row-status { color: var(--muted); font-size: .72rem; }
+.diagram-row-task .diagram-row-status .diagram-group-status { font-size: inherit; }
 /* By date: one table, newest first; a thumbnail and title that open the viewer, the task, and when it was saved. */
 .diagram-table { display: grid; }
 .diagram-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px) 84px; align-items: center; gap: 16px; border-bottom: 1px solid var(--line); padding: 6px 4px; }

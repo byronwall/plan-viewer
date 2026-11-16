@@ -58,7 +58,8 @@ const titleHtml = (diagram, query) => `<strong data-title="${escapeHtml(diagram.
 // Where a diagram came from, one quiet line: the task (unless the group already names it), and when it was saved.
 function metaLine(diagram, doc, group, ago) {
   const where = group.by === "task" ? "" : doc?.task ? doc.task.id : `${placeOf(diagram)}/`;
-  return `<span class="diagram-card-meta" title="${escapeHtml(new Date(diagram.modified).toLocaleString())}">${[where && `<code>${escapeHtml(where)}</code>`, `${ago(diagram.modified)} ago`].filter(Boolean).join('<span aria-hidden="true"> · </span>')}</span>`;
+  const project = group.by === "project" || group.by === "task" ? "" : doc?.task?.project || "";
+  return `<span class="diagram-card-meta" title="${escapeHtml(new Date(diagram.modified).toLocaleString())}">${[project && escapeHtml(project), where && `<code>${escapeHtml(where)}</code>`, `${ago(diagram.modified)} ago`].filter(Boolean).join('<span aria-hidden="true"> · </span>')}</span>`;
 }
 
 function card(diagram, group, query, ago, documents) {
@@ -79,7 +80,7 @@ function listRow(diagram, group, query, ago, documents) {
       ${frame(diagram)}
       <span class="diagram-card-text">${titleHtml(diagram, query)}${diagram.subtitle ? `<span>${escapeHtml(diagram.subtitle)}</span>` : ""}<code>${escapeHtml(diagram.path)}</code></span>
     </button>
-    <span class="diagram-row-task">${where}${task ? statusText(task) : ""}</span>
+    <span class="diagram-row-task">${where}${task ? `<span class="diagram-row-status">${statusText(task)}${task.project ? `<span aria-hidden="true"> · </span>${escapeHtml(task.project)}` : ""}</span>` : ""}</span>
     <time class="diagram-row-time" datetime="${modified.toISOString()}" title="${escapeHtml(modified.toLocaleString())}">${ago(diagram.modified)} ago</time>
   </div>`;
 }
@@ -97,30 +98,37 @@ function groupHead(group, ago) {
     `${group.items.length} ${group.items.length === 1 ? "diagram" : "diagrams"}`,
     group.by === "day" ? "" : `${ago(group.newest)} ago`,
   ].filter(Boolean).join('<span aria-hidden="true"> · </span>');
-  return `<header class="diagram-group-head">${title}<span class="diagram-group-meta">${facts}</span></header>`;
+  return `<header class="diagram-group-head"><button class="diagram-fold" type="button" data-diagram-fold aria-label="Collapse or expand ${escapeHtml(group.label || group.key)}"></button>${title}<span class="diagram-group-meta">${facts}</span></header>`;
 }
 
 const segment = (label, options, current, attribute) => `<span class="diagram-control"><span class="diagram-control-label">${label}</span><span class="code-segment" role="group" aria-label="${label}">${options.map(([value, text]) => `<button type="button" ${attribute}="${value}" aria-pressed="${value === current}">${text}</button>`).join("")}</span></span>`;
 
-export function diagramsPageHtml(diagrams, documents, query, ago, { by = "", as = "" } = {}) {
+const NO_PROJECT = "No project";
+const projectOf = (diagram, documents) => docOf(placeOf(diagram), documents)?.task?.project || NO_PROJECT;
+
+export function diagramsPageHtml(diagrams, documents, query, ago, { by = "", as = "", project = "", fold = "" } = {}) {
   by = DIAGRAM_GROUPS.some(([value]) => value === by) ? by : "";
   as = DIAGRAM_LAYOUTS.some(([value]) => value === as) ? as : "";
+  const projects = new Map();
+  for (const diagram of diagrams) projects.set(projectOf(diagram, documents), (projects.get(projectOf(diagram, documents)) || 0) + 1);
+  if (!projects.has(project)) project = "";
+  const all = diagrams;
+  if (project) diagrams = diagrams.filter((diagram) => projectOf(diagram, documents) === project);
   const groups = diagramGroups(diagrams, documents, by);
-  const places = new Set(diagrams.map(placeOf)).size;
-  const intro = diagrams.length
-    ? `${diagrams.length} ${diagrams.length === 1 ? "diagram" : "diagrams"} in ${places} ${places === 1 ? "place" : "places"}, newest first.`
+  const intro = all.length
+    ? `${diagrams.length === all.length ? "" : `${diagrams.length} of `}${all.length} ${all.length === 1 ? "diagram" : "diagrams"}`
     : "No diagrams yet. Write a <code>.draft</code> beside a task and embed it with <code>![What it shows](TASK-NNNN-assets/x.draft)</code>; it shows here and in the task.";
   const q = query.trim().toLowerCase();
   const controls = diagrams.length
-    ? `${segment("Group", DIAGRAM_GROUPS, by, "data-diagrams-by")}${segment("View", DIAGRAM_LAYOUTS, as, "data-diagrams-as")}<input class="diagram-filter" type="search" value="${escapeHtml(query)}" placeholder="Filter by title, task or file" aria-label="Filter diagrams (/)" spellcheck="false"><kbd class="diagram-filter-key">/</kbd>`
+    ? `${segment("Group", DIAGRAM_GROUPS, by, "data-diagrams-by")}${projects.size > 1 ? `<label class="diagram-control"><span class="diagram-control-label">Project</span><select class="diagram-project" aria-label="Filter by project"><option value="">All (${all.length})</option>${[...projects].sort(([a], [b]) => (a === NO_PROJECT) - (b === NO_PROJECT) || a.localeCompare(b)).map(([name, count]) => `<option value="${escapeHtml(name)}"${name === project ? " selected" : ""}>${escapeHtml(name)} (${count})</option>`).join("")}</select></label>` : ""}${segment("View", DIAGRAM_LAYOUTS, as, "data-diagrams-as")}<button class="diagram-fold-all" type="button" data-diagrams-fold-all="${fold ? "" : "1"}">${fold ? "Expand all" : "Collapse all"}</button><input class="diagram-filter" type="search" value="${escapeHtml(query)}" placeholder="Filter by title, task or file" aria-label="Filter diagrams (/)" spellcheck="false"><kbd class="diagram-filter-key">/</kbd>`
     : "";
   const body = (group) => as === "list"
     ? `<div class="diagram-table" role="table">${group.items.map((diagram) => listRow(diagram, group, q, ago, documents)).join("")}</div>`
     : `<div class="diagram-strip">${group.items.map((diagram) => card(diagram, group, q, ago, documents)).join("")}</div>`;
   return `<section class="library-list diagram-index" data-as="${as}" aria-label="Diagrams">
     <div class="diagram-index-bar"><p class="library-intro">${intro}</p>${controls}</div>
-    ${as === "list" && diagrams.length ? `<div class="diagram-row diagram-row-head" aria-hidden="true"><span>Diagram</span><span>Task</span><span>Modified</span></div>` : ""}
-    ${groups.map((group) => `<section class="diagram-group" data-group="${escapeHtml(group.key)}">${groupHead(group, ago)}${body(group)}</section>`).join("")}
+    ${as === "list" && all.length ? `<div class="diagram-row diagram-row-head" aria-hidden="true"><span>Diagram</span><span>Task</span><span>Modified</span></div>` : ""}
+    ${groups.map((group) => `<section class="diagram-group" data-group="${escapeHtml(group.key)}"${fold ? " data-folded" : ""}>${groupHead(group, ago)}${body(group)}</section>`).join("")}
     <p class="library-intro diagram-none" hidden>No diagram matches “<span></span>”.</p>
   </section>`;
 }

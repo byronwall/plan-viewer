@@ -1,0 +1,11 @@
+diagram "Publishing the self-hosting guide" version=1
+subtitle "Draft, review and release in three steps"
+
+node draft "Draft guide" color=blue shade=200
+node review "Review" color=amber shade=300
+node publish "Publish" color=green shade=300
+
+edge a draft -> review "PR opened"
+edge b review -> publish "approved"
+
+layout root engine=layered fit=slide
