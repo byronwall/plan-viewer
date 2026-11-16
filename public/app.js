@@ -2188,7 +2188,6 @@ function scrollToDocumentAnchor(anchor, behavior = "instant") {
   if (!target) {
     window.scrollTo({ top: 0, behavior });
     showNotice(`Opened the document, but could not find “${anchor}”.`, true);
-attachScorePopover((key) => stepsData?.steps.find((step) => stepKey(step) === key));
     return;
   }
 
@@ -2200,6 +2199,7 @@ attachScorePopover((key) => stepsData?.steps.find((step) => stepKey(step) === ke
 
 // The Steps page's data (`/api/steps`), kept so the Outbox panel can copy a manual draft's text.
 let stepsData = null;
+attachScorePopover((key) => stepsData?.steps.find((step) => stepKey(step) === key));
 const stepsOutboundBody = (path) => stepsData?.drafts?.find((draft) => draft.path === path)?.body || "";
 const stepsParams = () => new URLSearchParams(location.search);
 // The Steps table's grouping is remembered per browser (a URL `&group=` wins), since it is a way of working, not a view of one moment.
@@ -2289,7 +2289,8 @@ function renderStepsPage() {
   elements.count.textContent = `${counts.you} for you · ${plural(steps.length, "open step")}`;
   // The table is the page: nothing is selected until a row is clicked, so the table has the full width; the inspector
   // opens beside it for the selected step and closes with × or Esc.
-  if (!shown.some((step) => stepKey(step) === selectedStep)) selectedStep = "";
+  // Wide enough for the whole table and the inspector: open the top step beside it. Narrower, the table gets the room.
+  if (!shown.some((step) => stepKey(step) === selectedStep)) selectedStep = stepsRoomForBoth() && !stepsDetailClosed && shown[0] ? stepKey(shown[0]) : "";
   const step = steps.find((candidate) => stepKey(candidate) === selectedStep);
   elements.chunks.innerHTML = `<section class="task-browser${step ? " has-detail" : ""}" aria-label="Open steps">
     <div class="task-index">${stepsToolbarHtml(steps, stepsFilters, stepsData.slots, stepsData.runs?.length || 0)}${stepsTableHtml(steps, stepsFilters, selectedStep)}</div>
@@ -2297,9 +2298,13 @@ function renderStepsPage() {
   </section>`;
 }
 
+const stepsRoomForBoth = () => elements.chunks.clientWidth >= 1600;
+let stepsDetailClosed = false; // × or Esc on a wide screen keeps the inspector shut until a row is picked
+
 const stepDetailHtml = (step) => step ? `<button type="button" class="step-detail-close" data-step-close aria-label="Close the inspector" title="Close (Esc)">×</button>${stepInspectorHtml(step, "", stepContext())}` : "";
 function selectStepRow(key) {
   selectedStep = key;
+  stepsDetailClosed = !key;
   updateStepsUrl("replace");
   for (const tr of elements.chunks.querySelectorAll("tr[data-select-step]")) tr.setAttribute("aria-selected", tr.dataset.selectStep === selectedStep);
   const step = stepsData.steps.find((candidate) => stepKey(candidate) === selectedStep);
