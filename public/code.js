@@ -284,7 +284,9 @@ function emptyState(noun) {
     ui.tab === "worktrees" && ui.treeScope !== "all" && scopes[ui.treeScope],
     ui.tab === "commits" && (ui.branches.size || ui.prefixes.size) && "picked branches",
     ui.repos.size && (ui.repos.size === 1 ? [...ui.repos][0] : "picked repos"),
-    ui.tab !== "worktrees" && ui.authors.size && (ui.authors.size === 1 ? `${authorName([...ui.authors][0])}'s` : "picked authors"),
+    ui.tab !== "worktrees" && ui.authors.size && (ui.authors.size === 1 ? (authorName([...ui.authors][0]) === "you" ? "yours" : `${authorName([...ui.authors][0])}'s`) : "picked authors"),
+    ui.tab === "prs" && ui.prState !== "done" && ui.prLayout === "stacks" && ui.boardMove !== "all" && (MOVES[ui.boardMove].label),
+    ui.tab === "prs" && ui.prState !== "done" && ui.prLayout === "stacks" && ui.stackedOnly && "stacked only",
   ].filter(Boolean);
   if (!ui.filter && !narrowing.length) return `<div class="code-empty"><p>No ${noun} yet.</p></div>`;
   const query = ui.filter ? ` match <b>“${escapeHtml(ui.filter)}”</b>` : "";
@@ -457,7 +459,7 @@ const personName = (login) => {
 // What a PR needs next, as [tone, text]; the first rule that holds wins. Only fix, merge and mine are colored.
 function nextStep(pr) {
   const parent = stackParent(pr);
-  if (pr.mergeable === "CONFLICTING") return ["fix", parent ? `Merge #${parent.number}'s branch in` : `Merge ${pr.base} in`];
+  if (pr.mergeable === "CONFLICTING") return ["fix", parent ? `Merge #${parent.number} in` : `Merge ${pr.base} in`];
   if (["FAILURE", "ERROR"].includes(pr.ci)) return ["fix", "Fix failing checks"];
   if (pr.reviewDecision === "CHANGES_REQUESTED") return ["fix", "Address requested changes"];
   if (pr.draft) return ["draft", "Draft: mark ready"];
@@ -493,35 +495,61 @@ function placeOf(stack) {
 // Lines changed on a log scale, so a 20-line fix and a 2,000-line refactor both read at a glance; the fill splits
 // green and red by lines added and removed. Exact counts sit in the hover text.
 const sizeBar = (pr) => {
+const short = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
   const lines = pr.additions + pr.deletions;
   const width = Math.min(100, Math.round((Math.log10(lines + 1) / 4) * 100));
   const added = lines ? Math.round((pr.additions / lines) * 100) : 0;
   const files = pr.changedFiles ? ` in ${pr.changedFiles} file${pr.changedFiles === 1 ? "" : "s"}` : "";
-  return `<span class="code-chain-size" data-tip="${escapeHtml(`+${pr.additions.toLocaleString()} −${pr.deletions.toLocaleString()} lines${files}`)}"><i style="--w:${width}%;--add:${added}%"></i><b>${compact.format(lines)}</b>${pr.changedFiles ? `<em>${pr.changedFiles}f</em>` : ""}</span>`;
+  return `<span class="code-chain-size" data-tip="${escapeHtml(`+${pr.additions.toLocaleString()} −${pr.deletions.toLocaleString()} lines${files}`)}"><i style="--w:${width}%;--add:${added}%"></i><b>${short.format(lines)}</b>${pr.changedFiles ? `<em>${short.format(pr.changedFiles)}f</em>` : ""}</span>`;
 };
 
-function stackRow(pr, position, column) {
+// Who moves next on a PR: a reviewer while it waits on review (the column's person when they are one), else its author.
+const actorOf = (pr, column) => {
+  const [tone] = nextStep(pr);
+  if (tone === "mine") return ui.data.me;
+  if (tone !== "wait" || pr.reviewDecision === "APPROVED") return pr.author;
+  const reviewers = humanReviewers(pr);
+  return reviewers.includes(column) ? column : reviewers[0] || pr.author;
+};
+
+// Faces read author → reviewers; the ringed face is whoever moves next, so "who waits on whom" reads per row.
+function facesHtml(pr, column) {
+  // Idle work has no pending move, so nobody gets the ring there.
+  const reviewers = humanReviewers(pr).filter((login) => login !== pr.author);
+  // The ring only means something beside another face: alone, the author is plainly whose PR it is.
+  const actor = column === "" || !reviewers.length ? null : actorOf(pr, column);
+  const face = (login, role) => `<span class="code-face${login === actor ? " is-actor" : ""}" data-tip="${escapeHtml(`${role}: ${personName(login)}${login === actor ? " · moves next" : ""}`)}">${avatar(login)}</span>`;
+  return face(pr.author, "Author") + (reviewers.length ? `<svg class="code-chain-arrow" viewBox="0 0 24 24" aria-hidden="true">${GLYPHS["arrow-right"]}</svg><span class="code-chain-reviewers">${reviewers.map((login) => face(login, "Reviewer")).join("")}</span>` : "");
+}
+
+function stackRow(pr, position, column, stack = [pr]) {
   const key = `pr:${pr.slug}#${pr.number}`;
   const [tone, text] = nextStep(pr);
   const people = humanReviewers(pr);
   // In the reviewer's own column "Waiting on them" says nothing new.
-  const step = tone === "wait" && people[0] === column ? (people.length > 1 ? `Also ${people.slice(1).map(personName).join(", ")}` : "") : text;
-  const faces = [pr.author, ...people.filter((login) => login !== pr.author)].map((login) => `<span data-tip="${escapeHtml(`${login === pr.author ? "Author" : "Reviewer"}: ${personName(login)}`)}">${avatar(login)}</span>`).join("");
+  const approvers = (pr.reviews || []).filter((review) => review.state === "APPROVED").map((review) => personName(review.login));
+  // A step that only repeats its section says nothing; say who approved, or who else reviews, instead.
+  const step = tone === "wait" && people[0] === column ? (people.length > 1 ? `Also ${people.slice(1).map(personName).join(", ")}` : "")
+    : tone === "merge" ? (approvers.length ? `Approved by ${approvers.join(", ")}` : "Approved")
+    : tone === "none" || tone === "draft" ? "" : text;
+  const faces = facesHtml(pr, column);
+  const place = position ? `${position} of ${stack.length} in this stack · on ${position === 1 ? stack[0].base : `#${stack[position - 2].number}`}` : "";
   const tree = worktreeFor(pr);
-  return `<li class="code-chain-row" data-code-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">${position ? `<i class="code-chain-n${position === 1 ? " is-base" : ""}">${position}</i>` : `<i class="code-chain-dot"></i>`}
+  return `<li class="code-chain-row" data-code-row="${escapeHtml(key)}" aria-selected="${ui.sel === key}">${position ? `<i class="code-chain-n${position === 1 ? " is-base" : ""}" data-tip="${escapeHtml(place)}">${position}</i>` : ""}
     <div class="code-chain-line"><span class="code-chain-faces">${faces}</span><span><a class="code-pr-link" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">${ciBadge(pr)}#${pr.number}</a> <span class="code-chain-title">${escapeHtml(pr.title)}</span></span></div>
     <div class="code-chain-sub"><span class="code-next code-next-${tone}">${escapeHtml(step)}</span>${sizeBar(pr)}<span class="code-chain-age">${when(prWhen(pr))}</span></div>
     <span class="code-chain-tools">${skillButtons(pr, tree?.path || pr.repo, tree)}</span></li>`;
 }
 
 const chainHtml = (stack, column) => stack.length > 1
-  ? `<ol class="code-chain"><li class="code-chain-head">Stack of ${stack.length} · on ${escapeHtml(stack[0].base)}</li>${stack.map((pr, index) => stackRow(pr, index + 1, column)).join("")}</ol>`
+  ? `<ol class="code-chain">${stack.map((pr, index) => stackRow(pr, index + 1, column, stack)).join("")}</ol>`
   : `<ol class="code-chain is-single">${stackRow(stack[0], 0, column)}</ol>`;
 
 // One section's header: its move, count and the button that drafts the move for every PR in it.
 const moveHead = (move, stacks, column) => {
   const count = stacks.reduce((sum, stack) => sum + stack.length, 0);
-  return `<h4>${glyph(MOVES[move].glyph)}<span class="code-lane-label">${MOVES[move].label}</span><span class="code-lane-count">${count}</span><button type="button" class="code-lane-move" data-board-move="${move}" data-board-column="${escapeHtml(column)}">${MOVES[move].verb}</button></h4>`;
+  const label = move === "review" ? (column === ui.data.me ? "Your review" : "Their review") : MOVES[move].label;
+  return `<h4>${glyph(MOVES[move].glyph)}<span class="code-lane-label">${label}</span><span class="code-lane-count">${count}</span><button type="button" class="code-lane-move" data-board-move="${move}" data-board-column="${escapeHtml(column)}">${MOVES[move].verb}</button></h4>`;
 };
 
 // Stacks grouped by column and move; the move filter and "stacked only" narrow it, the sort orders stacks inside sections.
@@ -554,6 +582,19 @@ function boardSection(move, login) {
 }
 
 function stacksBody(prs) {
+// One line under a column's name that says the relationship: whose PRs this person reviews, and their own moves.
+function columnRelation(column) {
+  const prs = (section) => (column.sections.get(section) || []).flat();
+  if (column.login.startsWith("draft:")) return `${column.count} not ready for review yet`;
+  const reviews = prs("review");
+  const own = ["merge", "fix", "none"].reduce((sum, section) => sum + prs(section).length, 0);
+  const mine = column.login === ui.data.me;
+  const parts = [];
+  if (reviews.length) parts.push(mine ? `${reviews.length} waiting on your review` : reviews.every((pr) => pr.author === ui.data.me) ? `Reviewing ${reviews.length} of yours` : `Reviewing ${reviews.length}`);
+  if (own) parts.push(mine ? `${own} of yours to move` : `${own} of their own to move`);
+  return parts.join(" · ");
+}
+
   const { columns } = boardGroups(prs);
   const idle = columns.get("");
   columns.delete("");
@@ -567,10 +608,10 @@ function stacksBody(prs) {
     const name = draftOf ? (draftOf === ui.data.me ? "Your drafts" : `${personName(draftOf)}'s drafts`) : column.login === ui.data.me ? "You" : personName(column.login);
     const sections = [...column.sections.entries()].sort(([a], [b]) => moveOrder.indexOf(a) - moveOrder.indexOf(b))
       .map(([move, stacks]) => `<section class="code-lane" data-move="${move}">${moveHead(move, stacks, column.login)}${stacks.map((stack) => chainHtml(stack, column.login)).join("")}</section>`).join("");
-    return `<section class="code-board-col"><h3>${avatar(who)}<b>${escapeHtml(name)}</b><span>${column.count}</span></h3>${sections}</section>`;
+    return `<section class="code-board-col"><h3>${avatar(who)}<span class="code-board-who"><b>${escapeHtml(name)}</b><small>${escapeHtml(columnRelation(column))}</small></span></h3>${sections}</section>`;
   }).join("");
   const strip = idle ? `<section class="code-idle" data-move="idle">${moveHead("idle", idle.sections.get("idle"), "")}<div class="code-idle-grid">${idle.sections.get("idle").map((stack) => chainHtml(stack, "")).join("")}</div></section>` : "";
-  if (!board && !strip) return emptyState("pull requests for this move");
+  if (!board && !strip) return emptyState("pull requests");
   return `<div class="code-board">${board}</div>${strip}`;
 }
 
@@ -2715,7 +2756,7 @@ function boardControls() {
   const { moves } = boardGroups(visiblePrs());
   const total = Object.values(moves).reduce((sum, count) => sum + count, 0);
   const options = [["all", "All moves", total], ...Object.entries(MOVES).map(([move, { label }]) => [move, move === "idle" ? "Idle" : label, moves[move]])];
-  return `<div class="code-segment code-move-filter">${options.map(([id, label, count]) => `<button type="button" data-board-filter="${id}" data-move="${id}" aria-pressed="${ui.boardMove === id}" data-tip="${escapeHtml(id === "all" ? "Every move" : `Only ${label}`)}" aria-label="${escapeHtml(label)}" ${count || id === "all" ? "" : "disabled"}>${id === "all" ? "All" : glyph(MOVES[id].glyph)}<span class="code-count">${count}</span></button>`).join("")}</div><label class="code-check"><input type="checkbox" data-board-stacked ${ui.stackedOnly ? "checked" : ""}> Stacked only</label>`;
+  return `<div class="code-segment code-move-filter">${options.map(([id, label, count]) => `<button type="button" data-board-filter="${id}" data-move="${id}" aria-pressed="${ui.boardMove === id}" data-tip="${escapeHtml(id === "all" ? "Every move" : `Only ${label}`)}" aria-label="${escapeHtml(label)}" ${count || id === "all" ? "" : "disabled"}>${id === "all" ? "All " : glyph(MOVES[id].glyph)}<span class="code-count">${count}</span></button>`).join("")}</div><label class="code-check"><input type="checkbox" data-board-stacked ${ui.stackedOnly ? "checked" : ""}> Stacked only</label>`;
 }
 
 // Tracked repositories live in a settings popover opened from the toolbar gear.
@@ -2956,7 +2997,7 @@ function syncUrl() {
 }
 
 function resetFilters() {
-  Object.assign(ui, { filter: "", treeScope: "all", prScope: "all", hideDrafts: false, failingOnly: false });
+  Object.assign(ui, { filter: "", treeScope: "all", prScope: "all", hideDrafts: false, failingOnly: false, boardMove: "all", stackedOnly: false });
   ui.branches.clear(); ui.prefixes.clear(); ui.authors.clear(); ui.repos.clear(); syncUrl();
   const input = host?.querySelector("[data-code-filter]");
   if (input) input.value = "";
