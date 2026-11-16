@@ -12,7 +12,7 @@ import { draftFromText, outboundFields, type OutboundDraft } from "./outbound.ts
 export const OUTBOUND_KINDS = new Set(["jira-issue", "jira-comment", "jira-edit", "jira-transition", "slack", "pr", "pr-comment", "review-request", "email"]);
 const CHOICES = new Set(["pick-one", "pick-any"]);
 export type Priority = "p1" | "p2" | "p3";
-export type Move = "you-decide" | "you-act" | "agent" | "others" | "blocked" | "unclassified";
+export type Move = "you-decide" | "you-act" | "agent" | "others" | "blocked" | "unclassified" | "flags";
 
 export interface StepOption { id: string; title: string; tradeoff: string; recommended: boolean; status: string }
 export interface Step {
@@ -500,10 +500,20 @@ export async function listNotes(root: string): Promise<Step[]> {
       const path = `${folder}/${name}`;
       const text = await readFile(join(root, path), "utf8");
       const fields = outboundFields(text);
-      // Agent friction flags (`kind: agent-flag`, from the workspace's scripts/flag) are the daily retro's input, not Up next.
-      if (fields.note !== "open" || fields.kind === "agent-flag") continue;
+      // Agent friction flags (`kind: agent-flag`, from the workspace's scripts/flag, open as `flag: open`) are the daily
+      // retro's input, not Up next: they list under their own move, never queued and never tied to a step.
+      const flag = fields.kind === "agent-flag";
+      if (flag ? fields.flag !== "open" && fields.note !== "open" : fields.note !== "open") continue;
       const title = text.match(/^# (.+)$/m)?.[1] || name;
       const created = Date.parse(fields.created?.replace(" ", "T") || "") || Date.now();
+      if (flag) {
+        notes.push({
+          key: `flag ${path}`, task: fields.task || "", taskTitle: "Agent flag", path, id: name.slice(0, 17), title: title.replace(/^🚩\s*/, ""), status: "open",
+          kind: "flag", size: "", deps: [], next: false, move: "flags", reason: "for the daily retro", prompt: text.replace(/^---\n[\s\S]*?\n---\n+/, "").replace(/^# .+\n+/, ""),
+          age: Math.max(0, Math.floor((Date.now() - created) / 86_400_000)), order: -1, running: false, priority: "p2", unblocks: 0, score: 0,
+        });
+        continue;
+      }
       notes.push({
         key: `note ${path}`, task: fields.task || "", taskTitle: fields.source || "", path, id: fields.step?.split(" ")[1] || name.slice(0, 17), title, status: "open",
         kind: "note", size: "", deps: [], next: true, move: "agent", reason: "note", noteFor: fields.step?.trim().replace(/\s+/, " ") || undefined, prompt: text.replace(/^---\n[\s\S]*?\n---\n+/, "").replace(/^# .+\n+/, ""),
@@ -519,8 +529,11 @@ export async function closeNote(root: string, path: string, user: string, today:
   if (!/^(tasks\/TASK-\d{4}-assets|reference)\/notes\/[^/]+\.md$/.test(path)) throw new Error("Not a note.");
   const absolute = resolve(root, path);
   const text = await readFile(absolute, "utf8");
-  if (outboundFields(text).note !== "open") throw new Error("That note is already closed.");
-  await writeFile(absolute, `${text.replace(/^note: open$/m, "note: done").trimEnd()}\n\n- **${today} — Marked done (${user}, in the viewer).**\n`);
+  const fields = outboundFields(text);
+  // A flag (scripts/flag) closes as `flag: done`, the way `scripts/flag --close` does.
+  const field = fields.kind === "agent-flag" && fields.flag === "open" ? "flag" : "note";
+  if (fields[field] !== "open") throw new Error("That note is already closed.");
+  await writeFile(absolute, `${text.replace(new RegExp(`^${field}: open$`, "m"), `${field}: done`).trimEnd()}\n\n- **${today} — Marked done (${user}, in the viewer).**\n`);
 }
 
 // --- Follow-through: a click that finishes a step (Approve and send, Mark sent, Mark done, Pick, Approve and run, Apply)

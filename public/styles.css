@@ -3332,6 +3332,7 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 .step-move-friction { background: #f0c25e; color: #4a2f00; }
 .step-move-agent { background: var(--selected); color: var(--action-ink); }
 .step-move-others { background: #ece7f5; color: #5d477b; }
+.step-move-flag { background: #f6e3df; color: #7a3426; }
 .step-move-blocked, .step-move-unclassified { background: #e3e7ed; color: #465268; }
 .step-col-kind { white-space: nowrap; color: var(--body-ink); font-size: .8rem; }
 .step-col-work { white-space: nowrap; }

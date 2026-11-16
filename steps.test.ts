@@ -108,7 +108,8 @@ test("a saved note keeps its prompt and images, waits under Up next, and leaves 
   await writeFile(join(root, "reference/notes/2026-11-13-140600-flag-x.md"), "---\nflag: open\nkind: agent-flag\n---\n\n# 🚩 x\n");
   await writeFile(join(root, "reference/notes/2026-11-13-140601-flag-y.md"), "---\nnote: open\nkind: agent-flag\n---\n\n# 🚩 y\n");
   const notes = await listNotes(root);
-  assert.deepEqual(notes.map((n) => [n.task, n.title, n.next, n.move, n.kind]), [["", "Idea for the plan", true, "agent", "note"], ["TASK-0001", "Tighten the retry section", true, "agent", "note"]]);
+  // Agent flags list under their own move, never on Up next, whether they're open as `flag:` or `note:`.
+  assert.deepEqual(notes.map((n) => [n.task, n.title, n.next, n.move, n.kind]), [["", "Idea for the plan", true, "agent", "note"], ["TASK-0001", "Tighten the retry section", true, "agent", "note"], ["", "x", false, "flags", "flag"], ["", "y", false, "flags", "flag"]]);
   assert.match(notes[1].prompt!, /^Source file: tasks\/TASK-0001\.md[\s\S]*-1\.png$/m);
   const decided = await saveNote(root, { commentary: "Go with the fast path", prompt: "Resolve decision W3", task: "TASK-0001", step: "TASK-0001 W3" }, new Date(2026, 10, 13, 15, 0, 0));
   const tasks = [{ path: "tasks/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: TASK }];
@@ -118,7 +119,9 @@ test("a saved note keeps its prompt and images, waits under Up next, and leaves 
   await closeNote(root, decided.path, "Pat", "2026-11-14");
   assert.equal((await loadSteps(root, tasks, [])).steps.find((s) => s.key === "TASK-0001 W3")?.move, "you-decide");
   await closeNote(root, task.path, "Pat", "2026-11-14");
-  assert.deepEqual((await listNotes(root)).map((n) => n.path), [loose.path]);
+  await closeNote(root, "reference/notes/2026-11-13-140600-flag-x.md", "Pat", "2026-11-14");
+  assert.match(await readFile(join(root, "reference/notes/2026-11-13-140600-flag-x.md"), "utf8"), /^flag: done$[\s\S]*Marked done \(Pat/m);
+  assert.deepEqual((await listNotes(root)).map((n) => n.path), [loose.path, "reference/notes/2026-11-13-140601-flag-y.md"]);
   assert.match(await readFile(join(root, task.path), "utf8"), /^note: done$[\s\S]*2026-11-14 — Marked done \(Pat/m);
   await assert.rejects(closeNote(root, "tasks/TASK-0001.md", "Pat", "2026-11-14"), /Not a note/);
 });

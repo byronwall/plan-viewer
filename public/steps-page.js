@@ -22,11 +22,13 @@ export const MOVES = {
   others: { group: "Others", label: "Others" },
   blocked: { group: "Blocked", label: "Blocked" },
   unclassified: { group: "Needs a kind", label: "Unclassified" },
+  flags: { group: "Agent flags · for the daily retro", label: "Flag" },
 };
 const ORDER = ["you-decide", "you-act", "agent", "others", "blocked", "unclassified"];
 const HIDDEN = new Set(["blocked", "unclassified"]);
 const OUTBOUND = new Set(["jira-issue", "jira-comment", "jira-edit", "jira-transition", "slack", "pr", "pr-comment", "review-request", "email"]);
-export const MOVE_FILTERS = { you: ["you-decide", "you-act"], agent: ["agent"], others: ["others"], all: ORDER };
+// Agent friction flags (scripts/flag) have their own segment and stay out of All and Up next: the daily retro works them.
+export const MOVE_FILTERS = { you: ["you-decide", "you-act"], agent: ["agent"], others: ["others"], flags: ["flags"], all: ORDER };
 export const KIND_FILTERS = {
   any: ["Any kind", () => true],
   outbound: ["Outbound", (s) => OUTBOUND.has(s.kind)],
@@ -35,7 +37,8 @@ export const KIND_FILTERS = {
   byron: ["Only you", (s) => s.kind === "byron"],
   none: ["No kind yet", (s) => !s.kind],
 };
-const KIND_LABELS = { agent: "Agent", "check-in": "Check-in", decision: "Decision", "pick-one": "Choice", "pick-any": "Choice", "do-all": "Group", byron: "Only you", note: "Note" };
+const KIND_LABELS = { agent: "Agent", "check-in": "Check-in", decision: "Decision", "pick-one": "Choice", "pick-any": "Choice", "do-all": "Group", byron: "Only you", note: "Note", flag: "Agent flag" };
+const noteLike = (step) => step.kind === "note" || step.kind === "flag";
 export const kindLabel = (kind) => KIND_LABELS[kind] || (OUTBOUND.has(kind) ? outboundKindLabel(kind) : kind || "—");
 export const stepKey = (step) => `${step.task}:${step.id}`;
 
@@ -128,7 +131,7 @@ export function visibleSteps(steps, { move = "all", kind = "any", hidden = false
 export function moveCounts(steps, kind = "any") {
   const test = KIND_FILTERS[kind]?.[1] || (() => true);
   const of = (moves) => steps.filter((step) => moves.includes(step.move) && test(step)).length;
-  return { next: steps.filter((step) => step.next && test(step)).length, you: of(MOVE_FILTERS.you), agent: of(MOVE_FILTERS.agent), others: of(MOVE_FILTERS.others), all: of(ORDER.filter((m) => !HIDDEN.has(m))) };
+  return { next: steps.filter((step) => step.next && test(step)).length, you: of(MOVE_FILTERS.you), agent: of(MOVE_FILTERS.agent), others: of(MOVE_FILTERS.others), flags: of(MOVE_FILTERS.flags), all: of(ORDER.filter((m) => !HIDDEN.has(m))) };
 }
 
 const pill = (step) => {
@@ -144,8 +147,8 @@ const pill = (step) => {
 const EDIT_KINDS = ["agent", "check-in", "decision", "byron", "pick-one", "pick-any", "do-all", ...OUTBOUND];
 const select = (field, value, options, label) => `<select class="step-cell-edit" data-step-edit="${field}" aria-label="${label}">${options.map(([v, text]) => `<option value="${escapeHtml(v)}"${v === value ? " selected" : ""}>${escapeHtml(text)}</option>`).join("")}</select>`;
 export function stepRowCells(step, { withTask = true } = {}) {
-  const note = step.kind === "note";
-  const kindCell = note ? "Note" : select("kind", step.kind, [["", "—"], ...EDIT_KINDS.map((k) => [k, kindLabel(k)])], "Kind");
+  const note = noteLike(step);
+  const kindCell = note ? kindLabel(step.kind) : select("kind", step.kind, [["", "—"], ...EDIT_KINDS.map((k) => [k, kindLabel(k)])], "Kind");
   const sizeCell = note ? "" : select("size", step.size, [["", "—"], ["S", "S"], ["M", "M"], ["L", "L"]], "Size");
   const statusCell = note ? "" : select("status", step.status, STATUS_ORDER.map((st) => [st, st[0].toUpperCase() + st.slice(1)]), "Status");
   const done = `<input type="checkbox" class="step-done-box" data-step-done aria-label="Mark ${escapeHtml(step.id)} done" title="Mark done">`;
@@ -185,7 +188,7 @@ export function stepsTableHtml(steps, filters, selected) {
   const sorted = sortSteps(shown, filters.sort);
   const group = GROUPS[filters.group]?.[1] ? filters.group : "none";
   const keyOf = GROUPS[group][1];
-  const keys = !keyOf ? [""] : group === "move" ? ORDER : group === "status" ? STATUS_ORDER : [...new Set(sorted.map(keyOf))];
+  const keys = !keyOf ? [""] : group === "move" ? [...ORDER, "flags"] : group === "status" ? STATUS_ORDER : [...new Set(sorted.map(keyOf))];
   const groups = keys.map((key) => [key, keyOf ? sorted.filter((step) => keyOf(step) === key) : sorted]).filter(([, list]) => list.length);
   const withTask = group !== "task";
   const columns = withTask ? 10 : 9;
@@ -201,7 +204,7 @@ export function stepsToolbarHtml(steps, filters, slots, runs = 0) {
   const running = runs;
   const hiddenCount = steps.filter((step) => HIDDEN.has(step.move)).length;
   return `<div class="task-index-tools step-tools">
-    <span class="step-segs" role="group" aria-label="Next move">${seg("next", "Up next")}${seg("you", "Next move: You")}${seg("agent", "Agent")}${seg("others", "Others")}${seg("all", "All")}</span>
+    <span class="step-segs" role="group" aria-label="Next move">${seg("next", "Up next")}${seg("you", "Next move: You")}${seg("agent", "Agent")}${seg("others", "Others")}${seg("flags", "Agent flags")}${seg("all", "All")}</span>
     <select class="step-kind" data-step-kind aria-label="Kind">${Object.entries(KIND_FILTERS).map(([key, [label]]) => `<option value="${key}"${filters.kind === key ? " selected" : ""}>${label}</option>`).join("")}</select>
     <select class="step-kind" data-step-group aria-label="Group">${Object.entries(GROUPS).map(([key, [label]]) => `<option value="${key}"${(filters.group || "none") === key ? " selected" : ""}>${key === "none" ? "Group: none" : `Group: ${label.toLowerCase()}`}</option>`).join("")}</select>
     <select class="step-kind" data-step-sort aria-label="Sort">${Object.entries(SORTS).map(([key, [label]]) => `<option value="${key}"${(filters.sort || "priority") === key ? " selected" : ""}>Sort: ${label.toLowerCase()}</option>`).join("")}</select>
@@ -213,7 +216,7 @@ export function stepsToolbarHtml(steps, filters, slots, runs = 0) {
 // The shared step list (today's plan, a task's Steps panel, the World's Today column, the step dialog's rail): one line per
 // step, a short state pill only where it says who moves next, the full title, and right-aligned gray meta. Every row opens
 // the step dialog (`data-open-step`); none navigates.
-const PILLS = { "you-decide": ["you", "Decide"], "you-act": ["friction", "Friction"], agent: ["agent", "Agent"], others: ["others", "Waiting"], blocked: ["blocked", "Blocked"], unclassified: ["unclassified", "No kind"] };
+const PILLS = { "you-decide": ["you", "Decide"], "you-act": ["friction", "Friction"], agent: ["agent", "Agent"], others: ["others", "Waiting"], flags: ["flag", "Flag"], blocked: ["blocked", "Blocked"], unclassified: ["unclassified", "No kind"] };
 export const movePill = (step) => {
   const [tone, label] = PILLS[step.move] || PILLS.unclassified;
   return `<span class="step-move step-move-${tone}" title="${escapeHtml(step.reason)}">${step.running ? "Running" : label}</span>`;
@@ -342,6 +345,7 @@ const button = (action, label, primary = false, disabled = "") => `<button type=
 // Note… and Up next ride along with every step's own actions: a note (an approval, decision or direction) waits for an
 // agent thread under Up next, standing in for the step; Up next queues the step itself.
 export function stepActionsHtml(step, context = {}) {
+  if (step.kind === "flag") return `<div class="outbound-actions step-actions">${button("done", "Mark done", true)}${context.compact ? "" : '<span class="step-choice-note">The daily retro works flags into a finding or a fix; mark it done when that\'s handled.</span>'}</div>`;
   if (step.kind === "note") return `<div class="outbound-actions step-actions">${button("done", "Mark done", true)}${context.compact ? "" : '<span class="step-choice-note">An agent works it into its source; mark it done when that\'s handled.</span>'}</div>`;
   const own = ownActionsHtml(step, context);
   const next = `<button type="button" class="outbound-secondary step-next-toggle" data-step-action="next" aria-pressed="${Boolean(step.next)}" title="${step.next ? "Take it off the Up next queue" : "Queue it for an agent thread: plan-viewer next lists it"}">${step.next ? "● Up next" : "Up next"}</button>`;
@@ -385,7 +389,7 @@ export function stepBodyHtml(step) {
 }
 
 // The inspector's priority line: the score (hover for its waterfall) and the task's P1/P2/P3, which writes `priority:` to the task file.
-export const priorityHtml = (step) => step.kind === "note" ? "" : `<div class="step-priority">${scoreHtml(step)}<span class="step-priority-why">Task priority</span>
+export const priorityHtml = (step) => noteLike(step) ? "" : `<div class="step-priority">${scoreHtml(step)}<span class="step-priority-why">Task priority</span>
   <span class="step-toggle" role="group" aria-label="Task priority" title="The whole task's priority: P1 raises every step in it, P3 lowers them">${["p1", "p2", "p3"].map((p) => `<button type="button" data-step-action="priority-${p}" aria-pressed="${(step.priority || "p2") === p}">${p.toUpperCase()}</button>`).join("")}</span></div>`;
 
 export function stepInspectorHtml(step, extra = "", context = {}) {

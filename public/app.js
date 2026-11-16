@@ -378,7 +378,7 @@ const TASK_SORTS = {
   updated: (a, b) => a.task.updated.localeCompare(b.task.updated),
 };
 const taskSort = { key: "status", dir: 1 };
-const stepTally = (id) => { const steps = stepsData?.steps.filter((step) => step.task === id && step.move !== "blocked") || []; return { you: steps.filter((step) => MOVE_FILTERS.you.includes(step.move)).length, open: steps.length }; };
+const stepTally = (id) => { const steps = stepsData?.steps.filter((step) => step.task === id && step.move !== "blocked" && step.move !== "flags") || []; return { you: steps.filter((step) => MOVE_FILTERS.you.includes(step.move)).length, open: steps.length }; };
 // What each task's assets folder holds (documents, diagrams, images), from the world view's file list; filled after the
 // first Tasks render so the table never waits on it, and refreshed on each visit.
 let contentCounts = {};
