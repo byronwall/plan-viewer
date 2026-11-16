@@ -475,13 +475,18 @@ function nextStep(pr) {
 const IDLE = 14 * DAY;
 // Each move: label, glyph, the button that drafts it for the whole section, and the prompt's ask. Order is board order.
 const MOVES = {
-  review: { label: "Review", glyph: "eye", verb: "Nudge", ask: (who) => who === ui.data.me ? "Review each of these PRs; my review is requested on all of them. Start with the bottom of any stack." : `These PRs wait on review from ${personName(who)}. For each, say how long the request has waited, and draft a short nudge to them or propose another reviewer who knows the touched files. Send nothing.` },
+  review: { label: "Review", glyph: "eye", verb: "Nudge", ask: (who) => who === ui.data.me ? reviewAsk() : `These PRs wait on review from ${personName(who)}. For each, say how long the request has waited, and draft a short nudge to them or propose another reviewer who knows the touched files. Send nothing.` },
   merge: { label: "Merge", glyph: "circle-check", verb: "Check & merge", ask: () => "These PRs are approved. For each, confirm it is still mergeable with green checks and up to date with its base, then list them in merge order, bottom of each stack first. Do not merge anything." },
   fix: { label: "Fix first", glyph: "triangle-alert", verb: "Fix all", ask: () => "Each of these PRs needs a fix before anyone can review or merge it; the step is on its line. Do each step in the PR's worktree (merge its base in, fix the failing checks, or answer the requested changes), push, and report what changed. Stop and ask when a conflict needs a judgment call." },
   none: { label: "Pick a reviewer", glyph: "user", verb: "Pick reviewers", ask: () => "None of these PRs has a human reviewer. For each, propose one reviewer with a one-line reason, from the repository's code owners and the people who recently reviewed or changed the touched files. Draft the review requests; request nothing yet." },
   draft: { label: "Drafts", glyph: "pen-line", verb: "Triage drafts", ask: () => "These PRs are still drafts. For each, say what stands between it and review (failing checks, conflicts, unfinished work in the description), and recommend one of: mark ready with a reviewer, run a shakedown first, or park it." },
   idle: { label: "Idle two weeks or more", glyph: "clock", verb: "Triage idle", ask: () => "These PRs have had no activity for two weeks or more. For each, recommend close, fold into another PR, or revive, with one line why. Close nothing; I close PRs myself." },
 };
+// Your own review section runs `code.reviewMove` (a review gate that tries to break each PR, say) instead of nudging
+// yourself; without one it asks for a plain review. Other people's review sections keep Nudge.
+const reviewMove = () => config().code.reviewMove || {};
+const moveVerb = (move, column) => move === "review" && column === ui.data.me ? reviewMove().label || "Review all" : MOVES[move].verb;
+const reviewAsk = () => reviewMove().ask || "Review each of these PRs; my review is requested on all of them. Start with the bottom of any stack.";
 const glyph = (name) => `<svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true">${GLYPHS[name]}</svg>`;
 function placeOf(stack) {
   const pr = stack[0];
@@ -550,7 +555,7 @@ const chainHtml = (stack, column) => stack.length > 1
 const moveHead = (move, stacks, column) => {
   const count = stacks.reduce((sum, stack) => sum + stack.length, 0);
   const label = move === "review" ? (column === ui.data.me ? "Your review" : "Their review") : MOVES[move].label;
-  return `<h4>${glyph(MOVES[move].glyph)}<span class="code-lane-label">${label}</span><span class="code-lane-count">${count}</span><button type="button" class="code-lane-move" data-board-move="${move}" data-board-column="${escapeHtml(column)}">${MOVES[move].verb}</button></h4>`;
+  return `<h4>${glyph(MOVES[move].glyph)}<span class="code-lane-label">${label}</span><span class="code-lane-count">${count}</span><button type="button" class="code-lane-move" data-board-move="${move}" data-board-column="${escapeHtml(column)}">${escapeHtml(moveVerb(move, column))}</button></h4>`;
 };
 
 // Stacks grouped by column and move; the move filter and "stacked only" narrow it, the sort orders stacks inside sections.
@@ -624,7 +629,7 @@ function movePrompt(move, login, note) {
     const files = pr.changedFiles ? `, ${pr.changedFiles} files` : "";
     return `- ${pr.url} — ${pr.title} (${nextStep(pr)[1]}; +${pr.additions} −${pr.deletions}${files}; author ${personName(pr.author)}${parent ? `; stacked on #${parent.number}` : ""})`;
   });
-  return { prs, title: `${MOVES[move].verb}: ${prs.length} PR${prs.length === 1 ? "" : "s"}`, prompt: `${MOVES[move].ask(login)}\n\n${lines.join("\n")}${note.trim() ? `\n\nNote: ${note.trim()}` : ""}\n` };
+  return { prs, title: `${moveVerb(move, login)}: ${prs.length} PR${prs.length === 1 ? "" : "s"}`, prompt: `${MOVES[move].ask(login)}\n\n${lines.join("\n")}${note.trim() ? `\n\nNote: ${note.trim()}` : ""}\n` };
 }
 
 function openMovePop(button) {
@@ -638,7 +643,7 @@ function openMovePop(button) {
   pop.ontoggle = (event) => { if (event.newState === "closed") head.classList.remove("is-open"); };
   pop.dataset.move = move;
   pop.dataset.column = column;
-  pop.innerHTML = `<header>${glyph(MOVES[move].glyph)}<b>${MOVES[move].verb}</b><span>${prs.length} PR${prs.length === 1 ? "" : "s"}</span></header>
+  pop.innerHTML = `<header>${glyph(MOVES[move].glyph)}<b>${escapeHtml(moveVerb(move, column))}</b><span>${prs.length} PR${prs.length === 1 ? "" : "s"}</span></header>
     <p class="code-move-ask">${escapeHtml(MOVES[move].ask(column))}</p>
     <p class="code-move-prs">${prs.map((pr) => `#${pr.number}`).join(" ")}</p>
     <textarea data-move-note rows="2" placeholder="Add a comment for the agent (optional)" spellcheck="true"></textarea>

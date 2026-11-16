@@ -40,6 +40,9 @@ export const DEFAULT_CONFIG = {
     prSkills: [],
     // Skill file the "Post as review" notes prompt follows; empty asks the agent to post without one.
     postNotesSkill: "",
+    // The Stacks board's "Your review" section button: `{ label, ask }`, where `ask` leads the drafted prompt above the
+    // PR list (a review gate that tries to break each PR, say). Null keeps "Review all", a plain review prompt.
+    reviewMove: null,
     // Skill the Plans tab's Update and Retire drafts name (an initiative-planning skill); empty leaves it out.
     planSkill: "",
     // Opens a PR preview from a repo that has every `requires` file; `{number}` is the PR. null hides the button.
