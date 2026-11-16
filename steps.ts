@@ -458,10 +458,16 @@ export async function saveLaunchNote(root: string, body: Record<string, unknown>
   return saveNote(root, { commentary: title || comment || "Note", prompt }, now);
 }
 
+// A note's text, as one string copied from `source`, or as pieces each copied from its own document (`from`; "" for
+// text the writer composed, which is left alone). Every piece's relative links are re-pointed from its own document, so
+// a follow-through note's step title (from the task file) and the draft's own list (from the draft) both resolve.
+export type NoteText = string | { text: string; from: string }[];
+
 // `step` (`TASK-0101 W2.1`) ties the note to a step: a decision voiced over, or direction for one step. While the note
 // is open it stands in for that step, so the step leaves its mover's list.
-export async function saveNote(root: string, { commentary, prompt, source = "", task = "", step = "", images = [] as string[] }, now = new Date()) {
-  const title = commentary.trim().split("\n")[0].replace(/\s+/g, " ").slice(0, 90) || "Note";
+export async function saveNote(root: string, { commentary, prompt: text, source = "", task = "", step = "", images = [] as string[] }: { commentary: string; prompt: NoteText; source?: string; task?: string; step?: string; images?: string[] }, now = new Date()) {
+  // The heading keeps link labels only: a link cut off at 90 characters would leave half a target behind.
+  const title = commentary.trim().split("\n")[0].replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\s+/g, " ").slice(0, 90) || "Note";
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "note";
   const folder = notesFolder(task);
   const stem = `${stamp(now)}-${slug}`;
@@ -475,7 +481,7 @@ export async function saveNote(root: string, { commentary, prompt, source = "", 
   }
   const path = `${folder}/${stem}.md`;
   const front = [`note: open`, `created: ${now.toLocaleString("sv-SE").slice(0, 16)}`, source && `source: ${source}`, task && `task: ${task}`, step && `step: ${step}`].filter(Boolean).join("\n");
-  prompt = relinkFrom(prompt, source, path);
+  const prompt = (typeof text === "string" ? [{ text, from: source }] : text).map((piece) => relinkFrom(piece.text, piece.from, path)).join("\n");
   const body = kept.length ? `${prompt}\n\nAttached images (pasted with the note; open each file to view it):\n${kept.map((file) => `- ${file}`).join("\n")}` : prompt;
   await writeFile(join(root, path), `---\n${front}\n---\n\n# ${title}\n\n${body}\n`);
   return { path, title };
@@ -532,23 +538,24 @@ export async function followUpNote(root: string, { step, did, source = "", resul
   const node = parseWorkBreakdown(section(markdown, "Work breakdown")).nodes.find((n: { id: string }) => n.id === id);
   const machinery = source && source !== taskPath ? await readFile(join(root, source), "utf8").catch(() => "") : "";
   const known = machinery.match(AFTER)?.[1].trim() || "";
-  const prompt = [
+  const lines: (string | { text: string; from: string })[] = [
     `${config().user} ${did} in the viewer, which completed ${id}. The click did only that; reconcile what else should change now that it's done.`,
     "",
     `Planning workspace: ${resolve(root)}`,
     `Task: ${task}${markdown.match(/^title:\s*(.+)$/m) ? ` · ${markdown.match(/^title:\s*(.+)$/m)![1].replace(/^["']|["']$/g, "")}` : ""} (${taskPath})`,
-    `Step: ${id}${node ? `: ${node.title}` : ""}`,
+    { text: `Step: ${id}${node ? `: ${node.title}` : ""}`, from: taskPath },
     source && source !== taskPath ? `Draft or machinery: ${source}` : "",
     result ? `Result: ${result}` : "",
     "",
     `Read the workspace AGENTS.md and the task first, then any task asset whose front matter names \`step: ${task} ${id}\`.`,
-    known ? `\nThe draft listed this follow-through; do each item:\n\n${known}\n` : "",
+    known ? { text: `\nThe draft listed this follow-through; do each item:\n\n${known}\n`, from: source } : "",
     "Then check the ripple the click didn't touch:",
     `- The task: a dated update says what happened and links the result; Next actions that named ${id} are removed or rewritten (an active task keeps one ready action); steps that waited on ${id} (\`after:\`) are ready; the task's status, waiting and check-in still fit.`,
     "- Trackers, PRs and threads the step or its draft names: move or link what the workspace lets an agent change, and write anything that would leave the workspace as its own outbound draft instead of sending it.",
     "- Today's plan lists only what is still open.",
     "",
     "Record what you changed as a dated update on the task (one line saying nothing needed changing is fine). Then close this note: set `note: done` in its front matter and add a dated line saying what you did.",
-  ].filter((line, index, all) => line !== "" || all[index - 1] !== "").join("\n");
+  ];
+  const prompt = lines.filter((line, index, all) => line !== "" || all[index - 1] !== "").map((line) => typeof line === "string" ? { text: line, from: "" } : line);
   return saveNote(root, { commentary: `Follow through on ${id}${node ? ` · ${node.title}` : ""}`, prompt, task, step: `${task} ${id}`, source: source || taskPath }, now);
 }

@@ -217,18 +217,29 @@ test("a saved note re-points the copied chunk's relative links and images from i
   assert.ok(text.includes("[audit](../audit.md) ![map](../diagrams/1-map.draft) [plan](../../../plans/acme/README.md#goals) [other](../../TASK-0002.md) [web](https://acme.test/x) [here](#retry) [rooted](tasks/TASK-0003.md) `TASK-0001-assets/audit.md`"), text);
 });
 
+test("a note's pieces re-point links from their own documents, in a task's notes or in reference/notes", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "notes-pieces-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const at = new Date(2026, 10, 16, 9, 0, 0);
+  const pieces = [{ text: "Step: [draft](TASK-0001-assets/reply.md)", from: "tasks/TASK-0001.md" }, { text: "See [plan](plan.md)", from: "tasks/TASK-0001-assets/reply.md" }, { text: "Composed [as is](x.md)", from: "" }];
+  const task = await readFile(join(root, (await saveNote(root, { commentary: "Pieces", prompt: pieces, task: "TASK-0001" }, at)).path), "utf8");
+  assert.ok(task.includes("Step: [draft](../reply.md)\nSee [plan](../plan.md)\nComposed [as is](x.md)"), task);
+  const loose = await readFile(join(root, (await saveNote(root, { commentary: "Loose", prompt: pieces }, at)).path), "utf8");
+  assert.ok(loose.includes("Step: [draft](../../tasks/TASK-0001-assets/reply.md)\nSee [plan](../../tasks/TASK-0001-assets/plan.md)"), loose);
+});
+
 test("with steps.followUp, a finished step leaves an open follow-through note carrying the draft's own list", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "steps-follow-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "tasks", "TASK-0001-assets"), { recursive: true });
-  await writeFile(join(root, "tasks", "TASK-0001.md"), "---\ntitle: Ship it\n---\n\n## Work breakdown\n\n- W1: Reply on the PR [completed] {pr-comment, S}\n");
+  await writeFile(join(root, "tasks", "TASK-0001.md"), "---\ntitle: Ship it\n---\n\n## Work breakdown\n\n- W1: Reply on the PR ([draft](TASK-0001-assets/reply.md)) [completed] {pr-comment, S}\n");
   await writeFile(join(root, "tasks", "TASK-0001-assets", "reply.md"), "---\noutbound: pr-comment\nstep: TASK-0001 W1\n---\n\n# Reply\n\n## After it's sent\n\n- Resolve the review thread\n- See [the plan](plan.md)\n");
   const step = { step: "TASK-0001 W1", did: "approved and sent the pr-comment to #7", source: "tasks/TASK-0001-assets/reply.md", result: "https://github.com/acme/app/pull/7#c1" };
   assert.equal(await followUpNote(root, step), null); // off by default
   setConfig({ user: "Pat", steps: { followUp: true } });
   t.after(() => setConfig({}));
   const saved = await followUpNote(root, step);
-  assert.equal(saved?.title, "Follow through on W1 · Reply on the PR");
+  assert.equal(saved?.title, "Follow through on W1 · Reply on the PR (draft)"); // the heading keeps link labels only
   const text = await readFile(join(root, saved!.path), "utf8");
   assert.match(text, /^note: open$/m);
   assert.match(text, /^step: TASK-0001 W1$/m);
@@ -236,6 +247,9 @@ test("with steps.followUp, a finished step leaves an open follow-through note ca
   assert.match(text, /Result: https:\/\/github\.com\/acme\/app\/pull\/7#c1/);
   assert.match(text, /- Resolve the review thread/);
   assert.match(text, /\[the plan\]\(\.\.\/plan\.md\)/); // re-pointed from the draft's folder to the note's
+  // The step title comes from the task file, so its draft link is re-pointed from tasks/, not from the draft's folder
+  // (which once gave ../TASK-0001-assets/reply.md, i.e. tasks/TASK-0001-assets/TASK-0001-assets/reply.md).
+  assert.match(text, /^Step: W1: Reply on the PR \(\[draft\]\(\.\.\/reply\.md\)\)$/m);
   const [note] = await listNotes(root);
   assert.equal(note.noteFor, "TASK-0001 W1");
 });
