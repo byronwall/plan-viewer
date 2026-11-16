@@ -87,6 +87,8 @@ export function attachScorePopover(lookup) {
   document.addEventListener("pointerout", (event) => { const el = event.target.closest?.("[data-score-step]"); if (el && !el.contains(event.relatedTarget)) leave(); });
   document.addEventListener("focusin", (event) => {
     if (!event.target.matches?.(":focus-visible")) return;
+    // Form controls in a row (the next-move select, checkboxes) are not the score: focusing one hides the card, never opens it.
+    if (event.target.matches("select, input, textarea, [contenteditable]")) { if (current) close(); return; }
     const el = event.target.closest("tr, .step-row, .step-priority")?.querySelector("[data-score-step]");
     if (el) show(el); else if (current) close();
   });
