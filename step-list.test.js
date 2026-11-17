@@ -45,7 +45,9 @@ test("a task's Steps group rows under workstreams, pill only what waits on you, 
   const steps = [step({ id: 'W1.2' }), { ...step({ id: 'W2' }), move: 'agent', reason: 'ready' }];
   const html = taskStepsHtml({ taskId: 'TASK-0101', work, steps, noteCount: (id) => id === 'W1.3' ? 2 : 0 });
   const all = html.slice(html.indexOf('data-step-layer="all"'));
-  assert.match(all, /class="step-group-head" data-open-step="TASK-0101:W1"><code>W1<\/code><span>Invites/);
+  const head = all.match(/<button type="button" class="step-group-head" data-open-step="TASK-0101:W1".*?<\/button>/)?.[0] || '';
+  assert.match(head, /<code class="step-row-id">W1<\/code>.*is-group.*class="step-group-title">Invites/, 'a parent is a group header with a group glyph, not a status icon');
+  assert.match(head, /--done: 33%.*2 open · 1 done<\/span>/, 'the header carries its progress where a step carries its state');
   assert.match(all, /class="step-row is-settled" data-open-step="TASK-0101:W1.1"/);
   assert.match(all, /data-open-step="TASK-0101:W1.2".*step-move-you[^<]*>Decide<\/span>Decide the expiry/);
   assert.match(all, /data-open-step="TASK-0101:W1.3".*2<\/span>after W1.2/);

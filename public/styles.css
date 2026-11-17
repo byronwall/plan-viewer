@@ -906,9 +906,12 @@ button.task-list-id:hover { text-decoration: underline; }
 .step-row-title > .step-move { margin-right: 8px; vertical-align: 1px; }
 .step-row-notes { display: inline-flex; align-items: center; gap: 2px; margin-right: 8px; color: var(--action-ink); font-weight: 600; }
 .step-row-notes svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.step-group-head { display: flex; align-items: baseline; gap: 10px; width: 100%; margin-top: 8px; border: 0; border-top: 1px solid var(--line); background: transparent; padding: 6px 4px 3px; color: var(--ink); font: inherit; font-size: .84rem; font-weight: 650; text-align: left; cursor: pointer; transition: background-color 140ms ease-out; }
+/* A group header, not a step: muted, regular weight, a group glyph in the status slot and progress in the meta slot. */
+.step-group-head { display: grid; grid-template-columns: var(--step-lead, 70px) minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; margin-top: 10px; border: 0; border-top: 1px solid var(--line); background: transparent; padding: 6px 4px 4px; color: var(--muted); font: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease-out; }
 .step-layer > .step-rows > .step-group-head:first-child { margin-top: 0; }
-.step-group-head code { flex: none; width: var(--step-lead); color: var(--muted); font: 650 .74rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.step-group-title { font-size: .8rem; font-weight: 500; line-height: 1.4; }
+.step-group-head .work-status-icon.is-group svg { width: 14px; height: 14px; }
+.step-group-bar { display: inline-block; width: 36px; height: 4px; margin-right: 6px; border-radius: 2px; background: linear-gradient(to right, var(--success) var(--done), var(--line) var(--done)); vertical-align: 1px; }
 @media (hover: hover) { .step-group-head:hover { background: var(--hover-field); } }
 .step-row.is-settled .step-row-title { color: var(--muted); font-weight: 500; }
 .task-steps:not(:has(.show-done input:checked)) :is(.is-settled, .work-graph.is-full), .task-steps:has(.show-done input:checked) .work-graph.is-live { display: none; }

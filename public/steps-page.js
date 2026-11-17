@@ -299,12 +299,20 @@ export function taskStepsHtml({ taskId = "", work, steps = [], actions = [], not
     const step = stepOf(n.id);
     return stepRowHtml({ key: key(n), lead: `<code class="step-row-id">${escapeHtml(n.id)}</code>${workStatusIcon(n, nodes)}`, pill: step?.move.startsWith("you") ? movePill(step) : "", title: n.title, meta: meta(n), className: settled.has(n.id) ? " is-settled" : "" });
   };
+  // A workstream with steps under it is a group, not a step: a muted header with a group glyph where a step's status
+  // icon sits, and its progress (a thin bar, then `3 open · 5 done`) where a step's state sits.
+  const workstreamHead = (top) => {
+    const under = rows.filter((n) => n !== top && topOf(n) === top);
+    const done = under.filter((n) => settled.has(n.id)).length;
+    const open = under.length - done;
+    const progress = `<span class="step-group-bar" style="--done: ${under.length ? Math.round((done / under.length) * 100) : 0}%" aria-hidden="true"></span>${[open && `${open} open`, done && `${done} done`].filter(Boolean).join(" · ")}`;
+    return `<button type="button" class="step-group-head${settled.has(top.id) ? " is-settled" : ""}" data-open-step="${escapeHtml(key(top))}" aria-label="${escapeHtml(`${top.id} group: ${open} open, ${done} done`)}"><span class="step-row-lead"><code class="step-row-id">${escapeHtml(top.id)}</code><span class="work-status-icon is-group"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS["list-tree"]}</svg></span></span><span class="step-group-title">${stepTitleHtml(top.title)}</span><span class="step-row-meta">${progress}</span></button>`;
+  };
   const layer = (name) => {
     const html = nodes.filter((n) => !n.parent).map((top) => {
       const list = rows.filter((n) => topOf(n) === top && inLayer(n, name));
       if (!list.length) return "";
-      const head = isRow(top) ? "" : `<button type="button" class="step-group-head${settled.has(top.id) ? " is-settled" : ""}" data-open-step="${escapeHtml(key(top))}"><code>${escapeHtml(top.id)}</code><span>${stepTitleHtml(top.title)}</span></button>`;
-      return head + list.map(row).join("");
+      return (isRow(top) ? "" : workstreamHead(top)) + list.map(row).join("");
     }).join("");
     return `<div class="step-rows">${html || `<p class="step-rows-empty">No steps wait on ${name === "you" ? "you" : name === "agent" ? "an agent" : "others"}.</p>`}</div>`;
   };
