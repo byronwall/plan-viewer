@@ -5,7 +5,7 @@ import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
 import "./table-fit.js";
 import { assetHref, delimitedTable, diagramHref, documentHref, refreshAssetImages, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
-import { TABS as CODE_TABS, connectPlanning, setPeople, ago, copyPrompt, cachedPrIndex, commitLinkMatch, diffSize, hideTip, icon, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
+import { TABS as CODE_TABS, connectPlanning, setPeople, ago, copyPrompt, cachedPrIndex, commitLinkMatch, diffSize, hideTip, icon, showTip, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, isMyIssue, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
 import { renderActivityPage } from "./activity.js";
 import { openSlackThread, refreshSlackStars, setSlackFavorites, setSlackNotice, slackThreadTitle } from "./slack.js";
@@ -1173,7 +1173,7 @@ function renderImageViewer() {
       </div>
       <div class="image-viewer-controls" aria-label="Image controls">
         ${item.diagram && isDiffDiagram(item.source) ? panelsToggle(item) : ""}
-        ${item.diagram ? `<button class="image-viewer-text" type="button" data-image-action="toggle-source" aria-pressed="${imageViewerState.showSource}" title="Show the .draft source beside the drawing (S)">Source</button><button class="image-viewer-text" type="button" data-image-action="copy-png" title="Copy the drawing as a PNG that carries its source (C)">Copy PNG</button><button class="image-viewer-text image-viewer-edit" type="button" data-image-action="edit-diagram" title="Open ${escapeHtml(item.diagram.split("/").pop())} in the draftably editor; saves redraw here (E)">Edit</button>` : ""}
+        ${item.diagram ? `<button class="image-viewer-text" type="button" data-image-action="toggle-source" aria-pressed="${imageViewerState.showSource}" data-tip="Show the .draft source beside the drawing (S)">Source</button><button class="image-viewer-text" type="button" data-image-action="copy-png" data-tip="Copy the drawing as a PNG that carries its source (C)">Copy PNG</button><button class="image-viewer-text image-viewer-edit" type="button" data-image-action="edit-diagram" data-tip="Open ${escapeHtml(item.diagram.split("/").pop())} in the draftably editor; saves redraw here (E)">Edit</button>` : ""}
         <button type="button" data-image-action="zoom-out" aria-label="Zoom out">−</button>
         <button class="image-viewer-reset" type="button" data-image-action="reset" aria-label="Reset image to fit"><span data-image-zoom>Fit</span><span>Reset</span></button>
         <button type="button" data-image-action="zoom-in" aria-label="Zoom in">+</button>
@@ -1187,11 +1187,11 @@ function renderImageViewer() {
         ${count > 1 ? `<button class="image-viewer-nav image-viewer-previous" type="button" data-image-action="previous" aria-label="Previous image">←</button><button class="image-viewer-nav image-viewer-next" type="button" data-image-action="next" aria-label="Next image">→</button>` : ""}
       </div>
       ${source ? `<aside class="diagram-source" aria-label="Diagram source">
-        <header><span title="${escapeHtml(item.diagram)}">${escapeHtml(item.diagram.split("/").pop())}</span><button type="button" data-image-action="copy-source" title="Copy the source">${glyph("copy")}<span>Copy</span></button></header>
+        <header><span data-tip="${escapeHtml(item.diagram)}">${escapeHtml(item.diagram.split("/").pop())}</span><button type="button" data-image-action="copy-source" data-tip="Copy the source">${glyph("copy")}<span>Copy</span></button></header>
         <pre>${item.source === undefined ? `<span class="draft-loading">Loading…</span>` : item.source === null ? `<span class="draft-loading">Could not load the diagram. <button type="button" data-image-action="retry-diagram">Retry</button></span>` : sourceHtml(item.source)}</pre>
         <form class="diagram-ask" data-diagram-ask>
           <textarea rows="1" aria-label="Ask ${escapeHtml(agentName())} about this diagram" placeholder="Ask ${escapeHtml(agentName())} to change this diagram (D)…">${escapeHtml(diagramDrafts.get(item.diagram) || "")}</textarea>
-          <footer><span class="note-pop-hint"><kbd>Enter</kbd> save note · <kbd>⌘</kbd><kbd>Enter</kbd> open</span><button type="button" class="note-pop-icon" data-image-action="copy-prompt" title="Copy the prompt" aria-label="Copy the prompt">${glyph("copy")}</button><button type="button" class="note-pop-send" data-image-action="diagram-open">Open in ${escapeHtml(agentName())}</button><button class="note-pop-save" type="submit">Save note</button></footer>
+          <footer><span class="note-pop-hint"><kbd>Enter</kbd> save note · <kbd>⌘</kbd><kbd>Enter</kbd> open</span><button type="button" class="note-pop-icon" data-image-action="copy-prompt" data-tip="Copy the prompt" aria-label="Copy the prompt">${glyph("copy")}</button><button type="button" class="note-pop-send" data-image-action="diagram-open">Open in ${escapeHtml(agentName())}</button><button class="note-pop-save" type="submit">Save note</button></footer>
         </form>
       </aside>` : ""}
     </div>
@@ -3372,7 +3372,7 @@ elements.imageViewer.addEventListener("click", (event) => {
 // Inline, side by side or stacked, for a diff diagram. The pressed one is what is drawn.
 function panelsToggle(item) {
   const panels = imageViewerState.panels || comparePanels(item.source);
-  return `<span class="image-viewer-segmented" role="group" aria-label="How the changes are drawn">${DIFF_LAYOUTS.map(([value, label, how]) => `<button class="image-viewer-text" type="button" data-image-action="panels" data-panels="${value}" aria-pressed="${panels === value}" title="Draw the changes ${how} (L cycles)">${label}</button>`).join("")}</span>`;
+  return `<span class="image-viewer-segmented" role="group" aria-label="How the changes are drawn">${DIFF_LAYOUTS.map(([value, label, how]) => `<button class="image-viewer-text" type="button" data-image-action="panels" data-panels="${value}" aria-pressed="${panels === value}" data-tip="Draw the changes ${how} (L cycles)">${label}</button>`).join("")}</span>`;
 }
 
 function setDiagramPanels(panels) {
@@ -3532,6 +3532,8 @@ async function loadDiagram(item) {
 }
 
 // Hovering a drawn object marks its statement, and hovering a statement marks what it draws.
+// The viewer's controls use the shared hover tip, not native title tooltips.
+elements.imageViewer.addEventListener("pointerover", (event) => { const target = event.target.closest("[data-tip]"); if (target) showTip(target); else hideTip(); });
 elements.imageViewer.addEventListener("mouseover", (event) => {
   const from = event.target.closest(".image-viewer-diagram [data-id], .draft-line[data-id]");
   for (const marked of elements.imageViewer.querySelectorAll(".is-linked")) marked.classList.remove("is-linked");
