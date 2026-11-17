@@ -153,3 +153,31 @@ test("reference lint: step titles on new tasks and diagram labels say what each 
   const good = 'node a "RAI-55557 · role can\'t read data\\n#2278 names the role, #2291 error codes"\nedge e1 a -> b "error codes reach STAGING"\nlayout root flow\n';
   assert.deepEqual(diagramErrors(good), []);
 });
+
+test("voice lint: diagram headings that describe the drawing, leak the brief, or pad with filler", async () => {
+  const { diagramErrors, voiceProblems } = await import("./check-planning.ts");
+  for (const bad of [
+    "The happy path first, then the three edge cases that break it",
+    "What works up top, the cases where it breaks below",
+    "Exact text on read, no writes. 08 and 09 show each call in order",
+    "What is new by layer. Diagram 07 shows how they connect",
+    "This diagram shows how a deploy reaches staging",
+    "Key takeaways from the outage",
+    "A comprehensive view of the seamless rollout",
+    "Retries could potentially hide the error",
+    "Happy path: what everybody needs to know",
+  ]) assert.notDeepEqual(voiceProblems(bad), [], bad);
+  for (const good of [
+    "Models deployed before Sep 15 have no identity marker, and teardown refuses them",
+    "The rows are already in the oplog; the preview serves them",
+    "How one redeploy took both Hero Journey instances down",
+    "Persist the event first, then project it",
+    "Lock prod to its deploy branch, show attribute diffs, add one approval",
+    "Its overview table is made next, ahead of the background work",
+    "Rotate the API key before Friday",
+    "Latency stays below 2 s",
+  ]) assert.deepEqual(voiceProblems(good), [], good);
+  const source = 'diagram "What works, and where it breaks" version=1\nsubtitle "The happy path first, then the edge cases"\ngroup g "Seamless handoff"\nnode a "This diagram shows nothing wrong here"\nlegend red "Fails today"\n';
+  assert.deepEqual(diagramErrors(source).map((e) => e.split(":")[0]), ["line 2", "line 3"], "boxes are not voice-checked; headings are");
+  assert.match(diagramErrors(source)[0], /narrates the layout \(“happy path first”\)/);
+});

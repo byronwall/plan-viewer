@@ -30,16 +30,40 @@ export function ungroundedReferences(text: string): string[] {
 
 const GROUNDING_HINT = "give each reference two or three words saying what it is (“#2282 lost Settings save reply”, “RAI-55557 · role can't read data”)";
 
-// Every title, subtitle, box, group, edge label and note in a .draft diagram says what its references are.
+// Generated-sounding copy in a diagram's headings: the drawing describing itself or its own layout, notes from the
+// brief that leaked into the text, filler and hedges. Each pattern is narrow on purpose (a data "row", an "API key",
+// a "Hero Journey" product name all pass), so a hit is nearly always a line a reader would rewrite.
+const VOICE_PATTERNS: [string, RegExp][] = [
+  ["points at the drawing instead of saying something", /\b(?:this|the|each|every|next|previous|other) (?:diagram|chart|figure|drawing|picture|graphic|visual|slide)s?\b|\b(?:diagram|figure|chart)s? \d+\b|\b\d{1,2}(?: and \d{1,2})? shows?\b|\b(?:the|these|red|green|amber|gr[ae]y) (?:boxes|arrows|lanes) (?:show|mean)\b/i],
+  ["narrates the layout", /\b(?:up top|down below|(?:at|on|along) the (?:top|bottom|left|right)|(?:from )?left to right|(?:from )?top to bottom|happy path (?:first|on top|up top)|then the (?:edge|corner) cases|(?:shown|listed|drawn|laid out) (?:here|below|above)|(?:breaks?|fails?|go(?:es)?|is|are|sits?|follows?|comes?) (?:above|below)(?=\s*(?:[,;.:]|$)))/i],
+  ["reads like notes from the brief", /\b(?:at a glance|tl;?dr|(?:key |the |one )?takeaways?|in (?:\w+'s|my|your|their) voice|plain(?:er)? (?:language|wording)|as requested|per the brief|for the reader|what (?:you|everybody|everyone|readers?) (?:needs?|should) (?:to )?know|(?:an )?overview of|here's|here (?:is|are)|(?:this|it) (?:shows|illustrates|depicts|visuali[sz]es|highlights|summari[sz]es)|(?:illustrat|depict|visuali[sz])(?:es|ing|ed))\b/i],
+  ["uses filler", /\b(?:key (?:takeaways?|points?|insights?|flows?|concepts?|ideas?|findings?|players?|aspects?|elements?|considerations?|moments?)|comprehensive\w*|seamless\w*|robust(?:ly|ness)?|holistic\w*|leverag(?:e|es|ed|ing)|streamlin\w*|utili[sz]\w*|high-level|deep dive|delve\w*|crucial(?:ly)?|pivotal|myriad|nuanced)\b/i],
+  ["hedges", /\b(?:potentially|arguably|essentially|basically|somewhat|generally speaking|it (?:seems|appears)|may (?:potentially|possibly)|might possibly|could potentially|to some extent)\b/i],
+];
+const VOICE_HINT = "say the finding itself, as you'd tell a teammate (“Models deployed before Sep 15 have no identity marker, and teardown refuses them”, not “The happy path first, then the three edge cases that break it”)";
+
+// What reads as generated in one heading (title, subtitle, group title or legend entry): each problem and the words
+// that matched. Empty when it reads as written.
+export function voiceProblems(text: string): string[] {
+  return VOICE_PATTERNS.flatMap(([problem, pattern]) => {
+    const hit = text.match(pattern);
+    return hit ? [`${problem} (“${hit[0]}”)`] : [];
+  });
+}
+
+// Every title, subtitle, box, group, edge label and note in a .draft diagram says what its references are, and its
+// headings (title, subtitle, group titles, legend) don't read as generated.
 export function diagramErrors(source: string): string[] {
   const errors: string[] = [];
   source.split("\n").forEach((line, index) => {
-    const quoted = line.match(/^\s*[+\-~.]?(?:diagram|subtitle|node|group|edge|note|footnote)\b[^"]*("(?:[^"\\]|\\.)*")/)?.[1];
-    if (!quoted) return;
+    const match = line.match(/^\s*[+\-~.]?(diagram|subtitle|node|group|edge|note|footnote|legend)\b[^"]*("(?:[^"\\]|\\.)*")/);
+    if (!match) return;
     let label: string;
-    try { label = JSON.parse(quoted).replaceAll("\n", " "); } catch { return; }
-    const bare = ungroundedReferences(label);
+    try { label = JSON.parse(match[2]).replaceAll("\n", " "); } catch { return; }
+    const bare = match[1] === "legend" ? [] : ungroundedReferences(label);
     if (bare.length) errors.push(`line ${index + 1}: “${label}” names ${bare.join(", ")} without saying what ${bare.length > 1 ? "they are" : "it is"}; ${GROUNDING_HINT}.`);
+    const voice = ["diagram", "subtitle", "group", "legend"].includes(match[1]) ? voiceProblems(label) : [];
+    if (voice.length) errors.push(`line ${index + 1}: ${match[1]} “${label}” ${voice.join(" and ")}; ${VOICE_HINT}.`);
   });
   return errors;
 }
