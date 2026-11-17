@@ -359,7 +359,47 @@ button { cursor: pointer; }
 .table-tools button:active { background: var(--selected); }
 .table-tools button.is-copied { animation: path-copy-confirmation 900ms ease-out; }
 .table-tools [data-table-download], .table-tools [data-table-expand] { margin-left: 3px; border-left: 1px solid var(--line); border-radius: 0 5px 5px 0; }
-.viewer-dialog.table-viewer { width: calc(100vw - 32px); max-width: none; height: calc(100dvh - 32px); max-height: none; }
+/* table-size.js sets the width and height; the dialog stays centered, so a drag grows it on both sides. */
+.viewer-dialog.table-viewer { width: calc(100vw - 32px); max-width: calc(100vw - 32px); height: calc(100dvh - 32px); max-height: calc(100dvh - 32px); container: table-viewer / inline-size; }
+.table-viewer.is-easing { transition: width 180ms cubic-bezier(.2, .8, .2, 1), height 180ms cubic-bezier(.2, .8, .2, 1); }
+.table-viewer.is-sizing { user-select: none; }
+.table-viewer.is-sizing, .table-viewer.is-sizing * { cursor: var(--grip-cursor) !important; }
+.table-viewer[data-sizing="n"], .table-viewer[data-sizing="s"] { --grip-cursor: ns-resize; }
+.table-viewer[data-sizing="e"], .table-viewer[data-sizing="w"] { --grip-cursor: ew-resize; }
+.table-viewer[data-sizing="nw"], .table-viewer[data-sizing="se"] { --grip-cursor: nwse-resize; }
+.table-viewer[data-sizing="ne"], .table-viewer[data-sizing="sw"] { --grip-cursor: nesw-resize; }
+.table-size { display: flex; flex: none; align-items: center; height: 26px; border-radius: 6px; background: var(--quiet-field); padding: 2px; }
+.table-viewer .viewer-dialog-heading .table-size button { width: auto; min-width: 30px; height: 22px; border-radius: 4px; background: transparent; padding: 0 7px; color: var(--muted); font-size: .74rem; font-weight: 600; transition: background-color 140ms ease-out, color 140ms ease-out; }
+@media (hover: hover) { .table-viewer .viewer-dialog-heading .table-size button:hover { background: var(--paper); color: var(--ink); } }
+.table-viewer .viewer-dialog-heading .table-size button:active { transform: scale(.97); }
+.table-viewer .viewer-dialog-heading .table-size button[aria-pressed="true"] { background: var(--paper); color: var(--action-ink); box-shadow: 0 1px 2px #18212f1f; }
+.table-viewer .viewer-dialog-heading .table-size button:focus-visible { outline: 2px solid var(--action); outline-offset: 1px; }
+/* Grips: 16px squares in the corners, 8px strips along the edges between them, all inside the dialog's box. */
+.table-grip { position: absolute; z-index: 5; }
+.table-grip[data-grip="n"], .table-grip[data-grip="s"] { left: 16px; right: 16px; height: 8px; cursor: ns-resize; }
+.table-grip[data-grip="e"], .table-grip[data-grip="w"] { top: 16px; bottom: 16px; width: 8px; cursor: ew-resize; }
+.table-grip[data-grip="n"] { top: 0; } .table-grip[data-grip="s"] { bottom: 0; }
+.table-grip[data-grip="e"] { right: 0; } .table-grip[data-grip="w"] { left: 0; }
+.table-grip:is([data-grip="nw"], [data-grip="ne"], [data-grip="se"], [data-grip="sw"]) { width: 18px; height: 18px; }
+.table-grip[data-grip="nw"] { top: 0; left: 0; cursor: nwse-resize; } .table-grip[data-grip="se"] { right: 0; bottom: 0; cursor: nwse-resize; }
+.table-grip[data-grip="ne"] { top: 0; right: 0; cursor: nesw-resize; } .table-grip[data-grip="sw"] { bottom: 0; left: 0; cursor: nesw-resize; }
+/* Each corner shows a bracket that follows the dialog's rounded corner: faint while the pointer is over the dialog, blue on the grip. */
+.table-grip:is([data-grip="nw"], [data-grip="ne"], [data-grip="se"], [data-grip="sw"])::after { content: ""; position: absolute; inset: 3px; border: 0 solid var(--quiet-text); opacity: 0; transition: opacity 140ms ease-out, border-color 140ms ease-out; }
+.table-grip[data-grip="nw"]::after { border-width: 2px 0 0 2px; border-top-left-radius: 9px; }
+.table-grip[data-grip="ne"]::after { border-width: 2px 2px 0 0; border-top-right-radius: 9px; }
+.table-grip[data-grip="se"]::after { border-width: 0 2px 2px 0; border-bottom-right-radius: 9px; }
+.table-grip[data-grip="sw"]::after { border-width: 0 0 2px 2px; border-bottom-left-radius: 9px; }
+@media (hover: hover) { .table-viewer:hover .table-grip::after { opacity: .55; } .table-grip:hover::after { opacity: 1; border-color: var(--action); } }
+@media (hover: none) { .table-grip::after { opacity: .55; } }
+.table-viewer[data-sizing] .table-grip::after { opacity: .55; }
+.table-viewer[data-sizing] .table-grip:active::after { opacity: 1; border-color: var(--action); }
+/* While dragging, the size floats in the middle of the table. */
+.table-size-readout { position: absolute; z-index: 6; top: 50%; left: 50%; display: grid; justify-items: center; gap: 1px; border-radius: 8px; background: #18212fe0; padding: 7px 12px 6px; color: #fff; font-variant-numeric: tabular-nums; pointer-events: none; opacity: 0; transform: translate(-50%, -50%) scale(.96); transition: opacity 120ms ease-out, transform 120ms ease-out; }
+.table-viewer.is-sizing .table-size-readout { opacity: 1; transform: translate(-50%, -50%); }
+.table-size-readout b { font-size: .95rem; font-weight: 650; }
+.table-size-readout span { color: #c5cddb; font-size: .72rem; }
+.table-size-readout i { font-style: normal; }
+.table-size-readout i.is-snapped { color: #fff; font-weight: 650; }
 .table-viewer[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
 .table-viewer .viewer-dialog-heading { padding: 10px 12px 10px 18px; }
 .table-viewer h2 span { margin-left: 6px; color: var(--muted); font-size: .78rem; font-weight: 500; }
@@ -369,12 +409,13 @@ button { cursor: pointer; }
 .table-viewer-body { margin: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .table-viewer-body:focus-visible { outline: none; }
 .table-viewer .viewer-dialog-heading { justify-content: flex-start; gap: 10px; }
-@media (max-width: 1100px) {
+@container table-viewer (max-width: 1180px) {
   .table-viewer .viewer-dialog-heading { position: relative; flex-wrap: wrap; row-gap: 6px; padding-right: 50px; }
   .table-viewer .viewer-dialog-heading > [data-dialog-close] { position: absolute; top: 10px; right: 12px; }
   .table-viewer-filter, .table-viewer .viewer-dialog-heading .table-viewer-clear { order: 1; }
   .table-viewer-filter { flex: 1 1 200px; }
-  .table-viewer .table-tools { order: 2; margin-left: 0; flex-wrap: wrap; }
+  .table-viewer .table-tools, .table-viewer .table-size { order: 2; }
+  .table-viewer .table-tools { margin-left: 0; flex-wrap: wrap; }
 }
 .table-viewer h2 { white-space: nowrap; }
 .table-viewer h2 span { font-variant-numeric: tabular-nums; }
@@ -388,6 +429,7 @@ button { cursor: pointer; }
 .table-viewer .viewer-dialog-heading .table-viewer-clear:hover { background: var(--hover-field); color: var(--action-deep); }
 .table-viewer .viewer-dialog-heading > [data-dialog-close] { flex: none; }
 .table-viewer.is-resizing, .table-viewer.is-resizing * { cursor: col-resize !important; user-select: none; }
+@media (prefers-reduced-motion: reduce) { .table-viewer.is-easing, .table-grip::after, .table-size-readout, .table-viewer .viewer-dialog-heading .table-size button { transition: none; } }
 @media (prefers-reduced-motion: reduce) { .table-bar > .table-tools, .markdown-code > .table-tools, .table-tools button { transition: none; } }
 /* position: relative makes the frame the containing block of the links' absolute .sr-only text, so the frame clips it
    instead of letting it stretch the page to the uncapped table's height. */

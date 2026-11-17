@@ -22,3 +22,9 @@ test('column filters match text, exact values, exclusions and comparisons', () =
   assert.equal(cellTest('>', 'number'), null, 'an operator alone filters nothing yet');
   assert.equal(cellTest('  ', 'text'), null);
 });
+
+test("table sizes accept fit and window percentages only", async () => {
+  const { validTableSize } = await import("./public/table-size.js");
+  for (const mode of ["fit", "50x50", "67x67", "100x100", "5x100"]) assert.equal(validTableSize(mode), true, mode);
+  for (const mode of ["", "full", "0x50", "101x50", "50x", "50x50x", null]) assert.equal(validTableSize(mode), false, String(mode));
+});

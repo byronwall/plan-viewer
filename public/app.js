@@ -3,6 +3,7 @@ import { isSettled, renderActions, renderWorkGraph, showDoneToggle, workDiagnost
 import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDocumentSort, selectDockSource, taskDocumentSequence } from "./dock.js";
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
+import { savedTableSize, sizeTableViewer, validTableSize } from "./table-size.js";
 import "./table-fit.js";
 import { assetHref, delimitedTable, diagramHref, documentHref, refreshAssetImages, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, connectPlanning, setPeople, ago, copyPrompt, cachedPrIndex, commitLinkMatch, diffSize, hideTip, icon, showTip, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
@@ -4084,8 +4085,12 @@ async function copyTable(button) {
     showNotice("Could not copy the table.", true);
   }
 }
-function showTableViewer(wrapper) {
+// A table on the document page is `?table=N` (its place on the page) with `&table-size=` (see table-size.js), so a
+// refresh, Back or a shared link reopens it as it was. Tables inside other overlays have no place to name.
+const pageTables = () => [...elements.chunks.querySelectorAll(".markdown-table")];
+function showTableViewer(wrapper, size = "") {
   const dialog = elements.tableViewer;
+  const place = pageTables().indexOf(wrapper) + 1;
   const table = wrapper.querySelector("table");
   const tools = wrapper.querySelector(".table-tools").cloneNode(true);
   // The overlay sizes its own columns, so drop the widths table-fit.js set on the page's copy.
@@ -4098,8 +4103,12 @@ function showTableViewer(wrapper) {
   dialog.innerHTML = `<header class="viewer-dialog-heading"><h2 id="table-viewer-title">Table <span>${table.tBodies[0].rows.length} rows × ${table.tHead.rows[0].cells.length} columns</span></h2>${tools.outerHTML}<button type="button" data-dialog-close aria-label="Close table">×</button></header><div class="table-viewer-body markdown" tabindex="0">${copy.outerHTML}</div>`;
   if (!openViewerDialog(dialog, { stack: true })) return;
   enhanceTable(dialog, tableCellText);
+  const mode = validTableSize(size) ? size : savedTableSize();
+  sizeTableViewer(dialog, mode, (next) => { if (place) setOverlayParams({ "table-size": next }); });
+  if (place) setOverlayParams({ table: String(place), "table-size": mode });
   dialog.querySelector(".table-viewer-body").focus();
 }
+elements.tableViewer.addEventListener("close", () => setOverlayParams({ table: "", "table-size": "" }));
 // Code blocks copy and download their fenced source verbatim; the file extension follows the fence's language.
 const CODE_EXTENSIONS = { javascript: "js", typescript: "ts", python: "py", bash: "sh", shell: "sh", zsh: "sh", markdown: "md", text: "txt", yaml: "yml" };
 async function copyCode(button) {
@@ -4418,6 +4427,11 @@ const OVERLAYS = [
     result: (params) => { const plan = params.get("plan"); return { icon: "initiative", title: escapeHtml(planTitle(plan) || plan.split("/").pop()), detail: escapeHtml(`${plan.split(":")[0].split("/").pop()} · ${params.get("doc")?.split("/").pop() || "initiative"}`), side: "Initiative" }; },
     closed: (params) => ["initiative reader", planTitle(params.get("plan")) || params.get("plan").split("/").pop()] },
 ];
+// `page` keys a visit by its page too, since `table=2` means a different table on every document.
+OVERLAYS.push({ param: "table", extra: ["table-size"], page: true,
+  open: (params) => { const wrapper = pageTables()[Number(params.get("table")) - 1]; if (wrapper && !elements.tableViewer.open) showTableViewer(wrapper, params.get("table-size") || ""); },
+  result: (params) => { const doc = state.documents.find((candidate) => candidate.path === (params.get("path") || state.defaultPath)); return { ...(doc ? docResult(doc, []) : { icon: "file", title: escapeHtml(params.get("path") || "") }), detail: `Table ${Number(params.get("table"))}`, side: "Table" }; },
+  closed: (params) => ["table", `Table ${Number(params.get("table"))}`] });
 OVERLAYS.push({ param: "world", extra: ["world-day"],
   open: (params) => params.get("world") === "all" ? openPortfolio(portfolioTasks()) : /^TASK-\d{4}$/.test(params.get("world")) && openTaskWorld(params.get("world"), params.get("world-day") || ""),
   result: (params) => { const id = params.get("world"); const doc = state.documents.find((candidate) => candidate.path === `tasks/${id}.md`); return { icon: "file", title: escapeHtml(id === "all" ? "All tasks" : `${id} ${doc?.task?.title || ""}`), detail: "World view", side: "World" }; },
@@ -4462,7 +4476,7 @@ const pageKey = (url) => {
   for (const name of ["graph", ...OVERLAYS.flatMap((overlay) => [overlay.param, ...(overlay.extra || [])])]) params.delete(name);
   return params.toString();
 };
-const visitKey = (url) => { const overlay = overlayOf(url.searchParams); return overlay ? `${overlay.param}:${url.searchParams.get(overlay.param)}` : pageKey(url); };
+const visitKey = (url) => { const overlay = overlayOf(url.searchParams); return overlay ? `${overlay.page ? `${pageKey(url)}|` : ""}${overlay.param}:${url.searchParams.get(overlay.param)}` : pageKey(url); };
 function recordVisit() {
   const url = new URL(location.href);
   const key = visitKey(url);
