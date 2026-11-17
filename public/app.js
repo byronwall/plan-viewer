@@ -3681,6 +3681,9 @@ const shortcuts = [
   { group: "Agent drafts", keys: ["D"], label: "Draft about the current file", run: openDocumentComposer },
   { group: "Agent drafts", keys: ["Enter"], label: "In a draft: save it as a note", hint: "it waits under Up next" },
   { group: "Agent drafts", keys: ["⌘Enter", "Ctrl+Enter"], label: "In a draft: open it now" },
+  { group: "Expanded table", keys: ["1", "2", "3", "4"], label: "Size: ½, ⅔, Fit, Full", hint: "drag any corner or edge for any size in between" },
+  { group: "Expanded table", keys: ["F"], label: "Fill width", hint: "columns follow the overlay’s width" },
+  { group: "Expanded table", keys: ["/"], label: "Filter all columns" },
   { group: "General", keys: ["?"], label: "This guide", run: openShortcutGuide },
   { group: "General", keys: ["Esc"], label: "Close the dialog or popover" },
 ];
@@ -4047,6 +4050,14 @@ const tableCellText = (cell) => {
 // Only the rows showing, in their current order: the expanded table's sorting and filtering carry into copies and downloads.
 const tableRows = (table) => [...table.rows].filter((row) => !row.hidden && !row.closest("[data-table-ui]")).map((row) => [...row.cells].map(tableCellText));
 // Downloads are named for the heading the table sits under, falling back to the page title.
+// The overlay's title: the heading over the table, or the document's title for the untitled overview section.
+function tableTitle(wrapper) {
+  const card = wrapper.closest(".chunk-card");
+  const before = [...(card?.querySelectorAll(".chunk-heading h2, h3, h4, h5") || [])].filter((h) => h.compareDocumentPosition(wrapper) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const heading = before.pop()?.textContent.trim();
+  const overview = before.length === 0 && card === elements.chunks.querySelector(".chunk-card") && heading === "Overview";
+  return heading && !overview ? heading : elements.title?.textContent.trim() || "Table";
+}
 function tableName(wrapper) {
   const heading = [...document.querySelectorAll("main h1, main h2, main h3, main h4, main h5")].filter((h) => h.compareDocumentPosition(wrapper) & Node.DOCUMENT_POSITION_FOLLOWING).pop();
   return (heading?.textContent || document.title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "table";
@@ -4085,7 +4096,7 @@ async function copyTable(button) {
     showNotice("Could not copy the table.", true);
   }
 }
-// A table on the document page is `?table=N` (its place on the page) with `&table-size=` and `&table-fill=1` (see table-size.js), so a
+// A table on the document page is `?table=N` (its place on the page) with `&table-size=` and, when Fill width is off, `&table-fill=0` (see table-size.js), so a
 // refresh, Back or a shared link reopens it as it was. Tables inside other overlays have no place to name.
 const pageTables = () => [...elements.chunks.querySelectorAll(".markdown-table")];
 function showTableViewer(wrapper, size = "", fill = null) {
@@ -4100,16 +4111,18 @@ function showTableViewer(wrapper, size = "", fill = null) {
   copy.removeAttribute("class");
   dialog.dataset.tableSource = wrapper.dataset.tableSource;
   dialog.dataset.tableName = tableName(wrapper);
-  dialog.innerHTML = `<header class="viewer-dialog-heading"><h2 id="table-viewer-title">Table <span>${table.tBodies[0].rows.length} rows × ${table.tHead.rows[0].cells.length} columns</span></h2>${tools.outerHTML}<button type="button" data-dialog-close aria-label="Close table">×</button></header><div class="table-viewer-body markdown" tabindex="0">${copy.outerHTML}</div>`;
+  dialog.innerHTML = `<header class="viewer-dialog-heading"><h2 id="table-viewer-title">${escapeHtml(tableTitle(wrapper))} <span>${table.tBodies[0].rows.length} rows × ${table.tHead.rows[0].cells.length} columns</span></h2>${tools.outerHTML}<button type="button" data-dialog-close aria-label="Close table">×</button></header><div class="table-viewer-body markdown" tabindex="0">${copy.outerHTML}</div>`;
   if (!openViewerDialog(dialog, { stack: true })) return;
   const columns = enhanceTable(dialog, tableCellText);
   const mode = validTableSize(size) ? size : savedTableSize();
   const filled = fill ?? savedTableFill();
-  const remember = (next) => { if (place) setOverlayParams({ table: String(place), "table-size": next.size, "table-fill": next.fill ? "1" : "" }); };
+  const remember = (next) => { if (place) setOverlayParams({ table: String(place), "table-size": next.size, "table-fill": next.fill ? "" : "0" }); };
   sizeTableViewer(dialog, { size: mode, fill: filled, columns, onChange: remember });
   remember({ size: mode, fill: filled });
   dialog.querySelector(".table-viewer-body").focus();
 }
+elements.tableViewer.addEventListener("pointerover", (event) => { const target = event.target.closest("[data-tip]"); if (target) showTip(target); else hideTip(); });
+elements.tableViewer.addEventListener("close", hideTip);
 elements.tableViewer.addEventListener("close", () => setOverlayParams({ table: "", "table-size": "", "table-fill": "" }));
 // Code blocks copy and download their fenced source verbatim; the file extension follows the fence's language.
 const CODE_EXTENSIONS = { javascript: "js", typescript: "ts", python: "py", bash: "sh", shell: "sh", zsh: "sh", markdown: "md", text: "txt", yaml: "yml" };
@@ -4431,7 +4444,7 @@ const OVERLAYS = [
 ];
 // `page` keys a visit by its page too, since `table=2` means a different table on every document.
 OVERLAYS.push({ param: "table", extra: ["table-size", "table-fill"], page: true,
-  open: (params) => { const wrapper = pageTables()[Number(params.get("table")) - 1]; if (wrapper && !elements.tableViewer.open) showTableViewer(wrapper, params.get("table-size") || "", params.has("table-size") ? params.get("table-fill") === "1" : null); },
+  open: (params) => { const wrapper = pageTables()[Number(params.get("table")) - 1]; if (wrapper && !elements.tableViewer.open) showTableViewer(wrapper, params.get("table-size") || "", params.has("table-size") ? params.get("table-fill") !== "0" : null); },
   result: (params) => { const doc = state.documents.find((candidate) => candidate.path === (params.get("path") || state.defaultPath)); return { ...(doc ? docResult(doc, []) : { icon: "file", title: escapeHtml(params.get("path") || "") }), detail: `Table ${Number(params.get("table"))}`, side: "Table" }; },
   closed: (params) => ["table", `Table ${Number(params.get("table"))}`] });
 OVERLAYS.push({ param: "world", extra: ["world-day"],

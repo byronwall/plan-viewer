@@ -368,13 +368,10 @@ button { cursor: pointer; }
 .table-viewer[data-sizing="e"], .table-viewer[data-sizing="w"] { --grip-cursor: ew-resize; }
 .table-viewer[data-sizing="nw"], .table-viewer[data-sizing="se"] { --grip-cursor: nwse-resize; }
 .table-viewer[data-sizing="ne"], .table-viewer[data-sizing="sw"] { --grip-cursor: nesw-resize; }
-.table-viewer .viewer-dialog-heading .table-fill { flex: none; width: auto; height: 26px; border-radius: 6px; background: transparent; padding: 0 8px; color: var(--muted); font-size: .74rem; font-weight: 600; transition: background-color 140ms ease-out, color 140ms ease-out; }
-@media (hover: hover) { .table-viewer .viewer-dialog-heading .table-fill:hover { background: var(--hover-field); color: var(--ink); } }
-.table-viewer .viewer-dialog-heading .table-fill:active { transform: scale(.97); }
-.table-viewer .viewer-dialog-heading .table-fill[aria-pressed="true"] { background: var(--selected); color: var(--action-ink); }
-.table-viewer .viewer-dialog-heading .table-fill:focus-visible { outline: 2px solid var(--action); outline-offset: 1px; }
-.table-size { display: flex; flex: none; align-items: center; height: 26px; border-radius: 6px; background: var(--quiet-field); padding: 2px; }
-.table-viewer .viewer-dialog-heading .table-size button { width: auto; min-width: 30px; height: 22px; border-radius: 4px; background: transparent; padding: 0 7px; color: var(--muted); font-size: .74rem; font-weight: 600; transition: background-color 140ms ease-out, color 140ms ease-out; }
+/* Fill width and the four sizes share one well; Fill width is a toggle, the sizes pick one. */
+.table-size { display: flex; flex: none; align-items: center; gap: 1px; white-space: nowrap; height: 26px; border-radius: 6px; background: var(--quiet-field); padding: 2px; }
+.table-size-rule { width: 1px; height: 14px; margin: 0 3px; background: var(--line); }
+.table-viewer .viewer-dialog-heading .table-size button { width: auto; min-width: 28px; height: 22px; border-radius: 4px; background: transparent; padding: 0 7px; color: var(--muted); font-size: .74rem; font-weight: 600; transition: background-color 140ms ease-out, color 140ms ease-out; }
 @media (hover: hover) { .table-viewer .viewer-dialog-heading .table-size button:hover { background: var(--paper); color: var(--ink); } }
 .table-viewer .viewer-dialog-heading .table-size button:active { transform: scale(.97); }
 .table-viewer .viewer-dialog-heading .table-size button[aria-pressed="true"] { background: var(--paper); color: var(--action-ink); box-shadow: 0 1px 2px #18212f1f; }
@@ -389,15 +386,19 @@ button { cursor: pointer; }
 .table-grip[data-grip="nw"] { top: 0; left: 0; cursor: nwse-resize; } .table-grip[data-grip="se"] { right: 0; bottom: 0; cursor: nwse-resize; }
 .table-grip[data-grip="ne"] { top: 0; right: 0; cursor: nesw-resize; } .table-grip[data-grip="sw"] { bottom: 0; left: 0; cursor: nesw-resize; }
 /* Each corner shows a bracket that follows the dialog's rounded corner: faint while the pointer is over the dialog, blue on the grip. */
-.table-grip:is([data-grip="nw"], [data-grip="ne"], [data-grip="se"], [data-grip="sw"])::after { content: ""; position: absolute; inset: 3px; border: 0 solid var(--quiet-text); opacity: 0; transition: opacity 140ms ease-out, border-color 140ms ease-out; }
-.table-grip[data-grip="nw"]::after { border-width: 2px 0 0 2px; border-top-left-radius: 9px; }
-.table-grip[data-grip="ne"]::after { border-width: 2px 2px 0 0; border-top-right-radius: 9px; }
-.table-grip[data-grip="se"]::after { border-width: 0 2px 2px 0; border-bottom-right-radius: 9px; }
-.table-grip[data-grip="sw"]::after { border-width: 0 0 2px 2px; border-bottom-left-radius: 9px; }
-@media (hover: hover) { .table-viewer:hover .table-grip::after { opacity: .55; } .table-grip:hover::after { opacity: 1; border-color: var(--action); } }
+.table-grip:is([data-grip="nw"], [data-grip="ne"], [data-grip="se"], [data-grip="sw"])::after { content: ""; position: absolute; inset: 2px; border: 0 solid var(--quiet-text); opacity: 0; transition: opacity 140ms ease-out, border-color 140ms ease-out; }
+.table-grip[data-grip="nw"]::after { border-width: 2px 0 0 2px; border-top-left-radius: 10px; }
+.table-grip[data-grip="ne"]::after { border-width: 2px 2px 0 0; border-top-right-radius: 10px; }
+.table-grip[data-grip="se"]::after { border-width: 0 2px 2px 0; border-bottom-right-radius: 10px; }
+.table-grip[data-grip="sw"]::after { border-width: 0 0 2px 2px; border-bottom-left-radius: 10px; }
+@media (hover: hover) { .table-viewer:hover .table-grip::after { opacity: .55; } .table-viewer .table-grip:hover::after { opacity: 1; border-color: var(--action); } }
 @media (hover: none) { .table-grip::after { opacity: .55; } }
 .table-viewer[data-sizing] .table-grip::after { opacity: .55; }
 .table-viewer[data-sizing] .table-grip:active::after { opacity: 1; border-color: var(--action); }
+.table-viewer-empty { position: sticky; left: 0; margin: 0; padding: 14px 8px; color: var(--muted); font-size: .8rem; }
+.table-viewer-empty button { border: 0; border-radius: 5px; background: transparent; padding: 3px 6px; color: var(--action-ink); font: inherit; font-weight: 600; transition: background-color 140ms ease-out; }
+@media (hover: hover) { .table-viewer-empty button:hover { background: var(--hover-field); color: var(--action-deep); } }
+.table-viewer-empty button:focus-visible { outline: 2px solid var(--action); outline-offset: 1px; }
 /* While dragging, the size floats in the middle of the table. */
 .table-size-readout { position: absolute; z-index: 6; top: 50%; left: 50%; display: grid; justify-items: center; gap: 1px; border-radius: 8px; background: #18212fe0; padding: 7px 12px 6px; color: #fff; font-variant-numeric: tabular-nums; pointer-events: none; opacity: 0; transform: translate(-50%, -50%) scale(.96); transition: opacity 120ms ease-out, transform 120ms ease-out; }
 .table-viewer.is-sizing .table-size-readout { opacity: 1; transform: translate(-50%, -50%); }
@@ -406,7 +407,9 @@ button { cursor: pointer; }
 .table-size-readout i { font-style: normal; }
 .table-size-readout i.is-snapped { color: #fff; font-weight: 650; }
 .table-viewer[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
-.table-viewer .viewer-dialog-heading { padding: 10px 12px 10px 18px; }
+.table-viewer .viewer-dialog-heading { padding: 10px 12px 10px 20px; } /* 20px: the title shares an edge with the first column's text */
+.table-viewer .viewer-dialog-heading > [data-dialog-close] { width: 26px; height: 26px; font-size: 1.1rem; line-height: 1; }
+.table-viewer input[type="search"]::-webkit-search-cancel-button { display: none; } /* Clear and Esc clear filters */
 .table-viewer h2 span { margin-left: 6px; color: var(--muted); font-size: .78rem; font-weight: 500; }
 .table-viewer .table-tools { margin-left: auto; }
 .table-viewer .viewer-dialog-heading .table-tools button { width: auto; height: 26px; background: transparent; color: var(--action-ink); font-size: .74rem; }
@@ -415,13 +418,21 @@ button { cursor: pointer; }
 .table-viewer-body { margin: 0; padding: 0 12px 12px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .table-viewer-body:focus-visible { outline: none; }
 .table-viewer .viewer-dialog-heading { justify-content: flex-start; gap: 10px; }
+/* Narrower overlays: title, filter and close on top; copy tools on the left of a second row, layout on its right. */
 @container table-viewer (max-width: 1180px) {
-  .table-viewer .viewer-dialog-heading { position: relative; flex-wrap: wrap; row-gap: 6px; padding-right: 50px; }
-  .table-viewer .viewer-dialog-heading > [data-dialog-close] { position: absolute; top: 10px; right: 12px; }
-  .table-viewer-filter, .table-viewer .viewer-dialog-heading .table-viewer-clear { order: 1; }
-  .table-viewer-filter { flex: 1 1 200px; }
-  .table-viewer .table-tools, .table-viewer .table-size, .table-viewer .table-fill { order: 2; }
-  .table-viewer .table-tools { margin-left: 0; flex-wrap: wrap; }
+  .table-viewer .viewer-dialog-heading { display: grid; grid-template-columns: auto minmax(0, 420px) minmax(0, 1fr) auto; grid-template-areas: "title filter clear close" "tools tools layout layout"; row-gap: 8px; }
+  .table-viewer .viewer-dialog-heading h2 { grid-area: title; }
+  .table-viewer .table-viewer-filter { grid-area: filter; width: auto; }
+  .table-viewer .viewer-dialog-heading .table-viewer-clear { grid-area: clear; justify-self: start; }
+  .table-viewer .viewer-dialog-heading > [data-dialog-close] { grid-area: close; justify-self: end; }
+  .table-viewer .table-tools { grid-area: tools; margin-left: -6px; flex-wrap: wrap; }
+  .table-viewer .table-size { grid-area: layout; justify-self: end; }
+}
+@container table-viewer (max-width: 640px) {
+  .table-viewer .viewer-dialog-heading { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "title title title close" "filter filter clear clear" "tools tools tools tools" "layout layout layout layout"; }
+  .table-viewer .viewer-dialog-heading h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .table-viewer .table-size { justify-self: start; margin-left: -2px; }
+}
 }
 .table-viewer h2 { white-space: nowrap; }
 .table-viewer h2 span { font-variant-numeric: tabular-nums; }
@@ -446,9 +457,9 @@ button { cursor: pointer; }
 .markdown td { background: var(--paper); }
 /* table-fit.js measures each column on one line, then at its narrowest, and sets fixed widths that keep the table short. */
 .markdown-table-scroll table.is-fitted { table-layout: fixed; }
-:is(.markdown-table-scroll, .table-viewer-body) table.is-measuring-max { width: max-content; table-layout: auto; }
+:is(.markdown-table-scroll, .table-viewer-body) table.is-measuring-max { width: max-content; min-width: 0; table-layout: auto; }
 :is(.markdown-table-scroll, .table-viewer-body) table.is-measuring-max :is(th, td, td *) { white-space: nowrap !important; }
-:is(.markdown-table-scroll, .table-viewer-body) table.is-measuring-min { width: 0; table-layout: auto; }
+:is(.markdown-table-scroll, .table-viewer-body) table.is-measuring-min { width: 0; min-width: 0; table-layout: auto; }
 .markdown td code { white-space: nowrap; }
 .markdown td :is(a, code).is-wrap { white-space: normal; }
 .markdown td a.is-wrap .link-tail { white-space: nowrap; }
@@ -506,7 +517,7 @@ button { cursor: pointer; }
 .table-resize:hover::after, .table-viewer.is-resizing .table-resize:active::after { background: var(--action); }
 .table-viewer-body thead tr:first-child th:last-child .table-resize { right: 0; }
 .table-filter-row th { padding: 2px 3px; background: var(--paper); font-weight: 400; }
-.table-filter-row input { width: 100%; height: 22px; border: 1px solid transparent; border-radius: 4px; background: var(--hover-field); padding: 0 5px; color: var(--ink); font: inherit; font-size: .74rem; text-align: inherit; outline: none; transition: border-color 140ms ease-out, background-color 140ms ease-out; }
+.table-filter-row input { width: 100%; height: 22px; border: 1px solid transparent; border-radius: 4px; background: var(--hover-field); padding: 0 4px; /* text lines up with the header label above */ color: var(--ink); font: inherit; font-size: .74rem; text-align: inherit; outline: none; transition: border-color 140ms ease-out, background-color 140ms ease-out; }
 .table-filter-row input::placeholder, .table-viewer-filter input::placeholder { color: var(--quiet-text); }
 .table-filter-row input:hover { border-color: var(--line); }
 .table-filter-row input:focus { border-color: var(--action); background: var(--paper); }

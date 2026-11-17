@@ -9,7 +9,8 @@ const FILL_KEY = "plan-viewer:table-fill";
 const MARGIN = 16; // the gap kept to each window edge
 const MIN = { w: 420, h: 220 };
 const SNAP = 10;
-export const PRESETS = [["50x50", "½", "Half the window"], ["67x67", "⅔", "Two thirds of the window"], ["fit", "Fit", "Fit the table"], ["100x100", "Full", "Fill the window"]];
+// Each preset's key is its place in the row: 1 ½, 2 ⅔, 3 Fit, 4 Full. F toggles Fill width.
+export const PRESETS = [["50x50", "½", "Half the window"], ["67x67", "⅔", "Two thirds of the window"], ["fit", "Fit", "Size to the table"], ["100x100", "Full", "Fill the window"]];
 const GRIPS = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 
 export const validTableSize = (mode) => mode === "fit" || /^(?:[1-9]\d?|100)x(?:[1-9]\d?|100)$/.test(mode || "");
@@ -18,7 +19,7 @@ export function savedTableSize() {
 }
 
 export function savedTableFill() {
-  try { return localStorage.getItem(FILL_KEY) === "1"; } catch { return false; }
+  try { return localStorage.getItem(FILL_KEY) !== "0"; } catch { return true; } // on until turned off
 }
 
 const bounds = () => ({ w: innerWidth - 2 * MARGIN, h: innerHeight - 2 * MARGIN });
@@ -60,11 +61,31 @@ function fitSize(dialog, columns, fill) {
   return { w, h: clamp(h, MIN.h, max.h) };
 }
 
+// How tall the overlay must be to show every row at width `w`, with the columns laid out for that width.
+function heightAt(dialog, w, columns, fill) {
+  const body = dialog.querySelector(".table-viewer-body");
+  const table = body.querySelector("table");
+  const pad = padding(body);
+  const previous = dialog.style.width;
+  dialog.style.width = `${Math.round(w)}px`;
+  if (fill) columns.fill(body.clientWidth - pad.x);
+  const frame = dialog.offsetHeight - dialog.clientHeight;
+  const sideways = table.offsetWidth > body.clientWidth - pad.x ? body.offsetHeight - body.clientHeight : 0;
+  const h = dialog.querySelector(".viewer-dialog-heading").offsetHeight + table.offsetHeight + (body.querySelector(".table-viewer-empty:not([hidden])")?.offsetHeight || 0) + frame + pad.y + sideways;
+  dialog.style.width = previous;
+  return h;
+}
+
+const isPreset = (mode) => PRESETS.some(([value]) => value === mode);
+// ½, ⅔ and Full never make the overlay taller than its rows need, so a short table doesn't sit over blank space.
+// A size dragged by hand is kept as dragged.
 function resolve(dialog, mode, columns, fill) {
   if (mode === "fit") return fitSize(dialog, columns, fill);
   const [pw, ph] = mode.split("x").map(Number);
   const max = bounds();
-  return { w: clamp(innerWidth * pw / 100, MIN.w, max.w), h: clamp(innerHeight * ph / 100, MIN.h, max.h) };
+  const w = clamp(innerWidth * pw / 100, MIN.w, max.w);
+  const h = clamp(innerHeight * ph / 100, MIN.h, max.h);
+  return { w, h: isPreset(mode) ? clamp(Math.min(h, heightAt(dialog, w, columns, fill)), MIN.h, max.h) : h };
 }
 
 const percent = (size) => `${Math.round(size.w / innerWidth * 100)}x${Math.round(size.h / innerHeight * 100)}`;
@@ -74,7 +95,7 @@ const percent = (size) => `${Math.round(size.w / innerWidth * 100)}x${Math.round
 export function sizeTableViewer(dialog, { size: mode, fill = false, columns, onChange }) {
   const heading = dialog.querySelector(".viewer-dialog-heading");
   const body = dialog.querySelector(".table-viewer-body");
-  heading.querySelector("[data-dialog-close]").insertAdjacentHTML("beforebegin", `<button type="button" class="table-fill" data-table-fill aria-pressed="false">Fill width</button><div class="table-size" role="group" aria-label="Overlay size">${PRESETS.map(([value, label, name]) => `<button type="button" data-table-size="${value}" aria-label="${name}" aria-pressed="false">${label}</button>`).join("")}</div>`);
+  heading.querySelector("[data-dialog-close]").insertAdjacentHTML("beforebegin", `<div class="table-size" role="group" aria-label="Layout"><button type="button" class="table-fill" data-table-fill aria-pressed="false" aria-keyshortcuts="F" data-tip="Columns follow the overlay’s width (F)">Fill width</button><span class="table-size-rule" aria-hidden="true"></span>${PRESETS.map(([value, label, name], index) => `<button type="button" data-table-size="${value}" aria-label="${name}" aria-pressed="false" aria-keyshortcuts="${index + 1}" data-tip="${name} (${index + 1})">${label}</button>`).join("")}</div>`);
   dialog.insertAdjacentHTML("beforeend", `${GRIPS.map((grip) => `<span class="table-grip" data-grip="${grip}" aria-hidden="true"></span>`).join("")}<output class="table-size-readout" aria-live="off"></output>`);
   const readout = dialog.querySelector(".table-size-readout");
   let current = validTableSize(mode) ? mode : "fit";
@@ -116,13 +137,24 @@ export function sizeTableViewer(dialog, { size: mode, fill = false, columns, onC
     save();
   });
 
-  heading.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-table-size]");
-    if (button) commit(button.dataset.tableSize, { animate: true });
-    if (!event.target.closest("[data-table-fill]")) return;
+  const toggleFill = () => {
     fill = !fill;
     if (!fill) columns.restore();
     commit(current);
+  };
+  heading.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-table-size]");
+    if (button) commit(button.dataset.tableSize, { animate: true });
+    if (event.target.closest("[data-table-fill]")) toggleFill();
+  });
+  // Keys work anywhere in the overlay except while typing in a filter.
+  dialog.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.isComposing || event.target.closest("input, textarea, select")) return;
+    const preset = PRESETS[Number(event.key) - 1];
+    if (preset) commit(preset[0], { animate: true });
+    else if (event.key.toLowerCase() === "f") toggleFill();
+    else return;
+    event.preventDefault();
   });
   dialog.addEventListener("dblclick", (event) => {
     if (event.target.closest("[data-grip]")) commit("fit", { animate: true });

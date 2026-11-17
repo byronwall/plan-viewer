@@ -36,3 +36,17 @@ Every Acme environment with telemetry, from the last usage export. Expand the ta
 | `status-page` | Jordan | weekly | Aug 23 | 43 | 6 | 498 | 0.33% |
 
 Idle environments are candidates for the quarterly cleanup.
+
+## Access
+
+How the team reaches each environment's admin console today, and who can hand out access.
+
+| Environment | How we get in today | Roles available | Can grant? | Profile |
+| --- | --- | --- | --- | --- |
+| `atlas-prod` | Personal token in the `atlas` profile, renewed each quarter; single sign-on also works | `ADMIN` (default), `DEVELOPER`, `READ_ONLY` | Yes: `ADMIN` owns `DEPLOY_BOT` and `SUPPORT` and can create roles | `atlas` (active), works |
+| `atlas-staging` | Personal token in the profile | `ADMIN`, `SECURITY_ADMIN`, `DEVELOPER`, `QA_RUNNER` and others | Yes, full admin | `staging`, works |
+| `billing-prod` | Personal token (one year, created Nov 2) after the password reset; no single sign-on | `DEVELOPER` (default; has `MANAGE_GRANTS` and `CREATE_DATABASE`), `BILLING_READER`, `FINANCE_EXPORT` | Yes, through `MANAGE_GRANTS` | `billing`, works; run `USE ROLE` first |
+| `webhooks-prod` | Personal token; a network-policy exception lets it skip the office IP check | `ACCOUNT_ADMIN` (profile role), `SYSADMIN`, four `REPLAY_*` reader roles; no `DEVELOPER` role exists here | Yes, full admin | `webhooks`, works |
+| `search-indexer` | Shared service token, rotated by Alex | `INDEXER` only | No | `search`, read only |
+| `legacy-api` | Nothing. No single sign-on, no profile | Unknown | Unknown | None |
+| `audit-log` | Nothing. Access request open with IT | Unknown | Unknown | None |

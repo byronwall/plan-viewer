@@ -100,6 +100,10 @@ export function enhanceTable(dialog, cellText) {
   dialog.querySelector(".viewer-dialog-heading h2").insertAdjacentHTML("afterend", `<label class="table-viewer-filter">${glyph("search")}<input type="search" spellcheck="false" autocomplete="off" placeholder="Filter all columns" aria-label="Filter all columns" aria-keyshortcuts="/" data-filter-all><kbd>/</kbd></label><button type="button" class="table-viewer-clear" data-table-clear hidden>Clear</button>`);
   const all = dialog.querySelector("[data-filter-all]");
   const clear = dialog.querySelector("[data-table-clear]");
+  // Filters that match nothing say so under the headers, with the way back.
+  table.insertAdjacentHTML("afterend", `<p class="table-viewer-empty" data-table-ui hidden>No rows match the filters. <button type="button">Clear filters</button></p>`);
+  const empty = table.nextElementSibling;
+  empty.querySelector("button").addEventListener("click", () => clear.click());
 
   function update() {
     const tests = filters.map((raw, column) => cellTest(raw, kinds[column]));
@@ -125,6 +129,7 @@ export function enhanceTable(dialog, cellText) {
     const filtered = visible.length < rows.length;
     count.textContent = `${filtered ? `${visible.length} of ` : ""}${rows.length} rows × ${columns} columns`;
     clear.hidden = !query && !filters.some(Boolean) && !sorts.length;
+    empty.hidden = visible.length > 0;
     highlight(visible, terms, filters.map((raw) => /^[^=!<>]/.test(raw.trim()) ? raw.trim().toLowerCase() : ""));
   }
 
