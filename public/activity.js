@@ -41,7 +41,8 @@ function syncUrl() {
 const issueEvent = (row) => row.kind === "comment" ? `<b>${escapeHtml(row.by || "Someone")}</b> commented: <span class="activity-quote">${escapeHtml((row.text || "").replace(/\s+/g, " ").slice(0, 180))}</span>`
   : row.kind === "created" ? `created${row.by ? ` by <b>${escapeHtml(row.by)}</b>` : ""}`
   : `${escapeHtml(row.kind)} <s>${escapeHtml(row.from || "none")}</s> → <b>${escapeHtml(row.to || "none")}</b>${row.by ? ` · ${escapeHtml(row.by)}` : ""}`;
-const docEvent = (change) => `${change.kind === "created" ? "created" : "edited"}${change.sections.length ? ` <b>${escapeHtml(change.sections.map((section) => section.title).join(", "))}</b>` : ""}${change.kind === "changed" ? ` <span class="activity-delta"><ins>+${change.added}</ins> <del>−${change.removed}</del></span>` : ""}`;
+// Sections named like the document itself (its H1) would only repeat the title above, so they drop out.
+const docEvent = (change, title) => { const sections = change.sections.filter((section) => section.title !== title); return `${change.kind === "created" ? "created" : "edited"}${sections.length ? ` <b>${escapeHtml(sections.map((section) => section.title).join(", "))}</b>` : ""}${change.kind === "changed" ? ` <span class="activity-delta"><ins>+${change.added}</ins> <del>−${change.removed}</del></span>` : ""}`; };
 
 function rows() {
   const out = [];
@@ -49,14 +50,17 @@ function rows() {
     if (!doc.modified) continue;
     const change = ui.changes.find((candidate) => candidate.path === doc.path && candidate.kind !== "deleted");
     const task = doc.task;
-    const where = task ? [task.project, doc.group === "Task documents" ? doc.kind : ""].filter(Boolean).join(" · ") : doc.path.replace(/\/[^/]+$/, "/");
+    // A task's asset names its task in the key column (the container) and the task's title as where it lives.
+    const ownerId = doc.path.match(/^tasks\/(TASK-\d+)-assets\//)?.[1];
+    const owner = ownerId && ui.documents.find((candidate) => candidate.path === `tasks/${ownerId}.md`)?.task;
+    const where = task ? task.project || "" : owner ? owner.title : doc.path.replace(/\/[^/]+$/, "/");
     out.push({
       id: `doc:${doc.path}`, kind: "doc", source: DOC_SOURCE[doc.group] || "topics", at: doc.modified, doc, change,
-      label: task?.id || "", title: task?.title || doc.title,
-      event: change && Math.abs(change.at - doc.modified) < 5 * 60_000 ? docEvent(change) : task ? "saved" : `saved <span class="activity-path">${escapeHtml(doc.path)}</span>`,
+      label: task?.id || ownerId || "", container: Boolean(ownerId), containerTitle: owner?.title, title: task?.title || doc.title,
+      event: change && Math.abs(change.at - doc.modified) < 5 * 60_000 ? docEvent(change, doc.title) : task ? "saved" : `saved <span class="activity-path">${escapeHtml(ownerId ? doc.path.replace(/^tasks\/[^/]+\//, "") : doc.path)}</span>`,
       context: escapeHtml(where), state: task ? stateHtml(task.status, TASK_TONES[task.status] || "quiet") : "",
       who: change?.source === "agent" ? `<span class="activity-agent" data-tip="Edited by an agent">${icon("session")}</span>` : "",
-      mine: true, text: `${task?.id || ""} ${task?.title || doc.title} ${doc.path} ${task?.project || ""} ${task?.status || ""}`,
+      mine: true, text: `${task?.id || ""} ${task?.title || doc.title} ${doc.path} ${task?.project || ""} ${task?.status || ""} ${owner?.title || ""}`,
     });
   }
   // Diagrams by their source file's save time, under the task whose assets hold them.
@@ -66,7 +70,7 @@ function rows() {
     out.push({
       id: `diagram:${diagram.path}`, kind: "diagram", source: "diagrams", at: diagram.modified, diagram, owner,
       href: `?${new URLSearchParams({ ...(owner ? { path: owner.path } : {}), diagram: diagram.path })}`,
-      label: diagram.task, title: diagram.title,
+      label: diagram.task, container: true, containerTitle: task?.title, title: diagram.title,
       event: `saved <span class="activity-path">${escapeHtml(diagram.path.split("/").pop())}</span>${diagram.subtitle ? ` <span class="activity-quote">${escapeHtml(diagram.subtitle)}</span>` : ""}`,
       context: escapeHtml(task ? task.title : diagram.path.replace(/\/[^/]+$/, "/")), state: task ? stateHtml(task.status, TASK_TONES[task.status] || "quiet") : "", who: "",
       mine: true, text: `${diagram.title} ${diagram.subtitle} ${diagram.path} ${diagram.task} ${task?.title || ""} ${task?.project || ""}`,
@@ -115,7 +119,7 @@ function rows() {
     const text = opener(entry);
     out.push({
       id: `slack:${entry.key}`, kind: "slack", source: "slack", at: lastActive(entry), slack: entry, href: `?slack=${encodeURIComponent(permalink(entry))}`,
-      label: "", title: `${summary.author}: ${text.length > 70 ? `${text.slice(0, 70)}…` : text}`, state: "",
+      label: docs[0]?.task?.id || "", container: true, containerTitle: docs[0]?.task?.title, title: `${summary.author}: ${text.length > 70 ? `${text.slice(0, 70)}…` : text}`, state: "",
       event: `${fresh(entry) ? "<b>New replies</b> · " : ""}${summary.replies ? `${summary.replies} ${summary.replies === 1 ? "reply" : "replies"}` : "no replies"}${summary.people.length > 1 ? ` · ${summary.people.length} people` : ""}`,
       context: `${escapeHtml(channelLabel(entry))}${docs.length ? ` <span class="activity-path">${docs.slice(0, 3).map((doc) => escapeHtml(doc.task?.id || doc.date || doc.kind)).join(" ")}</span>` : ""}`,
       who: `<span data-tip="${escapeHtml(summary.author)}">${avatar("", summary.author, summary.email)}</span>`,
@@ -144,7 +148,9 @@ function dayStrip(scoped) {
 
 function rowHtml(row) {
   const href = row.href || (row.doc ? documentHref(row.doc.path, row.change?.sections[0]?.anchor || "") : row.issue ? `?issue=${encodeURIComponent(row.issue.key)}` : row.pr.url);
-  return `<tr class="code-row activity-row" data-activity-id="${escapeHtml(row.id)}" aria-selected="${ui.sel === row.id}"><td class="activity-col-when" data-tip="${escapeHtml(new Date(row.at).toLocaleString())}"><b>${clock(row.at)}</b>${when(row.at)}</td><td class="activity-col-source src-${row.source}" data-tip="${SOURCES[row.source]}">${SOURCE_ICONS[row.source]}</td><td class="code-col-main"><a class="activity-title" href="${escapeHtml(href)}" data-activity-open>${row.label ? `<code>${escapeHtml(row.label)}</code>` : ""}${escapeHtml(row.title)}</a><div class="activity-sub"><span class="activity-event">${row.event}</span><span class="activity-context">${row.context}</span></div></td><td class="activity-col-ci">${row.ci || ""}</td><td class="activity-col-state">${row.state}</td><td class="activity-col-who">${row.who}</td></tr>`;
+  const keyTip = row.container ? `In ${row.label}${row.containerTitle ? `: ${row.containerTitle}` : ""}` : row.label;
+  const key = row.label ? `<span class="activity-key${row.container ? " is-container" : ""}" data-tip="${escapeHtml(keyTip)}">${escapeHtml(row.label)}</span>` : "";
+  return `<tr class="code-row activity-row" data-activity-id="${escapeHtml(row.id)}" aria-selected="${ui.sel === row.id}"><td class="activity-col-when" data-tip="${escapeHtml(`${new Date(row.at).toLocaleString()} · ${when(row.at)} ago`)}">${clock(row.at)}</td><td class="activity-col-source src-${row.source}" data-tip="${SOURCES[row.source]}">${SOURCE_ICONS[row.source]}</td><td class="activity-col-key">${key}</td><td class="code-col-main"><a class="activity-title" href="${escapeHtml(href)}" data-activity-open>${escapeHtml(row.title)}</a><div class="activity-sub"><span class="activity-event">${row.event}</span><span class="activity-context">${row.context}</span></div></td><td class="activity-col-ci">${row.ci || ""}</td><td class="activity-col-state">${row.state}</td><td class="activity-col-who">${row.who}</td></tr>`;
 }
 
 function filtered() {
@@ -171,7 +177,7 @@ function render() {
   const focused = document.activeElement?.matches("[data-activity-filter]");
   const toolbar = `<div class="activity-toolbar" data-region="toolbar"><div class="code-segment">${sourceTabs}</div><label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-activity-filter placeholder="Filter  (F)" value="${escapeHtml(ui.query)}" spellcheck="false" autocomplete="off"></label><label class="code-check"><input type="checkbox" data-activity-mine ${ui.mine ? "checked" : ""}> Mine</label><span class="activity-when-controls"><div class="code-segment">${ranges}</div>${dayStrip(kept.filter((row) => ui.source === "all" || row.source === ui.source))}</span><span class="code-spacer"></span><span class="code-muted activity-status">${loading.length ? `Loading ${loading.join(" and ")}…` : ui.day ? `${new Date(`${ui.day}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · <button type="button" class="activity-clear-day" data-activity-day="${ui.day}">clear day</button>` : ""}</span></div>`;
   const table = ui.visible.length
-    ? `<table class="code-table activity-table"><thead><tr><th>When</th><th></th><th>Item <span class="code-muted">· what changed · where</span></th><th data-tip="Checks on the PR's latest commit">CI</th><th>State</th><th>Who</th></tr></thead>${[...days].map(([label, items]) => `<tbody><tr class="code-group-row"><th colspan="6">${escapeHtml(label)} <span>${items.length}</span></th></tr>${items.map(rowHtml).join("")}</tbody>`).join("")}</table>${shown.length > ui.visible.length ? `<p class="code-muted activity-more">Showing the newest ${ui.visible.length} of ${shown.length}. Narrow with a filter, day or range.</p>` : ""}`
+    ? `<table class="code-table activity-table"><thead><tr><th>When</th><th></th><th>Key</th><th>Item <span class="code-muted">· what changed · where</span></th><th data-tip="Checks on the PR's latest commit">CI</th><th>State</th><th>Who</th></tr></thead>${[...days].map(([label, items]) => `<tbody><tr class="code-group-row"><th colspan="7">${escapeHtml(label)} <span>${items.length}</span></th></tr>${items.map(rowHtml).join("")}</tbody>`).join("")}</table>${shown.length > ui.visible.length ? `<p class="code-muted activity-more">Showing the newest ${ui.visible.length} of ${shown.length}. Narrow with a filter, day or range.</p>` : ""}`
     : `<p class="code-muted activity-empty">${loading.length ? "Loading…" : "Nothing here. Widen the range, pick another day, or clear the filter."}</p>`;
   const scroll = ui.host.querySelector(".activity-inspector")?.scrollTop || 0;
   const hadInspector = ui.host.querySelector(".activity-inspector");

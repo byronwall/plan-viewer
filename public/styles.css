@@ -2830,22 +2830,24 @@ button.plan-doc-link:hover { background: var(--hover-field); }
   .activity-inspector { display: block; }
 }
 .activity-table { width: 100%; table-layout: fixed; }
-.activity-table th:nth-child(1) { width: 62px; } .activity-table th:nth-child(2) { width: 18px; } .activity-table th:nth-child(4) { width: 30px; } .activity-table th:nth-child(5) { width: 128px; } .activity-table th:nth-child(6) { width: 34px; }
+.activity-table th:nth-child(1) { width: 50px; } .activity-table th:nth-child(2) { width: 18px; } .activity-table th:nth-child(3) { width: 84px; } .activity-table th:nth-child(5) { width: 30px; } .activity-table th:nth-child(6) { width: 112px; } .activity-table th:nth-child(7) { width: 34px; }
 .activity-table thead th { padding-top: 6px; }
-.activity-table td { padding: 4px 6px; vertical-align: top; }
+.activity-table td { padding: 5px 6px; vertical-align: top; line-height: 1.35; }
 .activity-row { cursor: pointer; }
 .activity-row[aria-selected="true"] td { background: var(--selected); }
 .activity-row[aria-selected="true"] td:first-child { box-shadow: inset 2px 0 0 var(--action); }
-.activity-col-when { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.activity-col-when b { display: block; color: var(--body-ink); font-weight: 600; font-size: .78rem; }
-.activity-col-when time { color: var(--quiet-text); font-size: .7rem; }
+/* One time per row: the day header carries the date, the tip the full stamp and how long ago. */
+.activity-col-when { white-space: nowrap; color: var(--muted); font-size: .76rem; font-variant-numeric: tabular-nums; }
+/* The key column: the item's own key, or (lighter) the task that holds it, so titles start on one line. */
+.activity-col-key { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.activity-key { color: var(--ink); font: 600 .74rem ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.01em; }
+.activity-key.is-container { color: var(--body-ink); font-weight: 450; }
 .activity-col-source { width: 18px; padding-left: 0 !important; padding-right: 0 !important; color: var(--src); }
 .activity-col-source .service-icon, .activity-head-icon .service-icon { display: block; width: 15px; height: 15px; margin-top: 2px; fill: var(--src); }
 .activity-col-source .service-icon.is-stroke, .activity-head-icon .service-icon.is-stroke { fill: none; stroke: var(--src); }
-.activity-title { display: block; color: var(--ink); font-weight: 550; text-decoration: none; transition: color 140ms; }
+.activity-title { display: block; color: var(--ink); font-size: .84rem; font-weight: 550; text-decoration: none; transition: color 140ms; }
 .activity-title:hover { color: var(--action); }
-.activity-title code { margin-right: 6px; color: var(--muted); font-size: .74rem; font-weight: 500; }
-.activity-sub { display: flex; gap: 10px; margin-top: 1px; color: var(--muted); font-size: .74rem; white-space: nowrap; }
+.activity-sub { display: flex; gap: 12px; margin-top: 1px; color: var(--muted); font-size: .74rem; white-space: nowrap; }
 .activity-event { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .activity-context { flex: none; max-width: 35%; overflow: hidden; text-overflow: ellipsis; }
 .activity-event b { color: var(--body-ink); font-weight: 600; }
@@ -2868,7 +2870,7 @@ button.plan-doc-link:hover { background: var(--hover-field); }
 .activity-more, .activity-empty { padding: 12px 6px; }
 
 .activity-inspector .code-detail-head > .activity-head-icon { flex: none; margin-top: 2px; }
-.activity-inspector .code-detail-head h3 code { color: var(--muted); font-size: .8rem; font-weight: 500; }
+.activity-inspector .code-detail-head h3 code { color: var(--body-ink); font-size: .8rem; font-weight: 600; }
 .activity-sections { margin: 0 0 6px; }
 .activity-lines { margin: 0; padding: 4px 8px; list-style: none; border-radius: 6px; background: #effaf4; font: .72rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
 .activity-preview { font-size: .84rem; }
