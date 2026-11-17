@@ -1,9 +1,36 @@
 #!/bin/sh
 # The viewer's own commits keep npm test green. Tests run on a copy of the staged files, so another session's
 # unstaged edits in this checkout can neither fail nor pass this commit.
+#
+# git holds .git/index.lock for as long as this hook runs, and other sessions share this checkout, so the hook is
+# bounded: each test has a 30 s limit and the runner force-exits past leaked timers (both in the npm test script),
+# stdin is closed so nothing can wait on a prompt, and a watchdog kills the whole run after
+# PLAN_VIEWER_HOOK_TIMEOUT seconds (default 180; a clean run takes about 10).
 set -e
+limit=${PLAN_VIEWER_HOOK_TIMEOUT:-180}
 snapshot=$(mktemp -d)
-trap 'rm -rf "$snapshot"' EXIT
+log="$snapshot.log"
+trap 'rm -rf "$snapshot" "$log"' EXIT
 git checkout-index -a --prefix="$snapshot/"
+start=$(date +%s)
+# Job control puts the test run in its own process group, so the watchdog can kill npm, node and every test child.
+set -m
 # Tests create their own git repos; the commit's GIT_* variables would point them at this one.
-(cd "$snapshot" && env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE npm test --silent >/dev/null 2>&1) || { echo "npm test failed on the staged files; run it to see failures" >&2; exit 1; }
+(cd "$snapshot" && exec env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE npm test --silent) </dev/null >"$log" 2>&1 &
+tests=$!
+(sleep "$limit" && kill -TERM -- "-$tests" 2>/dev/null && sleep 5 && kill -KILL -- "-$tests" 2>/dev/null) >/dev/null 2>&1 &
+watchdog=$!
+set +m
+status=0
+wait "$tests" || status=$?
+{ kill -- "-$watchdog" || kill "$watchdog"; wait "$watchdog"; } 2>/dev/null || true
+elapsed=$(( $(date +%s) - start ))
+if [ "$status" -ne 0 ]; then
+  tail -n 40 "$log" >&2
+  if [ "$elapsed" -ge "$limit" ]; then
+    echo "pre-commit: npm test passed its ${limit}s limit and was killed; a test or child process is hanging (see above). Fix it, or raise PLAN_VIEWER_HOOK_TIMEOUT." >&2
+  else
+    echo "pre-commit: npm test failed on the staged files after ${elapsed}s (exit $status); run npm test to see every failure." >&2
+  fi
+  exit 1
+fi

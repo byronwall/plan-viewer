@@ -59,7 +59,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 - `npm run demo` serves `examples/workspace/` on 4173 (`PLAN_VIEWER_PORT` to change). `fixtures/` is for tests only; keep demo content in `examples/`. Against a real workspace, run `node /path/to/plan-viewer/cli.ts <serve|init|lint|links|move|task>` from that workspace.
 - `PLAN_VIEWER_DRY_RUN=1` makes agent handoffs validate and log without opening Codex or Claude (the response carries the `prompt`), for testing the draft flow.
 - `npm install --no-save playwright-core && node scripts/screenshots.mjs [name,…]` regenerates `docs/images/` with installed Chrome; then `oxipng -o 4 --strip safe docs/images/*.png`.
-- `.githooks/pre-commit` (enabled by `npm install`) runs `npm test`. `hooks/pre-commit` is the hook planning workspaces install; it is not this repository's.
+- `.githooks/pre-commit` (enabled by `npm install`) runs `npm test` on the staged files, bounded so a hang can never hold `.git/index.lock` for long: 30 s per test, `--test-force-exit` past leaked timers, stdin closed, and a watchdog that kills the run after `PLAN_VIEWER_HOOK_TIMEOUT` seconds (default 180) and prints the last 40 lines. A test that leaves a child or timer running must stop it in `t.after`. `hooks/pre-commit` is the hook planning workspaces install; it is not this repository's.
 
 ## Gotchas
 
