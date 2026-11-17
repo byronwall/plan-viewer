@@ -1,4 +1,5 @@
 import { glyph } from "./icons.js";
+import { distribute, measure } from "./column-fit.js";
 
 // The expanded table: click a header to sort (Shift-click adds a tiebreak), filter one column or every column, and drag a header edge to resize (double-click fits it).
 const EMPTY = /^(|—|–|-|n\/a)$/i;
@@ -180,9 +181,13 @@ export function enhanceTable(dialog, cellText) {
     update();
     all.focus();
   });
+  // A column sized by hand stops the columns from following the overlay's width.
+  let onManual = null;
   table.tHead.addEventListener("dblclick", (event) => {
     const grip = event.target.closest("[data-resize-column]");
-    if (grip) fitColumn(Number(grip.dataset.resizeColumn));
+    if (!grip) return;
+    fitColumn(Number(grip.dataset.resizeColumn));
+    onManual?.();
   });
   table.tHead.addEventListener("pointerdown", (event) => {
     const grip = event.target.closest("[data-resize-column]");
@@ -190,6 +195,7 @@ export function enhanceTable(dialog, cellText) {
     event.preventDefault();
     const column = Number(grip.dataset.resizeColumn);
     const start = event.clientX - widths[column];
+    onManual?.();
     grip.setPointerCapture(event.pointerId);
     dialog.classList.add("is-resizing");
     const move = (moveEvent) => setWidth(column, moveEvent.clientX - start);
@@ -218,4 +224,34 @@ export function enhanceTable(dialog, cellText) {
   update();
   table.classList.add("is-sized");
   widths.forEach((_, column) => fitColumn(column));
+  const natural = [...widths];
+
+  // Fit columns: the page tables' distribution (column-fit.js) for the overlay's width, so prose columns wrap to
+  // fill it instead of scrolling sideways. Measured once, with the fixed widths lifted.
+  let measured = null;
+  const fill = (avail) => {
+    table.classList.add("is-filled");
+    if (!measured) {
+      const held = table.style.width;
+      table.classList.remove("is-sized");
+      table.style.width = "";
+      for (const col of cols) col.style.width = "";
+      measured = measure(table);
+      table.classList.add("is-sized");
+      table.style.width = held;
+      widths.forEach((width, column) => { cols[column].style.width = `${width}px`; });
+    }
+    // Too narrow for every column's longest word: the narrowest table (the page's readable floors would be wider).
+    // Room for every column on one line: each column grows in proportion, rather than one column taking the rest.
+    const sum = (list) => list.reduce((total, width) => total + width, 0);
+    const next = sum(measured.min) >= avail ? measured.min
+      : sum(measured.max) <= avail ? measured.max.map((width) => Math.floor(width * avail / sum(measured.max)))
+      : distribute(measured, Math.floor(avail));
+    next.forEach((width, column) => setWidth(column, width));
+  };
+  const restore = () => {
+    table.classList.remove("is-filled");
+    natural.forEach((width, column) => setWidth(column, width));
+  };
+  return { fill, restore, naturalWidth: () => natural.reduce((total, width) => total + width, 0), onManual: (callback) => { onManual = callback; } };
 }

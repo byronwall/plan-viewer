@@ -368,6 +368,11 @@ button { cursor: pointer; }
 .table-viewer[data-sizing="e"], .table-viewer[data-sizing="w"] { --grip-cursor: ew-resize; }
 .table-viewer[data-sizing="nw"], .table-viewer[data-sizing="se"] { --grip-cursor: nwse-resize; }
 .table-viewer[data-sizing="ne"], .table-viewer[data-sizing="sw"] { --grip-cursor: nesw-resize; }
+.table-viewer .viewer-dialog-heading .table-fill { flex: none; width: auto; height: 26px; border-radius: 6px; background: transparent; padding: 0 8px; color: var(--muted); font-size: .74rem; font-weight: 600; transition: background-color 140ms ease-out, color 140ms ease-out; }
+@media (hover: hover) { .table-viewer .viewer-dialog-heading .table-fill:hover { background: var(--hover-field); color: var(--ink); } }
+.table-viewer .viewer-dialog-heading .table-fill:active { transform: scale(.97); }
+.table-viewer .viewer-dialog-heading .table-fill[aria-pressed="true"] { background: var(--selected); color: var(--action-ink); }
+.table-viewer .viewer-dialog-heading .table-fill:focus-visible { outline: 2px solid var(--action); outline-offset: 1px; }
 .table-size { display: flex; flex: none; align-items: center; height: 26px; border-radius: 6px; background: var(--quiet-field); padding: 2px; }
 .table-viewer .viewer-dialog-heading .table-size button { width: auto; min-width: 30px; height: 22px; border-radius: 4px; background: transparent; padding: 0 7px; color: var(--muted); font-size: .74rem; font-weight: 600; transition: background-color 140ms ease-out, color 140ms ease-out; }
 @media (hover: hover) { .table-viewer .viewer-dialog-heading .table-size button:hover { background: var(--paper); color: var(--ink); } }
@@ -406,7 +411,8 @@ button { cursor: pointer; }
 .table-viewer .table-tools { margin-left: auto; }
 .table-viewer .viewer-dialog-heading .table-tools button { width: auto; height: 26px; background: transparent; color: var(--action-ink); font-size: .74rem; }
 .table-viewer .viewer-dialog-heading .table-tools button:hover { background: var(--hover-field); color: var(--action-deep); }
-.table-viewer-body { margin: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+/* A 12px inset keeps the table's edges off the dialog's border. */
+.table-viewer-body { margin: 0; padding: 0 12px 12px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .table-viewer-body:focus-visible { outline: none; }
 .table-viewer .viewer-dialog-heading { justify-content: flex-start; gap: 10px; }
 @container table-viewer (max-width: 1180px) {
@@ -414,7 +420,7 @@ button { cursor: pointer; }
   .table-viewer .viewer-dialog-heading > [data-dialog-close] { position: absolute; top: 10px; right: 12px; }
   .table-viewer-filter, .table-viewer .viewer-dialog-heading .table-viewer-clear { order: 1; }
   .table-viewer-filter { flex: 1 1 200px; }
-  .table-viewer .table-tools, .table-viewer .table-size { order: 2; }
+  .table-viewer .table-tools, .table-viewer .table-size, .table-viewer .table-fill { order: 2; }
   .table-viewer .table-tools { margin-left: 0; flex-wrap: wrap; }
 }
 .table-viewer h2 { white-space: nowrap; }
@@ -440,9 +446,9 @@ button { cursor: pointer; }
 .markdown td { background: var(--paper); }
 /* table-fit.js measures each column on one line, then at its narrowest, and sets fixed widths that keep the table short. */
 .markdown-table-scroll table.is-fitted { table-layout: fixed; }
-.markdown-table-scroll table.is-measuring-max { width: max-content; table-layout: auto; }
-.markdown-table-scroll table.is-measuring-max :is(th, td, td *) { white-space: nowrap !important; }
-.markdown-table-scroll table.is-measuring-min { width: 0; table-layout: auto; }
+:is(.markdown-table-scroll, .table-viewer-body) table.is-measuring-max { width: max-content; table-layout: auto; }
+:is(.markdown-table-scroll, .table-viewer-body) table.is-measuring-max :is(th, td, td *) { white-space: nowrap !important; }
+:is(.markdown-table-scroll, .table-viewer-body) table.is-measuring-min { width: 0; table-layout: auto; }
 .markdown td code { white-space: nowrap; }
 .markdown td :is(a, code).is-wrap { white-space: normal; }
 .markdown td a.is-wrap .link-tail { white-space: nowrap; }
@@ -473,6 +479,8 @@ button { cursor: pointer; }
 .table-viewer-body tbody tr td { background: var(--paper); }
 .table-viewer-body tbody tr:hover td { background: #f3f6fd; }
 .table-viewer-body :is(th, td):first-child { position: sticky; z-index: 1; left: 0; box-shadow: inset -1px 0 var(--line); border-right: 0; }
+/* The pinned column sits inside the 12px inset; a strip to its left hides cells scrolling past underneath. */
+.table-viewer-body :is(th, td):first-child::before { content: ""; position: absolute; top: -1px; bottom: -1px; right: 100%; width: 12px; background: var(--paper); pointer-events: none; }
 .table-viewer-body .align-right { font-variant-numeric: tabular-nums; }
 .table-viewer-body thead { position: sticky; z-index: 2; top: 0; }
 .table-viewer-body thead th { position: relative; padding: 0; white-space: nowrap; }
@@ -483,6 +491,10 @@ button { cursor: pointer; }
 .align-right .table-sort { flex-direction: row-reverse; }
 .align-center .table-sort { justify-content: center; }
 .table-sort-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* With Fill width on, a header label wraps (at its spaces) rather than holding its column wide. */
+.table-viewer-body table.is-filled thead tr:first-child th { white-space: normal; }
+.table-viewer-body table.is-filled .table-sort { height: auto; min-height: 26px; padding-block: 4px; line-height: 1.25; }
+.table-viewer-body table.is-filled .table-sort-label { overflow: visible; }
 .table-sort-mark { display: inline-flex; flex: none; align-items: center; color: var(--action); opacity: 0; transition: opacity 140ms ease-out; }
 .table-sort-mark .glyph { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; transition: transform 140ms ease-out; }
 .table-sort-mark b { display: inline-block; min-width: .7em; font-size: .62rem; font-variant-numeric: tabular-nums; }
