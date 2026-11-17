@@ -8,6 +8,11 @@ export function inlineSvg(text) {
   const svg = doc.documentElement;
   if (svg.nodeName !== "svg") return null;
   for (const node of svg.querySelectorAll("script, foreignObject, iframe, metadata")) node.remove();
+  // SVG <title> elements show as native browser tooltips on hover; the diagram's own title stays as its accessible name.
+  const name = svg.querySelector(":scope > title")?.textContent.trim();
+  if (name && !svg.hasAttribute("aria-label")) svg.setAttribute("aria-label", name);
+  for (const node of svg.querySelectorAll("title")) node.remove();
+  for (const node of svg.querySelectorAll("[title]")) node.removeAttribute("title");
   for (const node of [svg, ...svg.querySelectorAll("*")]) {
     for (const { name, value } of [...node.attributes]) {
       if (/^on/i.test(name) || (/href$/i.test(name) && /^\s*javascript:/i.test(value))) node.removeAttribute(name);
