@@ -19,7 +19,7 @@ export interface OutboundDraft {
 }
 
 const FRONT = /^---\n([\s\S]*?)\n---\n/;
-const BODY = /<!-- (jira|send):start -->\n?([\s\S]*?)\n?<!-- \1:end -->/;
+const BODY = /^<!-- (jira|send):start -->[ \t]*\n([\s\S]*?)\n?^<!-- \1:end -->[ \t]*$/m; // markers on their own lines only, so one quoted in the notes is not the body; mirrored in daily-planning's scripts/outbound.py
 const DRAFT_PATH = /^tasks\/TASK-\d{4}-assets\/.+\.md$/;
 
 export function outboundFields(text: string): OutboundFields {

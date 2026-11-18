@@ -42,6 +42,11 @@ test("outbound fields, body and hash: notes outside the markers don't change the
   assert.equal(outboundFields(setOutboundFields(DRAFT, { status: "sent", send: null })).send, undefined);
 });
 
+test("a marker quoted inline in the notes is not taken for the body", () => {
+  const quoted = "---\noutbound: pr-comment\n---\nRun `awk '/<!-- send:start -->/'` by hand.\n\n<!-- send:start -->\nReal body.\n<!-- send:end -->\n";
+  assert.equal(outboundBody(quoted), "Real body.");
+});
+
 test("a draft's page renders its notes, with the outgoing text left to the panel", () => {
   const notes = stripFrontMatter(DRAFT);
   assert.match(notes, /^## Notes\n/);
