@@ -9,6 +9,7 @@ import "./code-highlight.js";
 import { assetHref, delimitedTable, diagramHref, documentHref, refreshAssetImages, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, connectPlanning, setPeople, ago, copyPrompt, cachedPrIndex, commitLinkMatch, diffSize, hideTip, icon, showTip, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, isMyIssue, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
+import { renderChatThreads } from "./chat-threads.js";
 import { renderActivityPage } from "./activity.js";
 import { openSlackThread, refreshSlackStars, setSlackFavorites, setSlackNotice, slackThreadTitle } from "./slack.js";
 import { channelLabel, fresh as freshThread, lastActive, opener, permalink, refreshSlackPage, renderSlackPage } from "./slack-page.js";
@@ -47,6 +48,7 @@ const elements = {
   plansButton: document.querySelector("#open-plans"),
   issuesButton: document.querySelector("#open-issues"),
   slackButton: document.querySelector("#open-slack"),
+  chatThreadsButton: document.querySelector("#open-chat-threads"),
   globalHandoff: document.querySelector("#global-handoff"),
   agentPicker: document.querySelector("#agent-picker"),
   get documentHandoff() { return document.querySelector("[data-dock-draft]"); },
@@ -172,6 +174,7 @@ function resetPageNavigation() {
   elements.plansButton.setAttribute("aria-current", "false");
   elements.issuesButton.setAttribute("aria-current", "false");
   elements.slackButton.setAttribute("aria-current", "false");
+  elements.chatThreadsButton.setAttribute("aria-current", "false");
   elements.activityButton.setAttribute("aria-current", "false");
   elements.chunks.classList.remove("tasks-page", "steps-page", "library-page", "diagrams-page", "code-page", "plans-page", "issues-page", "slack-page", "activity-page");
 }
@@ -918,6 +921,26 @@ function renderSlack() {
   elements.chunkNav.replaceChildren();
   elements.chunks.classList.add("code-page", "slack-page");
   renderSlackPage(elements.chunks, { showNotice, toggleFavorite, isFavorite, favorites: () => favorites.map((favorite) => favorite.href) });
+}
+
+function showChatThreads() {
+  if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
+  closeComposer();
+  history.pushState(null, "", "?view=chat-threads");
+  renderChatThreadsPage();
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+
+function renderChatThreadsPage() {
+  state.view = "chat-threads";
+  resetPageNavigation();
+  elements.chatThreadsButton.setAttribute("aria-current", "page");
+  for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
+  elements.title.textContent = "Chat Threads";
+  elements.count.textContent = "";
+  elements.chunkNav.hidden = true;
+  elements.chunkNav.replaceChildren();
+  renderChatThreads(elements.chunks);
 }
 
 function showActivity({ historyMode = "push" } = {}) {
@@ -2922,6 +2945,7 @@ elements.referenceButton.addEventListener("click", () => showLibrary("reference"
 elements.diagramsButton.addEventListener("click", () => showDiagrams());
 elements.activityButton.addEventListener("click", () => showActivity());
 elements.codeButton.addEventListener("click", () => showCode());
+elements.chatThreadsButton.addEventListener("click", showChatThreads);
 elements.plansButton.addEventListener("click", () => showPlans());
 elements.issuesButton.addEventListener("click", () => showIssues());
 elements.slackButton.addEventListener("click", () => showSlack());
@@ -3943,6 +3967,7 @@ const PAGES = [
   ...Object.entries(LIBRARY_VIEWS).map(([view, { title, intro }]) => ({ title, detail: intro, icon: title === "Topics" ? "topic" : "reference", run: () => showLibrary(view) })),
   { title: "Diagrams", detail: "Every diagram in the workspace", icon: "plan", run: () => showDiagrams() },
   { title: "Plans", detail: "Initiatives in tracked repositories", icon: "initiative", run: () => showPlans() },
+  { title: "Chat Threads", detail: "Active and completed Codex and Claude threads", icon: "history", run: showChatThreads },
   { title: "Local servers", detail: "Dev servers the viewer started: URLs, output, restart, stop", icon: "server", run: () => openServers(showNotice) },
   ...Object.entries(CODE_TABS).map(([tab, title]) => ({ title, detail: `Code · ${title}`, icon: tab === "prs" ? "pr" : tab === "commits" ? "branch" : "code", run: () => showCode({ tab: tab === "prs" ? "" : tab }) })),
   ...Object.entries(ISSUE_TABS).map(([tab, title]) => ({ title: tab === "all" ? "Issues" : `${title} issues`, detail: `Issues · ${title}`, icon: "issue", issues: true, run: () => showIssues({ tab: tab === "all" ? "" : tab }) })),
@@ -4328,6 +4353,7 @@ const VIEWS = Object.assign(Object.create(null), {
   code: { boot: () => renderCode(), back: (params) => showCode({ historyMode: "none", tab: params.get("tab") || "" }) },
   plans: { boot: () => renderPlans(), back: () => showPlans({ historyMode: "none" }) },
   issues: { boot: () => renderIssues(), back: (params) => showIssues({ historyMode: "none", tab: params.get("tab") || "" }) },
+  "chat-threads": { boot: renderChatThreadsPage, back: renderChatThreadsPage },
   slack: { boot: () => renderSlack(), back: () => showSlack({ historyMode: "none" }) },
   activity: { boot: () => renderActivity(), back: () => showActivity({ historyMode: "none" }), refresh: () => renderActivity() },
 });
@@ -4628,6 +4654,7 @@ function visitResult(href) {
   if (view === "code") return page("code", "Code", CODE_TABS[params.get("tab") || "prs"] || "Pull requests");
   if (view === "plans") return page("initiative", "Plans", "Initiatives by repo and status");
   if (view === "issues") return page("issue", "Issues", ISSUE_TABS[params.get("tab") || "all"] || "All");
+  if (view === "chat-threads") return page("history", "Chat Threads", "Codex and Claude");
   if (view === "slack") return page("slack", "Slack", "Linked threads");
   if (view === "activity") return page("plan", "Activity", "Everything that changed");
   if (view === "diagrams") return page("plan", "Diagrams", "Every diagram in the workspace");

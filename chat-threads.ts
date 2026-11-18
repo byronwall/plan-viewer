@@ -1,0 +1,345 @@
+import { execFile } from "node:child_process";
+import { open, readFile, readdir, stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, join } from "node:path";
+import { promisify } from "node:util";
+
+const run = promisify(execFile);
+const uuid = "[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}";
+const idPattern = new RegExp(`^${uuid}$`, "i");
+const claudeDesktopId = new RegExp(`^local_${uuid}$`, "i");
+const rolloutName = new RegExp(`/sessions/\\d{4}/\\d{2}/\\d{2}/rollout-[^/]+-(${uuid})\\.jsonl$`, "i");
+const claudeTranscript = new RegExp(`^(${uuid})\\.jsonl$`, "i");
+const historyLimit = 50;
+
+type Provider = "Codex" | "Claude";
+type Thread = {
+  id: string;
+  provider: Provider;
+  source: string;
+  title: string;
+  cwd: string;
+  updatedAt: number;
+  state: "active" | "waiting" | "completed" | "interrupted";
+  url: string | null;
+};
+type Inventory = { active: Thread[]; completed: Thread[]; issues: string[] };
+type JSONObject = Record<string, any>;
+
+type CodexIndexRow = {
+  id: string;
+  path: string;
+  cwd: string;
+  title: string;
+  updatedAt: number;
+  source: string;
+  originator: string;
+};
+
+type Turn = { state: Thread["state"]; updatedAt: number };
+
+const object = (line: string): JSONObject => JSON.parse(line);
+const string = (value: unknown) => typeof value === "string" ? value : "";
+const displayTitle = (value: string, fallback: string) => {
+  const title = value.trim().split(/\r?\n/, 1)[0];
+  return title.length > 160 ? `${title.slice(0, 159).trimEnd()}…` : title || fallback;
+};
+
+async function readObject(file: string) {
+  try { return object(await readFile(file, "utf8")); }
+  catch (error: any) {
+    if (error.code === "ENOENT" || error instanceof SyntaxError) return null;
+    throw error;
+  }
+}
+
+async function entries(path: string) {
+  try { return await readdir(path, { withFileTypes: true }); }
+  catch (error: any) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function children(path: string, directories: boolean, name: RegExp) {
+  return (await entries(path)).filter(entry => (directories ? entry.isDirectory() : entry.isFile()) && name.test(entry.name))
+    .map(entry => join(path, entry.name));
+}
+
+export function openAgentFiles(output: string) {
+  const rollouts = new Map<string, string>();
+  const claudePids = new Set<number>();
+  let pid = 0;
+  let codex = false;
+  let writable = false;
+  let descriptor = false;
+  // lsof -F emits records per process and file. A read-only descriptor can belong to history lookup.
+  for (const line of output.split("\n")) {
+    const value = line.slice(1);
+    switch (line[0]) {
+      case "p": pid = Number(value); codex = false; break;
+      case "c":
+        codex = /^codex/i.test(value);
+        if (/^claude(?:-code)?$/i.test(value)) claudePids.add(pid);
+        break;
+      case "f": descriptor = /^\d+$/.test(value); writable = false; break;
+      case "a": writable = value === "w" || value === "u"; break;
+      case "n": {
+        const id = codex && descriptor && writable && rolloutName.exec(value)?.[1];
+        if (id) rollouts.set(id, value);
+        break;
+      }
+    }
+  }
+  return { rollouts, claudePids };
+}
+
+async function liveFiles() {
+  try {
+    const { stdout } = await run("/usr/sbin/lsof", ["-a", "-u", String(process.getuid?.()), "-c", "/^(codex|claude)/i", "-Fpcfan"], { timeout: 3000, maxBuffer: 8 * 1024 * 1024 });
+    return openAgentFiles(stdout);
+  } catch (error: any) {
+    if (error.code === 1 && !error.stderr) return openAgentFiles(error.stdout || "");
+    throw error;
+  }
+}
+
+const turnStates: Record<string, Turn["state"]> = {
+  task_started: "active", task_complete: "completed", turn_aborted: "interrupted",
+};
+
+async function lastCodexTurn(path: string, size: number): Promise<Turn | null> {
+  const file = await open(path, "r");
+  try {
+    // Walk backwards to the most recent turn edge. Keep long tool results as bytes and only decode candidate events.
+    const chunkSize = 64 * 1024;
+    let partial = Buffer.alloc(0);
+    for (let end = size; end > 0;) {
+      const start = Math.max(0, end - chunkSize);
+      const chunk = Buffer.allocUnsafe(end - start);
+      const { bytesRead } = await file.read(chunk, 0, chunk.length, start);
+      const block = Buffer.concat([chunk.subarray(0, bytesRead), partial]);
+      let lineEnd = block.length;
+      while (lineEnd > 0) {
+        const newline = lineEnd > 1 ? block.lastIndexOf(10, lineEnd - 2) : -1;
+        if (newline === -1 && start > 0) break;
+        const line = block.subarray(newline + 1, lineEnd);
+        const prefix = line.subarray(0, 256);
+        if (prefix.includes('"type":"event_msg"')) {
+          const header = prefix.toString();
+          const edge = /"type":"event_msg","payload":\{"type":"(task_started|task_complete|turn_aborted)"/.exec(header)?.[1];
+          const updatedAt = Date.parse(/"timestamp":"([^"]+)"/.exec(header)?.[1] || "");
+          if (edge && Number.isFinite(updatedAt)) return { state: turnStates[edge], updatedAt };
+        }
+        lineEnd = newline + 1;
+      }
+      // If a record spans a chunk, retain its beginning next time. Only event records of interest need decoding.
+      partial = block.subarray(0, Math.min(lineEnd, 300));
+      end = start;
+    }
+    return null;
+  } finally { await file.close(); }
+}
+
+async function fileInfo(path: string) {
+  try { return await stat(path); }
+  catch (error: any) { if (error.code === "ENOENT") return null; throw error; }
+}
+
+async function firstRecord(path: string) {
+  const file = await open(path, "r");
+  try {
+    const { buffer, bytesRead } = await file.read(Buffer.alloc(128 * 1024), 0, 128 * 1024, 0);
+    return buffer.subarray(0, bytesRead).toString().split("\n");
+  } finally { await file.close(); }
+}
+
+async function codexIndex(home: string) {
+  const databases = await children(home, false, /^state_\d+\.sqlite$/);
+  const database = databases.sort((a, b) => Number(basename(b).match(/\d+/)?.[0]) - Number(basename(a).match(/\d+/)?.[0]))[0];
+  if (!database) return [] as CodexIndexRow[];
+  const command = (title: string, originator: string) => run("/usr/bin/sqlite3", ["-readonly", "-json", "-cmd", ".timeout 1000", database, `
+    SELECT id, rollout_path AS path, cwd, ${title} AS title, updated_at * 1000 AS updatedAt, source, ${originator} AS originator
+    FROM threads WHERE archived = 0 AND source NOT LIKE '%"guardian"%'
+    ORDER BY updated_at DESC`], { timeout: 3000, maxBuffer: 8 * 1024 * 1024 });
+  let result;
+  try { result = await command("substr(coalesce(nullif(name, ''), title), 1, 400)", "originator"); }
+  catch (error: any) {
+    if (!String(error.stderr).includes("no such column:")) throw error;
+    result = await command("substr(title, 1, 400)", "''");
+  }
+  return JSON.parse(result.stdout || "[]") as CodexIndexRow[];
+}
+
+async function codexThreads(home: string, rollouts: Map<string, string> | undefined, turns: Map<string, { key: string; turn: Turn | null }>) {
+  const index = await codexIndex(home).then(rows => ({ rows, issue: "" }), () => ({ rows: [], issue: "Codex history is unavailable." }));
+  const rows = new Map(index.rows.filter(row => idPattern.test(row.id)).map(row => [row.id, row]));
+  const active: Thread[] = [];
+  const completed: Thread[] = [];
+  for (const id of new Set([...(rollouts?.keys() || []), ...rows.keys()])) {
+    const live = rollouts?.get(id);
+    if (!live && completed.length >= historyLimit) continue;
+    let row = rows.get(id);
+    const path = live || row?.path;
+    if (!path) continue;
+    const info = await fileInfo(path);
+    if (!info?.isFile()) continue;
+    if (!row) {
+      const meta = await firstRecord(path).then(lines => object(lines[0]).payload).catch(() => null);
+      if (meta?.id !== id) continue;
+      row = { id, path, cwd: string(meta.cwd), title: "", source: JSON.stringify(meta.source) || "", originator: string(meta.originator), updatedAt: info.mtimeMs };
+    }
+    if (row.source.includes('"guardian"')) continue;
+    const key = `${info.size}:${info.mtimeMs}`;
+    const cached = turns.get(path);
+    const turn = cached?.key === key ? cached.turn : await lastCodexTurn(path, info.size).catch(error => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    turns.set(path, { key, turn });
+    if (!turn || (turn.state === "active" && !rollouts)) continue;
+    const state = turn.state === "active" && !live ? "interrupted" : turn.state;
+    const source = row.source === "exec" || ["codex_exec", "codex-tui"].includes(row.originator) || row.source === "cli" ? "CLI"
+      : row.originator === "Codex Desktop" ? "Desktop" : "Local";
+    const thread: Thread = { id, provider: "Codex", source, title: displayTitle(row.title, basename(row.cwd) || "Codex thread"), cwd: row.cwd,
+      updatedAt: state === "active" ? info.mtimeMs : turn.updatedAt, state, url: `codex://threads/${id}` };
+    (state === "active" ? active : completed).push(thread);
+  }
+  return { threads: [...active, ...completed], issue: index.issue };
+}
+
+async function claudeDesktopThreads(root: string) {
+  const accounts = await children(root, true, /./);
+  const groups = (await Promise.all(accounts.map(path => children(path, true, /./)))).flat();
+  const paths = (await Promise.all(groups.map(path => children(path, false, /^local_[\w-]+\.json$/)))).flat();
+  // Bound file concurrency when a Desktop history has thousands of entries.
+  const sessions = new Map<string, JSONObject>();
+  for (let i = 0; i < paths.length; i += 32) {
+    for (const session of await Promise.all(paths.slice(i, i + 32).map(readObject))) {
+      if (session && claudeDesktopId.test(string(session.sessionId))) sessions.set(session.sessionId, session);
+    }
+  }
+  return sessions;
+}
+
+async function claudeCliHistory(config: string, known: Set<string>) {
+  const projects = await children(join(config, "projects"), true, /./);
+  const transcripts = (await Promise.all(projects.map(path => children(path, false, claudeTranscript)))).flat()
+    .map(path => ({ id: basename(path, ".jsonl"), path })).filter(({ id }) => !known.has(id));
+  const candidates = [];
+  for (let i = 0; i < transcripts.length; i += 32) {
+    const batch = transcripts.slice(i, i + 32);
+    const info = await Promise.all(batch.map(({ path }) => fileInfo(path)));
+    for (const [index, file] of info.entries()) {
+      if (file?.size) candidates.push({ ...batch[index], time: file.mtimeMs });
+    }
+  }
+  candidates.sort((a, b) => b.time - a.time);
+  const history: Thread[] = [];
+  for (const { id, path, time } of candidates) {
+    if (history.length >= historyLimit) break;
+    const lines = await firstRecord(path).catch(() => []);
+    let cwd = "";
+    let title = "";
+    for (const line of lines) {
+      try {
+        const event = object(line);
+        if (event.type === "custom-title" || event.type === "ai-title") title ||= string(event.customTitle || event.aiTitle);
+        if (event.type !== "user" || event.isSidechain || event.isMeta) continue;
+        cwd ||= string(event.cwd);
+        const content = event.message?.content;
+        const prompt = typeof content === "string" ? content : Array.isArray(content) ? string(content.find(item => item?.type === "text")?.text) : "";
+        if (!title && prompt && !prompt.startsWith("<")) title = prompt;
+      } catch { /* The last line of the bounded read can be incomplete. */ }
+    }
+    if (!cwd) continue;
+    history.push({ id, provider: "Claude", source: "CLI", title: displayTitle(title, basename(cwd) || "Claude Code session"), cwd,
+      updatedAt: time, state: "completed", url: `claude://resume?session=${id}` });
+  }
+  return history;
+}
+
+function claudeState(row: JSONObject): Thread["state"] {
+  if (row.status === "idle") return "completed";
+  return /^waiting/.test(string(row.status)) ? "waiting" : "active";
+}
+
+async function claudeThreads(config: string, desktopRoot: string, pids: Set<number>) {
+  const [sessions, records] = await Promise.all([
+    claudeDesktopThreads(desktopRoot),
+    children(join(config, "sessions"), false, /^\d+\.json$/).then(paths => Promise.all(paths.map(readObject))),
+  ]);
+  const live = new Map<string, JSONObject>();
+  for (const row of records) {
+    if (row && idPattern.test(string(row.sessionId)) && pids.has(row.pid) && (!row.pidDomain || row.pidDomain === process.platform)) live.set(row.sessionId, row);
+  }
+  const threads: Thread[] = [];
+  const known = new Set(live.keys());
+  for (const session of sessions.values()) {
+    const cliId = string(session.cliSessionId);
+    known.add(cliId);
+    const row = live.get(cliId);
+    if (session.isArchived && !row) continue;
+    const state = row ? claudeState(row) : "completed";
+    if (state === "completed" && !session.completedTurns && !session.lastTurnEdgeAt) continue;
+    const cwd = string(session.cwd || row?.cwd);
+    threads.push({ id: session.sessionId, provider: "Claude", source: "Desktop", cwd, state,
+      title: displayTitle(string(session.title || row?.name), basename(cwd) || "Claude Code session"),
+      updatedAt: Number(row?.updatedAt || session.lastActivityAt || session.createdAt) || 0,
+      url: `claude://claude.ai/epitaxy/${session.sessionId}` });
+    live.delete(cliId);
+  }
+  for (const row of live.values()) {
+    const state = claudeState(row);
+    const desktopId = claudeDesktopId.test(string(row.hostSessionId)) ? row.hostSessionId : "";
+    const cwd = string(row.cwd);
+    threads.push({ id: desktopId || row.sessionId, provider: "Claude", source: desktopId ? "Desktop" : "CLI", cwd, state,
+      title: displayTitle(string(row.name), basename(cwd) || "Claude Code session"), updatedAt: Number(row.updatedAt || row.startedAt) || 0,
+      url: desktopId ? `claude://claude.ai/epitaxy/${desktopId}` : null });
+  }
+  return [...threads, ...await claudeCliHistory(config, known)];
+}
+
+export function createChatThreads({
+  home = homedir(), codexHome = process.env.CODEX_HOME || join(home, ".codex"),
+  claudeConfig = process.env.CLAUDE_CONFIG_DIR || join(home, ".claude"), readLiveFiles = liveFiles,
+} = {}) {
+  const desktop = join(home, "Library", "Application Support", "Claude", "claude-code-sessions");
+  const turns = new Map<string, { key: string; turn: Turn | null }>();
+  let pending: Promise<Inventory> | null = null;
+  let cached: Inventory | null = null;
+  let refreshed = 0;
+  async function scan(): Promise<Inventory> {
+    if (process.platform !== "darwin") return { active: [], completed: [], issues: ["Chat Threads is available on macOS."] };
+    const issues: string[] = [];
+    const files = await readLiveFiles().catch(() => {
+      issues.push("Live activity is unavailable.");
+      return null;
+    });
+    const [codex, claude] = await Promise.allSettled([
+      codexThreads(codexHome, files?.rollouts, turns), claudeThreads(claudeConfig, desktop, files?.claudePids || new Set()),
+    ]);
+    const threads: Thread[] = [];
+    if (codex.status === "fulfilled") {
+      threads.push(...codex.value.threads);
+      if (codex.value.issue) issues.push(codex.value.issue);
+    } else issues.push("Codex threads are unavailable.");
+    if (claude.status === "fulfilled") threads.push(...claude.value);
+    else issues.push("Claude threads are unavailable.");
+    threads.sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+    const finished = (thread: Thread) => thread.state === "completed" || thread.state === "interrupted";
+    return {
+      active: threads.filter(thread => !finished(thread)),
+      completed: (["Codex", "Claude"] as const).flatMap(provider => threads.filter(thread => thread.provider === provider && finished(thread)).slice(0, historyLimit))
+        .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)), issues,
+    };
+  }
+  return () => {
+    if (cached && Date.now() - refreshed < 4000) return Promise.resolve(cached);
+    return pending ||= scan().then(result => {
+      cached = result;
+      refreshed = Date.now();
+      return result;
+    }).finally(() => { pending = null; });
+  };
+}

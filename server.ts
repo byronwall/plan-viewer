@@ -13,6 +13,7 @@ import { metadataKey } from "./public/dock.js";
 import { CodexDesktopClient, taskTitle, withImages } from "./codex-desktop.ts";
 import { createLinkMetadataStore, slackChannelNames } from "./link-metadata.ts";
 import { createCodeDashboard, githubImage } from "./code-dashboard.ts";
+import { createChatThreads } from "./chat-threads.ts";
 import { createPeople } from "./people.ts";
 import { createIssueTracker } from "./issues.ts";
 import { createPlans } from "./plans.ts";
@@ -978,9 +979,15 @@ export async function stepsIndex() {
   return { ...await loadSteps(ROOT, tasks, order), today: order.filter((entry) => !entry.includes(" ")), startConfigured: Boolean(config().steps.start.length) };
 }
 
+const chatThreads = createChatThreads();
+
 export async function handleRequest(request: IncomingMessage, response: ServerResponse) {
   try {
     const url = new URL(request.url || "/", "http://localhost");
+    if (request.method === "GET" && url.pathname === "/api/chat-threads") {
+      if (!/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(request.headers.host || "")) return json(response, 403, { error: "Chat Threads requires localhost." });
+      return json(response, 200, await chatThreads());
+    }
     if (request.method === "GET" && url.pathname === "/api/documents") return json(response, 200, { documents: await listDocuments(), defaultPath: todayPath() });
     if (request.method === "GET" && url.pathname === "/api/document") return json(response, 200, await loadDocument(url.searchParams.get("path") || ""));
     if (request.method === "GET" && (url.pathname === "/api/linear-image" || url.pathname === "/api/github-image")) {
