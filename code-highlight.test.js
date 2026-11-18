@@ -33,3 +33,13 @@ test("a colored diff keeps its line kinds and word marks over the syntax colors"
   assert.match(html, /<span class="markdown-diff-del">.*hljs-keyword.*<\/span>/);
   assert.match(html, /markdown-diff-add.*<span class="hljs-number"><mark class="code-word">5000/);
 });
+
+test("a diff fence can name its code's language", async () => {
+  assert.equal(blockLanguage(hljs, "diff", "-a = 1\n+a = 2", "python"), "python");
+  assert.equal(blockLanguage(hljs, "diff", "-a\n+b", "nonsense-lang"), "");
+  const { renderMarkdown } = await import("./public/markdown.js");
+  const html = renderMarkdown("```diff python\n-a = 1\n+a = 2\n```");
+  assert.match(html, /data-code-language="diff" data-code-grammar="python"/);
+  assert.match(html, /markdown-diff-add/);
+  assert.doesNotMatch(renderMarkdown("```ts extra\nx\n```"), /data-code-grammar/);
+});

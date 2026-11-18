@@ -1220,6 +1220,9 @@ function renderImageViewer() {
   updateImageViewerTransform();
   autosizeDiagramAsk();
   filterImageViewerRail();
+  // Re-rendering replaces the focused element (a diagram's drawing arrives after the viewer opens), which would drop
+  // focus to the page and leave the arrow keys and shortcuts with nothing to reach; hand it back to the stage.
+  if (elements.imageViewer.open && !elements.imageViewer.contains(document.activeElement)) elements.imageViewer.querySelector(".image-viewer-stage")?.focus({ preventScroll: true });
 }
 
 function showImageViewer(trigger) {
@@ -3652,7 +3655,13 @@ elements.imageViewer.addEventListener("cancel", (event) => {
   if (document.activeElement?.closest?.("[data-diagram-ask] textarea, .image-viewer-rail-filter")) return; // Esc there leaves the box first
   closeImageViewer();
 });
-elements.imageViewer.addEventListener("keydown", (event) => {
+// Focus can still land on the page behind the open viewer (a focused element removed by a re-render); its keys go to
+// the viewer too, ahead of the page's own shortcuts.
+document.addEventListener("keydown", (event) => {
+  if (elements.imageViewer.open && (event.target === document.body || event.target === document.documentElement)) imageViewerKeydown(event);
+}, true);
+elements.imageViewer.addEventListener("keydown", imageViewerKeydown);
+function imageViewerKeydown(event) {
   if (!elements.imageViewer.open) return;
   const railFilter = event.target.closest(".image-viewer-rail-filter");
   if (railFilter) {
@@ -3690,7 +3699,7 @@ elements.imageViewer.addEventListener("keydown", (event) => {
   else return;
   event.preventDefault();
   event.stopPropagation();
-});
+}
 document.addEventListener("click", (event) => {
   if (!state.openComposer || elements.handoffPopover.contains(event.target) || event.target.closest(".handoff-button, [data-action-key], .global-handoff, [data-dock-draft]")) return;
   requestComposerClose();

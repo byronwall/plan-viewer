@@ -5,7 +5,7 @@
 // the first block. A fence's language picks the grammar (aliases such as `ts`, `py` and `sh` work); an unlabeled fence
 // is colored only when one common language clearly fits, so prose, trees and Slack drafts stay plain. A diff fence
 // keeps its line colors and word marks, and the code in it is colored by a guess from its added and context lines (a
-// diff is usually a small excerpt, so the bar is lower). If the highlighter fails to load every block stays as it was.
+// diff is usually a small excerpt, so the bar is lower) unless the fence names one (```diff python). If the highlighter fails to load every block stays as it was.
 import { codeBlock, diffLines } from "./markdown.js";
 
 const PLAIN = /^(text|txt|plain|plaintext|tree|draft)$/i;
@@ -15,9 +15,11 @@ const MIN_RELEVANCE = 6;
 const MIN_DIFF_RELEVANCE = 4;
 
 // The grammar for a fence, or "" for none: its own language when the highlighter knows it, else a confident guess.
-export function blockLanguage(highlighter, language, text) {
+// `grammar` is the language a diff fence names for its code (```diff python).
+export function blockLanguage(highlighter, language, text, grammar = "") {
   if (PLAIN.test(language)) return "";
   if (DIFF.test(language)) {
+    if (grammar) return highlighter.getLanguage(grammar) ? grammar : "";
     const code = diffLines(text.split("\n")).filter((line) => line.kind === "add" || line.kind === "ctx").map((line) => line.text).join("\n");
     return guess(highlighter, code, MIN_DIFF_RELEVANCE);
   }
@@ -51,7 +53,7 @@ function colorize(block) {
   const fence = block.dataset.codeLanguage || "";
   const diff = DIFF.test(fence);
   const text = diff ? block.dataset.codeSource ?? "" : code.textContent;
-  const language = blockLanguage(highlighter, fence, text);
+  const language = blockLanguage(highlighter, fence, text, block.dataset.codeGrammar || "");
   if (!language) return;
   const highlight = (source) => highlighter.highlight(source, { language, ignoreIllegals: true }).value;
   if (!diff) { code.innerHTML = highlight(text); return; }

@@ -695,10 +695,13 @@ const htmlMentions = (markdown) => markdown.replace(/<(pull-request|issue|projec
 });
 
 // Fenced blocks carry their source and language; app.js turns the tab's buttons into a copy and a download.
+// A diff fence may name the language of the code in it (```diff python), which code-highlight.js colors it as.
 const CODE_TOOLS = `<div class="table-tools" role="toolbar" aria-label="Code actions"><button type="button" data-code-copy>Copy</button><button type="button" data-code-download>Download</button></div>`;
-const fencedBlock = (lines, language, currentPath = "") => {
+const fencedBlock = (lines, info, currentPath = "") => {
+  const [language = "", grammar = ""] = info.split(/\s+/);
   const tree = /^(text|tree|txt|plain)?$/i.test(language) ? parseFeatureTree(lines) : null;
-  const attrs = `data-code-source="${escapeHtml(lines.join("\n"))}" data-code-language="${escapeHtml(language)}"`;
+  const diffGrammar = grammar && /^(diff|patch)$/i.test(language) ? ` data-code-grammar="${escapeHtml(grammar)}"` : "";
+  const attrs = `data-code-source="${escapeHtml(lines.join("\n"))}" data-code-language="${escapeHtml(language)}"${diffGrammar}`;
   if (!tree) return `<div class="markdown-code" ${attrs}>${CODE_TOOLS}${codeBlock(lines, language)}</div>`;
   const tools = CODE_TOOLS.replace("</div>", `<button type="button" data-tree-source aria-pressed="false">Text</button></div>`);
   return `<div class="markdown-code markdown-tree" ${attrs}>${tools}${renderFeatureTree(tree, currentPath)}${codeBlock(lines, language)}</div>`;
@@ -785,7 +788,7 @@ export function renderMarkdown(markdown, currentPath = "") {
     if (line.startsWith("```")) {
       flushParagraph();
       if (inCode) { html.push(fencedBlock(code, language, currentPath)); code = []; }
-      else language = line.slice(3).trim().split(/\s/)[0];
+      else language = line.slice(3).trim();
       inCode = !inCode;
       continue;
     }
