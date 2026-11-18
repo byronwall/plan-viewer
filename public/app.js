@@ -2271,8 +2271,19 @@ function updateViewerUrl(path, anchor, historyMode) {
   // Showing completed work carries from document to document until it is unchecked.
   url.search = new URLSearchParams({ path, ...(url.searchParams.get("done") === "1" ? { done: "1" } : {}) });
   url.hash = anchor || "";
+  if (historyMode === "push") saveScrollPosition(); // the entry being left keeps where the reader was, for Back
   history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
 }
+
+// Each history entry remembers how far down the page was, so a reload (the Reload viewer button, ⌘R, Chrome bringing
+// a discarded tab back) or Back/Forward returns to that spot instead of jumping to the URL's #section again. A link
+// opened fresh has no saved position, so it still lands on its section.
+let scrollSaveTimer = 0;
+function saveScrollPosition() {
+  window.clearTimeout(scrollSaveTimer);
+  history.replaceState({ ...history.state, scrollY: Math.round(window.scrollY) }, "");
+}
+const savedScrollPosition = () => Number.isFinite(history.state?.scrollY) ? history.state.scrollY : null;
 
 function locationAnchor() {
   try {
@@ -2552,7 +2563,7 @@ bindOutbound(elements.chunks, {
   bodyOf: (path) => state.view === "steps" ? stepsOutboundBody(path) : state.document?.outbound?.path === path ? state.document.outbound.body : "",
 });
 
-async function selectDocument(path, { historyMode = "push", anchor = "" } = {}) {
+async function selectDocument(path, { historyMode = "push", anchor = "", scrollY = null } = {}) {
   if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
   try {
     elements.chunks.setAttribute("aria-busy", "true");
@@ -2570,7 +2581,11 @@ async function selectDocument(path, { historyMode = "push", anchor = "" } = {}) 
     elements.chunks.classList.remove("is-live-refresh");
     renderDocument();
     updateViewerUrl(path, anchor, historyMode);
-    window.requestAnimationFrame(() => scrollToDocumentAnchor(anchor));
+    window.requestAnimationFrame(() => {
+      if (scrollY == null) return scrollToDocumentAnchor(anchor);
+      window.scrollTo({ top: scrollY, behavior: "instant" });
+      syncActiveChunk();
+    });
     const item = new URLSearchParams(location.search).get("item");
     if (item) openWorkItem(item);
     else if (workItemDialog.open) workItemDialog.close();
@@ -4244,6 +4259,8 @@ document.addEventListener("keydown", (event) => {
 });
 window.addEventListener("scroll", () => {
   syncDockStuck();
+  window.clearTimeout(scrollSaveTimer);
+  scrollSaveTimer = window.setTimeout(saveScrollPosition, 250);
   if (navigationScrollLock) {
     window.clearTimeout(navigationScrollTimer);
     navigationScrollTimer = window.setTimeout(releaseNavigationScrollLock, 500);
@@ -4301,7 +4318,7 @@ window.addEventListener("popstate", () => {
   const path = state.documents.find((doc) => doc.path === requested)?.path
     || state.documents.find((doc) => doc.path === state.defaultPath)?.path
     || state.documents[0]?.path;
-  if (path) selectDocument(path, { historyMode: "none", anchor: locationAnchor() });
+  if (path) selectDocument(path, { historyMode: "none", anchor: locationAnchor(), scrollY: savedScrollPosition() });
 });
 elements.handoffPopover.addEventListener("submit", (event) => { event.preventDefault(); dispatch(event.target); });
 elements.handoffPopover.addEventListener("input", (event) => {
@@ -4739,7 +4756,7 @@ async function boot() {
       || state.documents[0]?.path;
     renderLibrary();
     if (VIEWS[requestedView]) VIEWS[requestedView].boot();
-    else if (initial) await selectDocument(initial, { historyMode: "none", anchor: locationAnchor() });
+    else if (initial) await selectDocument(initial, { historyMode: "none", anchor: locationAnchor(), scrollY: savedScrollPosition() });
     else showNotice("No supported files were found under daily, tasks, plans, or reference.", true);
     connectLiveUpdates();
     loadPlans().then(updateNavCounts, () => {});
