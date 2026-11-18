@@ -2271,19 +2271,43 @@ function updateViewerUrl(path, anchor, historyMode) {
   // Showing completed work carries from document to document until it is unchecked.
   url.search = new URLSearchParams({ path, ...(url.searchParams.get("done") === "1" ? { done: "1" } : {}) });
   url.hash = anchor || "";
-  if (historyMode === "push") saveScrollPosition(); // the entry being left keeps where the reader was, for Back
   history[historyMode === "push" ? "pushState" : "replaceState"](null, "", url);
 }
 
-// Each history entry remembers how far down the page was, so a reload (the Reload viewer button, ⌘R, Chrome bringing
-// a discarded tab back) or Back/Forward returns to that spot instead of jumping to the URL's #section again. A link
-// opened fresh has no saved position, so it still lands on its section.
+// Scroll memory, for every page. Each history entry keeps how far down the page was (`history.state.scrollY`), so a
+// reload (the Reload viewer button, ⌘R, Chrome bringing back a tab it discarded) or Back/Forward returns to that spot
+// instead of jumping to the URL's #section or the top. A link opened fresh has no saved spot, so it still lands on its
+// section. The app owns this rather than the browser, whose own restore runs before a page has rendered. The history
+// wrapper below saves the entry being left on every pushState and carries the spot across replaceState(null), so no
+// call site has to remember; boot and popstate restore it through restoreSavedScroll.
+history.scrollRestoration = "manual";
+const rawReplaceState = history.replaceState.bind(history); // unwrapped: saving a spot is not a visit
 let scrollSaveTimer = 0;
+let pendingScroll = null; // a restore waiting for a page that renders late (Code, Issues) to grow tall enough
 function saveScrollPosition() {
   window.clearTimeout(scrollSaveTimer);
-  history.replaceState({ ...history.state, scrollY: Math.round(window.scrollY) }, "");
+  if (pendingScroll) return; // the clamped spot mid-restore isn't where the reader was
+  rawReplaceState({ ...history.state, scrollY: Math.round(window.scrollY) }, "");
 }
 const savedScrollPosition = () => Number.isFinite(history.state?.scrollY) ? history.state.scrollY : null;
+function restoreScroll(top) {
+  pendingScroll = { top, until: Date.now() + 4000 };
+  const step = () => {
+    if (!pendingScroll) return;
+    window.scrollTo({ top: pendingScroll.top, behavior: "instant" });
+    if (Math.abs(window.scrollY - pendingScroll.top) < 2 || Date.now() > pendingScroll.until) {
+      pendingScroll = null;
+      syncActiveChunk();
+    } else window.requestAnimationFrame(step);
+  };
+  window.requestAnimationFrame(step);
+}
+function restoreSavedScroll() {
+  const top = savedScrollPosition();
+  if (top != null) restoreScroll(top);
+}
+// Reaching for the page yourself ends a restore still waiting for content.
+for (const type of ["wheel", "touchstart", "keydown", "pointerdown"]) window.addEventListener(type, () => { pendingScroll = null; }, { capture: true, passive: true });
 
 function locationAnchor() {
   try {
@@ -2581,11 +2605,8 @@ async function selectDocument(path, { historyMode = "push", anchor = "", scrollY
     elements.chunks.classList.remove("is-live-refresh");
     renderDocument();
     updateViewerUrl(path, anchor, historyMode);
-    window.requestAnimationFrame(() => {
-      if (scrollY == null) return scrollToDocumentAnchor(anchor);
-      window.scrollTo({ top: scrollY, behavior: "instant" });
-      syncActiveChunk();
-    });
+    if (scrollY != null) restoreScroll(scrollY);
+    else window.requestAnimationFrame(() => scrollToDocumentAnchor(anchor));
     const item = new URLSearchParams(location.search).get("item");
     if (item) openWorkItem(item);
     else if (workItemDialog.open) workItemDialog.close();
@@ -4313,7 +4334,7 @@ window.addEventListener("popstate", () => {
   // The Plans tab moved out of Code into its own page; old links land there.
   if (params.get("view") === "code" && params.get("tab") === "plans") return showPlans({ historyMode: "replace" });
   const page = VIEWS[params.get("view")];
-  if (page) return page.back(params);
+  if (page) { page.back(params); return restoreSavedScroll(); }
   const requested = params.get("path");
   const path = state.documents.find((doc) => doc.path === requested)?.path
     || state.documents.find((doc) => doc.path === state.defaultPath)?.path
@@ -4518,7 +4539,13 @@ function recordVisit() {
 }
 for (const method of ["pushState", "replaceState"]) {
   const original = history[method].bind(history);
-  history[method] = (...args) => { original(...args); recordVisit(); };
+  history[method] = (state, ...rest) => {
+    // Scroll memory: the entry being left keeps its spot for Back, and a URL tweak in place keeps the spot it had.
+    if (method === "pushState") saveScrollPosition();
+    else if (state == null && savedScrollPosition() != null) state = { scrollY: savedScrollPosition() };
+    original(state, ...rest);
+    recordVisit();
+  };
 }
 window.addEventListener("popstate", recordVisit);
 
@@ -4755,7 +4782,7 @@ async function boot() {
       || state.documents.find((doc) => doc.path === body.defaultPath)?.path
       || state.documents[0]?.path;
     renderLibrary();
-    if (VIEWS[requestedView]) VIEWS[requestedView].boot();
+    if (VIEWS[requestedView]) { VIEWS[requestedView].boot(); restoreSavedScroll(); }
     else if (initial) await selectDocument(initial, { historyMode: "none", anchor: locationAnchor(), scrollY: savedScrollPosition() });
     else showNotice("No supported files were found under daily, tasks, plans, or reference.", true);
     connectLiveUpdates();
