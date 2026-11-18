@@ -361,19 +361,22 @@ test("the Updates timeline preserves mixed history, Markdown blocks, and heading
     "A new paragraph.",
     "",
     "- **2026-11-16** — An older date-only bullet.",
+    "- 2026-11-17: **An older plain-date bullet.** With details.",
   ].join("\r\n");
   const { entries, warnings } = parseUpdates(markdown);
   assert.deepEqual(warnings, []);
   assert.deepEqual(entries.map(({ date, title }) => [date, title]), [
     ["2026-11-18", "Follow-up"],
+    ["2026-11-17", ""],
     ["2026-11-16", ""],
     ["2026-11-04", "Merged"],
     ["2026-11-04", "Reviewed"],
     ["2026-10-27", ""],
   ]);
-  assert.equal(entries[1].body, "An older date-only bullet.");
-  assert.match(entries[2].body, /^First note for the day\.\n- Nested detail\./);
-  assert.match(entries[2].body, /Example/);
+  assert.equal(entries[1].body, "**An older plain-date bullet.** With details.");
+  assert.equal(entries[2].body, "An older date-only bullet.");
+  assert.match(entries[3].body, /^First note for the day\.\n- Nested detail\./);
+  assert.match(entries[3].body, /Example/);
   const html = renderUpdates(markdown, "tasks/TASK-0001.md");
   assert.ok(html);
   assert.match(html, /<p>Historical notes\.<\/p><ol class="update-timeline">/);
@@ -381,6 +384,7 @@ test("the Updates timeline preserves mixed history, Markdown blocks, and heading
   assert.match(html, /datetime="2026-10-27"/);
   assert.match(html, /<li>Plain bullet under the date\.<\/li>/);
   assert.match(html, /<li>Nested detail\.<\/li>/);
+  assert.match(html, /<strong>An older plain-date bullet\.<\/strong> With details\./);
   assert.match(html, /href="[^"]*TASK-0002\.md/);
   assert.equal(renderUpdates("- Undated historical note."), null);
 });

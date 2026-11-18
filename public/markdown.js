@@ -621,8 +621,9 @@ function renderMarkdownList(lines, currentPath) {
 
 // Older bullets sometimes bold only the date and put the full update after the dash.
 const datedUpdateBullet = /^([-*][ \t]+)\*\*(\d{4}-\d{2}-\d{2})(?:[ \t]*[—–-][ \t]*(.+?)\*\*:?[ \t]*|\*\*[ \t]*[—–-][ \t]*(?=\S))(.*)$/;
+const plainUpdateBullet = /^([-*][ \t]+)(\d{4}-\d{2}-\d{2})[ \t]*(?::|[—–-][ \t]+)[ \t]*(\S.*)$/;
 const datedUpdateHeading = /^###[ \t]+(\d{4}-\d{2}-\d{2})(?:[ \t]*[—–-][ \t]*(.+))?[ \t]*$/;
-const looksDated = /^(?:[-*][ \t]+\*\*|###[ \t]+)\d{4}-\d{2}-\d{2}\b/;
+const looksDated = /^(?:[-*][ \t]+(?:\*\*)?|###[ \t]+)\d{4}-\d{1,2}-\d{1,2}\b/;
 const validUpdateDate = (date) => {
   const day = new Date(`${date}T00:00:00Z`);
   return Number.isFinite(+day) && day.toISOString().slice(0, 10) === date;
@@ -640,12 +641,13 @@ export function parseUpdates(markdown = "") {
   for (const line of markdown.split(/\r?\n/)) {
     if (!fence) {
       const bullet = line.match(datedUpdateBullet);
+      const plain = line.match(plainUpdateBullet);
       const heading = line.match(datedUpdateHeading);
-      const date = bullet?.[2] || heading?.[1];
+      const date = bullet?.[2] || plain?.[2] || heading?.[1];
       const title = (bullet?.[3] || heading?.[2] || "").trim().replace(/:$/, "").trimEnd();
       if (date && validUpdateDate(date) && (bullet?.[3] === undefined || title)) {
         current = {
-          date, title, lines: [bullet?.[4] || ""], indent: bullet?.[1].length || 0,
+          date, title, lines: [bullet?.[4] || plain?.[3] || ""], indent: (bullet?.[1] || plain?.[1] || "").length,
           anchor: heading ? markdownHeadingId(line.replace(/^###[ \t]+/, "")) : "",
         };
         entries.push(current);

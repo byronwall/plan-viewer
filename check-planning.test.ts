@@ -72,6 +72,8 @@ test("planning lint accepts mixed update history and explains malformed date mar
     "Invalid update marker “- **2026-02-30 — Fixed:** Verified.”. Use - **YYYY-MM-DD — Title:** body with a valid date and a title.",
   ]);
   assert.match(planningErrors(taskPath, source + updates.replace("2026-10-14 — Fixed:", "2026-10-14:"))[0], /Invalid update marker/);
+  assert.deepEqual(planningErrors(taskPath, source + "\n## Updates\n\n- 2026-10-15: Older note.\n"), []);
+  assert.match(planningErrors(taskPath, source + "\n## Updates\n\n- 2026-10-5: Missing zero.\n")[0], /Invalid update marker/);
 });
 
 test("planning lint and the commit hook check the index rather than the corrected working copy", async t => {
