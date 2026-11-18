@@ -65,6 +65,15 @@ test("planning lint flags an active task whose only next actions are blocked", (
   assert.ok(planningErrors(taskPath, active.replace(/## Next actions[\s\S]*?## Work/, "## Work")).some(error => error.includes("no next actions")));
 });
 
+test("planning lint accepts mixed update history and explains malformed date markers", () => {
+  const updates = "\n## Updates\n\n### 2026-10-13\n\nHistorical note.\n\n- **2026-10-14 — Fixed:** Verified.\n  - Detail.\n- **2026-10-15** — Older date-only style.\n";
+  assert.deepEqual(planningErrors(taskPath, source + updates), []);
+  assert.deepEqual(planningErrors(taskPath, source + updates.replace("2026-10-14 — Fixed", "2026-02-30 — Fixed")), [
+    "Invalid update marker “- **2026-02-30 — Fixed:** Verified.”. Use - **YYYY-MM-DD — Title:** body with a valid date and a title.",
+  ]);
+  assert.match(planningErrors(taskPath, source + updates.replace("2026-10-14 — Fixed:", "2026-10-14:"))[0], /Invalid update marker/);
+});
+
 test("planning lint and the commit hook check the index rather than the corrected working copy", async t => {
   const root = await mkdtemp(join(tmpdir(), "planning-lint-"));
   t.after(() => rm(root, { recursive: true, force: true }));

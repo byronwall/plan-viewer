@@ -619,13 +619,60 @@ function renderMarkdownList(lines, currentPath) {
   return roots.map(renderList).join("");
 }
 
-// Task updates are single bullets in the form `- **2026-10-13 — Title:** body`. Anything else returns null so the
-// section falls back to ordinary Markdown.
+// Older bullets sometimes bold only the date and put the full update after the dash.
+const datedUpdateBullet = /^([-*][ \t]+)\*\*(\d{4}-\d{2}-\d{2})(?:[ \t]*[—–-][ \t]*(.+?)\*\*:?[ \t]*|\*\*[ \t]*[—–-][ \t]*(?=\S))(.*)$/;
+const datedUpdateHeading = /^###[ \t]+(\d{4}-\d{2}-\d{2})(?:[ \t]*[—–-][ \t]*(.+))?[ \t]*$/;
+const looksDated = /^(?:[-*][ \t]+\*\*|###[ \t]+)\d{4}-\d{2}-\d{2}\b/;
+const validUpdateDate = (date) => {
+  const day = new Date(`${date}T00:00:00Z`);
+  return Number.isFinite(+day) && day.toISOString().slice(0, 10) === date;
+};
+
+// An Updates section can mix dated bullets and older date headings. Each starts a new entry, while prose and lists
+// below it belong to its body. Keep Markdown before the first entry so historical notes and instructions stay visible.
 export function parseUpdates(markdown = "") {
-  const lines = markdown.split("\n").filter((line) => line.trim());
-  const entries = lines.map((line) => line.match(/^[-*]\s+\*\*(\d{4}-\d{2}-\d{2})\s*[—–-]\s*(.+?):?\*\*:?\s*(.*)$/));
-  if (!entries.length || entries.some((entry) => !entry)) return null;
-  return entries.map(([, date, title, body]) => ({ date, title: title.trim(), body: body.trim() }));
+  const preamble = [];
+  const entries = [];
+  const warnings = [];
+  let current;
+  let fence = "";
+
+  for (const line of markdown.split(/\r?\n/)) {
+    if (!fence) {
+      const bullet = line.match(datedUpdateBullet);
+      const heading = line.match(datedUpdateHeading);
+      const date = bullet?.[2] || heading?.[1];
+      const title = (bullet?.[3] || heading?.[2] || "").trim().replace(/:$/, "").trimEnd();
+      if (date && validUpdateDate(date) && (bullet?.[3] === undefined || title)) {
+        current = {
+          date, title, lines: [bullet?.[4] || ""], indent: bullet?.[1].length || 0,
+          anchor: heading ? markdownHeadingId(line.replace(/^###[ \t]+/, "")) : "",
+        };
+        entries.push(current);
+        continue;
+      }
+      if (looksDated.test(line)) {
+        warnings.push(`Invalid update marker “${line.trim()}”. Use - **YYYY-MM-DD — Title:** body with a valid date and a title.`);
+      }
+    }
+
+    const marker = line.match(/^[ \t]*(`{3,}|~{3,})/);
+    if (marker && !fence) fence = marker[1];
+    else if (marker && marker[1].startsWith(fence) && line.trim() === marker[1]) fence = "";
+    if (current) {
+      const indent = line.match(/^[ \t]*/)[0].length;
+      current.lines.push(line.slice(indent >= current.indent ? current.indent : 0));
+    } else preamble.push(line);
+  }
+
+  const intro = preamble.join("\n").trim();
+  if (/^Append dated events below\b/.test(intro)) entries.reverse();
+  const ordered = entries.sort((a, b) => b.date.localeCompare(a.date));
+  return {
+    preamble: intro,
+    entries: ordered.map(({ date, title, anchor, lines }) => ({ date, title, anchor, body: lines.join("\n").trim() })),
+    warnings,
+  };
 }
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -644,13 +691,12 @@ const longDate = (isoDate) => new Date(`${isoDate}T12:00:00`).toLocaleDateString
 
 // Newest first, as a timeline: title with its relative date (absolute on hover) at the right, then the entry body.
 export function renderUpdates(markdown, currentPath = "") {
-  const entries = parseUpdates(markdown);
-  if (!entries) return null;
-  const sorted = entries.map((entry, index) => ({ ...entry, index })).sort((a, b) => b.date.localeCompare(a.date) || b.index - a.index);
-  return `<div class="markdown"><ol class="update-timeline">${sorted.map((entry) => `<li class="update-entry">
-    <div class="update-head"><p class="update-title">${inlineMarkdown(entry.title, currentPath)}</p>
+  const { entries, preamble } = parseUpdates(markdown);
+  if (!entries.length) return null;
+  return `<div class="markdown">${renderMarkdown(preamble, currentPath)}<ol class="update-timeline">${entries.map((entry) => `<li class="update-entry"${entry.anchor ? ` id="${escapeHtml(entry.anchor)}"` : ""}>
+    <div class="update-head">${entry.title ? `<p class="update-title">${inlineMarkdown(entry.title, currentPath)}</p>` : ""}
     <time class="update-when" datetime="${entry.date}" title="${escapeHtml(longDate(entry.date))}">${escapeHtml(relativeDate(entry.date).replace(/^\p{Ll}/u, (letter) => letter.toUpperCase()))}</time></div>
-    ${entry.body ? `<p class="update-body">${inlineMarkdown(entry.body, currentPath)}</p>` : ""}
+    ${entry.body ? `<div class="update-body">${renderMarkdown(entry.body, currentPath)}</div>` : ""}
   </li>`).join("")}</ol></div>`;
 }
 

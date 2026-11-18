@@ -4,7 +4,7 @@ import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseActions, parseWorkBreakdown, stalledTaskReason } from "./public/actions.js";
-import { markdownFenceWarnings } from "./public/markdown.js";
+import { markdownFenceWarnings, parseUpdates } from "./public/markdown.js";
 import { isViewableDocumentPath, parseChunks, parseTaskDocument, ROOT } from "./server.ts";
 import { config } from "./public/config.js";
 import { outboundFields } from "./outbound.ts";
@@ -126,7 +126,11 @@ export function planningErrors(path: string, markdown: string): string[] {
     }
     const stalled = parsed ? stalledTaskReason(parsed.task.status, actions, work) : "";
     if (stalled) errors.push(stalled);
-    if (parsed) errors.push(...stepErrors(parsed.task, work.nodes, actions));
+    if (parsed) {
+      errors.push(...stepErrors(parsed.task, work.nodes, actions));
+      const updates = chunks.find((chunk) => /^updates$/i.test(chunk.title));
+      if (updates) errors.push(...parseUpdates(updates.markdown).warnings);
+    }
     return errors;
   } catch (error) {
     return [error instanceof Error ? error.message : String(error)];

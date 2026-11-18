@@ -3,6 +3,7 @@
 // the documents that reference the task, so a resuming agent need not read the whole history.
 import { access, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { parseUpdates } from "./public/markdown.js";
 import { listDocuments, loadDocument, ROOT } from "./server.ts";
 
 const id = process.argv[2]?.toUpperCase();
@@ -33,8 +34,10 @@ for (const action of doc.nextActions) {
 }
 if (!doc.nextActions.length) out.push("(none)", "");
 
-const latest = section(/^updates$/i).split(/\n(?=- )/).filter(Boolean).at(-1);
-if (latest) out.push("## Latest update", latest, "");
+const updates = doc.chunks.find((chunk) => /^updates$/i.test(chunk.title))?.markdown;
+const [latest] = parseUpdates(updates).entries;
+if (latest) out.push("## Latest update", `**${latest.date}${latest.title ? ` — ${latest.title}` : ""}**`, latest.body, "");
+else if (updates) out.push("## Updates", updates, "");
 if (doc.chatLinks.length) out.push("## Chats", ...doc.chatLinks.map((chat) => `- ${chat.label}: ${chat.href}`), "");
 const assets = await readdir(join(ROOT, "tasks", `${id}-assets`)).catch(() => []);
 if (assets.length) out.push("## Assets", ...assets.filter((name) => !name.startsWith(".")).map((name) => `- tasks/${id}-assets/${name}`), "");

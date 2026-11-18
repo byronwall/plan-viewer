@@ -312,8 +312,8 @@ export function renderDock({ doc, documents, links, body, steps = "", diagrams =
     add("work", label, hasWork ? progressRing(doneLeaves, leaves.length) : ICONS.actions, hasWork ? `${doneLeaves}/${leaves.length}` : `${readyActions || listed.length}`, hasWork ? "Steps" : actions.title, meta, content, hasWork ? work.id : actions.id);
     if (hasWork) items.at(-1).tools = `<button type="button" class="doc-dock-jump" data-work-item="${escapeHtml(start.id)}" title="Open the work items at ${escapeHtml(start.id)}">Work items <span aria-hidden="true">→</span></button>`;
   }
-  const entries = updates && parseUpdates(updates.markdown);
-  const latest = entries?.map((entry) => entry.date).sort().at(-1);
+  const entries = updates && parseUpdates(updates.markdown).entries;
+  const latest = entries?.[0]?.date;
   if (updates) add("updates", "Updates", ICONS.updates, `${entries?.length || countUpdates(updates.markdown) || ""}`, updates.title, latest ? `Latest ${relativeDate(latest)} · ${entries.length} ${entries.length === 1 ? "entry" : "entries"}` : "Recorded in the task", body(updates), updates.id);
   if (subDocuments.length) {
     const latest = Math.max(...subDocuments.map((sub) => sub.modified || 0));

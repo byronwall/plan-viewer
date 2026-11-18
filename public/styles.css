@@ -1262,8 +1262,11 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .update-entry:first-child::after { border-color: var(--action); background: var(--action); box-shadow: 0 0 0 3px var(--selected); }
 .markdown .update-title { flex: 1; min-width: 0; margin: 0; color: var(--ink); font-size: .92rem; font-weight: 650; line-height: 1.35; letter-spacing: -.008em; }
 .update-when { flex: none; margin-left: auto; white-space: nowrap; color: var(--muted); font-size: .74rem; font-weight: 550; cursor: default; }
+.update-when:only-child { margin-left: 0; }
 .update-entry:first-child .update-when { color: var(--action-ink); }
 .markdown .update-body { margin: 4px 0 0; color: var(--body-ink); font-size: .86rem; line-height: 1.55; }
+.update-body > :first-child { margin-top: 0; }
+.update-body > :last-child { margin-bottom: 0; }
 
 /* Code dashboard: worktrees, pull requests, cleanup. */
 .code-page, .plans-page { max-width: 1560px; --heat-hot: #e8590c; --heat-warm: #f59f00; --heat-week: #3157d5; --heat-cold: #d3d8e1; --dirty: #c27803; --dirty-field: #fdf1d8; --pass: #1f9d6b; --fail: #d6453d; --pending: #e0a100; --requested: #8b4fd8; --requested-field: #f1e8fd; --mine: #3157d5; --merged: #7b4fd1; --merged-field: #efe8fb; }

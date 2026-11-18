@@ -7,7 +7,7 @@ import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseActions, parseWorkBreakdown, stalledTaskReason } from "./public/actions.js";
-import { extractChatLinks, inlineMarkdown, pullRequestRefs } from "./public/markdown.js";
+import { extractChatLinks, inlineMarkdown, parseUpdates, pullRequestRefs } from "./public/markdown.js";
 import { isDiffDiagram } from "./public/diagram.js";
 import { metadataKey } from "./public/dock.js";
 import { CodexDesktopClient, taskTitle, withImages } from "./codex-desktop.ts";
@@ -530,7 +530,8 @@ export async function listTaskWorld() {
     if (!id) return;
     if (path.endsWith(`${id}.md`)) {
       const contents = await readFile(join(ROOT, path), "utf8");
-      for (const [, date, title] of contents.matchAll(/^[-*]\s+\*\*(\d{4}-\d{2}-\d{2})\s*[—–-]\s*(.+?):?\*\*/gm)) entry(id).updates.push({ date, title: title.trim() });
+      const updates = parseChunks(contents).find((chunk) => /^updates$/i.test(chunk.title));
+      for (const { date, title } of parseUpdates(updates?.markdown).entries) entry(id).updates.push({ date, title: title || "Task update" });
       return;
     }
     const { mtimeMs } = await stat(join(ROOT, path));

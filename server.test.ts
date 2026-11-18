@@ -10,6 +10,7 @@ import { dateKey, parseDateKey, startOfWeek } from "./public/dates.js";
 import { config, setConfig } from "./public/config.js";
 import { comparePanels, isDiffDiagram, sourceHtml, statementId } from "./public/diagram.js";
 import { taskItems } from "./public/world.js";
+import { parseUpdates, renderUpdates } from "./public/markdown.js";
 import { ROOT, buildCodexPrompt, describeChange, saveHandoffImages, planFocus, buildDocumentCodexPrompt, buildGlobalCodexPrompt, isViewableDocumentPath, listDocuments, watchMarkdownSources, loadDocument, markdownHeadingId, outline, parseChunks, parseTaskDocument, buildDiagramPrompt, listDiagrams, listTaskWorld, renderDiagram, safeAssetPath, withPanels, setTaskStatus, slackDeepLink, summarize, waitingSignals, watchedReferences } from "./server.ts";
 
 test("Slack refresh updates renamed channels, adds linked channels, and preserves other Markdown", async (t) => {
@@ -332,6 +333,62 @@ test("the Diagrams page lists every .draft with its title and owning task", asyn
   assert.equal(flow?.title, "Fixture flow");
   assert.equal(flow?.task, "TASK-0001");
   assert.ok(diagrams.every((diagram) => diagram.path.endsWith(".draft")));
+});
+
+test("the Updates timeline preserves mixed history, Markdown blocks, and heading anchors", () => {
+  const markdown = [
+    "Historical notes.",
+    "",
+    "### 2026-10-27",
+    "",
+    "A first [reference](TASK-0002.md).",
+    "",
+    "- Plain bullet under the date.",
+    "",
+    "- **2026-11-04 — Merged:** First note for the day.",
+    "  - Nested detail.",
+    "",
+    "  ````md",
+    "  ```",
+    "  - **2026-11-17 — Example:** Kept as code.",
+    "  ```",
+    "  ````",
+    "",
+    "- **2026-11-04 — Reviewed**: Second note for the day.",
+    "",
+    "### 2026-11-18 — Follow-up",
+    "",
+    "A new paragraph.",
+    "",
+    "- **2026-11-16** — An older date-only bullet.",
+  ].join("\r\n");
+  const { entries, warnings } = parseUpdates(markdown);
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(entries.map(({ date, title }) => [date, title]), [
+    ["2026-11-18", "Follow-up"],
+    ["2026-11-16", ""],
+    ["2026-11-04", "Merged"],
+    ["2026-11-04", "Reviewed"],
+    ["2026-10-27", ""],
+  ]);
+  assert.equal(entries[1].body, "An older date-only bullet.");
+  assert.match(entries[2].body, /^First note for the day\.\n- Nested detail\./);
+  assert.match(entries[2].body, /Example/);
+  const html = renderUpdates(markdown, "tasks/TASK-0001.md");
+  assert.ok(html);
+  assert.match(html, /<p>Historical notes\.<\/p><ol class="update-timeline">/);
+  assert.match(html, /id="2026-10-27"/);
+  assert.match(html, /datetime="2026-10-27"/);
+  assert.match(html, /<li>Plain bullet under the date\.<\/li>/);
+  assert.match(html, /<li>Nested detail\.<\/li>/);
+  assert.match(html, /href="[^"]*TASK-0002\.md/);
+  assert.equal(renderUpdates("- Undated historical note."), null);
+});
+
+test("same-day timeline entries follow the task's prepend or append convention", () => {
+  const bullets = "- **2026-11-04 — First**\n- **2026-11-04 — Second**";
+  assert.deepEqual(parseUpdates(bullets).entries.map(({ title }) => title), ["First", "Second"]);
+  assert.deepEqual(parseUpdates("Append dated events below this line.\n\n" + bullets).entries.map(({ title }) => title), ["Second", "First"]);
 });
 
 test("the world view lists a task's asset files by kind and its dated updates", async () => {
