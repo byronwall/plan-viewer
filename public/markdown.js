@@ -655,17 +655,27 @@ export function renderUpdates(markdown, currentPath = "") {
 }
 
 // A ```diff (or ```patch) fence colors each line by its leading +, - or @@, edge to edge, as GitHub does.
+// `colorize(text)`, when given, returns syntax-highlighted HTML lines for its text (code-highlight.js passes one once
+// highlight.js loads); each side (removed and context lines, added and context lines) is colored as one run, so a
+// string or comment carries across lines, and the word marks are laid over the colors.
 const DIFF_KINDS = { "+": "add", "-": "del", "@": "hunk" };
-export function codeBlock(lines, language = "") {
+export const diffLines = (lines) => lines.map((line) => {
+  const kind = line.startsWith("@@") ? "hunk" : DIFF_KINDS[line[0]] || "ctx";
+  const sign = kind === "add" || kind === "del" ? line[0] : "";
+  return { kind, sign, text: sign || line[0] === " " ? line.slice(1) : line }; // a context line's leading space is its sign column
+});
+export function codeBlock(lines, language = "", colorize = null) {
   if (!/^(diff|patch)$/i.test(language)) return `<pre><code>${escapeHtml(lines.join("\n"))}</code></pre>`;
-  const parsed = lines.map((line) => {
-    const kind = line.startsWith("@@") ? "hunk" : DIFF_KINDS[line[0]] || "ctx";
-    const sign = kind === "add" || kind === "del" ? line[0] : "";
-    return { kind, sign, text: sign || line[0] === " " ? line.slice(1) : line }; // a context line's leading space is its sign column
-  });
+  const parsed = diffLines(lines);
   markWords(parsed);
+  if (colorize) for (const side of ["del", "add"]) {
+    const run = parsed.filter((line) => line.kind === side || line.kind === "ctx");
+    const html = colorize(run.map((line) => line.text).join("\n"));
+    run.forEach((line, index) => { if (line.kind === side || side === "add") line.html = html[index]; });
+  }
   const rows = parsed.map((line) => {
-    const html = line.marks ? decorate(escapeHtml(line.text), lineClasses(line, false)) : escapeHtml(line.text);
+    const base = line.html ?? escapeHtml(line.text);
+    const html = line.marks ? decorate(base, lineClasses(line, false)) : base;
     return `<span class="markdown-diff-${line.kind}"><span class="markdown-diff-sign">${line.sign}</span>${html || " "}</span>`;
   });
   return `<pre class="markdown-diff"><code>${rows.join("")}</code></pre>`;

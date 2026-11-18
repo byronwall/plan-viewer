@@ -2,6 +2,7 @@ import { documentHref, escapeHtml, renderMarkdown, renderMarkdownInRepo, SERVICE
 import { GLYPHS } from "./icons.js";
 import { agentApp, agentName as appName, config, escapeRegExp, withNote } from "./config.js";
 import { decorate, lineClasses, markWords } from "./word-diff.js";
+import { splitHighlightedLines } from "./code-highlight.js";
 import { mapHtml, mapSvg, moveGroups, svgToPng, tileCard } from "./diff-map.js";
 import { anchorNote } from "./note-anchor.js";
 import { openNotePopover } from "./note-popover.js";
@@ -1788,15 +1789,7 @@ let highlighter = null;
 let highlighterLoad = null;
 const loadHighlighter = () => highlighterLoad ||= import("./vendor/highlight.js").then((module) => { highlighter = module.default; refreshAllFiles(); }, () => {});
 
-// highlight.js output can open a span on one line and close it lines later; close and reopen it at every line break.
-export function splitHighlightedLines(html) {
-  const open = [];
-  return html.split("\n").map((line) => {
-    const prefix = open.join("");
-    for (const tag of line.match(/<span[^>]*>|<\/span>/g) || []) tag === "</span>" ? open.pop() : open.push(tag);
-    return prefix + line + "</span>".repeat(open.length);
-  });
-}
+export { splitHighlightedLines };
 
 const languageFor = (path) => {
   const name = path.split("/").pop().toLowerCase();

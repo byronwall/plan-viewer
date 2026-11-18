@@ -302,7 +302,8 @@ button { cursor: pointer; }
 .markdown-table { position: relative; display: flow-root; margin: 30px 0 22px; scroll-margin-top: 84px; }
 .markdown > .markdown-table:first-child { margin-top: 30px; }
 .table-tools { display: flex; align-items: center; gap: 2px; font-size: .7rem; }
-.markdown-code { position: relative; margin: 28px 0 12px; }
+/* The same space above and below; the hover tab (20px) fits in the space above. */
+.markdown-code { position: relative; margin: 20px 0; }
 .markdown-code > pre { margin: 0; }
 /* The table's bar holds two such tabs. It is sticky below the 44px document dock, so on a tall table the view
    controls stay in reach while the table scrolls by; it adds no height (its negative top margin sits in the reserved space). */
@@ -314,6 +315,7 @@ button { cursor: pointer; }
 .table-bar > .table-view-tools [data-table-all]:not([hidden]) + [data-table-expand] { margin-left: 3px; border-left: 1px solid var(--line); border-radius: 0 5px 5px 0; }
 .markdown-code > .table-tools { position: absolute; z-index: 1; bottom: calc(100% - 1px); right: 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 7px 7px 0 0; background: var(--paper); padding: 1px 2px 0; opacity: 0; pointer-events: none; transition: opacity 140ms ease-out; }
 .markdown-code:hover > .table-tools, .markdown-code:focus-within > .table-tools { opacity: 1; pointer-events: auto; }
+.markdown-code > .table-tools button { height: 19px; }
 /* Feature trees: a box-drawing ```text tree drawn as an outline. Capitals at the top level are tone-coded sections;
    rails are drawn per item so the last branch stops at its own row. Text shows the source fence instead. */
 .markdown-tree { container-type: inline-size; max-width: 1100px; }
