@@ -42,6 +42,9 @@ test("lists running Codex CLI and Claude Desktop threads, and keeps inactive ses
   execFileSync("/usr/bin/sqlite3", [join(codexHome, "state_5.sqlite"), `
     CREATE TABLE threads (id TEXT, rollout_path TEXT, cwd TEXT, title TEXT, name TEXT, updated_at INTEGER, source TEXT, originator TEXT, archived INTEGER);
     ${[1, 2, 3].map(num => `INSERT INTO threads VALUES (${quote(id(num))}, ${quote(rollout(codexHome, num))}, '/repo/alpha', 'First prompt', 'Working title ${num}', 1767272400, 'exec', 'codex_exec', 0);`).join("\n")}
+    ALTER TABLE threads ADD COLUMN tokens_used INTEGER;
+    ALTER TABLE threads ADD COLUMN model TEXT;
+    UPDATE threads SET tokens_used = 18342, model = 'test-model' WHERE id = ${quote(id(1))};
   `]);
   await write(join(claudeConfig, "sessions/300.json"), JSON.stringify({ pid: 300, sessionId: id(5), status: "waiting", cwd: "/repo/beta", updatedAt: Date.parse(stamp) }));
   await write(join(claudeConfig, "sessions/400.json"), JSON.stringify({ pid: 400, sessionId: id(6), status: "busy", cwd: "/repo/beta" }));
@@ -53,6 +56,9 @@ test("lists running Codex CLI and Claude Desktop threads, and keeps inactive ses
   const { active, completed, issues } = await read();
   assert.deepEqual(issues, []);
   assert.deepEqual(active.map(({ id: key, state }) => [key, state]), [[id(1), "active"], [`local_${id(7)}`, "waiting"]]);
+  assert.equal(active[0].tokens, 18342);
+  assert.equal(active[0].model, "test-model");
+  assert.equal(completed.find(thread => thread.id === id(2))?.tokens, null);
   assert.equal(active[0].title, "Working title 1");
   assert.equal(active[0].url, `codex://threads/${id(1)}`);
   assert.equal(active[1].url, `claude://claude.ai/epitaxy/local_${id(7)}`);

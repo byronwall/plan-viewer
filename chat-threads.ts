@@ -13,7 +13,8 @@ const claudeTranscript = new RegExp(`^(${uuid})\\.jsonl$`, "i");
 const historyLimit = 50;
 
 type Provider = "Codex" | "Claude";
-type Thread = {
+type AgentDetails = { model?: string; role?: string; tokens?: number | null; branch?: string };
+type Thread = AgentDetails & {
   id: string;
   provider: Provider;
   source: string;
@@ -26,7 +27,7 @@ type Thread = {
 type Inventory = { active: Thread[]; completed: Thread[]; issues: string[] };
 type JSONObject = Record<string, any>;
 
-type CodexIndexRow = {
+type CodexIndexRow = AgentDetails & {
   id: string;
   path: string;
   cwd: string;
@@ -158,16 +159,17 @@ async function codexIndex(home: string) {
   const databases = await children(home, false, /^state_\d+\.sqlite$/);
   const database = databases.sort((a, b) => Number(basename(b).match(/\d+/)?.[0]) - Number(basename(a).match(/\d+/)?.[0]))[0];
   if (!database) return [] as CodexIndexRow[];
-  const command = (title: string, originator: string) => run("/usr/bin/sqlite3", ["-readonly", "-json", "-cmd", ".timeout 1000", database, `
-    SELECT id, rollout_path AS path, cwd, ${title} AS title, updated_at * 1000 AS updatedAt, source, ${originator} AS originator
+  const query = (sql: string) => run("/usr/bin/sqlite3", ["-readonly", "-json", "-cmd", ".timeout 1000", database, sql], { timeout: 3000, maxBuffer: 8 * 1024 * 1024 });
+  // Columns arrive independently across Codex releases. Select only fields this index supports.
+  const schema = await query("PRAGMA table_info(threads)");
+  const columns = new Set(JSON.parse(schema.stdout || "[]").map((column: JSONObject) => column.name));
+  const field = (name: string) => columns.has(name) ? name : "NULL";
+  const result = await query(`
+    SELECT id, rollout_path AS path, cwd, substr(coalesce(nullif(${field("name")}, ''), title), 1, 400) AS title,
+      updated_at * 1000 AS updatedAt, source, ${field("originator")} AS originator, ${field("tokens_used")} AS tokens,
+      ${field("model")} AS model, ${field("agent_role")} AS role, ${field("git_branch")} AS branch
     FROM threads WHERE archived = 0 AND source NOT LIKE '%"guardian"%'
-    ORDER BY updated_at DESC`], { timeout: 3000, maxBuffer: 8 * 1024 * 1024 });
-  let result;
-  try { result = await command("substr(coalesce(nullif(name, ''), title), 1, 400)", "originator"); }
-  catch (error: any) {
-    if (!String(error.stderr).includes("no such column:")) throw error;
-    result = await command("substr(title, 1, 400)", "''");
-  }
+    ORDER BY updated_at DESC`);
   return JSON.parse(result.stdout || "[]") as CodexIndexRow[];
 }
 
@@ -187,7 +189,7 @@ async function codexThreads(home: string, rollouts: Map<string, string> | undefi
     if (!row) {
       const meta = await firstRecord(path).then(lines => object(lines[0]).payload).catch(() => null);
       if (meta?.id !== id) continue;
-      row = { id, path, cwd: string(meta.cwd), title: "", source: JSON.stringify(meta.source) || "", originator: string(meta.originator), updatedAt: info.mtimeMs };
+      row = { id, path, cwd: string(meta.cwd), title: "", branch: string(meta.git?.branch), source: JSON.stringify(meta.source) || "", originator: string(meta.originator), updatedAt: info.mtimeMs };
     }
     if (row.source.includes('"guardian"')) continue;
     const key = `${info.size}:${info.mtimeMs}`;
@@ -201,7 +203,7 @@ async function codexThreads(home: string, rollouts: Map<string, string> | undefi
     const state = turn.state === "active" && !live ? "interrupted" : turn.state;
     const source = row.source === "exec" || ["codex_exec", "codex-tui"].includes(row.originator) || row.source === "cli" ? "CLI"
       : row.originator === "Codex Desktop" ? "Desktop" : "Local";
-    const thread: Thread = { id, provider: "Codex", source, title: displayTitle(row.title, basename(row.cwd) || "Codex thread"), cwd: row.cwd,
+    const thread: Thread = { id, provider: "Codex", source, model: row.model, role: row.role || (row.source.includes('"subagent"') ? "Subagent" : ""), tokens: row.tokens, branch: row.branch, title: displayTitle(row.title, basename(row.cwd) || "Codex thread"), cwd: row.cwd,
       updatedAt: state === "active" ? info.mtimeMs : turn.updatedAt, state, url: `codex://threads/${id}` };
     (state === "active" ? active : completed).push(thread);
   }
@@ -283,7 +285,7 @@ async function claudeThreads(config: string, desktopRoot: string, pids: Set<numb
     const state = row ? claudeState(row) : "completed";
     if (state === "completed" && !session.completedTurns && !session.lastTurnEdgeAt) continue;
     const cwd = string(session.cwd || row?.cwd);
-    threads.push({ id: session.sessionId, provider: "Claude", source: "Desktop", cwd, state,
+    threads.push({ id: session.sessionId, provider: "Claude", source: "Desktop", cwd, state, model: string(session.model),
       title: displayTitle(string(session.title || row?.name), basename(cwd) || "Claude Code session"),
       updatedAt: Number(row?.updatedAt || session.lastActivityAt || session.createdAt) || 0,
       url: `claude://claude.ai/epitaxy/${session.sessionId}` });
