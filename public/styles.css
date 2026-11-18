@@ -90,7 +90,7 @@ button { cursor: pointer; }
 .library-children { display: grid; gap: 2px; margin: 2px 0 0 14px; }
 .library-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 38%); align-items: baseline; gap: 16px; border-radius: 7px; padding: 7px 10px; color: var(--ink); text-decoration: none; }
 .library-row.markdown-document-link::after { content: none; }
-.library-row:hover { background: var(--quiet-field); }
+a.library-row:hover { background: var(--quiet-field); } /* a folder with no README is a plain heading row */
 .library-row strong { min-width: 0; overflow: hidden; font-size: .88rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .library-row code { min-width: 0; overflow: hidden; color: var(--quiet-text); font: .7rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .library-row:focus-visible { outline: 3px solid rgba(49, 87, 213, .26); outline-offset: 2px; }
@@ -490,7 +490,6 @@ button { cursor: pointer; }
 .table-viewer-body :is(th, td) { min-width: 0; padding: 3px 8px; }
 .table-viewer-body td { max-width: 60ch; }
 .table-viewer-body tbody tr td { background: var(--paper); }
-.table-viewer-body tbody tr:hover td { background: #f3f6fd; }
 .table-viewer-body :is(th, td):first-child { position: sticky; z-index: 1; left: 0; box-shadow: inset -1px 0 var(--line); border-right: 0; }
 /* The pinned column sits inside the 12px inset; a strip to its left hides cells scrolling past underneath. */
 .table-viewer-body :is(th, td):first-child::before { content: ""; position: absolute; top: -1px; bottom: -1px; right: 100%; width: 12px; background: var(--paper); pointer-events: none; }
@@ -1243,8 +1242,7 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .update-entry::after { content: ""; position: absolute; left: 0; top: 5px; width: 12px; height: 12px; box-sizing: border-box; border: 2px solid var(--line-strong); border-radius: 50%; background: var(--paper); }
 .update-entry:first-child::after { border-color: var(--action); background: var(--action); box-shadow: 0 0 0 3px var(--selected); }
 .markdown .update-title { flex: 1; min-width: 0; margin: 0; color: var(--ink); font-size: .92rem; font-weight: 650; line-height: 1.35; letter-spacing: -.008em; }
-.update-when { flex: none; margin-left: auto; white-space: nowrap; color: var(--muted); font-size: .74rem; font-weight: 550; text-decoration: underline dotted transparent; text-underline-offset: 3px; cursor: default; transition: text-decoration-color 140ms ease, color 140ms ease; }
-.update-when:hover { color: var(--body-ink); text-decoration-color: currentColor; }
+.update-when { flex: none; margin-left: auto; white-space: nowrap; color: var(--muted); font-size: .74rem; font-weight: 550; cursor: default; }
 .update-entry:first-child .update-when { color: var(--action-ink); }
 .markdown .update-body { margin: 4px 0 0; color: var(--body-ink); font-size: .86rem; line-height: 1.55; }
 
@@ -1496,7 +1494,6 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-settings h3 .code-muted { font-weight: 500; }
 .code-repo-list { display: grid; align-content: start; gap: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 8px -6px 0; padding: 0; list-style: none; }
 .code-repo-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-radius: 6px; padding: 1px 2px 1px 8px; }
-.code-repo-list li:hover { background: var(--hover-field); }
 .code-repo-list li > span { min-width: 0; }
 .code-repo-list b { color: var(--ink); font-weight: 650; }
 .code-repo-list code { color: var(--muted); }
@@ -1645,8 +1642,7 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-file-del { color: var(--fail); }
 .code-col-main:has(.code-pr-title) { min-width: 260px; }
 .code-col-state { width: 44px; text-align: center; }
-.code-state { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; cursor: default; transition: background-color 140ms ease; }
-.code-state:hover { background: var(--quiet-field); }
+.code-state { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; cursor: default; }
 .code-state .code-icon { width: 16px; height: 16px; }
 .code-state { position: relative; }
 .code-state-count { position: absolute; right: -2px; bottom: 0; font-size: .6rem; font-weight: 700; line-height: 1; }
@@ -1992,7 +1988,6 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 .code-local-table td:first-child .code-ftype { flex: none; }
 .code-local-table td:first-child > :last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .code-local-table td:nth-child(n+3), .code-local-table th:nth-child(n+3) { text-align: right; font-variant-numeric: tabular-nums; }
-.code-local-table tbody tr:hover td { background: var(--hover-field); }
 .code-local-link { border: 0; background: none; padding: 0; color: var(--action-ink); font: inherit; text-align: left; cursor: pointer; }
 .code-local-link:hover { text-decoration: underline; }
 .code-local-text { margin: 0; padding: 12px 16px 32px; font: .74rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -2148,8 +2143,6 @@ td.issue-col-person { color: var(--body-ink) !important; }
 .issue-col-code { white-space: nowrap; min-width: 64px; }
 .issue-col-code > * + * { margin-left: 4px; }
 .issue-col-code > .code-muted:first-child { padding-left: 7px; } /* "1 in Jira" starts where a PR chip's text does */
-.issue-col-code > .code-muted[data-tip] { cursor: help; transition: color 140ms ease; }
-.issue-col-code > .code-muted[data-tip]:hover { color: var(--ink); }
 .issue-col-check { width: 22px; }
 .issue-col-check input, .issue-table thead input { margin: 0; vertical-align: -2px; }
 .issue-col-progress { white-space: nowrap; }
@@ -2361,7 +2354,6 @@ a.issue-link-row[data-planning-path] > svg { align-self: center; }
 .slack-scroll { overflow: auto; overscroll-behavior: contain; }
 .slack-thread { max-width: 940px; margin: 0; padding: 6px 12px 28px; list-style: none; }
 .slack-message { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: 10px; padding: 6px 62px 4px 8px; border-radius: 6px; transition: background-color 140ms ease, opacity 140ms ease; }
-.slack-message:hover { background: var(--hover-field); }
 .slack-message > .code-avatar { grid-row: 1 / span 2; width: 36px; height: 36px; border-radius: 8px; font-size: .78rem; vertical-align: 0; margin-top: 2px; }
 .slack-message > header { display: flex; align-items: baseline; gap: 8px; font-size: .86rem; line-height: 1.3; }
 .slack-message > header b { color: var(--ink); font-weight: 700; }
@@ -3480,8 +3472,7 @@ a.diagram-group-title:hover strong { color: var(--action-ink); }
 @media (hover: hover) { .step-detail-close:hover { background: var(--quiet-field); color: var(--ink); } }
 .step-priority { display: flex; align-items: center; gap: 10px; margin: 6px 0 4px; }
 .step-priority-why { flex: 1; min-width: 0; color: var(--muted); font-size: .78rem; text-align: right; }
-.step-score { cursor: default; border-radius: 4px; transition: background-color 140ms ease-out; }
-@media (hover: hover) { .step-score:hover { background: var(--quiet-field); } }
+.step-score { cursor: default; border-radius: 4px; }
 /* The score's waterfall: a top-layer popover beside the score. Each part is a row: label (and a detail line), a bar from
    the running total before it to the one after, and its signed points; the total closes it. Bars are data marks, so they
    take saturated color (accent up, danger down); everything else stays in text tokens. */

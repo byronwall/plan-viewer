@@ -70,6 +70,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 - `/api/issues` answers from cache; the first live sync takes about two minutes. Wait for `[data-issues-state="ready"]`. `acli jira workitem search --fields key` returns nulls, so searches ask for `status`.
 - `/api/code` takes several seconds on its first scan. Wait for `[data-code-state="ready"]` (and `[data-commits-state="ready"]` on the Commits tab) instead of polling the table.
 - Load the `byron-ui-taste` skill in full before any UI change in `public/`.
+- A `:hover` that changes an element's look (background, color, underline, border) is only for something a click acts on. Tooltip-only marks (`data-tip`, `title`) and plain rows keep their look; a row may still reveal its own buttons on hover.
 
 ## Rules
 
