@@ -1652,6 +1652,9 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .code-state-merged { color: var(--merged); }
 .code-state-review { color: #6c2fb8; }
 .code-state-requested { color: #9a5b00; }
+.code-state-dot { position: absolute; right: 0; top: 1px; width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--paper); }
+.code-state-dot.is-optional { background: var(--mine); }
+.code-state-dot.is-needed { background: var(--pass); }
 /* skills and links sit in two headed columns; both stay quiet until the row is hovered or selected */
 .code-col-skills { white-space: nowrap; }
 .code-table thead th.code-col-skills { text-align: left; }
@@ -2091,7 +2094,7 @@ nav.code-diff-scopes .code-diff-scope { grid-template-columns: auto minmax(0, 1f
 .code-side-facts dd { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; min-width: 0; min-height: 26px; margin: 0; color: var(--ink); }
 .code-side-status { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; white-space: nowrap; }
 .code-side-status .code-icon { width: 13px; height: 13px; stroke-width: 2.3; }
-.code-side-pass { color: var(--pass); } .code-side-fail { color: var(--fail); } .code-side-pending { color: #a77500; } .code-side-merged { color: var(--merged); } .code-side-quiet { color: var(--muted); }
+.code-side-pass { color: var(--pass); } .code-side-fail { color: var(--fail); } .code-side-pending { color: #a77500; } .code-side-merged { color: var(--merged); } .code-side-quiet { color: var(--muted); } .code-side-mine { color: var(--mine); }
 .code-side-person { display: inline-flex; align-items: center; gap: 5px; }
 .code-side-size { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
 .code-side-size .code-add { color: var(--pass); } .code-side-size .code-del { color: var(--fail); }

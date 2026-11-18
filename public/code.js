@@ -213,11 +213,16 @@ const reviewTag = (pr) => { const [kind, label] = REVIEW[pr.reviewDecision] || [
 const PR_STATES = { MERGED: ["merged", "branch"], CLOSED: ["fail", "fail"], draft: ["draft", "draft"], CHANGES_REQUESTED: ["fail", "diff"], APPROVED: ["pass", "approved"], mine: ["review", "review"], requested: ["requested", "person"] };
 // Bots (Copilot, anything[bot]) are requested automatically, so they don't count as asking someone for a review.
 const humanReviewers = (pr) => (pr.reviewers || []).filter((login) => !/copilot|\[bot\]$/i.test(login));
+// People other than you (and the author) whose latest review approves, so a request of you reads as either the
+// approval GitHub still needs ("needed") or a request left over after someone else approved ("optional").
+const otherApprovers = (pr) => (pr.reviews || []).filter((review) => review.state === "APPROVED" && review.login !== ui.data?.me && review.login !== pr.author && !/copilot|\[bot\]$/i.test(review.login)).map((review) => review.login);
+const myRequest = (pr) => !pr.requestedOfMe || pr.state === "MERGED" || pr.state === "CLOSED" ? "" : pr.reviewDecision === "APPROVED" ? "optional" : otherApprovers(pr).length ? "needed" : "";
 const prState = (pr) => {
   const people = humanReviewers(pr);
   const key = pr.state === "MERGED" || pr.state === "CLOSED" ? pr.state : pr.draft ? "draft" : PR_STATES[pr.reviewDecision] ? pr.reviewDecision : pr.requestedOfMe ? "mine" : people.length ? "requested" : "";
   if (!key) return "";
   const [name, glyph] = PR_STATES[key];
+  const mine = ["APPROVED", "mine"].includes(key) ? myRequest(pr) : "";
   const by = (state) => (pr.reviews || []).filter((review) => review.state === state).map((review) => review.login).join(", ");
   const tip = {
     MERGED: `Merged ${ago(pr.closedAt)} ago`,
@@ -227,8 +232,10 @@ const prState = (pr) => {
     CHANGES_REQUESTED: `Changes requested${by("CHANGES_REQUESTED") ? ` by ${by("CHANGES_REQUESTED")}` : ""}`,
     mine: "Your review is requested",
     requested: `Review requested from ${people.join(", ")}`,
-  }[key];
-  return `<span class="code-state code-state-${name}" role="img" aria-label="${escapeHtml(tip)}" data-tip="${escapeHtml(tip)}">${icon(glyph)}${key === "requested" ? `<b class="code-state-count">${people.length}</b>` : ""}</span>`;
+  }[key] + ({ optional: " · your review is still requested but optional", needed: ` · ${otherApprovers(pr).map(personName).join(", ")} approved; it still needs another approval` }[mine] || "");
+  // A corner dot marks the other half: approved and still asking you (purple), or asking you after someone approved (green).
+  const dot = mine ? `<i class="code-state-dot is-${mine}"></i>` : key === "requested" ? `<b class="code-state-count">${people.length}</b>` : "";
+  return `<span class="code-state code-state-${name}" role="img" aria-label="${escapeHtml(tip)}" data-tip="${escapeHtml(tip)}">${icon(glyph)}${dot}</span>`;
 };
 const labelDots = (pr) => (pr.labels || []).map((label) => `<span class="code-label" style="--label:#${escapeHtml(label.color.replace(/[^0-9a-f]/gi, ""))}">${escapeHtml(label.name)}</span>`).join("");
 
@@ -466,7 +473,7 @@ function nextStep(pr) {
   if (pr.reviewDecision === "CHANGES_REQUESTED") return ["fix", "Address requested changes"];
   if (pr.draft) return ["draft", "Draft: mark ready"];
   if (pr.reviewDecision === "APPROVED") return parent ? ["wait", `Approved; lands after #${parent.number}`] : ["merge", "Approved: merge"];
-  if (pr.requestedOfMe) return ["mine", "Your review"];
+  if (pr.requestedOfMe) return ["mine", myRequest(pr) === "needed" ? `Your approval: ${otherApprovers(pr).map(personName).join(", ")} approved, needs another` : "Your review"];
   const people = humanReviewers(pr);
   if (people.length) return ["wait", `Waiting on ${people.map(personName).join(", ")}`];
   return ["none", "No reviewer yet"];
@@ -537,7 +544,7 @@ function stackRow(pr, position, column, stack = [pr]) {
   const approvers = (pr.reviews || []).filter((review) => review.state === "APPROVED").map((review) => personName(review.login));
   // A step that only repeats its section says nothing; say who approved, or who else reviews, instead.
   const step = tone === "wait" && people[0] === column ? (people.length > 1 ? `Also ${people.slice(1).map(personName).join(", ")}` : "")
-    : tone === "merge" ? (approvers.length ? `Approved by ${approvers.join(", ")}` : "Approved")
+    : tone === "merge" ? (approvers.length ? `Approved by ${approvers.join(", ")}` : "Approved") + (myRequest(pr) === "optional" ? "; your review optional" : "")
     : tone === "none" || tone === "draft" ? "" : text;
   const faces = facesHtml(pr, column);
   const place = position ? `${position} of ${stack.length} in this stack · on ${position === 1 ? stack[0].base : `#${stack[position - 2].number}`}` : "";
@@ -1540,6 +1547,8 @@ function prStatus(pr) {
     pr.draft ? sideStatus("quiet", "draft", "Draft") : "",
     ci ? sideStatus(ci[0], ci[0], ci[1]) : "",
     review && (!pr.state || pr.state === "OPEN") ? sideStatus(...review) : "",
+    { optional: sideStatus("quiet", "review", "You: optional", "Already approved; you are still requested, but your review isn't needed to merge"),
+      needed: sideStatus("mine", "review", "You: approval needed", `${otherApprovers(pr).map(personName).join(", ")} approved; GitHub still needs another approval, and yours is requested`) }[myRequest(pr)] || "",
     pr.mergeable === "CONFLICTING" ? sideStatus("fail", "conflict", "Conflicts") : "",
   ].join("");
 }
