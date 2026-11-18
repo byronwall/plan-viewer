@@ -49,6 +49,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 | Document tables: fitted column widths, tall-table scroll frame, its footer (row range, Show all, Expand) and sticky top tab bar (`TABLE_TOOLS` in `markdown.js`) | `public/table-fit.js` (finds every `.markdown-table-scroll` itself through a MutationObserver) |
 | Activity page: documents, issues, open PRs and Slack threads (row helpers and `threadDetail` from `slack-page.js`) in one list with a day strip and an inspector (reuses the Issues sidebar through `issueInspector`) | `public/activity.js` |
 | One avatar per person: GitHub/Linear/Slack/config identities joined into `/api/people`, read by `avatar()` in `code.js` | `people.ts` |
+| Syntax colors for Markdown code fences (`.markdown-code`, found by a MutationObserver; highlight.js loaded on the first block) | `public/code-highlight.js` |
 | Search and date helpers | `public/search.js`, `public/dates.js` |
 | Icons: Lucide glyphs and Simple Icons brand marks, vendored as path strings | `public/icons.js` |
 | Styles | `public/styles.css` |

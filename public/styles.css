@@ -1877,20 +1877,20 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 /* A rename's old path gives way before the file name does. */
 .code-diff-file-head > .code-diff-from { flex: 0 100 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* syntax highlighting in diffs (highlight.js classes), GitHub-light palette */
-.code-diff-table .hljs-keyword, .code-diff-table .hljs-selector-tag, .code-diff-table .hljs-meta .hljs-keyword, .code-diff-table .hljs-doctag { color: #cf222e; }
-.code-diff-table .hljs-title, .code-diff-table .hljs-title.function_, .code-diff-table .hljs-title.class_, .code-diff-table .hljs-meta { color: #8250df; }
-.code-diff-table .hljs-string, .code-diff-table .hljs-regexp, .code-diff-table .hljs-code, .code-diff-table .hljs-link { color: #0a3069; }
-.code-diff-table .hljs-number, .code-diff-table .hljs-literal, .code-diff-table .hljs-attr, .code-diff-table .hljs-attribute, .code-diff-table .hljs-property, .code-diff-table .hljs-symbol, .code-diff-table .hljs-built_in, .code-diff-table .hljs-type, .code-diff-table .hljs-selector-class, .code-diff-table .hljs-selector-id { color: #0550ae; }
-.code-diff-table .hljs-variable, .code-diff-table .hljs-template-variable, .code-diff-table .hljs-params, .code-diff-table .hljs-bullet, .code-diff-table .hljs-subst { color: #953800; }
-.code-diff-table .hljs-params { color: inherit; }
-.code-diff-table .hljs-name, .code-diff-table .hljs-tag { color: #116329; }
-.code-diff-table .hljs-comment, .code-diff-table .hljs-quote { color: #6e7781; font-style: italic; }
-.code-diff-table .hljs-section { color: #0550ae; font-weight: 700; }
-.code-diff-table .hljs-strong { font-weight: 700; }
-.code-diff-table .hljs-emphasis { font-style: italic; }
-.code-diff-table .hljs-addition { color: #116329; }
-.code-diff-table .hljs-deletion { color: #82071e; }
+/* syntax highlighting in diffs and Markdown code blocks (highlight.js classes), GitHub-light palette */
+:is(.code-diff-table, .markdown-code) :is(.hljs-keyword, .hljs-selector-tag, .hljs-meta .hljs-keyword, .hljs-doctag) { color: #cf222e; }
+:is(.code-diff-table, .markdown-code) :is(.hljs-title, .hljs-title.function_, .hljs-title.class_, .hljs-meta) { color: #8250df; }
+:is(.code-diff-table, .markdown-code) :is(.hljs-string, .hljs-regexp, .hljs-code, .hljs-link) { color: #0a3069; }
+:is(.code-diff-table, .markdown-code) :is(.hljs-number, .hljs-literal, .hljs-attr, .hljs-attribute, .hljs-property, .hljs-symbol, .hljs-built_in, .hljs-type, .hljs-selector-class, .hljs-selector-id) { color: #0550ae; }
+:is(.code-diff-table, .markdown-code) :is(.hljs-variable, .hljs-template-variable, .hljs-params, .hljs-bullet, .hljs-subst) { color: #953800; }
+:is(.code-diff-table, .markdown-code) :is(.hljs-params) { color: inherit; }
+:is(.code-diff-table, .markdown-code) :is(.hljs-name, .hljs-tag) { color: #116329; }
+:is(.code-diff-table, .markdown-code) :is(.hljs-comment, .hljs-quote) { color: #6e7781; font-style: italic; }
+:is(.code-diff-table, .markdown-code) :is(.hljs-section) { color: #0550ae; font-weight: 700; }
+:is(.code-diff-table, .markdown-code) :is(.hljs-strong) { font-weight: 700; }
+:is(.code-diff-table, .markdown-code) :is(.hljs-emphasis) { font-style: italic; }
+:is(.code-diff-table, .markdown-code) :is(.hljs-addition) { color: #116329; }
+:is(.code-diff-table, .markdown-code) :is(.hljs-deletion) { color: #82071e; }
 
 /* commit hover card and clickable SHAs */
 /* The commit card is a .hover-card that takes the pointer: hovering it keeps it open, clicking opens the diff. */

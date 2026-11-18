@@ -5,6 +5,7 @@ import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
 import { savedTableFill, savedTableSize, sizeTableViewer, validTableSize } from "./table-size.js";
 import "./table-fit.js";
+import "./code-highlight.js";
 import { assetHref, delimitedTable, diagramHref, documentHref, refreshAssetImages, escapeHtml, inlineMarkdown, isSlackLink, markdownOutline, relativeDate, renderChatLinks, renderMarkdown as renderMarkdownSource, renderUpdates, SERVICE_ICONS } from "./markdown.js";
 import { TABS as CODE_TABS, connectPlanning, setPeople, ago, copyPrompt, cachedPrIndex, commitLinkMatch, diffSize, hideTip, icon, showTip, modKey, installCommitCards, loadPrIndex, openCommit, openPrOverlay, openWorktreeOverlay, openServers, isSummonKey, prefetchPr, renderCodePage } from "./code.js";
 import { TABS as ISSUE_TABS, cachedIssues, isMyIssue, loadIssues, openIssue, renderIssuesPage } from "./issues.js";
