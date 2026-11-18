@@ -111,6 +111,37 @@ export function draftErrors(path: string, text: string, taskMarkdown: string | n
   return errors;
 }
 
+// A completed task is a closed record; new work belongs in a live task. Given a task at HEAD and in the commit, plus the
+// assets the commit adds under its folder, say what the commit piles onto a task that was already completed: dated
+// updates, steps that aren't completed or deferred, and assets other than saved notes. Reopening the task (any other
+// status) or retiring it (the `retired` tag arrives) is the deliberate way to touch one, so neither warns. A warning
+// never blocks the commit: a late closing note can be right, but it should be a choice.
+export function completedTaskWarnings(path: string, before: string | null, after: string | null, addedAssets: string[] = []): string[] {
+  if (!before || !after) return [];
+  const read = (markdown: string) => {
+    const { task, body } = parseTaskDocument(path, markdown);
+    const chunks = parseChunks(body);
+    const updates = parseUpdates(chunks.find((chunk) => /^updates$/i.test(chunk.title))?.markdown || "").entries.map((entry) => `${entry.date} ${entry.title}`.trim());
+    const open = parseWorkBreakdown(chunks.find((chunk) => /^work breakdown$/i.test(chunk.title))?.markdown || "").nodes.filter((node) => !["completed", "deferred"].includes(node.status)).map((node) => node.id);
+    return { task, updates, open };
+  };
+  let old, now;
+  try { old = read(before); now = read(after); } catch { return []; }
+  if (old.task.status !== "completed" || now.task.status !== "completed") return [];
+  if (now.task.tags.includes("retired") && !old.task.tags.includes("retired")) return [];
+  const updates = now.updates.filter((entry) => !old.updates.includes(entry));
+  const open = now.open.filter((id) => !old.open.includes(id));
+  const assets = addedAssets.filter((asset) => !/\/notes\//.test(asset));
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const added = [
+    updates.length && `${plural(updates.length, "dated update")} (${updates.map((entry) => entry.slice(0, 60)).join("; ")})`,
+    open.length && `${plural(open.length, "open step")} (${open.join(", ")})`,
+    assets.length && `${plural(assets.length, "asset")} (${assets.slice(0, 3).map((asset) => asset.split("/").slice(2).join("/")).join(", ")}${assets.length > 3 ? ", …" : ""})`,
+  ].filter(Boolean);
+  if (!added.length) return [];
+  return [`${now.task.id} is completed, but this commit adds ${added.join(", ")}. Put new work in a new or live task and link it from here, or reopen this one; retiring it with a \`retired\` tag is fine.`];
+}
+
 export function planningErrors(path: string, markdown: string): string[] {
   try {
     const parsed = /^tasks\/TASK-\d{4}\.md$/.test(path) ? parseTaskDocument(path, markdown) : undefined;
@@ -178,13 +209,29 @@ export async function checkPlanning(args: string[], root = ROOT) {
       errors.push(`${path}: ${(error as NodeJS.ErrnoException).code === "ENOENT" ? "file not found" : error instanceof Error ? error.message : String(error)}`);
     }
   }
-  return { files: paths.length + diagrams.length, errors };
+  const warnings: string[] = [];
+  if (staged) {
+    const added = (await git(["diff", "--cached", "--name-only", "--diff-filter=A", "-z"])).split("\0").filter(Boolean);
+    const assetsOf = new Map<string, string[]>();
+    for (const path of added) {
+      const id = path.match(/^tasks\/(TASK-\d{4})-assets\//)?.[1];
+      if (id) assetsOf.set(id, [...(assetsOf.get(id) || []), path]);
+    }
+    const ids = new Set([...listed.map((path) => path.match(/^tasks\/(TASK-\d{4})\.md$/)?.[1]).filter((id): id is string => !!id), ...assetsOf.keys()]);
+    for (const id of ids) {
+      const path = `tasks/${id}.md`;
+      const [before, after] = await Promise.all([git(["show", `HEAD:${path}`]).catch(() => null), git(["show", `:${path}`]).catch(() => null)]);
+      warnings.push(...completedTaskWarnings(path, before, after, assetsOf.get(id)).map((warning) => `${path}: ${warning}`));
+    }
+  }
+  return { files: paths.length + diagrams.length, errors, warnings };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const result = await checkPlanning(process.argv.slice(2));
     for (const error of result.errors) console.error(`error  ${error}`);
+    for (const warning of result.warnings) console.error(`warn   ${warning}`);
     if (!result.errors.length) console.log(`ok     ${result.files} planning files, no task, work-breakdown, action-reference or bare-reference errors`);
     process.exitCode = result.errors.length ? 1 : 0;
   } catch (error) {

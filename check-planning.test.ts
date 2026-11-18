@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import { checkPlanning, planningErrors } from "./check-planning.ts";
+import { checkPlanning, completedTaskWarnings, planningErrors } from "./check-planning.ts";
 import { fileURLToPath } from "node:url";
 
 const taskPath = "tasks/TASK-0042.md";
@@ -99,7 +99,7 @@ test("planning lint and the commit hook check the index rather than the correcte
   for (const name of ["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "PLANNING_ROOT"]) delete env[name];
   await assert.rejects(run(hook, [], { cwd: root, env }), error => error.code === 1 && error.stderr.includes("Replace [done] with [completed]"));
   await git(["add", taskPath]);
-  assert.deepEqual(await checkPlanning(["--staged"], root), { files: 1, errors: [] });
+  assert.deepEqual(await checkPlanning(["--staged"], root), { files: 1, errors: [], warnings: [] });
   assert.match((await run(hook, [], { cwd: root, env })).stdout, /ok\s+1 planning files/);
   // Links are checked in the index too: another session's unstaged assets folder must not block the commit.
   await mkdir(join(root, "tasks", "TASK-0099-assets"));
@@ -191,4 +191,30 @@ test("voice lint: diagram headings that describe the drawing, leak the brief, or
   const source = 'diagram "What works, and where it breaks" version=1\nsubtitle "The happy path first, then the edge cases"\ngroup g "Seamless handoff"\nnode a "This diagram shows nothing wrong here"\nlegend red "Fails today"\n';
   assert.deepEqual(diagramErrors(source).map((e) => e.split(":")[0]), ["line 2", "line 3"], "boxes are not voice-checked; headings are");
   assert.match(diagramErrors(source)[0], /narrates the layout \(“happy path first”\)/);
+});
+
+test("completed-task lint warns when a commit piles updates, open steps or assets onto a completed task", async t => {
+  const done = source.replace("status: open", "status: completed").replaceAll("[open]", "[completed]") + "\n## Updates\n\n- **2026-10-14 — Closed:** Done.\n";
+  const late = done.replace("[completed]\n  - W1.1", "[completed]\n  - W1.3: Chase the follow-up PR [open]\n  - W1.1") + "- **2026-11-18 — PR feedback:** More work landed here.\n";
+  const [warning] = completedTaskWarnings(taskPath, done, late, ["tasks/TASK-0042-assets/gate/report.md", "tasks/TASK-0042-assets/notes/2026-11-18-note.md"]);
+  assert.match(warning, /^TASK-0042 is completed, but this commit adds 1 dated update \(2026-11-18 PR feedback\), 1 open step \(W1\.3\), 1 asset \(gate\/report\.md\)\./);
+  assert.deepEqual(completedTaskWarnings(taskPath, done, done, ["tasks/TASK-0042-assets/notes/a.md"]), [], "a saved note on a completed task is fine");
+  assert.deepEqual(completedTaskWarnings(taskPath, source, late), [], "completing the task in this commit is fine");
+  assert.deepEqual(completedTaskWarnings(taskPath, done, late.replace("status: completed", "status: active")), [], "reopening it is fine");
+  assert.deepEqual(completedTaskWarnings(taskPath, done, late.replace("tags: []", "tags: [retired]")), [], "retiring it is fine");
+  assert.deepEqual(completedTaskWarnings(taskPath, null, late), []);
+
+  const root = await mkdtemp(join(tmpdir(), "planning-completed-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const git = (args: string[]) => promisify(execFile)("git", args, { cwd: root });
+  await git(["init", "--quiet"]);
+  await mkdir(join(root, "tasks", "TASK-0042-assets"), { recursive: true });
+  await writeFile(join(root, taskPath), done);
+  await git(["add", taskPath]);
+  await git(["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "done"]);
+  await writeFile(join(root, "tasks", "TASK-0042-assets", "report.md"), "# Report\n");
+  await git(["add", "tasks/TASK-0042-assets/report.md"]);
+  const onlyAsset = await checkPlanning(["--staged"], root);
+  assert.deepEqual(onlyAsset.errors, []);
+  assert.match(onlyAsset.warnings.join("\n"), /tasks\/TASK-0042\.md: TASK-0042 is completed, but this commit adds 1 asset \(report\.md\)/);
 });
