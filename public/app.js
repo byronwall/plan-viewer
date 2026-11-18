@@ -940,6 +940,7 @@ function renderChatThreadsPage() {
   elements.count.textContent = "";
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
+  document.querySelector("#chat-library-toggle").setAttribute("aria-expanded", "false");
   renderChatThreads(elements.chunks);
 }
 
@@ -2946,6 +2947,10 @@ elements.diagramsButton.addEventListener("click", () => showDiagrams());
 elements.activityButton.addEventListener("click", () => showActivity());
 elements.codeButton.addEventListener("click", () => showCode());
 elements.chatThreadsButton.addEventListener("click", showChatThreads);
+document.querySelector("#chat-library-toggle").addEventListener("click", event => {
+  const button = event.currentTarget;
+  button.setAttribute("aria-expanded", String(button.getAttribute("aria-expanded") !== "true"));
+});
 elements.plansButton.addEventListener("click", () => showPlans());
 elements.issuesButton.addEventListener("click", () => showIssues());
 elements.slackButton.addEventListener("click", () => showSlack());
@@ -3121,7 +3126,7 @@ railCard.setAttribute("role", "dialog");
 document.body.append(railCard);
 let railTimer = 0;
 let railAnchor = null;
-const railTarget = (node) => innerWidth > 820 && node?.closest?.(".library .day-row, .library .view-navigation-link[data-view]");
+const railTarget = (node) => innerWidth > 820 ? node?.closest?.(".library .day-row, .library .view-navigation-link[data-view]") : null;
 function openRailCard(row) {
   clearTimeout(railTimer);
   railAnchor = row;

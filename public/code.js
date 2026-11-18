@@ -39,6 +39,7 @@ export const codeTab = (value) => (value in TABS ? value : "prs");
 // Names here are the viewer's own (skills in viewer.config.json pick one by `icon`); glyphs come from icons.js.
 const ICONS = {
   doc: GLYPHS["file-text"],
+  search: GLYPHS.search,
   vscode: GLYPHS["code"],
   terminal: GLYPHS["terminal"],
   folder: GLYPHS["folder"],
@@ -3556,7 +3557,8 @@ export function renderCodePage(container, { tab, showNotice }) {
     }, true);
     container.addEventListener("pointerover", (event) => {
       const target = event.target.closest("[data-tip]");
-      if (target && !target.closest("a[href]") && container.querySelector(".code-surface")) showTip(target); else hideTip();
+      if (!container.querySelector(".code-surface")) return;
+      if (target && !target.closest("a[href]")) showTip(target); else hideTip();
     });
     container.addEventListener("pointerleave", hideTip);
     window.addEventListener("scroll", hideTip, { capture: true, passive: true });
