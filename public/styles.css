@@ -3707,3 +3707,15 @@ div.step-row { cursor: pointer; }
 .setup-viewer::backdrop { background: rgba(24, 33, 47, .25); }
 .setup-viewer header { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--paper); }
 .setup-viewer pre { margin: 0; padding: 14px; font-size: .8rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--body-ink); background: #f8f9fb; }
+.setup-prompts { display: grid; grid-template-columns: 10px max-content minmax(240px, 1fr) max-content max-content; column-gap: 14px; }
+.setup-prompt { display: contents; }
+.setup-prompt > * { display: flex; align-items: center; min-height: 34px; border-top: 1px solid var(--quiet-field); font-size: .84rem; }
+.setup-prompt:first-child > * { border-top: 0; }
+.setup-prompt b { font-weight: 600; }
+.setup-prompt[data-state="ok"] .setup-dot::before { background: var(--action); }
+.setup-prompt .setup-int-detail { color: var(--muted); font-size: .8rem; }
+.setup-slot { color: var(--action-ink); background: var(--selected); border-radius: 3px; padding: 0 2px; }
+.setup-viewer h3 { margin: 0; padding: 12px 14px 0; font-size: .78rem; color: var(--label-text); text-transform: uppercase; letter-spacing: .05em; }
+.setup-viewer header > span { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.setup-diff .is-add { color: var(--success-ink); }
+.setup-diff .is-del { color: var(--danger); text-decoration: line-through; }

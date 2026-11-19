@@ -90,18 +90,75 @@ const ago = (iso) => {
 
 // A config file, read-only, in a dialog over the page. The backdrop or Esc closes it.
 async function viewFile(path) {
+  try {
+    const response = await fetch(`/api/setup/file?${new URLSearchParams({ path })}`);
+    const file = await response.json();
+    if (!response.ok) throw new Error(file.error || "Couldn't read the file.");
+    openViewer(`<code>${escapeHtml(path)}</code>`, `<pre>${escapeHtml(file.text)}</pre>`);
+  } catch (error) { notify(error.message, true); }
+}
+
+function promptRow(row) {
+  return `<div class="setup-prompt" data-state="${row.customized ? "ok" : "unused"}">
+    <span class="setup-dot" aria-label="${row.customized ? "Customized" : "Default"}"></span>
+    <b>${escapeHtml(row.title)}</b>
+    <span class="setup-int-detail"><span>${escapeHtml(row.sent)}</span></span>
+    <span class="setup-default">${row.customized ? "Customized" : "Default"}</span>
+    <span class="setup-acts"><button type="button" class="setup-help" data-setup-prompt="${escapeHtml(row.id)}">View</button>${helpButton("prompt", row.id, "Edit…")}${row.customized ? `<button type="button" class="setup-reset" data-setup-prompt-reset="${escapeHtml(row.id)}" title="Delete config/prompts/${escapeHtml(row.id)}.md so the default applies">Reset</button>` : ""}</span>
+  </div>`;
+}
+
+function configuredRow(row) {
+  return `<div class="setup-prompt" data-state="unused">
+    <span class="setup-dot" aria-label="From settings"></span>
+    <b>${escapeHtml(row.title)}</b>
+    <span class="setup-int-detail"><span>${escapeHtml(row.sent)}</span></span>
+    <span class="setup-default"><code>${escapeHtml(row.key)}</code></span>
+    <span class="setup-acts"><button type="button" class="setup-help" data-setup-prompt="${escapeHtml(row.id)}">View</button>${helpButton("setting", row.key, "Configure…")}</span>
+  </div>`;
+}
+
+const showSlots = (text) => escapeHtml(text).replace(/\{([a-z][\w-]*)\}/g, '<span class="setup-slot">{$1}</span>');
+
+// Lines of `after` that are new since `before`, and lines of `before` that are gone, by longest common subsequence.
+function lineDiff(before, after) {
+  const a = before.split("\n"), b = after.split("\n");
+  const table = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) table[i][j] = a[i] === b[j] ? table[i + 1][j + 1] + 1 : Math.max(table[i + 1][j], table[i][j + 1]);
+  const out = [];
+  let i = 0, j = 0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) { out.push([" ", a[i]]); i++; j++; }
+    else if (j < b.length && (i === a.length || table[i][j + 1] >= table[i + 1][j])) out.push(["+", b[j++]]);
+    else out.push(["-", a[i++]]);
+  }
+  return out;
+}
+
+function viewPrompt(id) {
+  const row = data.prompts.find((entry) => entry.id === id) || data.configured.find((entry) => entry.id === id);
+  if (!row) return;
+  const diff = row.customized && row.body !== row.fallback
+    ? `<h3>Changes from the default</h3><pre class="setup-diff">${lineDiff(row.fallback, row.body).filter(([mark]) => mark !== " ").map(([mark, line]) => `<span class="${mark === "+" ? "is-add" : "is-del"}">${mark} ${escapeHtml(line)}</span>`).join("\n")}</pre>` : "";
+  openViewer(`<b>${escapeHtml(row.title)}</b> <span class="setup-default">${escapeHtml(row.sent)}</span>`, `${diff}<pre>${showSlots(row.body)}</pre>`);
+}
+
+function openViewer(head, body) {
   let dialog = document.querySelector("dialog.setup-viewer");
   if (!dialog) {
     dialog = Object.assign(document.createElement("dialog"), { className: "setup-viewer" });
     dialog.addEventListener("click", (event) => { if (event.target === dialog || event.target.closest("[data-setup-close]")) dialog.close(); });
     document.body.append(dialog);
   }
+  dialog.innerHTML = `<header><span>${head}</span><button type="button" class="setup-help" data-setup-close>Close</button></header>${body}`;
+  dialog.showModal();
+}
+
+async function promptAction(id, action) {
   try {
-    const response = await fetch(`/api/setup/file?${new URLSearchParams({ path })}`);
-    const file = await response.json();
-    if (!response.ok) throw new Error(file.error || "Couldn't read the file.");
-    dialog.innerHTML = `<header><code>${escapeHtml(path)}</code><button type="button" class="setup-help" data-setup-close>Close</button></header><pre>${escapeHtml(file.text)}</pre>`;
-    dialog.showModal();
+    data.prompts = (await post("/api/setup/prompt", { id, action })).prompts;
+    notify(action === "reset" ? `Reset the ${id} prompt to its default.` : `Copied the ${id} prompt into config/prompts/.`);
+    draw();
   } catch (error) { notify(error.message, true); }
 }
 
@@ -128,6 +185,12 @@ function draw() {
         <span class="setup-sum">${data.files.filter((row) => row.exists).length} of ${data.files.length} present</span></header>
       <p class="library-intro">Files in <code>config/</code> and the others the tooling reads. They are not in the library, so this is where to read them.</p>
       <div class="setup-files">${data.files.map(fileRow).join("")}</div>
+    </section>
+    <section class="setup-section" aria-labelledby="setup-prompts">
+      <header><h2 id="setup-prompts">Prompts</h2>
+        <span class="setup-sum">${data.prompts.filter((row) => row.customized).length} of ${data.prompts.length} customized · <code>config/prompts/</code></span></header>
+      <p class="library-intro">The words each button sends to an agent. The viewer fills the <span class="setup-slot">{slots}</span> with the file, step or your comment. <b>Edit…</b> makes your own copy in <code>config/prompts/</code>, which then wins; <b>Reset</b> deletes it.</p>
+      <div class="setup-prompts">${data.prompts.map(promptRow).join("")}${data.configured.map(configuredRow).join("")}</div>
     </section>
     <section class="setup-section" aria-labelledby="setup-settings">
       <header><h2 id="setup-settings">Settings</h2>
@@ -165,10 +228,10 @@ async function save(key, value, reset = false) {
 
 function help(button) {
   const kind = button.dataset.setupHelp, id = button.dataset.id;
-  const label = kind !== "integration" ? id : data.integrations.find((row) => row.id === id)?.label || id;
+  const label = kind === "prompt" ? data.prompts.find((row) => row.id === id)?.title || id : kind !== "integration" ? id : data.integrations.find((row) => row.id === id)?.label || id;
   openNotePopover(button, {
-    heading: kind === "setting" ? `Configure ${label}` : kind === "file" ? `${button.textContent.replace("…", "")} ${label}` : `Set up ${label}`, notify,
-    prompt: async (note) => (await setupAgent({ kind, id, note, copy: true })).prompt,
+    heading: kind === "setting" ? `Configure ${label}` : kind === "prompt" ? `Edit the ${label} prompt` : kind === "file" ? `${button.textContent.replace("…", "")} ${label}` : `Set up ${label}`, notify,
+    prompt: async (note) => { const { prompt } = await setupAgent({ kind, id, note, copy: true }); if (kind === "prompt") load(); return prompt; },
     send: { label: `Open in ${agentName()}`, run: async (note) => { await setupAgent({ kind, id, note, app: agentApp() }); notify(`Drafted the ${label} setup in ${agentName()}. Review it and press Enter to send.`); } },
   });
 }
@@ -180,9 +243,11 @@ function install() {
   const onPage = (event) => event.target.closest?.(".setup-page .setup");
   document.addEventListener("click", (event) => {
     if (!onPage(event)) return;
-    const target = event.target.closest("[data-setup-help], [data-setup-reset], [data-setup-recheck], [data-setup-view]");
+    const target = event.target.closest("[data-setup-help], [data-setup-reset], [data-setup-recheck], [data-setup-view], [data-setup-prompt], [data-setup-prompt-reset]");
     if (!target) return;
     if ("setupView" in target.dataset) viewFile(target.dataset.setupView);
+    else if ("setupPrompt" in target.dataset) viewPrompt(target.dataset.setupPrompt);
+    else if ("setupPromptReset" in target.dataset) promptAction(target.dataset.setupPromptReset, "reset");
     else if ("setupHelp" in target.dataset) help(target);
     else if ("setupReset" in target.dataset) save(target.dataset.setupReset, null, true);
     else { target.disabled = true; target.textContent = "Checking…"; load(); }

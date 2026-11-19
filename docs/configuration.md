@@ -93,6 +93,10 @@ The viewer's **Setup** page lists every key below with its value and edits the t
 
 Credentials stay with their tools: `gh` for GitHub, `acli` for Jira, `LINEAR_API_KEY` or `[linear] API_KEY` in `config.toml`, and `SLACK_TOKEN` or `[slack] TOKEN`. Link titles are cached in the workspace's ignored `tmp/` folder.
 
+## Prompts
+
+Every prompt the viewer sends is a Markdown file in the viewer's [`prompts/`](../prompts) folder: front matter with `title` and `sent` (where it is sent from), then the text. A file with the same name in the workspace's `config/prompts/` overrides it; the Setup page's **Edit…** makes that copy. The viewer reads the file on every use. `{name}` marks a slot the viewer fills, such as `{user}`, `{source}` or `{ask}`; `{chat-links}` is the `chat-links` prompt. A slot you delete is no longer sent, and braces around anything that is not a slot stay as written.
+
 ## Environment variables
 
 | Variable | Meaning |

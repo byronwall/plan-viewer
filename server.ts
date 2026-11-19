@@ -20,7 +20,8 @@ import { createPlans } from "./plans.ts";
 import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig, withNote } from "./public/config.js";
-import { filePrompt, integrationPrompt, listConfigFiles, probeIntegrations, readConfigFile, readRawConfig, setupData, settingMeanings, listSettings, settingPrompt, writeSetting, CONFIG_DOC } from "./setup.ts";
+import { customizePrompt, fillPrompt, listPrompts, resetPrompt } from "./prompts.ts";
+import { filePrompt, integrationPrompt, promptEditPrompt, listConfigFiles, probeIntegrations, readConfigFile, readRawConfig, setupData, settingMeanings, listSettings, settingPrompt, writeSetting, CONFIG_DOC } from "./setup.ts";
 import { CONFIG_FILE, DOC_ROOTS, dailyFile, isTaskAsset, isTaskFile, taskFile, taskOfPath } from "./public/layout.js";
 import { applyRule, closeNote, followUpNote, saveLaunchNote, loadSteps, markStepDone, pickChoice, planMentions, runStatement, saveNote, setStepNext, setTaskPriority, startStep } from "./steps.ts";
 import { editStep } from "./steps.ts"; // the Steps table's inline edits
@@ -696,7 +697,8 @@ function sourceLines(document: Awaited<ReturnType<typeof loadDocument>>, path = 
   return `Source file: ${path}${document.task ? `\nTask: ${document.task.id} · ${document.task.title}` : ""}`;
 }
 
-const CHAT_LINK_INSTRUCTION = "When your current conversation URL or thread ID is available from trusted session context or app tools, record a labeled Markdown link under ## Chats in the authoritative task or daily plan you work on. Use the verified conversation URL (a ChatGPT or Claude link) or codex://threads/<thread-id>. Keep existing links and avoid duplicates. Do not guess IDs, use a shared snapshot as a follow-up link, or associate unrelated chats. If this is a global request, record the link only after identifying its task or daily plan. If the URL or ID is unavailable, continue the work without inventing a link.";
+// The words of each handoff live in prompts/<id>.md (or the workspace's config/prompts/ override); these fill the slots.
+const fill = (id: string, values: Record<string, string>) => fillPrompt(ROOT, id, { viewer: config().title, workspace: WORKSPACE, user: config().user, root: ROOT, ...values });
 
 // A copied prompt can carry no commentary; its heading then ends the prompt, so text typed after pasting lands under it.
 function withAsk(heading: string, commentary: string, render: (ask: string) => string) {
@@ -704,28 +706,31 @@ function withAsk(heading: string, commentary: string, render: (ask: string) => s
 }
 
 export function buildCodexPrompt(document: Awaited<ReturnType<typeof loadDocument>>, chunk: Chunk, commentary: string) {
-  return withAsk(`${config().user}'s commentary:`, commentary, (ask) => `Task: ${taskTitle(chunk.title)}\n\nYou are receiving a work handoff from the local ${config().title}. Work in the ${WORKSPACE} repository and follow its AGENTS.md instructions. The source file remains authoritative.\n\n${sourceLines(document)}\nDocument: ${document.title}\nSelected ${chunk.kind}: ${chunk.title}\n\nSelected chunk:\n\n${chunk.markdown}\n\n${ask}Interpret the selected chunk together with ${config().user}'s commentary. Inspect the source file and relevant repository context before acting. If the commentary asks for a change or implementation, carry it through; if it asks for analysis, report evidence-backed findings. Preserve unrelated work and update the planning Markdown when the requested outcome calls for it.\n\n${CHAT_LINK_INSTRUCTION}`);
+  return withAsk(`${config().user}'s commentary:`, commentary, (ask) => fill("chunk", { card: taskTitle(chunk.title), source: sourceLines(document), document: document.title, kind: chunk.kind, chunk: chunk.markdown, ask }));
 }
 
 // A selection narrows the document to the excerpt the user highlighted, quoted with the section it sits under.
 export function buildDocumentCodexPrompt(document: Awaited<ReturnType<typeof loadDocument>>, commentary: string, selection = "", section = "") {
   const excerpt = selection.trim() ? `${section ? `Section: ${section}\n` : ""}\n${config().user} selected this excerpt as the focus; find it in the source file and work on it specifically:\n\n${selection.trim().split("\n").map((line) => `> ${line}`).join("\n")}\n\n` : "";
-  return withAsk(`${config().user}'s commentary:`, commentary, (ask) => `Task from the local ${config().title}\n\nWork in the ${WORKSPACE} repository and follow its AGENTS.md instructions. The attached file path is the authoritative context; inspect the file before acting.\n\n${sourceLines(document)}\n${excerpt}\n${ask}Carry out ${config().user}'s request using the source file and relevant repository context. Preserve unrelated work.\n\n${CHAT_LINK_INSTRUCTION}`);
+  return withAsk(`${config().user}'s commentary:`, commentary, (ask) => fill("document", { source: sourceLines(document), excerpt, ask }));
 }
 
 // The C composer is "global", but from a document page that document is still what was on screen, so it goes along.
 export function buildGlobalCodexPrompt(commentary: string, document?: Awaited<ReturnType<typeof loadDocument>>) {
   if (document) return buildDocumentCodexPrompt(document, commentary);
-  return withAsk(`${config().user}'s request:`, commentary, (ask) => `Task from the local ${config().title}\n\nWork in the ${WORKSPACE} repository and follow its AGENTS.md instructions. No plan, file, or chunk context is attached to this task.\n\n${ask}Carry out ${config().user}'s request using relevant repository context. Preserve unrelated work.\n\n${CHAT_LINK_INSTRUCTION}`);
+  return withAsk(`${config().user}'s request:`, commentary, (ask) => fill("global", { ask }));
 }
 
 // A request about one `.draft` diagram, opened from the image viewer beside its source.
 export function buildDiagramPrompt(source: { relative: string; absolute: string }, commentary: string, document?: Awaited<ReturnType<typeof loadDocument>>) {
-  return withAsk(`${config().user}'s request about the diagram:`, commentary, (ask) => `Task: Revise the diagram ${basename(source.relative)}\n\nWork in the ${WORKSPACE} repository and follow its AGENTS.md instructions. The diagram's source file is authoritative.\n\nDiagram source: ${source.relative} (${source.absolute})\n${document ? `Embedded in: ${document.path}${document.task ? ` (${document.task.id} · ${document.task.title})` : ""}\n` : ""}\n${ask}Read the .draft source and the document that embeds it, then carry out ${config().user}'s request; if it asks what to change, propose the edits first. Follow the draftably skill: edit the source by id (\`draftably set\`, \`rm\`, \`mv\`), let \`draftably vary\` choose layout rather than hand-tuning it, and run \`draftably check\` until it reports no errors or drawing conflicts. Keep the embed as it is; the viewer redraws the diagram from the source. Preserve unrelated work.\n\n${CHAT_LINK_INSTRUCTION}`);
+  const embedded = document ? `Embedded in: ${document.path}${document.task ? ` (${document.task.id} · ${document.task.title})` : ""}\n` : "";
+  return withAsk(`${config().user}'s request about the diagram:`, commentary, (ask) => fill("diagram", { name: basename(source.relative), relative: source.relative, absolute: source.absolute, embedded, ask }));
 }
 
+const directionFor = (commentary: string, run: boolean) => commentary.trim() ? `${config().user}'s direction${run ? " for this run (takes precedence over the stored prompt where they differ)" : ""}:\n${commentary.trim()}\n\n` : "";
+
 export function buildActionPrompt(document: Awaited<ReturnType<typeof loadDocument>>, action: { title: string; prompt: string }, commentary: string) {
-  return `Advance this next action: ${action.title}\n\nPlanning workspace: ${ROOT}\n${sourceLines(document, document.absolutePath)}\nRead the source file and the workspace AGENTS.md before acting. Follow the applicable target repository instructions and preserve unrelated work.\n\n${commentary.trim() ? `${config().user}'s direction for this run (takes precedence over the stored prompt where they differ):\n${commentary.trim()}\n\n` : ""}Stored action prompt:\n${action.prompt}\n\nCarry out the bounded action and verify its result. Record evidence and any remaining blocker in the authoritative task file. Update task state and the work breakdown only when supported by the result. Do not treat drafting a message as authorization to send it.\n\n${CHAT_LINK_INSTRUCTION}`;
+  return fill("next-action", { action: action.title, source: sourceLines(document, document.absolutePath), direction: directionFor(commentary, true), stored: action.prompt });
 }
 
 type WorkNode = { id: string; title: string; status: string; deps: string[]; parent: string; ready: boolean };
@@ -739,18 +744,13 @@ export function buildWorkItemPrompt(document: Awaited<ReturnType<typeof loadDocu
   const parent = byId.get(node.parent);
   const waiting = node.deps.filter((id) => byId.get(id)?.status !== "completed");
   const action = document.nextActions.find((a) => a.workItem === node.id);
-  const direction = commentary.trim() ? `${config().user}'s direction${mode === "run" ? " for this run (takes precedence over the stored prompt where they differ)" : ""}:\n${commentary.trim()}\n\n` : "";
   const facts = `Planning workspace: ${ROOT}\nSource file: ${document.absolutePath}\nTask: ${document.task?.id || document.title} · ${document.task?.title || document.title}\nWork item: ${line(node)}${parent ? `\nPart of: ${line(parent)}` : ""}${node.deps.length ? `\nAfter: ${node.deps.map((id) => byId.get(id) ? line(byId.get(id)!) : id).join("; ")}` : ""}${action ? `\nLinked next action: ${action.title}` : ""}`;
+  const base = { id: node.id, item: node.title, facts };
   // A note on a step: a decision, an approval, or direction, in the user's own words, for an agent to act on later.
-  if (mode === "note") {
-    const user = config().user;
-    return `Act on ${user}'s note on ${node.id}: ${node.title}\n\n${facts}\n\nRead the source file and the workspace AGENTS.md first, then any task asset whose front matter names \`step: ${document.task?.id} ${node.id}\` (an outbound draft or other machinery for this step).\n\n${user}'s note, in their own words:\n${commentary.trim()}\n\nThe note is a decision, an approval or direction for this step. Record it in the task file as a dated update whose bold title names (${node.id}). Then carry it through: a decision gets the steps it changes reworded, added or dropped; an approval of an outbound draft is ${user}'s approval to send that draft as written, or with the edits the note asks for, so send it the workspace's way and do the follow-through around it (links, labels, parent issues, references back in the task); direction gets the work it describes. A note is not a completion: afterwards set ${node.id}'s status to what actually comes next ([open], [active], [waiting], or [completed] only when the work the note asks for finishes the step, or the note says it is done), and adjust its kind if the next move changed. If the note leaves something genuinely open, record what was said and ask instead of guessing. Run the workspace lint on the task and fix what it reports.\n\n${CHAT_LINK_INSTRUCTION}`;
-  }
-  if (mode === "update") {
-    return `Update work item ${node.id} in its task file. Do not carry out the work itself.\n\n${facts}\n\nRead the source file and the workspace AGENTS.md first.\n\n${direction}Revise ${node.id} so the work breakdown matches current understanding: its title, status, nesting, (after: ...) prerequisites, and its linked next action and prompt where one exists. Use the task's Findings and Updates as evidence. Keep IDs stable unless a rename is asked for, and update every reference when one changes. Add a dated update whose bold title names (${node.id}) saying what changed and why. Run the workspace lint on the task and fix what it reports.\n\n${CHAT_LINK_INSTRUCTION}`;
-  }
+  if (mode === "note") return fill("work-note", { ...base, task: document.task?.id || "", note: commentary.trim() });
+  if (mode === "update") return fill("work-update", { ...base, direction: directionFor(commentary, false) });
   const frontier = node.ready ? "" : `\nThis item is not ready: ${waiting.length ? `it waits on ${waiting.map((id) => byId.get(id) ? line(byId.get(id)!) : id).join("; ")}` : `its status is ${node.status}`}. Check whether that still holds before acting. If it does, do only the preparation that is safe now and report what remains blocked.\n`;
-  return `Advance work item ${node.id}: ${node.title}\n\n${facts}\n${frontier}\nRead the source file and the workspace AGENTS.md before acting. Follow the applicable target repository instructions and preserve unrelated work.\n\n${direction}${action ? `Stored action prompt:\n${action.prompt}\n\n` : ""}Carry out the bounded work and verify its result. Record evidence and any remaining blocker in the authoritative task file. Update the item's status in the work breakdown only when supported by the result. Do not treat drafting a message as authorization to send it.\n\n${CHAT_LINK_INSTRUCTION}`;
+  return fill("work-run", { ...base, frontier, direction: directionFor(commentary, true), stored: action ? `Stored action prompt:\n${action.prompt}\n\n` : "" });
 }
 
 const MAX_IMAGES = 6;
@@ -1070,6 +1070,14 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     // The Setup page: live integration checks, every setting, and helper prompts (setup.ts).
     if (request.method === "GET" && url.pathname === "/api/setup") return json(response, 200, await setupData(ROOT, config()));
     if (request.method === "GET" && url.pathname === "/api/setup/file") return json(response, 200, await readConfigFile(ROOT, config(), url.searchParams.get("path") || ""));
+    // Customize copies a default prompt into config/prompts/ to edit; Reset deletes the copy.
+    if (request.method === "POST" && url.pathname === "/api/setup/prompt") {
+      const body = await readJson(request);
+      const id = String(body.id || "");
+      if (body.action === "reset") await resetPrompt(ROOT, id);
+      else viewerWrites.add(await customizePrompt(ROOT, id));
+      return json(response, 200, { prompts: listPrompts(ROOT) });
+    }
     if (request.method === "POST" && url.pathname === "/api/setup/config") {
       const body = await readJson(request);
       viewerWrites.add(CONFIG_FILE);
@@ -1083,7 +1091,12 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request);
       const id = String(body.id || "");
       let title = "", prompt = "";
-      if (body.kind === "file") {
+      if (body.kind === "prompt") {
+        const entry = listPrompts(ROOT).find((row) => row.id === id);
+        if (!entry) throw new Error(`No prompt named ${id}.`);
+        await customizePrompt(ROOT, id);
+        title = `Edit the ${entry.title} prompt`; prompt = promptEditPrompt(ROOT, entry);
+      } else if (body.kind === "file") {
         const file = (await listConfigFiles(ROOT, config())).find((row) => row.path === id && !row.secret);
         if (!file) throw new Error(`${id} is not a config file the page shows.`);
         title = `${file.exists ? "Update" : "Create"} ${id}`; prompt = filePrompt(ROOT, file);

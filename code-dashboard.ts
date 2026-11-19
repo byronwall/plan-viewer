@@ -5,6 +5,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { claudeNewSessionUrl as claudeUrl, codexNewTaskUrl } from "./codex-desktop.ts";
+import { fillPrompt } from "./prompts.ts";
 import { createLocalRuns } from "./local-runs.ts";
 import { createPrNotes } from "./pr-notes.ts";
 import { config, withNote } from "./public/config.js";
@@ -27,12 +28,11 @@ export const prSkills = () => [...config().code.prSkills, { id: "discuss", label
 const runCommand = (command: string[], values: Record<string, string>) =>
   exec(command[0], command.slice(1).map((arg) => arg.replace(/\{(\w+)\}/g, (match, key) => values[key] ?? match)), { cwd: values.cwd });
 
-// Prompts over the user's local PR notes (`code.prNotesDir`); the draft notes follow the prompt as Markdown.
+// Prompts over the user's local PR notes (`code.prNotesDir`); the draft notes follow the prompt as Markdown. The words
+// are prompts/pr-notes-*.md (or the workspace's override).
 const postSkill = () => config().code.postNotesSkill ? ` Read and follow ${config().code.postNotesSkill}.` : "";
-const NOTE_PROMPTS = {
-  "notes-post": (url: string, _slug: string, _number: number, where: string, path: string) => `Post my draft review notes below as one pending GitHub review on ${url}.${where}${postSkill()} Keep whole-file notes as actual file-level review threads in the same review. Post each comment as written and leave the review pending so I can read it on GitHub and submit it. Then change \`status: draft\` to \`status: posted\` for each verified posted note in ${path}.`,
-  "notes-work": (url: string, _slug: string, _number: number, where: string, path: string) => `Work through my draft review notes on ${url}.${where} They are below and in ${path}. For each one, read the code it points at and tell me whether it holds up, what change or reply you'd suggest, and anything nearby I missed. Don't change code, push, or post to GitHub until I say which way to go.`,
-};
+const notePrompt = (id: string) => (planning: string, url: string, where: string, path: string) => fillPrompt(planning, id, { url, where, "post-skill": postSkill(), path });
+const NOTE_PROMPTS = { "notes-post": notePrompt("pr-notes-post"), "notes-work": notePrompt("pr-notes-work") };
 
 // Conversation comments, line comments and review summaries from GitHub's REST API, oldest first. Reviews with no
 // text (a bare approval) are left out; bots are flagged, not dropped, so the overview can hide them by default.
@@ -94,6 +94,7 @@ export async function githubImage(root: string, slug: string, number: number, id
 }
 
 export function createCodeDashboard(root: string) {
+  const planning = root; // `root` is shadowed below by the repository a draft opens in
   const prNotes = createPrNotes(root, config().code.prNotesDir);
   const configPath = join(root, config().code.reposFile);
   const statusCache = new Map<string, { at: number; dirty: number; editTime: number; files: string[]; ownCommits?: number }>();
@@ -609,7 +610,7 @@ export function createCodeDashboard(root: string) {
     if (Object.hasOwn(NOTE_PROMPTS, skill)) {
       const notes = await prNotes.drafts(pull[1], Number(pull[2]));
       if (!notes.text) throw new Error("No draft notes on this PR.");
-      draft = `${NOTE_PROMPTS[skill as keyof typeof NOTE_PROMPTS](prUrl, pull[1], Number(pull[2]), where, notes.path)}\n\n${notes.text}\n`;
+      draft = `${NOTE_PROMPTS[skill as keyof typeof NOTE_PROMPTS](planning, prUrl, where, notes.path)}\n\n${notes.text}\n`;
     } else if (skill === "discuss-comment") {
       const comment = (await prDetail(pull[1], Number(pull[2]))).discussion.find((item) => item.id === commentId);
       if (!comment) throw new Error("That comment is no longer on the PR.");
@@ -655,7 +656,7 @@ export function createCodeDashboard(root: string) {
     if (!trees.length) throw new Error("No worktrees selected.");
     const repo = trees[0].repo;
     const lines = trees.map((tree) => `- ${tree.path} (branch ${tree.branch}; last activity ${new Date(tree.activity).toISOString().slice(0, 10)}; ${tree.cleanup?.reason || ""})`);
-    return { repo, prompt: `Help me clean up old git worktrees in ${repo}. I have far too many and want to remove the ones that hold nothing I need.\n\nCandidates:\n${lines.join("\n")}\n\nFor each candidate, check for uncommitted or untracked changes, commits not on any remote branch (\`git log <branch> --not --remotes\`), stashes, and ignored local files that look hand-made rather than generated (notes, .env overrides, scratch scripts). Follow this repository's own worktree instructions if it has any. Remove a worktree with \`git worktree remove <path>\` (never --force) only when it holds nothing unique; keep its branch. Do not delete branches or push anything. Finish with \`git worktree prune\` and a short table: removed, kept (with the reason), and anything you need me to decide.` };
+    return { repo, prompt: fillPrompt(planning, "worktree-cleanup", { repo, candidates: lines.join("\n") }) };
   }
 
   async function launchCleanup(app: string, paths: string[], copy = false, note = "") {
