@@ -9,6 +9,7 @@ import { parseActions, parseWorkBreakdown, STEP_FLAGS, STEP_SIZES } from "./publ
 import { config, withNote } from "./public/config.js";
 import { draftFromText, outboundFields, type OutboundDraft } from "./outbound.ts";
 import { isTaskAsset, isTaskFile, notesFolder, taskFile as taskPathOf } from "./public/layout.js";
+import { taskFolderFiles } from "./task-files.ts";
 
 export const OUTBOUND_KINDS = new Set(["jira-issue", "jira-comment", "jira-edit", "jira-transition", "it-ticket", "slack", "pr", "pr-comment", "review-request", "email"]);
 const CHOICES = new Set(["pick-one", "pick-any"]);
@@ -190,7 +191,7 @@ export async function listMachinery(root: string) {
   const tasks = join(root, "tasks");
   for (const entry of await readdir(tasks, { withFileTypes: true }).catch(() => [])) {
     if (!entry.isDirectory() || !/^TASK-\d{4}$/.test(entry.name)) continue;
-    for (const file of await readdir(join(tasks, entry.name), { recursive: true }).catch(() => [] as string[])) {
+    for (const file of await taskFolderFiles(join(tasks, entry.name))) {
       const path = `tasks/${entry.name}/${file}`;
       if (!path.endsWith(".md") || isTaskFile(path)) continue;
       const text = await readFile(join(root, path), "utf8").catch(() => "");

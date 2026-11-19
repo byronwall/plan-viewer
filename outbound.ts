@@ -7,6 +7,7 @@ import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { config } from "./public/config.js";
+import { taskFolderFiles } from "./task-files.ts";
 
 export type OutboundFields = Record<string, string>;
 export interface OutboundDraft {
@@ -67,7 +68,7 @@ export async function listOutbound(root: string): Promise<OutboundDraft[]> {
   const tasks = join(root, "tasks");
   for (const entry of await readdir(tasks, { withFileTypes: true }).catch(() => [])) {
     if (!entry.isDirectory() || !/^TASK-\d{4}$/.test(entry.name)) continue;
-    for (const file of await readdir(join(tasks, entry.name), { recursive: true }).catch(() => [] as string[])) {
+    for (const file of await taskFolderFiles(join(tasks, entry.name))) {
       if (!String(file).endsWith(".md") || file === `${entry.name}.md`) continue;
       const path = `tasks/${entry.name}/${file}`;
       const absolute = join(root, path);
