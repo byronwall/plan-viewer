@@ -1,6 +1,6 @@
 import { contextScore, fuzzyChunks, searchDocuments, searchPrs, termMatch, textScore } from "./search.js";
 import { isSettled, renderActions, renderWorkGraph, showDoneToggle, workDiagnostics, workStatusIcon, workStatusLabel } from "./actions.js";
-import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDocumentSort, selectDockSource, taskDocumentSequence } from "./dock.js";
+import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDocumentSort, selectDockSource, taskDocumentSequence, toggleDocumentNested, updateDocumentBrowser } from "./dock.js";
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
 import { savedTableFill, savedTableSize, sizeTableViewer, validTableSize } from "./table-size.js";
@@ -3308,6 +3308,13 @@ elements.chunks.addEventListener("click", (event) => {
     if (state.document) elements.meta.innerHTML = documentBreadcrumb(state.document) + documentStepper(state.document);
     return;
   }
+  const docFolder = event.target.closest("[data-doc-folder]");
+  if (docFolder) {
+    updateDocumentBrowser(docFolder.closest(".doc-dock-panel"), { folder: docFolder.dataset.docFolder });
+    return;
+  }
+  const docNested = event.target.closest("[data-doc-nested]");
+  if (docNested) return toggleDocumentNested(docNested);
   const dockPanel = event.target.closest(".doc-dock-panel");
   if (dockPanel && event.target.closest("a[href], [data-action-key], [data-work-item], .handoff-button")) queueMicrotask(() => dockPanel.matches(":popover-open") && dockPanel.hidePopover());
   const imageTrigger = event.target.closest(".markdown-image-trigger");
@@ -3387,7 +3394,21 @@ elements.chunks.addEventListener("click", (event) => {
 elements.chunks.addEventListener("toggle", (event) => {
   if (!event.target.matches?.(".doc-dock-panel")) return;
   elements.chunks.querySelector(`[popovertarget="${event.target.id}"]`)?.setAttribute("aria-expanded", String(event.newState === "open"));
+  // The Documents panel opens with its filter focused, so typing narrows the list at once.
+  if (event.newState === "open") event.target.querySelector("[data-doc-filter]")?.focus({ preventScroll: true });
 }, true);
+// The Documents filter narrows the list as you type; ↓ moves into the rows and Enter opens the first match.
+elements.chunks.addEventListener("input", (event) => {
+  if (event.target.matches?.("[data-doc-filter]")) updateDocumentBrowser(event.target.closest(".doc-dock-panel"), { filter: event.target.value });
+});
+elements.chunks.addEventListener("keydown", (event) => {
+  if (!event.target.matches?.("[data-doc-filter]") || !["ArrowDown", "Enter"].includes(event.key) || event.isComposing) return;
+  const first = event.target.closest(".doc-dock-panel").querySelector("[data-doc-list] .dock-link");
+  if (!first) return;
+  event.preventDefault();
+  if (event.key === "Enter") first.click();
+  else first.focus();
+});
 elements.handoffPopover.addEventListener("click", (event) => {
   const toggle = event.target.closest(".context-toggle");
   if (toggle) {

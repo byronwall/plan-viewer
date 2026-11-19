@@ -1,0 +1,2 @@
+send invite to sam@example.com        -> queued
+mailer webhook: bounce (mailbox full) -> invite still pending

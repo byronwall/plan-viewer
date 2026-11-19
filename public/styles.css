@@ -1283,6 +1283,34 @@ button.task-status:focus-visible { outline: 2px solid var(--action); outline-off
 .dock-doc-list .dock-channel-heading { position: static; padding: 8px 10px 2px; }
 .dock-doc-list .dock-channel:first-child .dock-channel-heading { padding-top: 4px; }
 .dock-doc-list .dock-channel-name { color: var(--muted); font-size: .72rem; }
+/* The Documents panel's folder bar: breadcrumb, filter and the Subfolders switch, on the sticky header's second row. */
+.dock-doc-bar { flex: 1 0 100%; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dock-doc-crumbs { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0 2px; font: 600 .74rem/24px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.dock-doc-crumb { min-height: 24px; border: 0; border-radius: 5px; background: none; padding: 0 4px; color: var(--action-ink); font: inherit; white-space: nowrap; transition: background-color 140ms ease; }
+button.dock-doc-crumb { cursor: pointer; }
+@media (hover: hover) { button.dock-doc-crumb:hover { background: var(--hover-field); } }
+button.dock-doc-crumb:active { background: var(--selected); }
+.dock-doc-crumb[aria-current] { color: var(--ink); }
+.dock-doc-slash { color: var(--quiet-text); }
+.dock-doc-filter { flex: 0 1 15rem; min-width: 9rem; display: flex; align-items: center; gap: 6px; height: 26px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 0 8px; color: var(--muted); cursor: text; transition: border-color 140ms ease, box-shadow 140ms ease; }
+.dock-doc-filter:focus-within { border-color: var(--action); box-shadow: 0 0 0 3px var(--selected); }
+.dock-doc-filter .dock-glyph { flex: none; width: 13px; height: 13px; }
+.dock-doc-filter input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; padding: 0; color: var(--ink); font: inherit; font-size: .76rem; }
+.dock-doc-filter input::placeholder { color: var(--quiet-text); }
+.dock-doc-nested { flex: none; height: 26px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 0 9px; color: var(--muted); font-size: .72rem; font-weight: 600; cursor: pointer; transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease; }
+@media (hover: hover) { .dock-doc-nested:hover { border-color: var(--line-strong); color: var(--ink); } }
+.dock-doc-nested:active { transform: scale(.97); }
+.dock-doc-nested[aria-pressed="true"] { border-color: transparent; background: var(--selected); color: var(--action-ink); }
+.dock-doc-nested:focus-visible, button.dock-doc-crumb:focus-visible { outline: 2px solid var(--action); outline-offset: 1px; }
+/* A row below the browsed folder leads with its folder path; folder rows open that folder in place. */
+.dock-doc-path { color: var(--muted); font: 500 .74rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.dock-doc mark { border-radius: 2px; background: var(--selected); color: inherit; }
+.dock-folder { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+.dock-folder .dock-link-icon { color: var(--action-ink); }
+.dock-folder-name { font: 600 .78rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.dock-folder .dock-link-out { font-size: .9rem; }
+.dock-folder-count { margin-left: 10px; color: var(--quiet-text); font-size: .72rem; font-weight: 400; }
+.dock-folder:focus-visible, .dock-doc:focus-visible { outline: 2px solid var(--action); outline-offset: -2px; }
 .dock-sort { flex: none; display: inline-flex; gap: 2px; border-radius: 7px; background: var(--hover-field); padding: 2px; }
 .dock-sort button { border: 0; border-radius: 5px; background: transparent; padding: 3px 8px; color: var(--muted); font-size: .72rem; font-weight: 600; transition: background-color 140ms ease, color 140ms ease; }
 .dock-sort button:hover { color: var(--ink); }
