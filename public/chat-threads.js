@@ -148,8 +148,12 @@ export function renderChatThreads(root) {
       const noun = kids.every((kid) => kid.kind === "subagent") ? "subagent" : kids.every((kid) => kid.kind !== "subagent") ? "session" : "agent";
       toggle = `<button type="button" class="chat-kids" data-chat-toggle="${escapeHtml(thread.id)}" aria-expanded="${open}">${glyph("chevron-right", "code-icon chat-caret")}${kids.length} ${noun}${kids.length === 1 ? "" : "s"}${running ? ` <em>${running} live</em>` : ""}</button>`;
     }
-    const tasks = thread.tasks?.length
-      ? `<div class="chat-tasks">${thread.tasks.map((task) => `<span data-tip="${task.kind === "agent" ? "Background agent" : "Background command"} still running">${glyph(task.kind === "agent" ? "bot" : "terminal")}${escapeHtml(task.label)}</span>`).join("")}</div>`
+    // At most two tasks show, each on one line; the rest fold into "+N more", and every full command is in a tooltip.
+    const tip = (task) => escapeHtml(`${task.kind === "agent" ? "Background agent" : "Background command"} still running\n${task.detail || task.label}`);
+    const shown = (thread.tasks || []).slice(0, 2);
+    const rest = (thread.tasks || []).slice(2);
+    const tasks = shown.length
+      ? `<div class="chat-tasks">${shown.map((task) => `<span class="chat-task" data-tip="${tip(task)}">${glyph(task.kind === "agent" ? "bot" : "terminal")}<span>${escapeHtml(task.label)}</span></span>`).join("")}${rest.length ? `<span class="chat-task-more" data-tip="${escapeHtml(rest.map((task) => task.detail || task.label).join("\n"))}">+${rest.length} more</span>` : ""}</div>`
       : "";
     return `<td class="chat-thread-cell" style="--depth:${depth}"><div class="chat-title">${lead}${name}${toggle}</div>${tasks}</td>`;
   }

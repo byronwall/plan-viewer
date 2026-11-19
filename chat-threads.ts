@@ -15,7 +15,8 @@ const historyLimit = 50;
 type Provider = "Codex" | "Claude";
 // parent: the thread that spawned this one (a Codex subagent or a Claude side session). kind says how it started.
 type Usage = { tokens: number; input: number; cached: number; output: number };
-type Task = { kind: "command" | "agent"; label: string };
+// label is short enough for one line; detail, when present, is the full command for a tooltip.
+type Task = { kind: "command" | "agent"; label: string; detail?: string };
 type AgentDetails = { model?: string; usage?: Usage; cliId?: string; live?: boolean; tasks?: Task[]; effort?: string; role?: string; nickname?: string; parent?: string; kind?: "subagent" | "automation" | "agent";
   tokens?: number | null; branch?: string; startedAt?: number };
 type Thread = AgentDetails & {
@@ -454,7 +455,13 @@ async function transcriptUsage(path: string, cache: UsageCache) {
 // Codex runs commands as terminal sessions. A tool result that still lists a session's ID means it is running; a later
 // call that polls that ID and gets no ID back (it gets an exit code) means it ended. A session recorded before the Codex
 // process that holds the thread started belongs to an earlier run and is gone.
-type CodexTaskCache = Map<string, { offset: number; calls: Map<string, string>; running: Map<string, { label: string; at: number }> }>;
+type CodexTaskCache = Map<string, { offset: number; calls: Map<string, string>; running: Map<string, { commands: string[]; at: number }> }>;
+
+// A shell command as a one-line label: drop a leading `cd <dir> &&`, collapse whitespace, keep 60 characters.
+export function commandLabel(command: string) {
+  const text = command.replace(/^\s*cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*&&\s*/, "").replace(/\s+/g, " ").trim();
+  return text.length > 60 ? `${text.slice(0, 59).trimEnd()}…` : text;
+}
 export async function codexTasks(path: string, size: number, cache: CodexTaskCache, since: number): Promise<Task[]> {
   let entry = cache.get(path);
   if (!entry || size < entry.offset) entry = { offset: 0, calls: new Map(), running: new Map() };
@@ -479,11 +486,16 @@ export async function codexTasks(path: string, size: number, cache: CodexTaskCac
       const seen = new Set([...output.matchAll(/"session_id"\s*:\s*(\d+)/g)].map(match => match[1]));
       const commands = [...input.matchAll(/\bcmd["']?\s*:\s*"((?:[^"\\]|\\.)*)"/g)].map(match => { try { return JSON.parse(`"${match[1]}"`); } catch { return match[1]; } });
       const at = Date.parse(string(record.timestamp)) || 0;
-      for (const id of seen) if (!running.has(id)) running.set(id, { label: commands.length === 1 ? commands[0] : "Background command", at });
+      for (const id of seen) if (!running.has(id)) running.set(id, { commands, at });
       for (const match of input.matchAll(/session_id["']?\s*:\s*(\d+)/g)) if (!seen.has(match[1])) running.delete(match[1]);
     } catch { /* a line written mid-read is retried next time */ }
   });
-  return [...running.values()].filter(task => task.at >= since).map(task => ({ kind: "command", label: displayTitle(task.label, "Background command") }));
+  // One script can start several commands; its result does not say which one is still running, so name them all.
+  return [...running.values()].filter(task => task.at >= since).map(({ commands }) => ({
+    kind: "command" as const,
+    label: commands.length === 1 ? commandLabel(commands[0]) || "Background command" : commands.length ? `One of ${commands.length} commands` : "Background command",
+    ...(commands.length ? { detail: commands.map(command => command.length > 400 ? `${command.slice(0, 399)}…` : command).join("\n") } : {}),
+  }));
 }
 
 async function claudeUsage(threads: Thread[], config: string, cache: UsageCache) {

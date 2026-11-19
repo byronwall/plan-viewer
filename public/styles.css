@@ -306,8 +306,11 @@ a.library-row:hover { background: var(--quiet-field); } /* a folder with no READ
 .chat-app-badge .code-icon { width: 8px; height: 8px; stroke-width: 2.6; }
 .chat-title b { color: var(--ink); font-weight: 600; }
 .chat-kind { width: 14px; height: 14px; color: #6d5bd0; }
-.chat-tasks { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 2px 0 0 20px; color: #3f5bb5; font-size: .74rem; }
-.chat-tasks span { display: inline-flex; align-items: center; gap: 4px; }
+.chat-tasks { display: flex; flex-wrap: wrap; gap: 2px 12px; min-width: 0; margin: 2px 0 0 20px; color: #3f5bb5; font-size: .74rem; }
+.chat-task { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: min(100%, 42ch); }
+.chat-task > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-tasks .code-icon { flex: none; }
+.chat-task-more { color: var(--quiet-text); white-space: nowrap; }
 .chat-tasks .code-icon { width: 12px; height: 12px; }
 [data-state="background"] > .chat-state .code-icon { color: #4c6ef5; }
 .chat-summary [data-state="background"]:not(.is-zero) { color: #3f5bb5; font-weight: 600; }
@@ -1477,7 +1480,7 @@ button.dock-doc-crumb:active { background: var(--selected); }
 [data-code-skill="ruthless-simplify"]:hover { color: var(--merged); }
 
 /* one viewport-clamped tooltip, positioned by code.js */
-.code-tip { position: fixed; z-index: 80; inset: auto; margin: 0; overflow: visible; max-width: min(360px, calc(100vw - 24px)); border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 5px 9px; box-shadow: 0 6px 18px rgba(24, 33, 47, .1); color: var(--ink); font-size: .76rem; font-weight: 500; line-height: 1.4; pointer-events: none; white-space: pre-line; opacity: 0; transform: scale(.96); transition: opacity 90ms ease-out, transform 90ms ease-out; }
+.code-tip { position: fixed; z-index: 80; inset: auto; margin: 0; overflow: visible; max-width: min(360px, calc(100vw - 24px)); border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 5px 9px; box-shadow: 0 6px 18px rgba(24, 33, 47, .1); color: var(--ink); font-size: .76rem; font-weight: 500; line-height: 1.4; pointer-events: none; white-space: pre-line; overflow-wrap: anywhere; opacity: 0; transform: scale(.96); transition: opacity 90ms ease-out, transform 90ms ease-out; }
 .code-tip.is-visible { transition-duration: 160ms; transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1); }
 .code-tip.is-visible { opacity: 1; transform: none; }
 .code-tip.is-instant { transition-duration: 0ms; }

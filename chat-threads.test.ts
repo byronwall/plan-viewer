@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { codexTasks, createChatThreads, openAgentFiles } from "./chat-threads.ts";
+import { codexTasks, commandLabel, createChatThreads, openAgentFiles } from "./chat-threads.ts";
 
 const id = (num: number) => `00000000-0000-4000-8000-${String(num).padStart(12, "0")}`;
 const stamp = "2026-01-01T13:00:00.000Z";
@@ -107,7 +107,14 @@ test("Codex terminal sessions count as background tasks until a poll gets no ses
     call("c", "text(await tools.write_stdin({session_id:202,chars:\"\"}))", 3), output("c", '{"chunk_id":"3","exit_code":0,"output":"ok"}', 3),
   ].join(""));
   const size = (await import("node:fs/promises")).stat(path).then(info => info.size);
-  assert.deepEqual(await codexTasks(path, await size, new Map(), 0), [{ kind: "command", label: "pnpm dev" }]);
+  assert.deepEqual(await codexTasks(path, await size, new Map(), 0), [{ kind: "command", label: "pnpm dev", detail: "pnpm dev" }]);
   // Started before this Codex process did: it died with the earlier one.
   assert.deepEqual(await codexTasks(path, await size, new Map(), Date.parse(at(5))), []);
+});
+
+test("long Codex commands read as one short line", () => {
+  assert.equal(commandLabel('cd "/repo/my app" && pnpm   test \\\n  --filter web'), "pnpm test \\ --filter web");
+  const label = commandLabel(`node scripts/run.mjs ${"--flag ".repeat(20)}`);
+  assert.equal(label.length, 60);
+  assert.ok(label.endsWith("…"));
 });
