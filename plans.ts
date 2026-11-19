@@ -4,6 +4,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { claudeNewSessionUrl as claudeUrl, codexNewTaskUrl } from "./codex-desktop.ts";
+import { fillPrompt } from "./prompts.ts";
 import { config } from "./public/config.js";
 
 // Plans: the initiatives (`initiative-map.json` plus the briefs beside it) on each tracked repo's origin/main, read
@@ -440,10 +441,7 @@ export function createPlans(root: string, deps: { repos: () => Promise<string[]>
       : `It is on ${cache.repos[item.repo]?.base || "origin/main"}; the checkout at ${item.repo} may be on another branch, so start from origin/main and open a PR.`;
     const base = local?.path || item.repo;
     const files = [`- Folder: ${join(base, item.folder)}`, `- Map: ${join(base, item.folder, MAP_FILE)}`, ...(open ? [`- Open document: ${join(base, open)}`] : []), ...item.prs.filter((pr) => pr !== proposal).map((pr) => `- Open PR touching it: ${pr.url} (${pr.branch})`)];
-    const ask = kind === "retire"
-      ? `${use ? use : "Please "}retire the initiative "${item.title}" in ${item.repo}. It is ${item.status}, and I approve retiring it: reconcile the code with its intent, move anything durable into the repository's docs, and remove the planning artifacts.`
-      : `${use ? use : "Please "}update the initiative "${item.title}" in ${item.repo}.`;
-    const draft = `${ask} ${where}\n\n${files.join("\n")}\n\n---\n\n${note.trim() ? `${note.trim()}\n` : ""}`;
+    const draft = fillPrompt(root, kind === "retire" ? "plan-retire" : "plan-update", { use: use || "Please ", initiative: item.title, repo: item.repo, status: item.status, where, files: files.join("\n"), note: note.trim() ? `${note.trim()}\n` : "" });
     if (app !== "claude" && app !== "codex") throw new Error("Unknown agent app.");
     return { repo: item.repo, draft, url: app === "claude" ? claudeUrl(item.repo, draft) : codexNewTaskUrl(draft, item.repo) };
   }

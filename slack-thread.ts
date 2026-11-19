@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import { claudeNewSessionUrl, codexNewTaskUrl } from "./codex-desktop.ts";
+import { fillPrompt } from "./prompts.ts";
 
 // A message forwarded or shared into this one; `truncated` when the connector cut its text short.
 export type SlackForward = { author: string; url: string; text: string; truncated: boolean };
@@ -153,7 +154,7 @@ export function createSlackThreads(root: string, command: () => string[]) {
     await writeFile(file, slackTranscript(thread, permalink));
     const where = thread.channelName ? ` in ${thread.channelName}` : "";
     const cited = documents.length ? `\n\nPlanning documents that link it: ${documents.map((path) => `\`${path}\``).join(", ")}.` : "";
-    const draft = `Let's talk through this Slack thread${where}: ${permalink}\n\nThe whole thread (${thread.messages.length} messages, read ${thread.fetchedAt}) is in \`${file}\`; read it first. Use the Slack connector only if you need something newer or outside the thread.${cited}\n\n${request.trim()}`;
+    const draft = fillPrompt(root, "slack-discuss", { where, permalink, count: thread.messages.length, fetched: thread.fetchedAt, file, cited, request: request.trim() });
     if (copy) return { prompt: draft };
     if (process.env.PLAN_VIEWER_DRY_RUN === "1") return console.log(`[dry run] ${app} draft in ${root}:\n${draft}`);
     await promisify(execFile)("/usr/bin/open", [app === "claude" ? claudeNewSessionUrl(root, draft) : codexNewTaskUrl(draft, root)]);

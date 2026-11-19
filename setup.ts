@@ -11,6 +11,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { configValue } from "./link-metadata.ts";
 import { linearClient } from "./linear.ts";
+import { listPrompts } from "./prompts.ts";
 import { DEFAULT_CONFIG } from "./public/config.js";
 import { CONFIG_DIR, CONFIG_FILE, configPath } from "./public/layout.js";
 
@@ -231,6 +232,16 @@ export async function readConfigFile(root: string, cfg: any, path: string) {
   return { path, text: await readFile(absolute, "utf8") };
 }
 
+export function promptEditPrompt(root: string, prompt: { id: string; title: string; sent: string; slots: string[] }) {
+  return `Edit the "${prompt.title}" prompt in ${join(root, "config/prompts", `${prompt.id}.md`)} for the Plan Viewer workspace at ${root}.
+
+The viewer sends it from: ${prompt.sent}.
+Slots the viewer fills: ${prompt.slots.map((slot) => `{${slot}}`).join(", ") || "none"}. Keep each slot you still want; a slot you remove is no longer sent, and text in braces that is not a slot stays as written.
+The default is ${join(VIEWER, "prompts", `${prompt.id}.md`)}; keep its front matter.
+
+Ask the user what should change before you edit it. The viewer reads the file on every use, so no restart is needed.`;
+}
+
 export function filePrompt(root: string, file: ConfigFile) {
   return `${file.exists ? "Update" : "Create"} ${file.path} in the Plan Viewer workspace at ${root}.
 
@@ -241,5 +252,13 @@ ${docLine} Ask the user what should change before you edit it, and keep the form
 
 export async function setupData(root: string, cfg: any, deps: Deps = DEPS) {
   const [integrations, raw, doc, files] = await Promise.all([probeIntegrations(root, cfg, deps), readRawConfig(root).catch(() => ({})), readFile(CONFIG_DOC, "utf8").catch(() => ""), listConfigFiles(root, cfg)]);
-  return { file: CONFIG_FILE, integrations, settings: listSettings(raw, cfg, settingMeanings(doc)), files };
+  return { file: CONFIG_FILE, integrations, settings: listSettings(raw, cfg, settingMeanings(doc)), files, prompts: listPrompts(root), configured: configuredPrompts(cfg) };
+}
+
+// Prompts that live in settings rather than in prompts/: issue skills carry their own text, PR skills name a skill.
+export function configuredPrompts(cfg: any) {
+  return [
+    ...cfg.issues.skills.map((skill: any) => ({ id: `issues.skills.${skill.id}`, title: `Issue skill: ${skill.label || skill.id}`, sent: "The skill menu on selected issues (Issues page); the issues follow as bullets", body: skill.prompt || "", key: "issues.skills" })),
+    ...cfg.code.prSkills.map((skill: any) => ({ id: `code.prSkills.${skill.id}`, title: `PR skill: ${skill.label || skill.id}`, sent: "A PR's skill buttons (Code page)", body: `Runs the \`${skill.id}\` skill (the repository's .claude/skills/${skill.id}/ or ~/.agents/skills/${skill.id}/) on the PR.`, key: "code.prSkills" })),
+  ];
 }
