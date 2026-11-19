@@ -1,0 +1,251 @@
+{
+  "schema_version": "0.5.0",
+  "initiative": {
+    "title": "Workspace layout on disk",
+    "slug": "workspace-layout",
+    "scale": "capability",
+    "current_phase": "plan",
+    "last_updated": "2026-11-18",
+    "summary": "Make the planning workspace folder layout deliberate (tasks as folders, a clear home for reference and topics) and move existing workspaces with one migrate command.",
+    "status": "planned",
+    "next_action": "Build m1: public/layout.js and plan-viewer migrate"
+  },
+  "artifacts": {
+    "intent_brief": {
+      "path": "intent-brief.md",
+      "status": "current",
+      "updated_at": "2026-11-18"
+    },
+    "brainstorm": {
+      "path": "brainstorm.md",
+      "status": "not-requested",
+      "updated_at": null
+    },
+    "shape_brief": {
+      "path": "shape-brief.md",
+      "status": "current",
+      "updated_at": "2026-11-18"
+    },
+    "implementation_plan": {
+      "path": "implementation-plan.md",
+      "status": "current",
+      "updated_at": "2026-11-18"
+    }
+  },
+  "sources": [
+    {
+      "id": "S1",
+      "type": "transcript",
+      "location": "~/Projects/planning/tasks/TASK-0039.md",
+      "anchor": "Byron's words 2026-11-18",
+      "authority": "user"
+    },
+    {
+      "id": "S2",
+      "type": "qa",
+      "location": "TASK-0039 scope questions",
+      "anchor": "Decisions from the scope questions",
+      "authority": "user"
+    },
+    {
+      "id": "S3",
+      "type": "repo",
+      "location": "server.ts",
+      "anchor": "isViewableDocumentPath, summarize, listDocuments",
+      "authority": "repo"
+    },
+    {
+      "id": "S4",
+      "type": "repo",
+      "location": "~/Projects/planning",
+      "anchor": "folder listing: no plans/, reference/ mixes JSON config and prose",
+      "authority": "repo"
+    },
+    {
+      "id": "qa-round-1",
+      "type": "qa",
+      "location": "conversation",
+      "anchor": "round 1: task folder, config home, topics, daily",
+      "authority": "user"
+    },
+    {
+      "id": "qa-round-2",
+      "type": "qa",
+      "location": "conversation",
+      "anchor": "round 2: notes stay in reference/notes, tool md to config, dry run then --write agent-friendly, sidebar",
+      "authority": "user"
+    },
+    {
+      "id": "qa-round-3",
+      "type": "qa",
+      "location": "conversation",
+      "anchor": "round 3: old links break; migrate behavior confirmed",
+      "authority": "user"
+    }
+  ],
+  "intent": {
+    "claims": [
+      {
+        "id": "C1",
+        "statement": "The folder layout should be deliberate and explainable to a new user.",
+        "kind": "goal",
+        "sources": [
+          "S1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C2",
+        "statement": "A task and its assets should probably live in one folder.",
+        "kind": "hypothesis",
+        "sources": [
+          "S1"
+        ],
+        "confidence": "medium"
+      },
+      {
+        "id": "C3",
+        "statement": "Reference files and topics feel misplaced; the sidebar placement of topics is unexplained.",
+        "kind": "problem",
+        "sources": [
+          "S1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C4",
+        "statement": "Existing workspaces move with a one-shot migrate command; the viewer reads only the new layout.",
+        "kind": "decision",
+        "sources": [
+          "S2"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C5",
+        "statement": "Layout is its own initiative and lands before TASK-0038 and TASK-0040 build on it.",
+        "kind": "decision",
+        "sources": [
+          "S2"
+        ],
+        "confidence": "high"
+      }
+    ],
+    "themes": [
+      "task folders",
+      "reference vs config",
+      "topics",
+      "daily tree"
+    ],
+    "conflicts": [],
+    "human_questions": []
+  },
+  "brainstorm": {
+    "status": "not-requested",
+    "requested_count": 7,
+    "options": [],
+    "selected_option": null
+  },
+  "shape": {
+    "status": "current",
+    "appetite": "a few days of agent work; stack of four PRs",
+    "problem": "Workspace folders are haphazard: task split across file and assets folder, reference mixes prose and tool data, topics unexplained.",
+    "recommended_shape": "tasks/TASK-NNNN/ folders, flat daily/YYYY-MM-DD.md, config/ for tool data, reference/ prose only, topics dropped; shared public/layout.js; agent-friendly plan-viewer migrate.",
+    "success_moves": [
+      "Shared public/layout.js before touching readers",
+      "Migrate built and proven before any reader switches",
+      "Demo and fixtures converted by migrate itself",
+      "Every blocker message carries a fix hint so an agent can loop",
+      "Migrate verifies every link still resolves"
+    ],
+    "first_proof": {
+      "question": "Can migrate convert the demo with every link resolving?",
+      "artifact": "migrate.test.ts on a temp copy of examples/workspace",
+      "decision_rule": "If any link breaks, fix the rewrite before switching readers."
+    },
+    "rabbit_holes": [
+      "compat redirects for old URLs",
+      "rewriting scripts automatically"
+    ],
+    "open_decisions": []
+  },
+  "implementation": {
+    "status": "planned",
+    "repository_snapshot": {
+      "root": "plan-viewer",
+      "revision": "a2fbb55",
+      "worktree_status": "clean",
+      "subsystems": [
+        "server.ts",
+        "check-planning.ts",
+        "check-links.ts",
+        "move-doc.ts",
+        "steps.ts",
+        "outbound.ts",
+        "task-context.ts",
+        "init-workspace.ts",
+        "public/app.js"
+      ],
+      "test_commands": [
+        "npm test"
+      ],
+      "deployment_surfaces": []
+    },
+    "dependencies": [],
+    "fast_local_loop": {
+      "command": "npm test -- migrate.test.ts && node cli.ts migrate"
+    },
+    "milestones": [
+      {
+        "id": "m1",
+        "title": "Migrate converts the demo workspace",
+        "outcome": "plan-viewer migrate turns a copy of the demo into the new layout",
+        "dependencies_introduced": [
+          "git"
+        ],
+        "proof": "migrate.test.ts",
+        "valid_intermediate_state": "readers unchanged; migrate unused",
+        "rollback": "revert the PR",
+        "status": "planned"
+      },
+      {
+        "id": "m2",
+        "title": "Viewer and checks read only the new layout",
+        "outcome": "demo and fixtures in new layout; all readers use public/layout.js",
+        "dependencies_introduced": [],
+        "proof": "npm test green; browser check of demo",
+        "valid_intermediate_state": "old-layout workspaces must run migrate",
+        "rollback": "revert the PR",
+        "status": "planned"
+      },
+      {
+        "id": "m3",
+        "title": "Byron workspace migrated",
+        "outcome": "~/Projects/planning on new layout",
+        "dependencies_introduced": [],
+        "proof": "lint and links clean; viewer shows workspace",
+        "valid_intermediate_state": "workspace committed in new layout",
+        "rollback": "git reset in planning repo before commit",
+        "status": "planned"
+      }
+    ],
+    "cut_line": [
+      "tmp/ caches",
+      "favorites rewrite and old URL redirects",
+      "slug in task folder",
+      "automatic script rewrites"
+    ],
+    "open_decisions": []
+  },
+  "history": [
+    {
+      "date": "2026-11-18",
+      "event": "Intent brief written from Byron's dictation and code survey."
+    },
+    {
+      "date": "2026-11-18",
+      "event": "Three question rounds answered; shape and plan written."
+    }
+  ],
+  "closure": null
+}
