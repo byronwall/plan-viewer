@@ -44,7 +44,7 @@ You need [Node.js](https://nodejs.org) 22.6 or later. There are no dependencies 
 git clone https://github.com/byronwall/plan-viewer.git
 cd plan-viewer
 npm install
-npm run demo
+npm run dev:demo
 ```
 
 Open <http://127.0.0.1:4173>. The demo serves [`examples/workspace/`](examples/workspace), a small fictional team's week: five tasks, daily plans, reference notes, and a stand-in Jira so the Issues page has data. The Code view is empty until you track a repository (gear icon on the Code page).
@@ -157,7 +157,7 @@ The server is TypeScript that Node runs directly (`--experimental-strip-types`),
 
 ```bash
 npm test        # runs every test against fixtures/planning
-npm run demo    # serves examples/workspace
+npm run dev:demo  # serves examples/workspace
 ```
 
 `npm install` enables a pre-commit hook that runs the tests. [`AGENTS.md`](AGENTS.md) maps features to files and lists the rules for changes; it is written for coding agents but is the fastest orientation for anyone. To refresh the screenshots above, see [`scripts/screenshots.mjs`](scripts/screenshots.mjs).
