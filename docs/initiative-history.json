@@ -1,0 +1,20 @@
+[
+  {
+    "title": "Settings, reference files and prompts in the viewer",
+    "slug": "settings-and-reference",
+    "outcome": "completed",
+    "retired_at": "2026-11-18",
+    "summary": "The Setup page (?view=setup) shows integrations with live checks and agent helpers, every config/viewer.json key with scalar edits, the files in config/, and every agent prompt as a template in prompts/ that config/prompts/ overrides, plus daily plan, daily review and Up next sweep routines. Inspected at 9fb51f8.",
+    "reason": "All four milestones shipped on the setup-page stack (#25, #26, #28, #29).",
+    "documentation": [
+      "docs/guide.md",
+      "docs/configuration.md",
+      "AGENTS.md"
+    ],
+    "revision": "9fb51f8",
+    "follow_ups": [
+      "Make browser-built prompts (Stacks review moves) templates too",
+      "Edit string lists in place on the Setup page"
+    ]
+  }
+]
