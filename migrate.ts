@@ -11,7 +11,7 @@
 // agent guides, scripts and package.json that still name the old layout. This is the only code that knows that layout.
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rename, rmdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rmdir, writeFile } from "node:fs/promises";
 import { dirname, join, posix, resolve } from "node:path";
 import { promisify } from "node:util";
 
@@ -22,7 +22,7 @@ if (args.some((arg) => arg !== "--write")) throw new Error("Usage: plan-viewer m
 
 const run = (cmd: string, cmdArgs: string[]) => promisify(execFile)(cmd, cmdArgs, { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 });
 const OLD_ROOTS = ["tasks", "daily", "plans", "reference"];
-const SKIP = new Set([".git", "node_modules", ".DS_Store"]);
+const SKIP = new Set([".git", "node_modules", ".DS_Store", "__pycache__"]);
 
 async function walk(dir: string): Promise<string[]> {
   const entries = await readdir(join(ROOT, dir), { withFileTypes: true }).catch(() => []);
@@ -46,7 +46,9 @@ export function newPath(path: string) {
   return path;
 }
 
-const files = (await Promise.all(OLD_ROOTS.map(walk))).flat().sort();
+const tracked = new Set((await run("git", ["ls-files", "-z"]).then(({ stdout }) => stdout, () => "")).split("\0").filter(Boolean));
+// The walk skips node_modules and the like, but a tracked one (a test runner's symlink, say) still has to move.
+const files = [...new Set([...(await Promise.all(OLD_ROOTS.map(walk))).flat(), ...[...tracked].filter((path) => OLD_ROOTS.some((dir) => path.startsWith(`${dir}/`)))])].sort();
 if (existsSync(join(ROOT, "viewer.config.json"))) files.push("viewer.config.json");
 const fileSet = new Set(files);
 const fixFirst: string[] = [];
@@ -76,6 +78,7 @@ const existsAfter = (path: string) => targets.has(path) || newDirs.has(path) || 
 
 // Links: inline `](target)`, reference definitions `[x]: target`, and backticked repository paths.
 const ROOT_LINK = /^(daily|tasks|plans|reference|config)\//;
+const ABSOLUTE = new RegExp(`${ROOT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/((?:daily|tasks|plans|reference)/[^\\s)\`'"\\]>]*?|viewer\\.config\\.json)([.,;:]*(?=[\\s)\`'"\\]>]|$))`, "gm");
 function rewrite(doc: string, text: string, broken: string[]) {
   const to = nowAt(doc);
   const link = (target: string) => {
@@ -95,7 +98,9 @@ function rewrite(doc: string, text: string, broken: string[]) {
   return text
     .replace(/(\]\()(<[^>]+>|[^)\s]+)/g, (_m, open, target) => open + (target.startsWith("<") ? `<${link(target.slice(1, -1))}>` : link(target)))
     .replace(/^(\s*\[[^\]]+\]:\s*)(\S+)/gm, (_m, open, target) => open + link(target))
-    .replace(/`((?:daily|tasks|plans|reference)\/[^`\s]+|viewer\.config\.json)`/g, (match, path) => newPath(path) !== path && exists(path) ? `\`${newPath(path)}\`` : match);
+    .replace(/`((?:daily|tasks|plans|reference)\/[^`\s]+|viewer\.config\.json)`/g, (match, path) => newPath(path) !== path && exists(path) ? `\`${newPath(path)}\`` : match)
+    // Absolute paths into this workspace, in commands and prose: /Users/me/planning/tasks/TASK-0101-assets/run.log.
+    .replace(ABSOLUTE, (match, path, tail) => newPath(path) !== path && exists(path) ? `${ROOT}/${newPath(path)}${tail}` : match);
 }
 
 // New contents for every Markdown file that changes, keyed by its old path.
@@ -116,9 +121,10 @@ if (fileSet.has("viewer.config.json")) {
 }
 
 // Text outside the documents that still names the old layout, for an agent to update after --write.
-const OLD_TEXT = /TASK-(?:\d{4}|NNNN)-assets|tasks\/TASK-(?:\d{4}|NNNN)\.md|daily\/(?:\d{4}|YYYY)\/(?:\d{2}|MM)\/(?:\d{2}|DD)|viewer\.config\.json|reference\/[\w.-]+\.json|reference\/(?:slack-channels|retired-tasks)\.md|(?<![\w.-])plans\/[\w<-]/;
+const OLD_TEXT = /TASK-(?:\d{4}|NNNN|\*)-assets|-assets["'\/]|TASK-\*\.md|%Y\/%m\/%d|\bplan\.md\b|tasks\/TASK-(?:\d{4}|NNNN)\.md|daily\/(?:\d{4}|YYYY)\/(?:\d{2}|MM)\/(?:\d{2}|DD)|viewer\.config\.json|reference\/[\w.-]+\.json|reference\/(?:slack-channels|retired-tasks)\.md|(?<![\w.-])plans\/[\w<-]/;
 async function leftovers() {
-  const candidates = ["AGENTS.md", "CLAUDE.md", "README.md", "package.json", ...(await walk("scripts")), ...(await walk("hooks"))];
+  // Agent guides, skills and templates, and scripts that build paths ("daily" / strftime("%Y/%m/%d") / "plan.md").
+  const candidates = ["AGENTS.md", "CLAUDE.md", "README.md", "package.json", ...(await Promise.all(["scripts", "hooks", "templates", ".agents", ".claude/skills", ".claude/commands", ".codex"].map(walk))).flat()];
   const found: string[] = [];
   for (const path of candidates) {
     const text = contents.get(path) ?? await readFile(join(ROOT, path), "utf8").catch(() => "");
@@ -145,7 +151,6 @@ if (!write) {
   process.exit(0);
 }
 
-const tracked = new Set((await run("git", ["ls-files", "-z"]).then(({ stdout }) => stdout, () => "")).split("\0"));
 for (const [from, to] of moves) {
   await mkdir(join(ROOT, dirname(to)), { recursive: true });
   if (tracked.has(from)) await run("git", ["mv", from, to]);
@@ -158,7 +163,9 @@ async function prune(dir: string) {
   if (dir.includes("/") || dir === "plans") await rmdir(join(ROOT, dir)).catch(() => {});
 }
 for (const dir of ["tasks", "daily", "plans"]) await prune(dir);
-if ((await stat(join(ROOT, "plans")).catch(() => null))?.isDirectory()) console.log("plans/ still holds files the migration did not move (such as .DS_Store); remove it by hand.");
+// Ignored or untracked files (test caches, .DS_Store) keep an old folder alive; often another session is still writing there.
+const stranded = [...new Set([...oldDirs].filter((dir) => /^(tasks\/TASK-\d{4}-assets|daily\/\d{4}|plans)$/.test(dir)))].filter((dir) => existsSync(join(ROOT, dir)));
+if (stranded.length) console.log(`\nThese old folders still hold files the migration did not move (ignored or written since the dry run). Move what matters to its new place (${stranded.map((dir) => newPath(dir)).join(", ")}) and delete the rest:\n${stranded.map((dir) => `  ${dir}/`).join("\n")}`);
 
 const left = await leftovers();
 console.log(`\nMigrated ${moves.size} file(s) and rewrote ${contents.size}.`);

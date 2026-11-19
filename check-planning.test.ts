@@ -240,3 +240,24 @@ test("an old-layout workspace can still commit, so migrate --write gets the clea
   const { stderr } = await run(hook, [], { cwd: root, env });
   assert.match(stderr, /warn\s+.*older folder layout/);
 });
+
+test("a staged rename is judged only on errors its old version didn't have", async (t) => {
+  const { setConfig } = await import("./public/config.js");
+  setConfig({ steps: { groundReferencesFrom: "2026-11-16" } });
+  t.after(() => setConfig({}));
+  const root = await mkdtemp(join(tmpdir(), "planning-rename-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const git = (args: string[]) => promisify(execFile)("git", args, { cwd: root });
+  await git(["init", "--quiet"]);
+  await mkdir(join(root, "tasks", "TASK-0001"), { recursive: true });
+  const old = 'diagram "Stacks" version=1\nnode a "MOD-2898 stack"\nlayout root flow\n';
+  await writeFile(join(root, "tasks", "TASK-0001", "stacks.draft"), old);
+  await git(["add", "-A"]);
+  await git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "before the rule"]);
+  await mkdir(join(root, "tasks", "TASK-0001", "diagrams"));
+  await git(["mv", "tasks/TASK-0001/stacks.draft", "tasks/TASK-0001/diagrams/stacks.draft"]);
+  assert.deepEqual((await checkPlanning(["--staged"], root)).errors, [], "a move carries old errors along without failing");
+  await writeFile(join(root, "tasks", "TASK-0001", "diagrams", "stacks.draft"), old.replace("layout", 'node b "RAI-55530 startup"\nlayout'));
+  await git(["add", "-A"]);
+  assert.deepEqual((await checkPlanning(["--staged"], root)).errors.map((e) => e.split(": ").slice(0, 2).join(": ")), ["tasks/TASK-0001/diagrams/stacks.draft: line 3"]);
+});

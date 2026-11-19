@@ -178,9 +178,25 @@ export async function checkPlanning(args: string[], root = ROOT) {
   const git = async (argv: string[]) => (await promisify(execFile)("git", argv, { cwd: root, maxBuffer: 16 * 1024 * 1024 }).catch(error => {
     throw /not a git repository/.test(error.stderr) ? new Error("not a git repository; run plan-viewer init") : error;
   })).stdout;
-  const listed = args.length && !staged
-    ? args.map(path => relative(root, resolve(root, path)).replaceAll("\\", "/"))
-    : (await git(staged ? ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"] : ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])).split("\0").filter(Boolean);
+  // A staged rename is checked only for errors its old version didn't have, so a reorganization (plan-viewer migrate, a
+  // move) commits even when older files predate a rule.
+  const renamedFrom = new Map<string, string>();
+  let listed: string[];
+  if (args.length && !staged) listed = args.map(path => relative(root, resolve(root, path)).replaceAll("\\", "/"));
+  else if (staged) {
+    const fields = (await git(["diff", "--cached", "--name-status", "-M", "--diff-filter=ACMR", "-z"])).split("\0").filter(Boolean);
+    listed = [];
+    for (let i = 0; i < fields.length; i++) {
+      if (fields[i].startsWith("R")) renamedFrom.set(fields[i + 2], fields[i + 1]), listed.push(fields[(i += 2)]);
+      else listed.push(fields[++i]);
+    }
+  } else listed = (await git(["ls-files", "--cached", "--others", "--exclude-standard", "-z"])).split("\0").filter(Boolean);
+  const newErrors = async (path: string, found: string[], check: (source: string) => string[]) => {
+    const from = renamedFrom.get(path);
+    if (!from || !found.length) return found;
+    const before = new Set(check(await git(["show", `HEAD:${from}`]).catch(() => "")));
+    return found.filter(error => !before.has(error));
+  };
   // The older layout (tasks/TASK-NNNN.md, -assets folders, daily/YYYY/MM/DD/, plans/, viewer.config.json) is not read at all.
   const old = listed.find((path) => /^tasks\/TASK-\d{4}(\.md|-assets\/)|^daily\/\d{4}\/|^plans\/|^viewer\.config\.json$/.test(path))
     || (await access(resolve(root, "viewer.config.json")).then(() => "viewer.config.json", () => ""));
@@ -198,7 +214,7 @@ export async function checkPlanning(args: string[], root = ROOT) {
   for (const path of diagrams) {
     try {
       const source = staged ? await git(["show", `:${path}`]) : await readFile(resolve(root, path), "utf8");
-      errors.push(...diagramErrors(source).map(error => `${path}: ${error}`));
+      errors.push(...(await newErrors(path, diagramErrors(source), diagramErrors)).map(error => `${path}: ${error}`));
     } catch (error) {
       errors.push(`${path}: ${(error as NodeJS.ErrnoException).code === "ENOENT" ? "file not found" : error instanceof Error ? error.message : String(error)}`);
     }
@@ -206,7 +222,7 @@ export async function checkPlanning(args: string[], root = ROOT) {
   for (const path of paths) {
     try {
       const markdown = staged ? await git(["show", `:${path}`]) : await readFile(resolve(root, path), "utf8");
-      errors.push(...planningErrors(path, markdown).map(error => `${path}: ${error}`));
+      errors.push(...(await newErrors(path, planningErrors(path, markdown), (source) => planningErrors(path, source))).map(error => `${path}: ${error}`));
       const step = outboundFields(markdown).step?.match(/^(TASK-\d{4})\s/)?.[1];
       if (step) {
         const taskMarkdown = await (staged ? git(["show", `:${taskFile(step)}`]) : readFile(resolve(root, taskFile(step)), "utf8")).catch(() => null);

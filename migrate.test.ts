@@ -72,3 +72,30 @@ test("migrate lists what to fix first and changes nothing until it is fixed", as
   }
   await stat(join(root, "tasks/TASK-0101.md"));
 });
+
+test("migrate carries absolute paths, tracked symlinks and stragglers, and points at scripts and skills to update", async t => {
+  const { root, migrate, read } = await oldWorkspace(t);
+  const git = (...args) => exec("git", args, { cwd: root, env: Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_"))) });
+  const { symlink } = await import("node:fs/promises");
+  await writeFile(join(root, "tasks/TASK-0101-assets/run.md"), `# Run\n\nRan \`node ${root}/tasks/TASK-0101-assets/runbook.md\`. See ${root}/daily/2026/10/22/plan.md.\n`);
+  await symlink("/nowhere/node_modules", join(root, "tasks/TASK-0101-assets/node_modules"));
+  await mkdir(join(root, "scripts"));
+  await writeFile(join(root, "scripts/today.py"), 'plan = ROOT / "daily" / date.today().strftime("%Y/%m/%d") / "plan.md"\n');
+  await mkdir(join(root, ".agents/skills/plan"), { recursive: true });
+  await writeFile(join(root, ".agents/skills/plan/SKILL.md"), "Put drafts in tasks/TASK-NNNN-assets/.\n");
+  await git("add", "-A");
+  await git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "more");
+  // Written after the commit and ignored: what a still-running session leaves behind.
+  await writeFile(join(root, ".gitignore"), "node_modules/\n");
+  await mkdir(join(root, "tasks/TASK-0101-assets/head/node_modules/.vite"), { recursive: true });
+  await writeFile(join(root, "tasks/TASK-0101-assets/head/node_modules/.vite/results.json"), "{}");
+  await git("add", ".gitignore");
+  await git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "ignore");
+
+  const { stdout } = await migrate("--write");
+  assert.equal(await read("tasks/TASK-0101/run.md"), `# Run\n\nRan \`node ${root}/tasks/TASK-0101/runbook.md\`. See ${root}/daily/2026-10-22.md.\n`);
+  assert.match((await git("ls-files", "tasks")).stdout, /^tasks\/TASK-0101\/node_modules$/m);
+  assert.match(stdout, /scripts\/today\.py:1:/);
+  assert.match(stdout, /\.agents\/skills\/plan\/SKILL\.md:1:/);
+  assert.match(stdout, /still hold files the migration did not move[\s\S]*tasks\/TASK-0101-assets\//);
+});
