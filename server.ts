@@ -1198,7 +1198,9 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (request.method === "POST" && url.pathname === "/api/link-metadata") {
       const body = await readJson(request);
       const keys = Array.isArray(body.keys) ? body.keys.map(String).slice(0, 1000) : [];
-      return json(response, 200, { metadata: { ...await lookupLinkMetadata(keys), ...issueTracker.aliasMetadata(keys) } });
+      // Wait about a second for titles never fetched; the page asks again for the `pending` ones.
+      const metadata = { ...await lookupLinkMetadata(keys, { waitMs: 1000 }), ...issueTracker.aliasMetadata(keys) };
+      return json(response, 200, { metadata, pending: lookupLinkMetadata.pending(keys.filter((key) => !metadata[key])) });
     }
     if (request.method === "GET" && url.pathname === "/api/people") return json(response, 200, await people());
     if (request.method === "GET" && url.pathname === "/api/changes") return json(response, 200, { changes: recentChanges });

@@ -409,6 +409,7 @@ function progressRing(done, total) {
 // `diagrams` ({ path, title }) are the ones the page embeds, then the rest of the task's; the Diagrams panel shows them as
 // thumbnails that open the viewer.
 export function renderDock({ doc, documents, links, body, steps = "", diagrams = [] }) {
+  lazyPanels.clear();
   const chunk = (pattern) => doc.chunks.find((candidate) => pattern.test(candidate.title));
   const actions = chunk(/^(next actions|next steps)$/i);
   const work = chunk(/^work breakdown$/i);
@@ -465,6 +466,24 @@ export function renderDock({ doc, documents, links, body, steps = "", diagrams =
     <div class="doc-dock-buttons" role="toolbar" aria-label="Document overview"><button type="button" class="doc-dock-button doc-dock-draft" data-dock-draft aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false" title="Open an agent draft for ${escapeHtml(doc.path)}"><span class="doc-dock-icon">${ICONS.draft}</span><span class="doc-dock-label">Draft</span></button>${taskId ? `<button type="button" class="doc-dock-button" data-world-task-open="${escapeHtml(taskId)}" aria-haspopup="dialog" title="Everything filed for ${escapeHtml(taskId)} on one timeline (W)"><span class="doc-dock-icon">${ICONS.world}</span><span class="doc-dock-label">World</span></button>` : ""}<span class="doc-dock-divider" aria-hidden="true"></span>${items.map((item) => `<button type="button" class="doc-dock-button" ${item.workItem ? `data-work-item="${escapeHtml(item.workItem)}" aria-haspopup="dialog" aria-controls="work-item-dialog"` : `popovertarget="dock-${item.key}" aria-expanded="false" style="anchor-name: --dock-${item.key}"`} title="${escapeHtml(item.meta)}"><span class="doc-dock-icon">${item.icon}</span><span class="doc-dock-label">${escapeHtml(item.label)}</span>${item.badge && item.badge !== "0" ? `<span class="doc-dock-badge">${escapeHtml(item.badge)}</span>` : ""}</button>`).join("")}</div>
   </div>${items.filter((item) => !item.workItem).map((item) => `<div class="doc-dock-panel doc-dock-panel-${item.key}" id="dock-${item.key}" popover style="position-anchor: --dock-${item.key}" role="dialog" aria-label="${escapeHtml(item.title)}">
     ${item.bare ? "" : `<header class="doc-dock-panel-header"><span class="doc-dock-icon">${item.icon}</span><div><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.meta)}</p></div>${item.tools || ""}${item.jump ? `<button type="button" class="doc-dock-jump" data-dock-jump="${escapeHtml(item.jump)}">Go to section <span aria-hidden="true">↓</span></button>` : ""}</header>`}
-    <div class="doc-dock-panel-body">${item.content}</div>
+    ${LAZY_PANELS.has(item.key) ? `<div class="doc-dock-panel-body" data-lazy>${lazyPanels.set(`dock-${item.key}`, item.content) && ""}</div>` : `<div class="doc-dock-panel-body">${item.content}</div>`}
   </div>`).join("")}</div>`;
+}
+
+// Links and Updates repeat the page's own content, thousands of nodes on a long task, and most visits never open them:
+// their bodies are built when the panel first opens. The page hears `dock-panel-filled` to finish a body it fills.
+const LAZY_PANELS = new Set(["links", "updates"]);
+const lazyPanels = new Map();
+// The server imports this module too, where there is no document.
+globalThis.document?.addEventListener("beforetoggle", (event) => {
+  const panel = event.target;
+  if (event.newState !== "open" || !panel.matches?.(".doc-dock-panel")) return;
+  fillDockPanel(panel);
+}, true);
+export function fillDockPanel(panel) {
+  const body = panel?.querySelector(".doc-dock-panel-body[data-lazy]");
+  if (!body) return;
+  body.innerHTML = lazyPanels.get(panel.id) || "";
+  body.removeAttribute("data-lazy");
+  panel.dispatchEvent(new CustomEvent("dock-panel-filled", { bubbles: true }));
 }

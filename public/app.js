@@ -2082,17 +2082,29 @@ function renderDocumentDock(doc) {
   elements.chunks.insertAdjacentHTML("afterbegin", renderDock({ doc, documents: state.documents, links, body: chunk => chunkBody(doc, chunk), steps: showsSteps(doc) ? taskStepsPanel(doc, false) : "", diagrams: dockDiagrams(doc) }));
   for (const node of elements.chunks.querySelectorAll(".doc-dock-panel-body [id]")) if (node.localName !== "marker") node.removeAttribute("id");
   syncDockStuck();
+  linkMetadataSeen = {};
   loadLinkMetadata(doc);
 }
 
 // Titles and states for GitHub, Linear and Jira links arrive after render; rows keep their fallback text until then.
-async function loadLinkMetadata(doc) {
-  const keys = [...new Set([...elements.chunks.querySelectorAll("a[href]")].map(link => link.dataset.metaKey || metadataKey(link.href)).filter(Boolean))];
+// Titles already applied to this page, for dock panels whose bodies are built later (dock-panel-filled).
+let linkMetadataSeen = {};
+elements.chunks.addEventListener("dock-panel-filled", (event) => {
+  for (const node of event.target.querySelectorAll(".doc-dock-panel-body [id]")) if (node.localName !== "marker") node.removeAttribute("id");
+  applyLinkMetadata(event.target, linkMetadataSeen);
+});
+
+// The server waits about a second on the network; titles still being fetched come back as `pending` and are asked for again.
+async function loadLinkMetadata(doc, wanted = null, attempt = 0) {
+  const keys = wanted || [...new Set([...elements.chunks.querySelectorAll("a[href]")].map(link => link.dataset.metaKey || metadataKey(link.href)).filter(Boolean))];
   if (!keys.length) return;
   try {
     const response = await fetch("/api/link-metadata", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ keys }) });
     if (!response.ok || state.document !== doc) return;
-    applyLinkMetadata(elements.chunks, (await response.json()).metadata || {});
+    const body = await response.json();
+    Object.assign(linkMetadataSeen, body.metadata || {});
+    applyLinkMetadata(elements.chunks, body.metadata || {});
+    if (body.pending?.length && attempt < 4) setTimeout(() => state.document === doc && loadLinkMetadata(doc, body.pending, attempt + 1), 1500 * (attempt + 1));
   } catch {
     // Offline or unauthenticated sources leave the plain IDs in place.
   }
