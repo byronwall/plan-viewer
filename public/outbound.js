@@ -45,7 +45,8 @@ function note(draft) {
   if (f.status === "failed" && f.error) return `<p class="outbound-note is-error">${escapeHtml(f.error)}</p>`;
   if (f.status === "ready" && f.error) return `<p class="outbound-note is-error">${escapeHtml(f.error)}</p>`;
   if (f.status === "ready" && draft.fields.outbound === "it-ticket") return `<p class="outbound-note">To the RAI Help Desk (ITSM). Next: file it with the create-it-ticket skill in a Codex desktop app task (terminal codex has no browser host), then mark it sent.</p>`;
-  if (f.status === "ready" && isManual(draft)) return `<p class="outbound-note is-friction">You send this by hand. Fix: add a Slack user token with chat:write so it can send on approval.</p>`;
+  if (f.status === "ready" && isManual(draft) && f.outbound === "slack") return `<p class="outbound-note is-friction">You send this by hand. Fix: add a Slack user token with chat:write so it can send on approval.</p>`;
+  if (f.status === "ready" && isManual(draft)) return `<p class="outbound-note">You send this by hand: copy the text, send it, then mark it sent.</p>`;
   if (f.status === "draft" && f.waits) return `<p class="outbound-note">Waits on ${escapeHtml(f.waits)}</p>`;
   if (f.status === "revise") return `<p class="outbound-note">Sent back with your feedback; an agent is revising it and it comes back here.</p>`;
   if (f.status === "approved") return `<p class="outbound-note">Approved ${escapeHtml((f.approved || "").split(" ")[0].replace("T", " "))}; sending.</p>`;

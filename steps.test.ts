@@ -75,6 +75,11 @@ test("each open step gets one next move from its kind, status, prerequisites and
   const choice = steps.find((s) => s.id === "W3")!;
   assert.deepEqual(choice.options!.map((o) => [o.id, o.title, o.tradeoff, o.recommended]), [["W3.1", "Fast", "ships now", true], ["W3.2", "Safe", "waits a week", false]]);
   assert.equal(steps.find((s) => s.id === "W4")!.fix, "Approve and run");
+  assert.match(steps.find((s) => s.id === "W10")!.fix!, /chat:write/);
+  // A hand-sent PR comment is sent by hand too, but a Slack token wouldn't change that.
+  const prTask = { ...task, markdown: TASK.replace("{slack, S}", "{pr-comment, S}") };
+  const pr = deriveSteps([prTask], [draft("TASK-0001 W10", "pr-comment", "send: manual\n")], ["TASK-0001"], Date.parse("2026-11-12")).find((s) => s.id === "W10")!;
+  assert.deepEqual([pr.move, pr.reason, pr.fix], ["you-act", "send by hand", undefined]);
   assert.equal(steps.find((s) => s.id === "W2")!.draft!.fields.outbound, "jira-comment");
   assert.equal(steps.find((s) => s.id === "W2")!.age, 2);
   // A sent draft hides its step, even before the line is marked completed.

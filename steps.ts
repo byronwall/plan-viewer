@@ -169,7 +169,7 @@ function nextMove(step: Step, blockedBy: string[]): [Move, string, string?] | [n
     if (!draft) return ["agent", "draft it"];
     if (status === "sent" || status === "dropped") return [null, ""];
     if (status === "ready" && kind === "it-ticket") return ["agent", "file via create-it-ticket", "File it with the create-it-ticket skill in a Codex desktop app task (terminal codex has no browser host)"];
-    if (status === "ready" && draft.fields.send === "manual") return ["you-act", "send by hand", "Add a Slack user token with chat:write so it sends on approval"];
+    if (status === "ready" && draft.fields.send === "manual") return kind === "slack" ? ["you-act", "send by hand", "Add a Slack user token with chat:write so it sends on approval"] : ["you-act", "send by hand"];
     if (status === "ready") return ["you-decide", "approve"];
     if (status === "failed") return ["you-decide", "retry or send back"];
     if (status === "draft" && draft.fields.waits) return ["others", `waits: ${draft.fields.waits}`];
