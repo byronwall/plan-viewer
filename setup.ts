@@ -6,13 +6,13 @@
 // back to config/viewer.json one at a time.
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { configValue } from "./link-metadata.ts";
 import { linearClient } from "./linear.ts";
 import { DEFAULT_CONFIG } from "./public/config.js";
-import { CONFIG_FILE } from "./public/layout.js";
+import { CONFIG_DIR, CONFIG_FILE, configPath } from "./public/layout.js";
 
 const VIEWER = fileURLToPath(new URL(".", import.meta.url));
 export const CONFIG_DOC = join(VIEWER, "docs", "configuration.md");
@@ -186,7 +186,60 @@ Current value: ${JSON.stringify(setting.value)}${setting.set ? "" : " (the defau
 ${docLine} Ask the user what they want this setting to do before you change it. Keep the file valid JSON and leave the other keys as they are.${setting.restart ? " This key is read at startup, so the viewer needs a restart afterwards." : " The viewer reloads the file by itself."}`;
 }
 
+// The files the tooling reads: config/ (not a library folder, so this page is the only place they show), the file
+// `code.reposFile` and `steps.settingsFile` name, and the ignored config.toml, whose contents are never read here.
+export type ConfigFile = { path: string; purpose: string; key: string; exists: boolean; modified: string; size: number; secret: boolean };
+
+const KNOWN: Record<string, { purpose: string; key?: string }> = {
+  [CONFIG_FILE]: { purpose: "Settings: everything in the Settings section above." },
+  [configPath("slack-channels.md")]: { purpose: "Names for Slack channel and DM IDs in links. `plan-viewer links` reports IDs missing here." },
+  [configPath("retired-tasks.md")]: { purpose: "Task IDs removed on purpose, so `plan-viewer links` stops reporting them as unknown." },
+  "config.toml": { purpose: "Linear and Slack tokens (`[linear] API_KEY`, `[slack] TOKEN`). Ignored by git; the viewer never shows it." },
+};
+
+export async function listConfigFiles(root: string, cfg: any): Promise<ConfigFile[]> {
+  const { [CONFIG_FILE]: settings, ...rest } = KNOWN;
+  const known: Record<string, { purpose: string; key?: string }> = {
+    [CONFIG_FILE]: settings,
+    [cfg.code.reposFile]: { purpose: "Repositories the Code, Plans and Issues pages track. The Code page's gear menu writes it.", key: "code.reposFile" },
+    ...(cfg.steps.settingsFile ? { [cfg.steps.settingsFile]: { purpose: "Claude settings that the Steps page's Apply adds allow rules to.", key: "steps.settingsFile" } } : {}),
+    ...rest,
+  };
+  const found: string[] = [];
+  const walk = async (dir: string) => {
+    for (const entry of await readdir(join(root, dir), { withFileTypes: true }).catch(() => [])) {
+      if (entry.name.startsWith(".")) continue;
+      if (entry.isDirectory()) { if (entry.name !== "prompts") await walk(`${dir}/${entry.name}`); }
+      else found.push(`${dir}/${entry.name}`);
+    }
+  };
+  await walk(CONFIG_DIR);
+  const paths = [...new Set([...Object.keys(known), ...found.sort()])].sort((a, b) => Number(a === "config.toml") - Number(b === "config.toml"));
+  return Promise.all(paths.map(async (path) => {
+    const info = await stat(join(root, path)).catch(() => null);
+    const { purpose = "Read by this workspace's own scripts, not by the viewer.", key = "" } = known[path] || {};
+    return { path, purpose, key, exists: Boolean(info), modified: info ? info.mtime.toISOString() : "", size: info?.size || 0, secret: path === "config.toml" };
+  }));
+}
+
+// A config file's text for the page's read-only view; only listed files, and never config.toml.
+export async function readConfigFile(root: string, cfg: any, path: string) {
+  const file = (await listConfigFiles(root, cfg)).find((row) => row.path === path);
+  if (!file || file.secret) throw new Error(`${path} is not a config file the page shows.`);
+  const absolute = resolve(root, path);
+  if (relative(root, absolute).startsWith("..")) throw new Error(`${path} is outside the workspace.`);
+  return { path, text: await readFile(absolute, "utf8") };
+}
+
+export function filePrompt(root: string, file: ConfigFile) {
+  return `${file.exists ? "Update" : "Create"} ${file.path} in the Plan Viewer workspace at ${root}.
+
+What it is for: ${file.purpose}${file.key ? `\nThe \`${file.key}\` setting names this file.` : ""}
+
+${docLine} Ask the user what should change before you edit it, and keep the format the viewer reads.`;
+}
+
 export async function setupData(root: string, cfg: any, deps: Deps = DEPS) {
-  const [integrations, raw, doc] = await Promise.all([probeIntegrations(root, cfg, deps), readRawConfig(root).catch(() => ({})), readFile(CONFIG_DOC, "utf8").catch(() => "")]);
-  return { file: CONFIG_FILE, integrations, settings: listSettings(raw, cfg, settingMeanings(doc)) };
+  const [integrations, raw, doc, files] = await Promise.all([probeIntegrations(root, cfg, deps), readRawConfig(root).catch(() => ({})), readFile(CONFIG_DOC, "utf8").catch(() => ""), listConfigFiles(root, cfg)]);
+  return { file: CONFIG_FILE, integrations, settings: listSettings(raw, cfg, settingMeanings(doc)), files };
 }
