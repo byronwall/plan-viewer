@@ -6,6 +6,7 @@ Everything the viewer does, page by page. Start with the [README](../README.md) 
 - [Code view](#code-view)
 - [Issues](#issues)
 - [Chat Threads](#chat-threads)
+- [Setup](#setup)
 - [Tasks, next actions, and links](#tasks-next-actions-and-links)
 
 ## Using the viewer
@@ -32,6 +33,14 @@ The viewer, `lint`, `links` and `move` read only this layout. `plan-viewer migra
 Open **Chat Threads** in the sidebar or through ⌘K. **Active** shows local Codex and Claude Code threads with a turn running or waiting for input. **Completed** shows up to 50 recent threads per app after their turns end, including interrupted Codex threads. Search by title, workspace, branch, app, model, agent role, or activity. On narrow screens, **Library** expands the navigation above the sessions. The full-width table lines up workspace, agent, model, usage, status and update time. The agent identifies the app and whether it ran on Desktop or CLI. The model and role appear when recorded. Filter counts show how many sessions are in each status or app before text search. Tokens shows the local Codex index’s reported thread total. Hover a count for the exact number. Touch devices show exact counts inline. From the search field, Down focuses the first openable conversation. Up and Down move between conversation links, and Enter opens one. Each usage bar compares its count with the largest reported total in the current results. Missing totals read **Unreported**. Choose **Most tokens** to rank reported usage, **Recent activity** for newest first, or **By workspace** to collect sessions sharing a working directory, with the most recently active group first. Search, sort, status and app filters survive reload. An empty filtered list offers **Clear search** or **Show all apps**. If a refresh fails, you can still filter the last results while the viewer retries. Click a thread's title to open its conversation in the desktop app. A standalone Claude CLI session becomes openable in Claude Desktop after the terminal process exits.
 
 The viewer refreshes the list while the page is visible. It checks the local process and turn state, so a desktop window left open after a turn ends does not count as active. The list reads local session metadata on macOS and displays titles, workspaces, and activity times. Cloud and other machines' threads are outside this view.
+
+### Setup
+
+Open **Setup** in the sidebar or through ⌘K to see what the viewer can use and how it is configured.
+
+- **Integrations** lists the GitHub CLI, Jira (`acli`), Linear, the Slack token, the Codex app server, draftably and the agent apps. The viewer checks each one when the page opens: a green dot works, a red dot is something your config uses that does not work, and a gray dot is not set up. Each row says what it turns on. **Recheck** runs the checks again.
+- **Set up…** (or **Help…** on a working row) opens the note popover with a prompt for an agent: what is wrong, what it turns on, and the steps. Enter saves it as an Up next note, the quiet button drafts it in the agent app now, and the copy icon copies it. The prompt tells the agent to leave sign-ins and tokens to you; the viewer never shows a token.
+- **Settings** lists every key in `config/viewer.json`, grouped, with its value, whether the file sets it, and its meaning from [configuration.md](configuration.md). Text, number and on/off keys save when you change them (Enter or leaving the field), and **Reset** removes a key so its default applies. Lists, objects and commands have **Configure…**, which drafts the change for an agent. Keys marked **restart** take effect after a restart. Filter the table with the box above it.
 
 ### Tab briefs
 
