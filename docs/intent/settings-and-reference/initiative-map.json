@@ -1,0 +1,413 @@
+{
+  "schema_version": "0.5.0",
+  "initiative": {
+    "title": "Settings, reference files and prompts in the viewer",
+    "slug": "settings-and-reference",
+    "scale": "capability",
+    "current_phase": "plan",
+    "last_updated": "2026-11-18",
+    "summary": "Show every setting, reference file and prompt in the UI, with agent-led setup helpers for anything missing.",
+    "status": "planned",
+    "next_action": "Wait for TASK-0039 reader switch to merge, then build m1 (Setup page: Integrations and Settings)."
+  },
+  "artifacts": {
+    "intent_brief": {
+      "path": "intent-brief.md",
+      "status": "current",
+      "updated_at": "2026-11-18"
+    },
+    "brainstorm": {
+      "path": "brainstorm.md",
+      "status": "not-requested",
+      "updated_at": null
+    },
+    "shape_brief": {
+      "path": "shape-brief.md",
+      "status": "current",
+      "updated_at": "2026-11-18"
+    },
+    "implementation_plan": {
+      "path": "implementation-plan.md",
+      "status": "current",
+      "updated_at": "2026-11-18"
+    }
+  },
+  "sources": [
+    {
+      "id": "S1",
+      "type": "transcript",
+      "location": "~/Projects/planning/tasks/TASK-0040.md",
+      "anchor": "Byron's dictation 2026-11-18",
+      "authority": "user"
+    },
+    {
+      "id": "S2",
+      "type": "doc",
+      "location": "docs/configuration.md",
+      "anchor": "viewer.config.json table",
+      "authority": "repo"
+    },
+    {
+      "id": "S3",
+      "type": "repo",
+      "location": "server.ts",
+      "anchor": "buildCodexPrompt..buildWorkItemPrompt",
+      "authority": "repo"
+    },
+    {
+      "id": "S4",
+      "type": "repo",
+      "location": "code-dashboard.ts, plans.ts, public/slack.js, public/code.js",
+      "anchor": "NOTE_PROMPTS, prompt(), copyDiscussPrompt, movePrompt",
+      "authority": "repo"
+    },
+    {
+      "id": "S5",
+      "type": "doc",
+      "location": "~/Projects/planning/AGENTS.md",
+      "anchor": "Daily plans",
+      "authority": "repo"
+    },
+    {
+      "id": "S6",
+      "type": "repo",
+      "location": "public/note-popover.js, steps.ts",
+      "anchor": "saveUpNextNote, saveLaunchNote",
+      "authority": "repo"
+    },
+    {
+      "id": "Q1",
+      "type": "qa",
+      "location": "conversation",
+      "anchor": "question rounds 1-3, 2026-11-18",
+      "authority": "user"
+    },
+    {
+      "id": "S7",
+      "type": "doc",
+      "location": "side-session notes workspace-layout-decisions.md; plan-viewer PR #14",
+      "anchor": "TASK-0039 decisions 2026-11-18",
+      "authority": "user"
+    }
+  ],
+  "intent": {
+    "claims": [
+      {
+        "id": "C1",
+        "statement": "The UI shows everything that can be configured and whether it is set.",
+        "kind": "goal",
+        "sources": [
+          "S1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C2",
+        "statement": "Each missing setting has a helper that hands its setup to an agent via copy-to-agent or an Up next note; no in-app wizard.",
+        "kind": "decision",
+        "sources": [
+          "S1",
+          "S6"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C3",
+        "statement": "The UI shows every reference file the viewer uses, starting with the repo list.",
+        "kind": "goal",
+        "sources": [
+          "S1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C4",
+        "statement": "The UI shows the prompts the viewer has: issue review, daily plan, daily review, Up next sweep.",
+        "kind": "goal",
+        "sources": [
+          "S1",
+          "S3",
+          "S4"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C5",
+        "statement": "Settings live in config/viewer.json; tool files in config/ (not a library group, shown only on Setup); prompt overrides in config/prompts/<id>.md; reference/ is prose on its own library page.",
+        "kind": "constraint",
+        "sources": [
+          "S1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C6",
+        "statement": "Daily plan, daily review and Up next sweep prompts do not exist in the viewer today; they are AGENTS.md conventions and skills.",
+        "kind": "fact",
+        "sources": [
+          "S5"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C7",
+        "statement": "One Setup page with Integrations, Settings, Reference files and Prompts sections.",
+        "kind": "decision",
+        "sources": [
+          "Q1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C8",
+        "statement": "Scalar settings edit in place; arrays, objects and commands go through a helper or editor.",
+        "kind": "decision",
+        "sources": [
+          "Q1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C9",
+        "statement": "All prompts become workspace files; defaults stay in the viewer and only customized prompts are written to the workspace.",
+        "kind": "decision",
+        "sources": [
+          "Q1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C10",
+        "statement": "Integrations get a live probe on page open, with Recheck.",
+        "kind": "decision",
+        "sources": [
+          "Q1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C11",
+        "statement": "Helpers use the note popover; Enter saves an Up next note.",
+        "kind": "decision",
+        "sources": [
+          "Q1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C12",
+        "statement": "Daily plan drafts from Steps priority; daily review covers recap, stale and waiting, agent flags retro, and drafts tomorrow; Up next sweep works the queue in priority order.",
+        "kind": "decision",
+        "sources": [
+          "Q1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C13",
+        "statement": "Build waits for TASK-0039 layout to land.",
+        "kind": "decision",
+        "sources": [
+          "Q1"
+        ],
+        "confidence": "high"
+      }
+    ],
+    "themes": [],
+    "conflicts": [],
+    "human_questions": []
+  },
+  "brainstorm": {
+    "status": "not-requested",
+    "requested_count": 7,
+    "options": [],
+    "selected_option": null
+  },
+  "shape": {
+    "status": "current",
+    "appetite": "One page with four sections; medium, including a prompt registry refactor.",
+    "problem": "Settings, reference files and prompts are invisible to a new user.",
+    "recommended_shape": "Setup page with Integrations (live probes + note-popover helpers), Settings (scalar edit), Reference files, Prompts (registry with workspace overrides and routine launch buttons).",
+    "success_moves": [
+      "Integrations and Settings first: no prompt-code coupling.",
+      "Probe commands are configurable so tests use fakes like fake-acli.js.",
+      "One prompt registry is both what the page shows and what buttons send.",
+      "Defaults stay in the viewer; overrides only when customized, so upgrades reach untouched prompts.",
+      "Prompt files hold instruction text with named slots; conditional facts stay in code."
+    ],
+    "first_proof": {
+      "question": "Can live probes report integration state quickly and hand setup to an agent?",
+      "artifact": "Integrations section with gh and acli probes against fixture fakes",
+      "decision_rule": "If probes exceed ~1s or prompt for sign-in, switch to presence-only states with an explicit Check button."
+    },
+    "rabbit_holes": [
+      "A template language for prompts.",
+      "Editing nested config in the UI."
+    ],
+    "open_decisions": []
+  },
+  "implementation": {
+    "status": "current",
+    "repository_snapshot": {
+      "root": "plan-viewer",
+      "revision": "a2fbb55",
+      "worktree_status": "clean",
+      "subsystems": [
+        "server.ts",
+        "code-dashboard.ts",
+        "plans.ts",
+        "steps.ts",
+        "public/app.js",
+        "public/note-popover.js",
+        "public/config.js"
+      ],
+      "test_commands": [
+        "npm test"
+      ],
+      "deployment_surfaces": [
+        "local node server"
+      ]
+    },
+    "dependencies": [
+      {
+        "id": "D1",
+        "name": "External CLIs and tokens (gh, acli, Linear, Slack, codex, draftably)",
+        "material": true,
+        "application_seam": "probe(name) in setup.ts running configured commands",
+        "failure_modes": [
+          "not installed",
+          "signed out",
+          "slow or interactive probe"
+        ],
+        "proof_rungs": [
+          "fake commands in fixtures",
+          "live check on Byron's workspace"
+        ],
+        "first_proof_role": {
+          "mode": "local-substitute",
+          "rationale": "Fake gh/acli scripts give pass and fail states deterministically."
+        },
+        "local_proof": "node --test setup.test.ts with fake commands",
+        "live_proof": "Open Setup on the workspace preview (4177)",
+        "rollout": "One VIEWS entry; remove to disable."
+      },
+      {
+        "id": "D2",
+        "name": "TASK-0039 workspace layout",
+        "material": true,
+        "application_seam": "Paths for reference files and prompt overrides",
+        "failure_modes": [
+          "layout changes after build"
+        ],
+        "proof_rungs": [
+          "wait for merged layout PRs"
+        ],
+        "first_proof_role": {
+          "mode": "absent",
+          "rationale": "Integrations section does not read layout paths."
+        },
+        "local_proof": "fixtures workspace on new layout",
+        "live_proof": "Byron's migrated workspace",
+        "rollout": "Build after layout lands."
+      }
+    ],
+    "fast_local_loop": {
+      "command": "node --test setup.test.ts prompts.test.ts && npm run demo"
+    },
+    "milestones": [
+      {
+        "id": "m1",
+        "title": "Setup page: Integrations and Settings",
+        "outcome": "Every integration and config key visible with state; helpers save Up next notes; scalars edit in place.",
+        "dependencies_introduced": [
+          "D1"
+        ],
+        "proof": "setup.test.ts with fakes; screenshot of page",
+        "valid_intermediate_state": "Setup page with two sections",
+        "rollback": "Remove VIEWS entry",
+        "status": "planned"
+      },
+      {
+        "id": "m2",
+        "title": "Config files section",
+        "outcome": "Each file in config/ listed with purpose, key and Open.",
+        "dependencies_introduced": [
+          "D2"
+        ],
+        "proof": "Screenshot; missing file shows helper",
+        "valid_intermediate_state": "Three sections",
+        "rollback": "Remove section",
+        "status": "planned"
+      },
+      {
+        "id": "m3",
+        "title": "Prompt registry with overrides",
+        "outcome": "All prompts come from one registry; workspace overrides win; page shows Default/Customized and diff.",
+        "dependencies_introduced": [],
+        "proof": "Existing prompt tests unchanged; override test",
+        "valid_intermediate_state": "Buttons send identical text by default",
+        "rollback": "Delete overrides folder",
+        "status": "planned"
+      },
+      {
+        "id": "m4",
+        "title": "Routine prompts",
+        "outcome": "Daily plan, daily review, Up next sweep prompts with launch buttons.",
+        "dependencies_introduced": [],
+        "proof": "Launch saves Up next note with the routine text",
+        "valid_intermediate_state": "Full Setup page",
+        "rollback": "Remove routine entries",
+        "status": "planned"
+      }
+    ],
+    "cut_line": [
+      "Editing lists and commands in place",
+      "First-run banner (TASK-0038)",
+      "Scheduled routines"
+    ],
+    "open_decisions": []
+  },
+  "history": [
+    {
+      "date": "2026-11-18",
+      "event": "Intent brief drafted from dictation and repository inventory."
+    },
+    {
+      "date": "2026-11-18",
+      "event": "Three question rounds answered; shape and plan written. Build waits for TASK-0039."
+    }
+  ],
+  "closure": null,
+  "question_rounds": [
+    {
+      "round": 1,
+      "date": "2026-11-18",
+      "topics": [
+        "pages",
+        "editing",
+        "prompt location",
+        "routines"
+      ]
+    },
+    {
+      "round": 2,
+      "date": "2026-11-18",
+      "topics": [
+        "prompt defaults",
+        "health check",
+        "helper",
+        "edit scope"
+      ]
+    },
+    {
+      "round": 3,
+      "date": "2026-11-18",
+      "topics": [
+        "sweep",
+        "daily review",
+        "daily plan",
+        "build order"
+      ]
+    }
+  ]
+}
