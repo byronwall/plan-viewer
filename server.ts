@@ -20,7 +20,7 @@ import { createPlans } from "./plans.ts";
 import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig, withNote } from "./public/config.js";
-import { integrationPrompt, probeIntegrations, readRawConfig, setupData, settingMeanings, listSettings, settingPrompt, writeSetting, CONFIG_DOC } from "./setup.ts";
+import { filePrompt, integrationPrompt, listConfigFiles, probeIntegrations, readConfigFile, readRawConfig, setupData, settingMeanings, listSettings, settingPrompt, writeSetting, CONFIG_DOC } from "./setup.ts";
 import { CONFIG_FILE, DOC_ROOTS, dailyFile, isTaskAsset, isTaskFile, taskFile, taskOfPath } from "./public/layout.js";
 import { applyRule, closeNote, followUpNote, saveLaunchNote, loadSteps, markStepDone, pickChoice, planMentions, runStatement, saveNote, setStepNext, setTaskPriority, startStep } from "./steps.ts";
 import { editStep } from "./steps.ts"; // the Steps table's inline edits
@@ -1069,6 +1069,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (request.method === "GET" && url.pathname === "/api/config") return json(response, 200, config());
     // The Setup page: live integration checks, every setting, and helper prompts (setup.ts).
     if (request.method === "GET" && url.pathname === "/api/setup") return json(response, 200, await setupData(ROOT, config()));
+    if (request.method === "GET" && url.pathname === "/api/setup/file") return json(response, 200, await readConfigFile(ROOT, config(), url.searchParams.get("path") || ""));
     if (request.method === "POST" && url.pathname === "/api/setup/config") {
       const body = await readJson(request);
       viewerWrites.add(CONFIG_FILE);
@@ -1082,7 +1083,11 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request);
       const id = String(body.id || "");
       let title = "", prompt = "";
-      if (body.kind === "setting") {
+      if (body.kind === "file") {
+        const file = (await listConfigFiles(ROOT, config())).find((row) => row.path === id && !row.secret);
+        if (!file) throw new Error(`${id} is not a config file the page shows.`);
+        title = `${file.exists ? "Update" : "Create"} ${id}`; prompt = filePrompt(ROOT, file);
+      } else if (body.kind === "setting") {
         const setting = listSettings(await readRawConfig(ROOT).catch(() => ({})), config(), settingMeanings(await readFile(CONFIG_DOC, "utf8").catch(() => ""))).find((row) => row.key === id);
         if (!setting) throw new Error(`${id} is not a setting.`);
         title = `Configure ${id}`; prompt = settingPrompt(ROOT, setting);

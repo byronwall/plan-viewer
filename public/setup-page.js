@@ -70,6 +70,41 @@ function settingRow(row) {
   </tr>`;
 }
 
+function fileRow(row) {
+  const action = row.secret ? '<span class="setup-default">Hidden</span>'
+    : `${row.exists ? `<button type="button" class="setup-help" data-setup-view="${escapeHtml(row.path)}">View</button>` : ""}${helpButton("file", row.path, row.exists ? "Edit…" : "Create…")}`;
+  return `<div class="setup-file" data-state="${row.exists ? "ok" : "unused"}">
+    <span class="setup-dot" aria-label="${row.exists ? "Present" : "Not created"}"></span>
+    <code>${escapeHtml(row.path)}</code>
+    <span class="setup-int-detail"><span>${inline(row.purpose)}${row.key ? ` <span class="setup-default">· <code>${escapeHtml(row.key)}</code></span>` : ""}</span></span>
+    <span class="setup-default">${row.exists ? `${ago(row.modified)} · ${size(row.size)}` : "Not created"}</span>
+    <span class="setup-acts">${action}</span>
+  </div>`;
+}
+
+const size = (bytes) => bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
+const ago = (iso) => {
+  const minutes = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  return minutes < 60 ? `${Math.max(minutes, 0)}m ago` : minutes < 1440 ? `${Math.round(minutes / 60)}h ago` : `${Math.round(minutes / 1440)}d ago`;
+};
+
+// A config file, read-only, in a dialog over the page. The backdrop or Esc closes it.
+async function viewFile(path) {
+  let dialog = document.querySelector("dialog.setup-viewer");
+  if (!dialog) {
+    dialog = Object.assign(document.createElement("dialog"), { className: "setup-viewer" });
+    dialog.addEventListener("click", (event) => { if (event.target === dialog || event.target.closest("[data-setup-close]")) dialog.close(); });
+    document.body.append(dialog);
+  }
+  try {
+    const response = await fetch(`/api/setup/file?${new URLSearchParams({ path })}`);
+    const file = await response.json();
+    if (!response.ok) throw new Error(file.error || "Couldn't read the file.");
+    dialog.innerHTML = `<header><code>${escapeHtml(path)}</code><button type="button" class="setup-help" data-setup-close>Close</button></header><pre>${escapeHtml(file.text)}</pre>`;
+    dialog.showModal();
+  } catch (error) { notify(error.message, true); }
+}
+
 function draw() {
   const query = host.querySelector(".setup-filter")?.value || "";
   const counts = { ok: 0, missing: 0, unused: 0 };
@@ -87,6 +122,12 @@ function draw() {
         <button type="button" class="setup-recheck" data-setup-recheck>Recheck</button></header>
       <p class="library-intro">Tools and tokens the viewer reads. A helper drafts the setup for an agent; sign-ins and tokens stay with you.</p>
       <div class="setup-ints">${data.integrations.map(integrationRow).join("")}</div>
+    </section>
+    <section class="setup-section" aria-labelledby="setup-files">
+      <header><h2 id="setup-files">Config files</h2>
+        <span class="setup-sum">${data.files.filter((row) => row.exists).length} of ${data.files.length} present</span></header>
+      <p class="library-intro">Files in <code>config/</code> and the others the tooling reads. They are not in the library, so this is where to read them.</p>
+      <div class="setup-files">${data.files.map(fileRow).join("")}</div>
     </section>
     <section class="setup-section" aria-labelledby="setup-settings">
       <header><h2 id="setup-settings">Settings</h2>
@@ -124,9 +165,9 @@ async function save(key, value, reset = false) {
 
 function help(button) {
   const kind = button.dataset.setupHelp, id = button.dataset.id;
-  const label = kind === "setting" ? id : data.integrations.find((row) => row.id === id)?.label || id;
+  const label = kind !== "integration" ? id : data.integrations.find((row) => row.id === id)?.label || id;
   openNotePopover(button, {
-    heading: kind === "setting" ? `Configure ${label}` : `Set up ${label}`, notify,
+    heading: kind === "setting" ? `Configure ${label}` : kind === "file" ? `${button.textContent.replace("…", "")} ${label}` : `Set up ${label}`, notify,
     prompt: async (note) => (await setupAgent({ kind, id, note, copy: true })).prompt,
     send: { label: `Open in ${agentName()}`, run: async (note) => { await setupAgent({ kind, id, note, app: agentApp() }); notify(`Drafted the ${label} setup in ${agentName()}. Review it and press Enter to send.`); } },
   });
@@ -139,9 +180,10 @@ function install() {
   const onPage = (event) => event.target.closest?.(".setup-page .setup");
   document.addEventListener("click", (event) => {
     if (!onPage(event)) return;
-    const target = event.target.closest("[data-setup-help], [data-setup-reset], [data-setup-recheck]");
+    const target = event.target.closest("[data-setup-help], [data-setup-reset], [data-setup-recheck], [data-setup-view]");
     if (!target) return;
-    if ("setupHelp" in target.dataset) help(target);
+    if ("setupView" in target.dataset) viewFile(target.dataset.setupView);
+    else if ("setupHelp" in target.dataset) help(target);
     else if ("setupReset" in target.dataset) save(target.dataset.setupReset, null, true);
     else { target.disabled = true; target.textContent = "Checking…"; load(); }
   });
