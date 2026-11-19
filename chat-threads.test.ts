@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { createChatThreads, openAgentFiles } from "./chat-threads.ts";
+import { codexTasks, createChatThreads, openAgentFiles } from "./chat-threads.ts";
 
 const id = (num: number) => `00000000-0000-4000-8000-${String(num).padStart(12, "0")}`;
 const stamp = "2026-01-01T13:00:00.000Z";
@@ -92,4 +92,22 @@ test("lists running Codex CLI and Claude Desktop threads, and keeps inactive ses
   assert.deepEqual([worker?.parent, worker?.kind, worker?.nickname, worker?.effort, worker?.title], [id(3), "subagent", "Kepler", "high", "browser check"]);
   const side = completed.find(thread => thread.id === `local_${id(8)}`);
   assert.deepEqual([side?.parent, side?.effort], [`local_${id(7)}`, "max"]);
+});
+
+test("Codex terminal sessions count as background tasks until a poll gets no session back", async t => {
+  const home = await mkdtemp(join(tmpdir(), "plan-viewer-codex-tasks-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const path = join(home, "rollout.jsonl");
+  const at = (minute: number) => `2026-01-01T13:0${minute}:00.000Z`;
+  const call = (id: string, input: string, minute: number) => JSON.stringify({ timestamp: at(minute), type: "response_item", payload: { type: "custom_tool_call", call_id: id, name: "exec", input } }) + "\n";
+  const output = (id: string, text: string, minute: number) => JSON.stringify({ timestamp: at(minute), type: "response_item", payload: { type: "custom_tool_call_output", call_id: id, output: [{ type: "input_text", text }] } }) + "\n";
+  await write(path, [
+    call("a", 'text(await tools.exec_command({cmd:"pnpm dev",yield_time_ms:1000}))', 1), output("a", '{"chunk_id":"1","session_id":101,"output":"ready"}', 1),
+    call("b", 'text(await tools.exec_command({cmd:"pnpm test"}))', 2), output("b", '{"chunk_id":"2","session_id":202,"output":""}', 2),
+    call("c", "text(await tools.write_stdin({session_id:202,chars:\"\"}))", 3), output("c", '{"chunk_id":"3","exit_code":0,"output":"ok"}', 3),
+  ].join(""));
+  const size = (await import("node:fs/promises")).stat(path).then(info => info.size);
+  assert.deepEqual(await codexTasks(path, await size, new Map(), 0), [{ kind: "command", label: "pnpm dev" }]);
+  // Started before this Codex process did: it died with the earlier one.
+  assert.deepEqual(await codexTasks(path, await size, new Map(), Date.parse(at(5))), []);
 });
