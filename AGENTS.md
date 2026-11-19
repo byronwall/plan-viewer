@@ -15,7 +15,7 @@ Node.js 22.6+ and nothing else. `npm install` (no packages; it enables the pre-c
 | `docs/guide.md` | Every page, shortcut, and behavior. | Any user-visible behavior changes. |
 | `docs/configuration.md` | Every `config/viewer.json` key and environment variable. | A key or variable is added or changed. |
 | `docs/code-view.md`, `docs/issues-plan.md`, `docs/plans-plan.md` | Design intent and plans for those surfaces. | Before adding a list/inspector/overview surface, read `code-view.md`. |
-| `docs/images/` | README screenshots, made by `scripts/screenshots.mjs` from `examples/workspace/`. | A pictured screen changes visibly. |
+| `docs/images/` | README screenshots, made by `scripts/screenshots.mjs` from `examples/workspace/`; the Chat Threads shot answers `/api/chat-threads` with the fictional threads in `scripts/chat-threads-sample.mjs`, never real sessions. | A pictured screen changes visibly. |
 | `examples/workspace/` | The demo and the template for new workspaces, including the workspace-side `AGENTS.md`. | The content format changes (it must pass `plan-viewer lint` and `links`). |
 
 ## Layout
