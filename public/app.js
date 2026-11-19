@@ -4123,15 +4123,51 @@ function renderSearchResults() {
   const count = (key, one, many) => { const n = searchMatches.filter((item) => item[key]).length; return n ? `${n} ${n === 1 ? one : many}` : ""; };
   elements.searchStatus.textContent = [count("work", "work item", "work items"), count("issue", "issue", "issues"), count("pr", "PR", "PRs"), count("plan", "initiative", "initiatives"), count("doc", "document", "documents")].filter(Boolean).join(" · ");
   let position = 0;
-  elements.searchResults.innerHTML = searchMatches.length
-    ? groups.map(([label, items]) => `<div class="search-section" role="presentation">${label}</div>${items.map((item) => renderMatch(item, position++, terms)).join("")}`).join("")
+  searchQueue = groups.flatMap(([label, items]) => [{ label }, ...items.map((item) => ({ item, index: position++ }))]);
+  searchTerms = terms;
+  cancelSearchRows();
+  elements.searchResults.innerHTML = searchMatches.length ? ""
     : '<div class="search-empty"><strong>No matches</strong><span>Try a title, path, task ID, work item, PR number or title, project, or tag.</span></div>';
+  appendSearchRows(FIRST_SEARCH_ROWS);
+  scheduleSearchRows();
   elements.searchResults.scrollTop = 0;
   syncSearchSelection();
 }
 
+// A short query matches most of the workspace, and building every row on each keystroke made typing lag. The first rows
+// paint with the keystroke; the rest follow in chunks between frames, dropped when the next keystroke starts over.
+// Moving the selection to a row not drawn yet draws the rest first.
+const FIRST_SEARCH_ROWS = 40;
+const SEARCH_ROWS_PER_CHUNK = 150;
+let searchQueue = [];
+let searchTerms = [];
+let searchRenderTimer = 0;
+function appendSearchRows(limit) {
+  let html = "", rows = 0;
+  while (searchQueue.length && rows < limit) {
+    const entry = searchQueue.shift();
+    if (entry.label) html += `<div class="search-section" role="presentation">${entry.label}</div>`;
+    else { html += renderMatch(entry.item, entry.index, searchTerms); rows++; }
+  }
+  if (html) elements.searchResults.insertAdjacentHTML("beforeend", html);
+}
+function scheduleSearchRows() {
+  if (!searchQueue.length) return;
+  const run = () => { appendSearchRows(SEARCH_ROWS_PER_CHUNK); scheduleSearchRows(); };
+  searchRenderTimer = "requestIdleCallback" in window ? -requestIdleCallback(run, { timeout: 500 }) : setTimeout(run, 16);
+}
+function cancelSearchRows() {
+  if (searchRenderTimer < 0) cancelIdleCallback(-searchRenderTimer); else clearTimeout(searchRenderTimer);
+}
+function flushSearchRows() {
+  cancelSearchRows();
+  appendSearchRows(Infinity);
+}
+
 function syncSearchSelection() {
-  for (const result of elements.searchResults.querySelectorAll("[data-search-index]")) result.setAttribute("aria-selected", Number(result.dataset.searchIndex) === searchIndex ? "true" : "false");
+  if (searchMatches.length && !document.getElementById(`search-result-${searchIndex}`)) flushSearchRows();
+  for (const result of elements.searchResults.querySelectorAll('[aria-selected="true"]')) result.setAttribute("aria-selected", "false");
+  document.getElementById(`search-result-${searchIndex}`)?.setAttribute("aria-selected", "true");
   if (searchMatches.length) {
     elements.searchInput.setAttribute("aria-activedescendant", `search-result-${searchIndex}`);
     const row = document.getElementById(`search-result-${searchIndex}`);
@@ -4182,7 +4218,8 @@ elements.searchResults.addEventListener("mousemove", event => {
   const result = event.target.closest("[data-search-index]");
   if (!result || Number(result.dataset.searchIndex) === searchIndex) return;
   searchIndex = Number(result.dataset.searchIndex);
-  for (const option of elements.searchResults.querySelectorAll("[data-search-index]")) option.setAttribute("aria-selected", option === result ? "true" : "false");
+  for (const option of elements.searchResults.querySelectorAll('[aria-selected="true"]')) option.setAttribute("aria-selected", "false");
+  result.setAttribute("aria-selected", "true");
   elements.searchInput.setAttribute("aria-activedescendant", result.id);
   const pr = searchMatches[searchIndex]?.pr;
   if (pr) prefetchPr(pr.slug, pr.number);
