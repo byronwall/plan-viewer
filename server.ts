@@ -1298,8 +1298,9 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (request.method === "GET" && url.pathname === "/api/waiting") {
       const tasks = (await listDocuments()).filter((doc) => doc.task?.watch?.length);
       const keys = tasks.flatMap((doc) => doc.task!.watch!.map(({ key }) => key));
-      const metadata = { ...await lookupLinkMetadata(keys), ...issueTracker.aliasMetadata(keys) };
-      return json(response, 200, { waiting: Object.fromEntries(tasks.map((doc) => [doc.path, waitingSignals(doc.task!, metadata)])) });
+      // Like link titles: a second on the network at most, then the page asks again while `pending` is true.
+      const metadata = { ...await lookupLinkMetadata(keys, { waitMs: 1000 }), ...issueTracker.aliasMetadata(keys) };
+      return json(response, 200, { waiting: Object.fromEntries(tasks.map((doc) => [doc.path, waitingSignals(doc.task!, metadata)])), pending: lookupLinkMetadata.pending(keys).length > 0 });
     }
     if (request.method === "POST" && url.pathname === "/api/dispatch") {
       const requestId = `dispatch-${Date.now()}-${++dispatchSequence}`;

@@ -356,15 +356,17 @@ function updateNavCounts() {
   }
 }
 
-async function loadWaiting() {
+async function loadWaiting(attempt = 0) {
   try {
     const response = await fetch("/api/waiting");
     if (!response.ok) return;
-    const { waiting } = await response.json();
+    const { waiting, pending } = await response.json();
     const changed = JSON.stringify(waiting) !== JSON.stringify(waitingSignals);
     waitingSignals = waiting;
     updateNavCounts();
     if (changed && state.view === "tasks") renderTasksPage();
+    // Titles the server was still fetching: ask again, backing off, so the signals settle without a reload.
+    if (pending && attempt < 3) setTimeout(() => loadWaiting(attempt + 1), 2000 * (attempt + 1));
   } catch {}
 }
 setInterval(loadWaiting, 10 * 60 * 1000);
@@ -4871,14 +4873,20 @@ async function boot() {
     if (!stepsData) loadSteps();
     loadPrIndex().catch(() => {}); // so ⌘K lists PRs on its first paint instead of inserting them a moment later
     openOverlays(new URLSearchParams(location.search));
-    if (issuesOn()) loadIssues().then(() => { renderFavorites(); updateNavCounts(); }).catch(() => {}); // ⌘K finds issues by key and title
     loadPrIndex().then(() => { renderFavorites(); updateNavCounts(); }).catch(() => {}); // PR favorites get their titles
-    if (config().slack.codex?.length) fetch("/api/slack").then((response) => response.json()).then((data) => { slackThreads = data.threads || []; updateNavCounts(); }).catch(() => {});
+    // Issues (megabytes on a busy tracker) and Slack threads feed ⌘K and the nav counts, not the page in view: they wait
+    // for the browser to go idle so parsing them never lands on a first click or scroll.
+    whenIdle(() => {
+      if (issuesOn()) loadIssues().then(() => { renderFavorites(); updateNavCounts(); }).catch(() => {}); // ⌘K finds issues by key and title
+      if (config().slack.codex?.length) fetch("/api/slack").then((response) => response.json()).then((data) => { slackThreads = data.threads || []; updateNavCounts(); }).catch(() => {});
+    });
     recordVisit();
   } catch (error) {
     showNotice(error.message, true);
   }
 }
+
+const whenIdle = (work) => ("requestIdleCallback" in window ? requestIdleCallback(work, { timeout: 2000 }) : setTimeout(work, 300));
 
 // config/viewer.json drives reference links and labels, so it loads before anything renders.
 try {
