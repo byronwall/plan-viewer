@@ -15,7 +15,8 @@ const historyLimit = 50;
 type Provider = "Codex" | "Claude";
 // parent: the thread that spawned this one (a Codex subagent or a Claude side session). kind says how it started.
 type Usage = { tokens: number; input: number; cached: number; output: number };
-type AgentDetails = { model?: string; usage?: Usage; cliId?: string; effort?: string; role?: string; nickname?: string; parent?: string; kind?: "subagent" | "automation" | "agent";
+type Task = { kind: "command" | "agent"; label: string };
+type AgentDetails = { model?: string; usage?: Usage; cliId?: string; live?: boolean; tasks?: Task[]; effort?: string; role?: string; nickname?: string; parent?: string; kind?: "subagent" | "automation" | "agent";
   tokens?: number | null; branch?: string; startedAt?: number };
 type Thread = AgentDetails & {
   id: string;
@@ -24,7 +25,8 @@ type Thread = AgentDetails & {
   title: string;
   cwd: string;
   updatedAt: number;
-  state: "active" | "waiting" | "completed" | "interrupted";
+  // background: the turn ended but tasks it started in the background still run.
+  state: "active" | "waiting" | "background" | "completed" | "interrupted";
   url: string | null;
 };
 type Inventory = { active: Thread[]; completed: Thread[]; issues: string[] };
@@ -330,7 +332,7 @@ async function claudeThreads(config: string, desktopRoot: string, pids: Set<numb
     if (state === "completed" && !session.completedTurns && !session.lastTurnEdgeAt) continue;
     const cwd = string(session.cwd || row?.cwd);
     const parent = string(session.spawnedFrom?.sessionId);
-    threads.push({ id: session.sessionId, cliId, provider: "Claude", source: "Desktop", cwd, state, model: string(session.model), effort: string(session.effort) || undefined,
+    threads.push({ id: session.sessionId, cliId, live: !!row, provider: "Claude", source: "Desktop", cwd, state, model: string(session.model), effort: string(session.effort) || undefined,
       parent: parent || undefined, kind: parent ? "agent" : undefined, startedAt: Number(session.createdAt) || undefined,
       title: displayTitle(string(session.title || row?.name), basename(cwd) || "Claude Code session"),
       updatedAt: Number(row?.updatedAt || session.lastActivityAt || session.createdAt) || 0,
@@ -341,7 +343,7 @@ async function claudeThreads(config: string, desktopRoot: string, pids: Set<numb
     const state = claudeState(row);
     const desktopId = claudeDesktopId.test(string(row.hostSessionId)) ? row.hostSessionId : "";
     const cwd = string(row.cwd);
-    threads.push({ id: desktopId || row.sessionId, cliId: row.sessionId, provider: "Claude", source: desktopId ? "Desktop" : "CLI", cwd, state,
+    threads.push({ id: desktopId || row.sessionId, cliId: row.sessionId, live: true, provider: "Claude", source: desktopId ? "Desktop" : "CLI", cwd, state,
       title: displayTitle(string(row.name), basename(cwd) || "Claude Code session"), updatedAt: Number(row.updatedAt || row.startedAt) || 0, startedAt: Number(row.startedAt) || undefined,
       url: desktopId ? `claude://claude.ai/epitaxy/${desktopId}` : null });
   }
@@ -350,12 +352,15 @@ async function claudeThreads(config: string, desktopRoot: string, pids: Set<numb
 
 // Claude Code records each reply's usage in its transcript. Every content block of a reply repeats the same usage, so
 // count each message ID once. Transcripts only grow, so each read resumes where the last one stopped.
-type UsageCache = Map<string, Usage & { offset: number; ids: Set<string> }>;
+// The same pass tracks background tasks: a tool call with run_in_background starts one, and the <task-notification>
+// naming its tool call ID (or an error result for it) ends it.
+// TaskStop (or KillShell) ends one by the short ID its launch result gave, and writes no notification.
+type UsageCache = Map<string, Usage & { offset: number; ids: Set<string>; tasks: Map<string, Task>; aliases: Map<string, string> }>;
 async function transcriptUsage(path: string, cache: UsageCache) {
   const info = await fileInfo(path);
   if (!info?.isFile()) return null;
   let entry = cache.get(path);
-  if (!entry || info.size < entry.offset) entry = { tokens: 0, input: 0, cached: 0, output: 0, offset: 0, ids: new Set() };
+  if (!entry || info.size < entry.offset) entry = { tokens: 0, input: 0, cached: 0, output: 0, offset: 0, ids: new Set(), tasks: new Map(), aliases: new Map() };
   cache.set(path, entry);
   if (info.size === entry.offset) return entry;
   const file = await open(path, "r");
@@ -368,9 +373,38 @@ async function transcriptUsage(path: string, cache: UsageCache) {
       const lines = (partial + buffer.subarray(0, bytesRead).toString()).split("\n");
       partial = lines.pop() || "";
       for (const line of lines) {
+        if (line.includes("<task-notification>")) {
+          for (const match of line.matchAll(/<tool-use-id>(toolu_\w+)<\/tool-use-id>/g)) entry.tasks.delete(match[1]);
+          for (const match of line.matchAll(/<task-id>([\w-]+)<\/task-id>/g)) entry.tasks.delete(entry.aliases.get(match[1]) || "");
+          continue;
+        }
+        if (line.includes('"tool_result"') && line.includes('"type":"user"')) {
+          try {
+            for (const part of object(line).message?.content || []) {
+              if (part?.type !== "tool_result" || !entry.tasks.has(part.tool_use_id)) continue;
+              if (part.is_error) { entry.tasks.delete(part.tool_use_id); continue; }
+              const text = typeof part.content === "string" ? part.content : JSON.stringify(part.content);
+              const alias = /running in background with ID: ([\w-]+)/.exec(text)?.[1] || /agentId: ([\w-]+)/.exec(text)?.[1];
+              if (alias) entry.aliases.set(alias, part.tool_use_id);
+            }
+          } catch { /* retried next time */ }
+          continue;
+        }
         if (!line.includes('"usage"') || !line.includes('"type":"assistant"')) continue;
         try {
           const message = object(line).message;
+          if (line.includes('"TaskStop"') || line.includes('"KillShell"')) {
+            for (const part of message?.content || []) {
+              if (part?.type === "tool_use" && ["TaskStop", "KillShell"].includes(part.name)) entry.tasks.delete(entry.aliases.get(string(part.input?.task_id || part.input?.shell_id)) || "");
+            }
+          }
+          if (line.includes('"run_in_background":true')) {
+            for (const part of message?.content || []) {
+              if (part?.type !== "tool_use" || part.input?.run_in_background !== true) continue;
+              const kind = part.name === "Bash" ? "command" : "agent";
+              entry.tasks.set(part.id, { kind, label: displayTitle(string(part.input.description || part.input.command || part.name), part.name) });
+            }
+          }
           const usage = message?.usage;
           if (!usage || !message.id || entry.ids.has(message.id)) continue;
           entry.ids.add(message.id);
@@ -391,8 +425,9 @@ async function claudeUsage(threads: Thread[], config: string, cache: UsageCache)
   const projects = join(config, "projects");
   let index: Map<string, string> | null = null;
   for (const thread of threads) {
-    const id = thread.cliId;
+    const { cliId: id, live } = thread;
     delete thread.cliId;
+    delete thread.live;
     if (!id) continue;
     let path = join(projects, thread.cwd.replace(/[^a-zA-Z0-9]/g, "-"), `${id}.jsonl`);
     if (!await fileInfo(path)) {
@@ -403,6 +438,11 @@ async function claudeUsage(threads: Thread[], config: string, cache: UsageCache)
       if (!path) continue;
     }
     const usage = await transcriptUsage(path, cache).catch(() => null);
+    // Background tasks die with their session, so only a running session can be waiting on them.
+    if (live && usage?.tasks.size && thread.state === "completed") {
+      thread.state = "background";
+      thread.tasks = [...usage.tasks.values()];
+    }
     if (usage?.tokens) {
       thread.tokens = usage.tokens;
       thread.usage = { tokens: usage.tokens, input: usage.input, cached: usage.cached, output: usage.output };
@@ -450,7 +490,7 @@ export function createChatThreads({
     }
     // A spawned thread whose parent is not listed (an older orchestrator) stays only while it is live.
     const shown = threads.filter(thread => kept.has(thread.id));
-    for (const thread of threads) if (!kept.has(thread.id)) delete thread.cliId;
+    for (const thread of threads) if (!kept.has(thread.id)) { delete thread.cliId; delete thread.live; }
     await claudeUsage(shown.filter(thread => thread.provider === "Claude"), claudeConfig, usage);
     return { active: shown.filter(thread => !finished(thread)), completed: shown.filter(finished), issues };
   }

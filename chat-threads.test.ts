@@ -59,10 +59,23 @@ test("lists running Codex CLI and Claude Desktop threads, and keeps inactive ses
   const reply = (msg: string) => JSON.stringify({ type: "assistant", message: { id: msg, usage: { input_tokens: 10, cache_read_input_tokens: 80, cache_creation_input_tokens: 10, output_tokens: 5 } } }) + "\n";
   await write(join(claudeConfig, `projects/beta/${id(5)}.jsonl`), reply("m1") + reply("m1") + reply("m2"));
   await write(join(claudeConfig, `projects/beta/${id(9)}.jsonl`), JSON.stringify({ type: "user", cwd: "/repo/beta", message: { content: "Completed CLI work" } }));
-  const read = createChatThreads({ home, codexHome, claudeConfig, readLiveFiles: async () => openAgentFiles(fileRecords(codexHome)) });
+  // An idle live session with background tasks: one notified, one stopped, one failed to start, one still running.
+  await write(join(claudeConfig, "sessions/500.json"), JSON.stringify({ pid: 500, sessionId: id(11), status: "idle", cwd: "/repo/gamma", name: "Watching CI" }));
+  const launch = (use: string, name: string, description: string) => JSON.stringify({ type: "assistant", message: { id: `m-${use}`, usage: { output_tokens: 1 }, content: [{ type: "tool_use", id: use, name, input: { description, run_in_background: true } }] } }) + "\n";
+  const result = (use: string, content: string, is_error = false) => JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: use, content, is_error }] } }) + "\n";
+  await write(join(claudeConfig, `projects/-repo-gamma/${id(11)}.jsonl`), [
+    launch("toolu_a", "Bash", "Run tests"), result("toolu_a", "Command running in background with ID: aaa1."),
+    launch("toolu_b", "Agent", "Audit icons"), result("toolu_b", "Async agent launched. agentId: bbb2"),
+    launch("toolu_c", "Bash", "Serve sample"), result("toolu_c", "Command running in background with ID: ccc3."),
+    launch("toolu_d", "Bash", "Bad command"), result("toolu_d", "Error", true),
+    JSON.stringify({ type: "queue-operation", content: "<task-notification>\n<task-id>aaa1</task-id>\n<status>completed</status>" }) + "\n",
+    JSON.stringify({ type: "assistant", message: { id: "m-stop", content: [{ type: "tool_use", id: "toolu_e", name: "TaskStop", input: { task_id: "ccc3" } }], usage: { output_tokens: 1 } } }) + "\n",
+  ].join(""));
+  const read = createChatThreads({ home, codexHome, claudeConfig, readLiveFiles: async () => openAgentFiles(fileRecords(codexHome) + "\np500\ncclaude") });
   const { active, completed, issues } = await read();
   assert.deepEqual(issues, []);
-  assert.deepEqual(active.map(({ id: key, state }) => [key, state]), [[id(1), "active"], [`local_${id(7)}`, "waiting"]]);
+  assert.deepEqual(active.map(({ id: key, state }) => [key, state]), [[id(1), "active"], [`local_${id(7)}`, "waiting"], [id(11), "background"]]);
+  assert.deepEqual(active[2].tasks, [{ kind: "agent", label: "Audit icons" }]);
   assert.equal(active[0].tokens, 18342);
   assert.equal(active[0].model, "test-model");
   assert.equal(completed.find(thread => thread.id === id(2))?.tokens, null);

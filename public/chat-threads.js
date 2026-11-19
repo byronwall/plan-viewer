@@ -10,10 +10,11 @@ const apps = { all: "All", codex: "Codex", claude: "Claude" };
 const STATES = {
   waiting: { label: "Waiting for you", glyph: "circle-dot" },
   active: { label: "Running", glyph: "" },
+  background: { label: "Background tasks", glyph: "hourglass" },
   interrupted: { label: "Interrupted", glyph: "circle-alert" },
   completed: { label: "Completed", glyph: "circle-check" },
 };
-const live = (thread) => thread.state === "active" || thread.state === "waiting";
+const live = (thread) => thread.state === "active" || thread.state === "waiting" || thread.state === "background";
 const glyph = (name, className = "code-icon") => `<svg class="${className}" viewBox="0 0 24 24" aria-hidden="true">${GLYPHS[name]}</svg>`;
 
 // App marks: the real Claude spark (Simple Icons) and Codex blossom (lobe-icons), from icons.js.
@@ -87,8 +88,8 @@ export function renderChatThreads(root) {
   page.innerHTML = `<div data-region="toolbar"><div class="code-toolbar"><div class="code-toolbar-row">
       ${segment("app", apps, app, "App", { codex: CODEX_MARK, claude: CLAUDE_MARK })}
       <label class="code-filter">${icon("search")}<input type="search" aria-label="Find a thread by title, agent, folder, branch or model" placeholder="Find a thread…"></label>
-      <span class="chat-bar-group"><span class="chat-bar-label">Group</span>${segment("group", { status: "Status", workspace: "Workspace" }, group, "Group")}</span>
-      <span class="chat-bar-group"><span class="chat-bar-label">Sort</span>${segment("order", { recent: "Recent", tokens: "Tokens" }, order, "Sort")}</span>
+      ${segment("group", { status: "By status", workspace: "By workspace" }, group, "Group")}
+      ${segment("order", { recent: "Recent", tokens: "Most tokens" }, order, "Sort")}
       <span class="chat-issues" role="status"></span>
       <span class="chat-summary"></span>
     </div></div></div>
@@ -136,7 +137,8 @@ export function renderChatThreads(root) {
       : appCell(thread);
     // Long prompts used as titles often start with an absolute path; home reads as ~.
     const label = (spawned && thread.role && thread.title.toLowerCase() === thread.role.replaceAll("_", " ").toLowerCase() ? thread.role.replaceAll("_", " ") : thread.title).replace(/\/Users\/[^/\s]+/g, "~");
-    const text = `<span class="chat-title-text">${mark(label)}</span>`;
+    // Long first prompts clamp to two lines; the full text is one hover away.
+    const text = `<span class="chat-title-text"${label.length > 90 ? ` data-tip="${escapeHtml(label)}"` : ""}>${mark(label)}</span>`;
     const name = thread.url
       ? `<a class="chat-thread-link" href="${escapeHtml(thread.url)}" aria-label="Open ${escapeHtml(thread.title)} in ${thread.provider}">${text}</a>`
       : `<span class="chat-thread-link is-closed" tabindex="0" data-tip="Opens in Claude Desktop after the terminal session exits">${text}</span>`;
@@ -146,7 +148,10 @@ export function renderChatThreads(root) {
       const noun = kids.every((kid) => kid.kind === "subagent") ? "subagent" : kids.every((kid) => kid.kind !== "subagent") ? "session" : "agent";
       toggle = `<button type="button" class="chat-kids" data-chat-toggle="${escapeHtml(thread.id)}" aria-expanded="${open}">${glyph("chevron-right", "code-icon chat-caret")}${kids.length} ${noun}${kids.length === 1 ? "" : "s"}${running ? ` <em>${running} live</em>` : ""}</button>`;
     }
-    return `<td class="chat-thread-cell" style="--depth:${depth}"><div class="chat-title">${lead}${name}${toggle}</div></td>`;
+    const tasks = thread.tasks?.length
+      ? `<div class="chat-tasks">${thread.tasks.map((task) => `<span data-tip="${task.kind === "agent" ? "Background agent" : "Background command"} still running">${glyph(task.kind === "agent" ? "bot" : "terminal")}${escapeHtml(task.label)}</span>`).join("")}</div>`
+      : "";
+    return `<td class="chat-thread-cell" style="--depth:${depth}"><div class="chat-title">${lead}${name}${toggle}</div>${tasks}</td>`;
   }
 
   // A finished thread whose spawned threads still run shows a faint spinner, so the Running section never shows only checks.
@@ -154,7 +159,9 @@ export function renderChatThreads(root) {
     const running = live(thread) ? 0 : kids.filter(live).length;
     const state = STATES[thread.state];
     const tip = running ? `${state.label} its turn · ${running} spawned ${running === 1 ? "thread is" : "threads are"} still running`
-      : thread.state === "active" ? "Running · a turn is in progress" : state.label;
+      : thread.state === "active" ? "Running · a turn is in progress"
+      : thread.state === "background" ? `Turn finished · waiting on ${thread.tasks.length} background task${thread.tasks.length === 1 ? "" : "s"}`
+      : state.label;
     const mark = running ? '<i class="chat-spinner is-family"></i>' : state.glyph ? glyph(state.glyph) : '<i class="chat-spinner"></i>';
     return `<td class="chat-state"><span data-tip="${tip}" aria-label="${tip}">${mark}</span></td>`;
   }
@@ -208,7 +215,7 @@ export function renderChatThreads(root) {
     const started = (thread) => thread.startedAt || thread.updatedAt;
     const tokens = (thread) => family(thread).reduce((sum, member) => sum + (member.tokens || 0), 0);
     const byOrder = (a, b) => order === "tokens" ? tokens(b) - tokens(a) : 0;
-    const section = (thread) => thread.state === "waiting" ? "waiting" : live(thread) || (children.get(thread.id) || []).some(live) ? "active" : "done";
+    const section = (thread) => thread.state === "waiting" || thread.state === "background" ? thread.state : live(thread) || (children.get(thread.id) || []).some(live) ? "active" : "done";
 
     const groups = new Map();
     const add = (key, label, thread) => { if (!groups.has(key)) groups.set(key, { label, threads: [] }); groups.get(key).threads.push(thread); };
@@ -218,7 +225,7 @@ export function renderChatThreads(root) {
       for (const thread of [...roots].sort((a, b) => recent.get(b.cwd) - recent.get(a.cwd) || a.cwd.localeCompare(b.cwd))) add(thread.cwd, folder(thread) || "Unknown folder", thread);
       for (const { threads } of groups.values()) threads.sort((a, b) => byOrder(a, b) || (section(a) === "done") - (section(b) === "done") || b.updatedAt - a.updatedAt);
     } else {
-      for (const key of ["waiting", "active"]) for (const thread of roots.filter((candidate) => section(candidate) === key).sort((a, b) => byOrder(a, b) || started(b) - started(a))) add(key, STATES[key].label, thread);
+      for (const key of ["waiting", "active", "background"]) for (const thread of roots.filter((candidate) => section(candidate) === key).sort((a, b) => byOrder(a, b) || started(b) - started(a))) add(key, STATES[key].label, thread);
       const done = roots.filter((thread) => section(thread) === "done").sort((a, b) => b.updatedAt - a.updatedAt);
       if (order === "tokens") for (const thread of done.sort(byOrder)) add("done", "Finished", thread);
       else for (const thread of done) add(dayLabel(thread.updatedAt), dayLabel(thread.updatedAt), thread);
@@ -231,13 +238,14 @@ export function renderChatThreads(root) {
     };
     const html = [...groups].map(([key, { label, threads }]) => {
       const tip = group === "workspace" ? ` data-tip="${escapeHtml(threads[0].cwd)}"` : "";
-      const lead = group === "workspace" ? folderMark(label) : key === "waiting" || key === "active" ? `<span class="chat-group-state" data-state="${key}"></span>` : "";
+      const lead = group === "workspace" ? folderMark(label) : key in STATES && key !== "completed" && key !== "interrupted" ? `<span class="chat-group-state" data-state="${key}"></span>` : "";
       return `<tr class="code-group-row chat-group" data-group="${escapeHtml(key)}"><th colspan="6"><span class="chat-group-label"${tip}>${lead}${escapeHtml(label)}</span> <span>${threads.length}</span></th></tr>${threads.map((thread) => rows(thread, 0)).join("")}`;
     }).join("");
 
     const waiting = liveCount("waiting");
     const running = liveCount("active");
-    summary.innerHTML = `<span data-state="waiting"${waiting ? "" : ' class="is-zero"'} data-tip="Threads waiting for your input, subagents included">${glyph("circle-dot")}${waiting} waiting</span><span data-state="active"${running ? "" : ' class="is-zero"'} data-tip="Threads with a turn in progress, subagents included"><i class="chat-spinner"></i>${running} running</span>`;
+    const background = liveCount("background");
+    summary.innerHTML = `<span data-state="waiting"${waiting ? "" : ' class="is-zero"'} data-tip="Threads waiting for your input, subagents included">${glyph("circle-dot")}${waiting} waiting</span><span data-state="active"${running ? "" : ' class="is-zero"'} data-tip="Threads with a turn in progress, subagents included"><i class="chat-spinner"></i>${running} running</span><span data-state="background"${background ? "" : ' class="is-zero"'} data-tip="Threads whose turn ended while tasks they started in the background still run">${glyph("hourglass")}${background} background</span>`;
     // Problems reading a source stay in view at the top, not under a long list.
     const problems = [...inventory.issues];
     if (page.dataset.chatThreadsState === "error") problems.unshift("Refresh failed; showing the last results.");
