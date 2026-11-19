@@ -4,11 +4,11 @@
     "title": "First-run onboarding",
     "slug": "first-run-onboarding",
     "scale": "capability",
-    "current_phase": "plan",
+    "current_phase": "execution",
     "last_updated": "2026-11-18",
     "summary": "A solo developer who clones plan-viewer from GitHub ends with a working workspace of their own without hand-holding; the demo-first path is reconsidered.",
     "status": "active",
-    "next_action": "Build M1-M3; M4 waits for TASK-0040 Setup page"
+    "next_action": "Merge stack #23; build m4 after the TASK-0040 Setup page merges"
   },
   "artifacts": {
     "intent_brief": {
@@ -282,7 +282,10 @@
         "proof": "npm run dev:demo serves examples/workspace; grep finds no run demo",
         "valid_intermediate_state": "Viewer and docs unchanged except the script name",
         "rollback": "Revert the rename",
-        "status": "planned"
+        "status": "active",
+        "evidence": [
+          "PR #20"
+        ]
       },
       {
         "id": "m2",
@@ -292,7 +295,10 @@
         "proof": "init-workspace.test.ts and a by-hand temp run with a hook-checked commit",
         "valid_intermediate_state": "Old workspaces with package.json keep working",
         "rollback": "Revert init-workspace.ts",
-        "status": "planned"
+        "status": "active",
+        "evidence": [
+          "PR #21; init-workspace.test.ts; by-hand clone run"
+        ]
       },
       {
         "id": "m3",
@@ -302,7 +308,10 @@
         "proof": "Follow docs/setup.md literally in a temp folder",
         "valid_intermediate_state": "Manual setup stays documented as a fallback",
         "rollback": "Revert README and setup.md",
-        "status": "planned"
+        "status": "active",
+        "evidence": [
+          "PR #22; headless agent run from the README prompt"
+        ]
       },
       {
         "id": "m4",
@@ -340,6 +349,10 @@
     {
       "date": "2026-11-18",
       "change": "Shape and plan written from rounds 1-3."
+    },
+    {
+      "date": "2026-11-18",
+      "change": "Built m1-m3 as PRs 20-22 on stack 23."
     }
   ],
   "closure": null,
