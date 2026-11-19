@@ -13,7 +13,9 @@ const claudeTranscript = new RegExp(`^(${uuid})\\.jsonl$`, "i");
 const historyLimit = 50;
 
 type Provider = "Codex" | "Claude";
-type AgentDetails = { model?: string; role?: string; tokens?: number | null; branch?: string };
+// parent: the thread that spawned this one (a Codex subagent or a Claude side session). kind says how it started.
+type AgentDetails = { model?: string; effort?: string; role?: string; nickname?: string; parent?: string; kind?: "subagent" | "automation" | "agent";
+  tokens?: number | null; branch?: string; startedAt?: number };
 type Thread = AgentDetails & {
   id: string;
   provider: Provider;
@@ -35,6 +37,7 @@ type CodexIndexRow = AgentDetails & {
   updatedAt: number;
   source: string;
   originator: string;
+  origin?: string;
 };
 
 type Turn = { state: Thread["state"]; updatedAt: number };
@@ -167,10 +170,18 @@ async function codexIndex(home: string) {
   const result = await query(`
     SELECT id, rollout_path AS path, cwd, substr(coalesce(nullif(${field("name")}, ''), title), 1, 400) AS title,
       updated_at * 1000 AS updatedAt, source, ${field("originator")} AS originator, ${field("tokens_used")} AS tokens,
-      ${field("model")} AS model, ${field("agent_role")} AS role, ${field("git_branch")} AS branch
+      ${field("model")} AS model, ${field("agent_role")} AS role, ${field("git_branch")} AS branch,
+      ${field("reasoning_effort")} AS effort, ${field("agent_nickname")} AS nickname, ${field("thread_source")} AS origin,
+      ${columns.has("created_at") ? "created_at * 1000" : "NULL"} AS startedAt
     FROM threads WHERE archived = 0 AND source NOT LIKE '%"guardian"%'
     ORDER BY updated_at DESC`);
   return JSON.parse(result.stdout || "[]") as CodexIndexRow[];
+}
+
+// A subagent's source is JSON naming its parent thread and the path its orchestrator gave it.
+function spawn(source: string) {
+  if (!source.includes('"thread_spawn"')) return null;
+  try { return JSON.parse(source).subagent?.thread_spawn as JSONObject; } catch { return null; }
 }
 
 async function codexThreads(home: string, rollouts: Map<string, string> | undefined, turns: Map<string, { key: string; turn: Turn | null }>) {
@@ -178,20 +189,19 @@ async function codexThreads(home: string, rollouts: Map<string, string> | undefi
   const rows = new Map(index.rows.filter(row => idPattern.test(row.id)).map(row => [row.id, row]));
   const active: Thread[] = [];
   const completed: Thread[] = [];
-  for (const id of new Set([...(rollouts?.keys() || []), ...rows.keys()])) {
+  async function load(id: string) {
     const live = rollouts?.get(id);
-    if (!live && completed.length >= historyLimit) continue;
     let row = rows.get(id);
     const path = live || row?.path;
-    if (!path) continue;
+    if (!path) return null;
     const info = await fileInfo(path);
-    if (!info?.isFile()) continue;
+    if (!info?.isFile()) return null;
     if (!row) {
       const meta = await firstRecord(path).then(lines => object(lines[0]).payload).catch(() => null);
-      if (meta?.id !== id) continue;
+      if (meta?.id !== id) return null;
       row = { id, path, cwd: string(meta.cwd), title: "", branch: string(meta.git?.branch), source: JSON.stringify(meta.source) || "", originator: string(meta.originator), updatedAt: info.mtimeMs };
     }
-    if (row.source.includes('"guardian"')) continue;
+    if (row.source.includes('"guardian"')) return null;
     const key = `${info.size}:${info.mtimeMs}`;
     const cached = turns.get(path);
     const turn = cached?.key === key ? cached.turn : await lastCodexTurn(path, info.size).catch(error => {
@@ -199,13 +209,40 @@ async function codexThreads(home: string, rollouts: Map<string, string> | undefi
       throw error;
     });
     turns.set(path, { key, turn });
-    if (!turn || (turn.state === "active" && !rollouts)) continue;
+    if (!turn || (turn.state === "active" && !rollouts)) return null;
     const state = turn.state === "active" && !live ? "interrupted" : turn.state;
     const source = row.source === "exec" || ["codex_exec", "codex-tui"].includes(row.originator) || row.source === "cli" ? "CLI"
       : row.originator === "Codex Desktop" ? "Desktop" : "Local";
-    const thread: Thread = { id, provider: "Codex", source, model: row.model, role: row.role || (row.source.includes('"subagent"') ? "Subagent" : ""), tokens: row.tokens, branch: row.branch, title: displayTitle(row.title, basename(row.cwd) || "Codex thread"), cwd: row.cwd,
+    const spawned = spawn(row.source);
+    const role = row.role || string(spawned?.agent_role) || string(spawned?.agent_path).split("/").filter(Boolean).at(-1) || "";
+    const kind = spawned || row.source.includes('"subagent"') ? "subagent" : row.origin === "automation" ? "automation" : row.origin === "agent_created_thread" ? "agent" : undefined;
+    const thread: Thread = { id, provider: "Codex", source, model: row.model || undefined, effort: row.effort || undefined, role, nickname: row.nickname || string(spawned?.agent_nickname) || undefined,
+      parent: string(spawned?.parent_thread_id) || undefined, kind, tokens: row.tokens, branch: row.branch, startedAt: Number(row.startedAt) || undefined,
+      title: displayTitle(row.title || role.replaceAll("_", " "), basename(row.cwd) || "Codex thread"), cwd: row.cwd,
       updatedAt: state === "active" ? info.mtimeMs : turn.updatedAt, state, url: `codex://threads/${id}` };
     (state === "active" ? active : completed).push(thread);
+    return thread;
+  }
+  // Live threads first, then the latest finished top-level threads, then the subagents of everything listed.
+  // Subagents never count toward the history limit, so an orchestrator's workers cannot push its siblings out.
+  const listed = new Set<string>();
+  for (const id of rollouts?.keys() || []) if (await load(id)) listed.add(id);
+  let roots = 0;
+  for (const [id, row] of rows) {
+    if (roots >= historyLimit) break;
+    if (listed.has(id) || spawn(row.source) || row.source.includes('"subagent"')) continue;
+    const thread = await load(id);
+    if (!thread) continue;
+    listed.add(id);
+    if (thread.state !== "active") roots++;
+  }
+  for (let depth = 0, added = true; added && depth < 4; depth++) {
+    added = false;
+    for (const [id, row] of rows) {
+      const parent = spawn(row.source)?.parent_thread_id;
+      if (listed.has(id) || !parent || !listed.has(parent)) continue;
+      if (await load(id)) { listed.add(id); added = true; }
+    }
   }
   return { threads: [...active, ...completed], issue: index.issue };
 }
@@ -285,7 +322,9 @@ async function claudeThreads(config: string, desktopRoot: string, pids: Set<numb
     const state = row ? claudeState(row) : "completed";
     if (state === "completed" && !session.completedTurns && !session.lastTurnEdgeAt) continue;
     const cwd = string(session.cwd || row?.cwd);
-    threads.push({ id: session.sessionId, provider: "Claude", source: "Desktop", cwd, state, model: string(session.model),
+    const parent = string(session.spawnedFrom?.sessionId);
+    threads.push({ id: session.sessionId, provider: "Claude", source: "Desktop", cwd, state, model: string(session.model), effort: string(session.effort) || undefined,
+      parent: parent || undefined, kind: parent ? "agent" : undefined, startedAt: Number(session.createdAt) || undefined,
       title: displayTitle(string(session.title || row?.name), basename(cwd) || "Claude Code session"),
       updatedAt: Number(row?.updatedAt || session.lastActivityAt || session.createdAt) || 0,
       url: `claude://claude.ai/epitaxy/${session.sessionId}` });
@@ -296,7 +335,7 @@ async function claudeThreads(config: string, desktopRoot: string, pids: Set<numb
     const desktopId = claudeDesktopId.test(string(row.hostSessionId)) ? row.hostSessionId : "";
     const cwd = string(row.cwd);
     threads.push({ id: desktopId || row.sessionId, provider: "Claude", source: desktopId ? "Desktop" : "CLI", cwd, state,
-      title: displayTitle(string(row.name), basename(cwd) || "Claude Code session"), updatedAt: Number(row.updatedAt || row.startedAt) || 0,
+      title: displayTitle(string(row.name), basename(cwd) || "Claude Code session"), updatedAt: Number(row.updatedAt || row.startedAt) || 0, startedAt: Number(row.startedAt) || undefined,
       url: desktopId ? `claude://claude.ai/epitaxy/${desktopId}` : null });
   }
   return [...threads, ...await claudeCliHistory(config, known)];
@@ -330,11 +369,18 @@ export function createChatThreads({
     else issues.push("Claude threads are unavailable.");
     threads.sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
     const finished = (thread: Thread) => thread.state === "completed" || thread.state === "interrupted";
-    return {
-      active: threads.filter(thread => !finished(thread)),
-      completed: (["Codex", "Claude"] as const).flatMap(provider => threads.filter(thread => thread.provider === provider && finished(thread)).slice(0, historyLimit))
-        .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)), issues,
-    };
+    // History keeps the latest top-level threads per app, plus every thread spawned from one that is listed.
+    const kept = new Set(threads.filter(thread => !finished(thread)).map(thread => thread.id));
+    for (const provider of ["Codex", "Claude"]) {
+      for (const thread of threads.filter(thread => thread.provider === provider && finished(thread) && !thread.parent).slice(0, historyLimit)) kept.add(thread.id);
+    }
+    for (let depth = 0, size = -1; size !== kept.size && depth < 4; depth++) {
+      size = kept.size;
+      for (const thread of threads) if (thread.parent && kept.has(thread.parent)) kept.add(thread.id);
+    }
+    // A spawned thread whose parent is not listed (an older orchestrator) stays only while it is live.
+    const shown = threads.filter(thread => kept.has(thread.id));
+    return { active: shown.filter(thread => !finished(thread)), completed: shown.filter(finished), issues };
   }
   return () => {
     if (cached && Date.now() - refreshed < 4000) return Promise.resolve(cached);

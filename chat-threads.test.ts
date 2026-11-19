@@ -38,6 +38,7 @@ test("lists running Codex CLI and Claude Desktop threads, and keeps inactive ses
   await write(rollout(codexHome, 2), meta(2) + edge("task_started") + event);
   await write(rollout(codexHome, 3), meta(3) + edge("task_started") + edge("task_complete", { last_agent_message: "b".repeat(80_000) }) + event);
   await write(rollout(codexHome, 4), meta(4, { subagent: { other: "guardian" } }) + edge("task_started"));
+  await write(rollout(codexHome, 10), meta(10) + edge("task_started") + edge("task_complete"));
   const quote = (s: string) => `'${s.replaceAll("'", "''")}'`;
   execFileSync("/usr/bin/sqlite3", [join(codexHome, "state_5.sqlite"), `
     CREATE TABLE threads (id TEXT, rollout_path TEXT, cwd TEXT, title TEXT, name TEXT, updated_at INTEGER, source TEXT, originator TEXT, archived INTEGER);
@@ -45,11 +46,14 @@ test("lists running Codex CLI and Claude Desktop threads, and keeps inactive ses
     ALTER TABLE threads ADD COLUMN tokens_used INTEGER;
     ALTER TABLE threads ADD COLUMN model TEXT;
     UPDATE threads SET tokens_used = 18342, model = 'test-model' WHERE id = ${quote(id(1))};
+    ALTER TABLE threads ADD COLUMN reasoning_effort TEXT;
+    ALTER TABLE threads ADD COLUMN agent_nickname TEXT;
+    INSERT INTO threads VALUES (${quote(id(10))}, ${quote(rollout(codexHome, 10))}, '/repo/alpha', '', '', 1767272400, ${quote(JSON.stringify({ subagent: { thread_spawn: { parent_thread_id: id(3), agent_path: "/root/browser_check" } } }))}, 'Codex Desktop', 0, 50, 'worker-model', 'high', 'Kepler');
   `]);
   await write(join(claudeConfig, "sessions/300.json"), JSON.stringify({ pid: 300, sessionId: id(5), status: "waiting", cwd: "/repo/beta", updatedAt: Date.parse(stamp) }));
   await write(join(claudeConfig, "sessions/400.json"), JSON.stringify({ pid: 400, sessionId: id(6), status: "busy", cwd: "/repo/beta" }));
   await write(join(desktop, `local_${id(7)}.json`), JSON.stringify({ sessionId: `local_${id(7)}`, cliSessionId: id(5), title: "Desktop work", completedTurns: 1 }));
-  await write(join(desktop, `local_${id(8)}.json`), JSON.stringify({ sessionId: `local_${id(8)}`, cliSessionId: id(6), title: "Stopped Desktop work", completedTurns: 1, lastActivityAt: Date.parse(stamp) }));
+  await write(join(desktop, `local_${id(8)}.json`), JSON.stringify({ sessionId: `local_${id(8)}`, cliSessionId: id(6), title: "Stopped Desktop work", completedTurns: 1, lastActivityAt: Date.parse(stamp), effort: "max", spawnedFrom: { sessionId: `local_${id(7)}` } }));
   await write(join(claudeConfig, `projects/beta/${id(6)}.jsonl`), JSON.stringify({ type: "user", cwd: "/repo/beta", message: { content: "Duplicate CLI copy" } }));
   await write(join(claudeConfig, `projects/beta/${id(9)}.jsonl`), JSON.stringify({ type: "user", cwd: "/repo/beta", message: { content: "Completed CLI work" } }));
   const read = createChatThreads({ home, codexHome, claudeConfig, readLiveFiles: async () => openAgentFiles(fileRecords(codexHome)) });
@@ -64,6 +68,11 @@ test("lists running Codex CLI and Claude Desktop threads, and keeps inactive ses
   assert.equal(active[1].url, `claude://claude.ai/epitaxy/local_${id(7)}`);
   assert.equal(completed.find(thread => thread.id === id(9))?.url, `claude://resume?session=${id(9)}`);
   assert.deepEqual(new Map(completed.map(({ id: key, state }) => [key, state])), new Map([
-    [id(2), "interrupted"], [id(3), "completed"], [`local_${id(8)}`, "completed"], [id(9), "completed"],
+    [id(2), "interrupted"], [id(3), "completed"], [id(10), "completed"], [`local_${id(8)}`, "completed"], [id(9), "completed"],
   ]));
+  // Spawned threads name their parent, so the page can nest them; a subagent with no title takes its path's name.
+  const worker = completed.find(thread => thread.id === id(10));
+  assert.deepEqual([worker?.parent, worker?.kind, worker?.nickname, worker?.effort, worker?.title], [id(3), "subagent", "Kepler", "high", "browser check"]);
+  const side = completed.find(thread => thread.id === `local_${id(8)}`);
+  assert.deepEqual([side?.parent, side?.effort], [`local_${id(7)}`, "max"]);
 });
