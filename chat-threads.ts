@@ -14,7 +14,8 @@ const historyLimit = 50;
 
 type Provider = "Codex" | "Claude";
 // parent: the thread that spawned this one (a Codex subagent or a Claude side session). kind says how it started.
-type AgentDetails = { model?: string; effort?: string; role?: string; nickname?: string; parent?: string; kind?: "subagent" | "automation" | "agent";
+type Usage = { tokens: number; input: number; cached: number; output: number };
+type AgentDetails = { model?: string; usage?: Usage; cliId?: string; effort?: string; role?: string; nickname?: string; parent?: string; kind?: "subagent" | "automation" | "agent";
   tokens?: number | null; branch?: string; startedAt?: number };
 type Thread = AgentDetails & {
   id: string;
@@ -162,7 +163,13 @@ async function codexIndex(home: string) {
   const databases = await children(home, false, /^state_\d+\.sqlite$/);
   const database = databases.sort((a, b) => Number(basename(b).match(/\d+/)?.[0]) - Number(basename(a).match(/\d+/)?.[0]))[0];
   if (!database) return [] as CodexIndexRow[];
-  const query = (sql: string) => run("/usr/bin/sqlite3", ["-readonly", "-json", "-cmd", ".timeout 1000", database, sql], { timeout: 3000, maxBuffer: 8 * 1024 * 1024 });
+  const open = (file: string, sql: string) => run("/usr/bin/sqlite3", ["-readonly", "-json", "-cmd", ".timeout 1000", file, sql], { timeout: 3000, maxBuffer: 8 * 1024 * 1024 });
+  // A read-only open fails (SQLITE_CANTOPEN) when the database is in WAL mode and has no -shm file to share, as after Codex
+  // quits. With no -wal file there are no pending writes, so reading the file as immutable is safe then.
+  const query = (sql: string) => open(database, sql).catch(async (error) => {
+    if (error.code !== 14 || await fileInfo(`${database}-wal`)) throw error;
+    return open(`file:${encodeURI(database)}?immutable=1`, sql);
+  });
   // Columns arrive independently across Codex releases. Select only fields this index supports.
   const schema = await query("PRAGMA table_info(threads)");
   const columns = new Set(JSON.parse(schema.stdout || "[]").map((column: JSONObject) => column.name));
@@ -292,7 +299,7 @@ async function claudeCliHistory(config: string, known: Set<string>) {
       } catch { /* The last line of the bounded read can be incomplete. */ }
     }
     if (!cwd) continue;
-    history.push({ id, provider: "Claude", source: "CLI", title: displayTitle(title, basename(cwd) || "Claude Code session"), cwd,
+    history.push({ id, cliId: id, provider: "Claude", source: "CLI", title: displayTitle(title, basename(cwd) || "Claude Code session"), cwd,
       updatedAt: time, state: "completed", url: `claude://resume?session=${id}` });
   }
   return history;
@@ -323,7 +330,7 @@ async function claudeThreads(config: string, desktopRoot: string, pids: Set<numb
     if (state === "completed" && !session.completedTurns && !session.lastTurnEdgeAt) continue;
     const cwd = string(session.cwd || row?.cwd);
     const parent = string(session.spawnedFrom?.sessionId);
-    threads.push({ id: session.sessionId, provider: "Claude", source: "Desktop", cwd, state, model: string(session.model), effort: string(session.effort) || undefined,
+    threads.push({ id: session.sessionId, cliId, provider: "Claude", source: "Desktop", cwd, state, model: string(session.model), effort: string(session.effort) || undefined,
       parent: parent || undefined, kind: parent ? "agent" : undefined, startedAt: Number(session.createdAt) || undefined,
       title: displayTitle(string(session.title || row?.name), basename(cwd) || "Claude Code session"),
       updatedAt: Number(row?.updatedAt || session.lastActivityAt || session.createdAt) || 0,
@@ -334,11 +341,73 @@ async function claudeThreads(config: string, desktopRoot: string, pids: Set<numb
     const state = claudeState(row);
     const desktopId = claudeDesktopId.test(string(row.hostSessionId)) ? row.hostSessionId : "";
     const cwd = string(row.cwd);
-    threads.push({ id: desktopId || row.sessionId, provider: "Claude", source: desktopId ? "Desktop" : "CLI", cwd, state,
+    threads.push({ id: desktopId || row.sessionId, cliId: row.sessionId, provider: "Claude", source: desktopId ? "Desktop" : "CLI", cwd, state,
       title: displayTitle(string(row.name), basename(cwd) || "Claude Code session"), updatedAt: Number(row.updatedAt || row.startedAt) || 0, startedAt: Number(row.startedAt) || undefined,
       url: desktopId ? `claude://claude.ai/epitaxy/${desktopId}` : null });
   }
   return [...threads, ...await claudeCliHistory(config, known)];
+}
+
+// Claude Code records each reply's usage in its transcript. Every content block of a reply repeats the same usage, so
+// count each message ID once. Transcripts only grow, so each read resumes where the last one stopped.
+type UsageCache = Map<string, Usage & { offset: number; ids: Set<string> }>;
+async function transcriptUsage(path: string, cache: UsageCache) {
+  const info = await fileInfo(path);
+  if (!info?.isFile()) return null;
+  let entry = cache.get(path);
+  if (!entry || info.size < entry.offset) entry = { tokens: 0, input: 0, cached: 0, output: 0, offset: 0, ids: new Set() };
+  cache.set(path, entry);
+  if (info.size === entry.offset) return entry;
+  const file = await open(path, "r");
+  try {
+    let partial = "";
+    for (let position = entry.offset; position < info.size;) {
+      const { buffer, bytesRead } = await file.read(Buffer.alloc(Math.min(1 << 20, info.size - position)), 0, Math.min(1 << 20, info.size - position), position);
+      if (!bytesRead) break;
+      position += bytesRead;
+      const lines = (partial + buffer.subarray(0, bytesRead).toString()).split("\n");
+      partial = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.includes('"usage"') || !line.includes('"type":"assistant"')) continue;
+        try {
+          const message = object(line).message;
+          const usage = message?.usage;
+          if (!usage || !message.id || entry.ids.has(message.id)) continue;
+          entry.ids.add(message.id);
+          const cached = (Number(usage.cache_read_input_tokens) || 0) + (Number(usage.cache_creation_input_tokens) || 0);
+          const input = (Number(usage.input_tokens) || 0) + cached;
+          const output = Number(usage.output_tokens) || 0;
+          entry.input += input; entry.cached += cached; entry.output += output; entry.tokens += input + output;
+        } catch { /* a line written mid-read is retried next time */ }
+      }
+    }
+    // Stop before a line still being written, so the next read starts at its beginning.
+    entry.offset = info.size - Buffer.byteLength(partial);
+  } finally { await file.close(); }
+  return entry;
+}
+
+async function claudeUsage(threads: Thread[], config: string, cache: UsageCache) {
+  const projects = join(config, "projects");
+  let index: Map<string, string> | null = null;
+  for (const thread of threads) {
+    const id = thread.cliId;
+    delete thread.cliId;
+    if (!id) continue;
+    let path = join(projects, thread.cwd.replace(/[^a-zA-Z0-9]/g, "-"), `${id}.jsonl`);
+    if (!await fileInfo(path)) {
+      // A session that changed folder keeps its transcript under the folder it started in.
+      index ||= new Map((await Promise.all((await children(projects, true, /./)).map(dir => children(dir, false, claudeTranscript)))).flat()
+        .map(file => [basename(file, ".jsonl"), file]));
+      path = index.get(id) || "";
+      if (!path) continue;
+    }
+    const usage = await transcriptUsage(path, cache).catch(() => null);
+    if (usage?.tokens) {
+      thread.tokens = usage.tokens;
+      thread.usage = { tokens: usage.tokens, input: usage.input, cached: usage.cached, output: usage.output };
+    }
+  }
 }
 
 export function createChatThreads({
@@ -347,6 +416,7 @@ export function createChatThreads({
 } = {}) {
   const desktop = join(home, "Library", "Application Support", "Claude", "claude-code-sessions");
   const turns = new Map<string, { key: string; turn: Turn | null }>();
+  const usage: UsageCache = new Map();
   let pending: Promise<Inventory> | null = null;
   let cached: Inventory | null = null;
   let refreshed = 0;
@@ -380,6 +450,8 @@ export function createChatThreads({
     }
     // A spawned thread whose parent is not listed (an older orchestrator) stays only while it is live.
     const shown = threads.filter(thread => kept.has(thread.id));
+    for (const thread of threads) if (!kept.has(thread.id)) delete thread.cliId;
+    await claudeUsage(shown.filter(thread => thread.provider === "Claude"), claudeConfig, usage);
     return { active: shown.filter(thread => !finished(thread)), completed: shown.filter(finished), issues };
   }
   return () => {

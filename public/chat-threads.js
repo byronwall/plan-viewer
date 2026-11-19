@@ -1,6 +1,6 @@
 import { escapeHtml } from "./markdown.js";
 import { ago, icon, showTip, hideTip } from "./code.js";
-import { GLYPHS } from "./icons.js";
+import { GLYPHS, brandMark } from "./icons.js";
 import { setOverlayParams } from "./overlay.js";
 
 // Every Codex and Claude Code thread on this Mac in one table: live threads on top, history by day below. A thread an
@@ -16,9 +16,9 @@ const STATES = {
 const live = (thread) => thread.state === "active" || thread.state === "waiting";
 const glyph = (name, className = "code-icon") => `<svg class="${className}" viewBox="0 0 24 24" aria-hidden="true">${GLYPHS[name]}</svg>`;
 
-// App marks: Claude's starburst in its clay color, Codex's prompt in a square.
-const CLAUDE_MARK = `<svg class="chat-app-mark is-claude" viewBox="0 0 24 24" aria-hidden="true">${[0, 30, 60, 90, 120, 150].map((angle) => `<path d="M12 3.2v17.6" transform="rotate(${angle} 12 12)"/>`).join("")}</svg>`;
-const CODEX_MARK = `<svg class="chat-app-mark is-codex" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="m8 9.5 3 2.5-3 2.5"/><path d="M13 15h3.5"/></svg>`;
+// App marks: the real Claude spark (Simple Icons) and Codex blossom (lobe-icons), from icons.js.
+const CLAUDE_MARK = brandMark("claude", "chat-app-mark is-claude");
+const CODEX_MARK = brandMark("codex", "chat-app-mark is-codex");
 const appMark = (provider) => (provider === "Claude" ? CLAUDE_MARK : CODEX_MARK);
 
 // Model IDs as people say them, with a hue per family so Opus, Fable, Sol and Luna read apart at a glance.
@@ -45,7 +45,7 @@ function modelCell(thread) {
   const hue = FAMILY_HUES[model.family] ?? hueOf(model.family);
   const level = EFFORT[thread.effort];
   const effort = thread.effort
-    ? `<span class="chat-effort" data-level="${level ?? 0}" data-tip="Reasoning effort: ${escapeHtml(thread.effort)}">${"<i></i>".repeat(5)}<span>${escapeHtml(thread.effort === "medium" ? "med" : thread.effort)}</span></span>`
+    ? `<span class="chat-effort" data-level="${level ?? 0}" data-tip="Reasoning effort: ${escapeHtml(thread.effort)}">${"<i></i>".repeat(5)}<span>${escapeHtml(thread.effort)}</span></span>`
     : "";
   return `<span class="chat-model" style="--hue:${hue}" data-tip="${escapeHtml(thread.model)}"><i aria-hidden="true"></i>${escapeHtml(model.name)}</span>${effort}`;
 }
@@ -79,7 +79,7 @@ export function renderChatThreads(root) {
   const opened = new Map();
 
   const segment = (name, options, selected, label, marks = {}) => `<div class="code-segment" role="group" aria-label="${label}">${Object.entries(options).map(([key, text]) =>
-    `<button type="button" data-chat-${name}="${key}" aria-pressed="${selected === key}">${marks[key] || ""}${text}<span class="code-count" data-count></span></button>`).join("")}</div>`;
+    `<button type="button" data-chat-${name}="${key}" aria-pressed="${selected === key}">${marks[key] || ""}${text}${name === "app" ? '<span class="code-count" data-count>–</span>' : ""}</button>`).join("")}</div>`;
   root.classList.add("code-page");
   const page = document.createElement("section");
   page.className = "chat-threads code-surface";
@@ -89,12 +89,13 @@ export function renderChatThreads(root) {
       <label class="code-filter">${icon("search")}<input type="search" aria-label="Find a thread by title, agent, folder, branch or model" placeholder="Find a thread…"></label>
       <span class="chat-bar-group"><span class="chat-bar-label">Group</span>${segment("group", { status: "Status", workspace: "Workspace" }, group, "Group")}</span>
       <span class="chat-bar-group"><span class="chat-bar-label">Sort</span>${segment("order", { recent: "Recent", tokens: "Tokens" }, order, "Sort")}</span>
-      <span class="chat-summary" role="status"></span>
+      <span class="chat-issues" role="status"></span>
+      <span class="chat-summary"></span>
     </div></div></div>
     <div class="code-list chat-list"><table class="code-table chat-table" aria-label="Chat threads"><colgroup><col class="chat-col-state"><col><col class="chat-col-workspace"><col class="chat-col-model"><col class="chat-col-tokens"><col class="chat-col-age"></colgroup>
       <thead><tr><th><span class="sr-only">Status</span></th><th>Thread</th><th>Workspace</th><th>Model</th><th class="chat-num">Tokens</th><th class="chat-num">Updated</th></tr></thead>
       <tbody class="chat-thread-list"></tbody></table>
-      <p class="code-empty chat-empty"><span class="chat-notice">Loading threads…</span><button type="button" class="chat-reset" hidden></button></p></div>`;
+      <p class="code-empty chat-empty"><span class="chat-notice"><i class="chat-spinner"></i>Reading local Codex and Claude sessions…</span><button type="button" class="chat-reset" hidden></button></p></div>`;
   root.replaceChildren(page);
   new ResizeObserver(([entry]) => page.style.setProperty("--code-bar-h", `${Math.ceil(entry.borderBoxSize[0].blockSize)}px`)).observe(page.querySelector('[data-region="toolbar"]'));
 
@@ -105,6 +106,7 @@ export function renderChatThreads(root) {
   const notice = page.querySelector(".chat-notice");
   const reset = page.querySelector(".chat-reset");
   const summary = page.querySelector(".chat-summary");
+  const issues = page.querySelector(".chat-issues");
   search.value = params.get("find") || "";
 
   function saveParams() {
@@ -130,34 +132,46 @@ export function renderChatThreads(root) {
       : `<span class="chat-thread-link is-closed" tabindex="0" data-tip="Opens in Claude Desktop after the terminal session exits">${text}</span>`;
     const tags = [
       thread.source === "CLI" ? `<span class="chat-tag" data-tip="Started from the ${thread.provider === "Claude" ? "claude" : "codex"} command line">${icon("terminal")}CLI</span>` : "",
-      thread.kind === "automation" ? `<span class="chat-tag" data-tip="Started by a Codex automation">${icon("pending")}Automation</span>` : "",
-      thread.kind === "agent" && !thread.parent ? `<span class="chat-tag" data-tip="Started by another agent">${glyph("square-stack")}Spawned</span>` : "",
+      thread.kind === "automation" ? `<span class="chat-tag" data-tip="Started by a Codex automation">${glyph("calendar-clock")}Automation</span>` : "",
+      thread.kind === "agent" && !thread.parent ? `<span class="chat-tag" data-tip="Started by another agent">${glyph("network")}Spawned</span>` : "",
     ].join("");
     let toggle = "";
     if (kids.length) {
       const running = kids.filter(live).length;
       const noun = kids.every((kid) => kid.kind === "subagent") ? "subagent" : kids.every((kid) => kid.kind !== "subagent") ? "session" : "agent";
-      toggle = `<button type="button" class="chat-kids" data-chat-toggle="${escapeHtml(thread.id)}" aria-expanded="${open}">${glyph("arrow-right", "code-icon chat-caret")}${kids.length} ${noun}${kids.length === 1 ? "" : "s"}${running ? ` <em>${running} live</em>` : ""}</button>`;
+      toggle = `<button type="button" class="chat-kids" data-chat-toggle="${escapeHtml(thread.id)}" aria-expanded="${open}">${glyph("chevron-right", "code-icon chat-caret")}${kids.length} ${noun}${kids.length === 1 ? "" : "s"}${running ? ` <em>${running} live</em>` : ""}</button>`;
     }
     return `<td class="chat-thread-cell" style="--depth:${depth}"><div class="chat-title">${lead}${name}${tags}${toggle}</div></td>`;
   }
 
-  function row(thread, query, peak, kids, depth, parent, open, last) {
+  // A finished thread whose spawned threads still run shows a faint spinner, so the Running section never shows only checks.
+  function stateCell(thread, kids) {
+    const running = live(thread) ? 0 : kids.filter(live).length;
+    const state = STATES[thread.state];
+    const tip = running ? `${state.label} its turn · ${running} spawned ${running === 1 ? "thread is" : "threads are"} still running`
+      : thread.state === "active" ? "Running · a turn is in progress" : state.label;
+    const mark = running ? '<i class="chat-spinner is-family"></i>' : state.glyph ? glyph(state.glyph) : '<i class="chat-spinner"></i>';
+    return `<td class="chat-state"><span data-tip="${tip}" aria-label="${tip}">${mark}</span></td>`;
+  }
+
+  function row(thread, query, kids, depth, parent, open, last) {
     const time = thread.updatedAt ? new Date(thread.updatedAt) : null;
     const age = ago(thread.updatedAt);
     const known = Number.isSafeInteger(thread.tokens) && thread.tokens >= 0;
-    const exact = known ? `${thread.tokens.toLocaleString()} tokens reported` : "";
+    const usage = thread.usage;
+    const exact = !known ? "" : usage
+      ? `${thread.tokens.toLocaleString()} tokens: ${usage.input.toLocaleString()} input (${Math.round(100 * usage.cached / (usage.input || 1))}% from cache) and ${usage.output.toLocaleString()} output`
+      : `${thread.tokens.toLocaleString()} tokens reported by Codex`;
     // Under its parent, or in a workspace group, the folder is already said once above the row.
     const sameFolder = (parent && parent.cwd === thread.cwd) || group === "workspace";
-    const state = STATES[thread.state];
     const branch = thread.branch && !(parent && parent.cwd === thread.cwd && parent.branch === thread.branch) ? `<small class="chat-branch" data-tip="${escapeHtml(thread.branch)}">${icon("branch")}${escapeHtml(thread.branch)}</small>` : "";
     return `<tr class="code-row chat-thread${depth ? " is-child" : ""}${last ? " is-last" : ""}" data-thread="${escapeHtml(String(thread.id))}" data-state="${thread.state}">
-      <td class="chat-state"><span data-tip="${state.label}${thread.state === "active" ? " · a turn is in progress" : ""}" aria-label="${state.label}">${state.glyph ? glyph(state.glyph) : '<i class="chat-spinner"></i>'}</span></td>
+      ${stateCell(thread, kids)}
       ${threadCell(thread, query, kids, depth, open)}
       <td class="chat-workspace${sameFolder ? " is-bare" : ""}">${sameFolder ? "" : `<span class="chat-folder" data-tip="${escapeHtml(thread.cwd)}">${folderMark(folder(thread))}<span>${escapeHtml(folder(thread))}</span></span>`}${branch}</td>
       <td class="chat-model-cell">${modelCell(thread)}</td>
-      <td class="chat-num chat-usage">${known ? `<span data-tip="${exact}">${compact.format(thread.tokens)}</span><i aria-hidden="true" style="--usage:${peak ? Math.max(2, 100 * thread.tokens / peak) : 0}%"></i>` : '<span class="chat-none is-unknown" data-tip="This app does not report token use">—</span>'}</td>
-      <td class="chat-num chat-age">${time ? `<time datetime="${time.toISOString()}" data-tip="${escapeHtml(time.toLocaleString())}">${live(thread) && age === "0m" ? "now" : age}</time>` : "—"}</td>
+      <td class="chat-num chat-usage">${known ? `<span data-tip="${exact}">${compact.format(thread.tokens)}</span>` : '<span class="chat-none is-unknown" data-tip="No usage recorded for this thread">—</span>'}</td>
+      <td class="chat-num chat-age">${time ? `<time datetime="${time.toISOString()}" data-tip="${escapeHtml(time.toLocaleString())}">${age === "0m" ? "now" : age}</time>` : "—"}</td>
     </tr>`;
   }
 
@@ -190,7 +204,6 @@ export function renderChatThreads(root) {
     const tokens = (thread) => family(thread).reduce((sum, member) => sum + (member.tokens || 0), 0);
     const byOrder = (a, b) => order === "tokens" ? tokens(b) - tokens(a) : 0;
     const section = (thread) => thread.state === "waiting" ? "waiting" : live(thread) || (children.get(thread.id) || []).some(live) ? "active" : "done";
-    const peak = Math.max(0, ...pool.map((thread) => thread.tokens || 0));
 
     const groups = new Map();
     const add = (key, label, thread) => { if (!groups.has(key)) groups.set(key, { label, threads: [] }); groups.get(key).threads.push(thread); };
@@ -209,7 +222,7 @@ export function renderChatThreads(root) {
     const rows = (thread, depth, parent, last) => {
       const kids = (children.get(thread.id) || []).filter((kid) => !query || matches(thread) || family(kid).some(matches));
       const open = query ? kids.length > 0 : isOpen(thread, kids);
-      return row(thread, query, peak, kids, depth, parent, open, last) + (open ? kids.map((kid, index) => rows(kid, depth + 1, thread, index === kids.length - 1)).join("") : "");
+      return row(thread, query, kids, depth, parent, open, last) + (open ? kids.map((kid, index) => rows(kid, depth + 1, thread, index === kids.length - 1)).join("") : "");
     };
     const html = [...groups].map(([key, { label, threads }]) => {
       const tip = group === "workspace" ? ` data-tip="${escapeHtml(threads[0].cwd)}"` : "";
@@ -219,10 +232,14 @@ export function renderChatThreads(root) {
 
     const waiting = liveCount("waiting");
     const running = liveCount("active");
-    summary.innerHTML = `<span data-state="waiting"${waiting ? "" : ' class="is-zero"'}>${glyph("circle-dot")}${waiting} waiting</span><span data-state="active"${running ? "" : ' class="is-zero"'}><i class="chat-spinner"></i>${running} running</span>`;
+    summary.innerHTML = `<span data-state="waiting"${waiting ? "" : ' class="is-zero"'} data-tip="Threads waiting for your input, subagents included">${glyph("circle-dot")}${waiting} waiting</span><span data-state="active"${running ? "" : ' class="is-zero"'} data-tip="Threads with a turn in progress, subagents included"><i class="chat-spinner"></i>${running} running</span>`;
+    // Problems reading a source stay in view at the top, not under a long list.
+    const problems = [...inventory.issues];
+    if (page.dataset.chatThreadsState === "error") problems.unshift("Refresh failed; showing the last results.");
+    const problemText = problems.join(" ");
+    if (issues.textContent !== problemText) issues.innerHTML = problemText ? `${icon("conflict")}${escapeHtml(problemText)}` : "";
 
-    const messages = [...inventory.issues];
-    if (page.dataset.chatThreadsState === "error") messages.unshift("Refresh failed. Showing the last results; retrying.");
+    const messages = [];
     if (!roots.length) messages.push(query ? `No ${app === "all" ? "" : apps[app] + " "}threads match “${search.value.trim()}”.` : `No ${app === "all" ? "" : apps[app] + " "}threads yet.`);
     notice.textContent = messages.join(" ");
     empty.hidden = !messages.length;
@@ -272,6 +289,13 @@ export function renderChatThreads(root) {
   // Down from the search field, then Up and Down between conversations; Right and Left open and close a family.
   page.addEventListener("keydown", (event) => {
     if (event.altKey || event.metaKey || event.ctrlKey) return;
+    if (event.key === "Escape" && event.target === search && search.value) {
+      event.preventDefault();
+      search.value = "";
+      saveParams();
+      render();
+      return;
+    }
     const onLink = event.target.matches?.(".chat-thread-link");
     if ((event.key === "ArrowRight" || event.key === "ArrowLeft") && onLink) {
       const toggle = event.target.closest("tr").querySelector(".chat-kids");
@@ -307,7 +331,7 @@ export function renderChatThreads(root) {
       } catch {
         page.dataset.chatThreadsState = "error";
         if (inventory) render();
-        else notice.textContent = "Could not load chat threads. Retrying automatically.";
+        else notice.innerHTML = `${icon("conflict")}Could not load chat threads. Retrying every few seconds.`;
       }
     }
     if (page.isConnected) window.setTimeout(refresh, 5000);

@@ -55,6 +55,9 @@ test("lists running Codex CLI and Claude Desktop threads, and keeps inactive ses
   await write(join(desktop, `local_${id(7)}.json`), JSON.stringify({ sessionId: `local_${id(7)}`, cliSessionId: id(5), title: "Desktop work", completedTurns: 1 }));
   await write(join(desktop, `local_${id(8)}.json`), JSON.stringify({ sessionId: `local_${id(8)}`, cliSessionId: id(6), title: "Stopped Desktop work", completedTurns: 1, lastActivityAt: Date.parse(stamp), effort: "max", spawnedFrom: { sessionId: `local_${id(7)}` } }));
   await write(join(claudeConfig, `projects/beta/${id(6)}.jsonl`), JSON.stringify({ type: "user", cwd: "/repo/beta", message: { content: "Duplicate CLI copy" } }));
+  // A reply's usage repeats on each of its content blocks; it counts once.
+  const reply = (msg: string) => JSON.stringify({ type: "assistant", message: { id: msg, usage: { input_tokens: 10, cache_read_input_tokens: 80, cache_creation_input_tokens: 10, output_tokens: 5 } } }) + "\n";
+  await write(join(claudeConfig, `projects/beta/${id(5)}.jsonl`), reply("m1") + reply("m1") + reply("m2"));
   await write(join(claudeConfig, `projects/beta/${id(9)}.jsonl`), JSON.stringify({ type: "user", cwd: "/repo/beta", message: { content: "Completed CLI work" } }));
   const read = createChatThreads({ home, codexHome, claudeConfig, readLiveFiles: async () => openAgentFiles(fileRecords(codexHome)) });
   const { active, completed, issues } = await read();
@@ -66,6 +69,7 @@ test("lists running Codex CLI and Claude Desktop threads, and keeps inactive ses
   assert.equal(active[0].title, "Working title 1");
   assert.equal(active[0].url, `codex://threads/${id(1)}`);
   assert.equal(active[1].url, `claude://claude.ai/epitaxy/local_${id(7)}`);
+  assert.deepEqual(active[1].usage, { tokens: 210, input: 200, cached: 180, output: 10 });
   assert.equal(completed.find(thread => thread.id === id(9))?.url, `claude://resume?session=${id(9)}`);
   assert.deepEqual(new Map(completed.map(({ id: key, state }) => [key, state])), new Map([
     [id(2), "interrupted"], [id(3), "completed"], [id(10), "completed"], [`local_${id(8)}`, "completed"], [id(9), "completed"],
