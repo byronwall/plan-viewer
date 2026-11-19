@@ -9,6 +9,7 @@ import { handleIssueClick, issueInspector, issueLink, loadIssueDetail, loadIssue
 import { channelLabel, docsFor, fresh, lastActive, opener, permalink, threadDetail } from "./slack-page.js";
 import { openSlackThread } from "./slack.js";
 import { avatar, ciBadge, copied, diffSize, fadeIn, hideTip, icon, iconButton, loadPrIndex, openPrOverlay, prBodyHtml, prefetchPr, reviewTag, showTip, sideFacts, sideHead, sideStatus, when } from "./code.js";
+import { formatDateTime } from "./dates.js";
 
 const DAY = 86_400_000;
 const STRIP_DAYS = 14;
@@ -27,9 +28,9 @@ const localDay = (time) => { const date = new Date(time); return `${date.getFull
 const dayStart = (key) => new Date(`${key}T00:00:00`).getTime();
 const dayLabel = (time) => {
   const diff = Math.round((dayStart(localDay(Date.now())) - dayStart(localDay(time))) / DAY);
-  return diff === 0 ? "Today" : diff === 1 ? "Yesterday" : new Date(time).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  return diff === 0 ? "Today" : diff === 1 ? "Yesterday" : formatDateTime(time, "en-US", { weekday: "short", month: "short", day: "numeric" });
 };
-const clock = (time) => new Date(time).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).replace(/\s?([AP])M/, (_, half) => half.toLowerCase());
+const clock = (time) => formatDateTime(time, "en-US", { hour: "numeric", minute: "2-digit" }).replace(/\s?([AP])M/, (_, half) => half.toLowerCase());
 const stateHtml = (label, tone, tip = "") => label ? `<span class="activity-state is-${tone}"${tip ? ` data-tip="${escapeHtml(tip)}"` : ""}>${escapeHtml(label)}</span>` : "";
 
 function syncUrl() {
@@ -47,13 +48,17 @@ const docEvent = (change, title) => { const sections = change.sections.filter((s
 
 function rows() {
   const out = [];
+  // Lookups by path, built once: a .find per document was quadratic and froze a large workspace's Activity page.
+  const byPath = new Map(ui.documents.map((doc) => [doc.path, doc]));
+  const changeOf = new Map();
+  for (const change of ui.changes) if (change.kind !== "deleted" && !changeOf.has(change.path)) changeOf.set(change.path, change);
   for (const doc of ui.documents) {
     if (!doc.modified) continue;
-    const change = ui.changes.find((candidate) => candidate.path === doc.path && candidate.kind !== "deleted");
+    const change = changeOf.get(doc.path);
     const task = doc.task;
     // A task's asset names its task in the key column (the container) and the task's title as where it lives.
     const ownerId = isTaskAsset(doc.path) ? taskOfPath(doc.path) : "";
-    const owner = ownerId && ui.documents.find((candidate) => candidate.path === taskFile(ownerId))?.task;
+    const owner = ownerId && byPath.get(taskFile(ownerId))?.task;
     const where = task ? task.project || "" : owner ? owner.title : doc.path.replace(/\/[^/]+$/, "/");
     out.push({
       id: `doc:${doc.path}`, kind: "doc", source: DOC_SOURCE[doc.group] || "topics", at: doc.modified, doc, change,
@@ -66,7 +71,7 @@ function rows() {
   }
   // Diagrams by their source file's save time, under the task whose assets hold them.
   for (const diagram of ui.diagrams || []) {
-    const owner = diagram.task && ui.documents.find((doc) => doc.path === taskFile(diagram.task));
+    const owner = diagram.task && byPath.get(taskFile(diagram.task));
     const task = owner?.task;
     out.push({
       id: `diagram:${diagram.path}`, kind: "diagram", source: "diagrams", at: diagram.modified, diagram, owner,

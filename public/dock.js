@@ -1,6 +1,7 @@
 import { diagramHref, escapeHtml, isSlackLink, parseUpdates, relativeDate, SERVICE_ICONS } from "./markdown.js";
 import { glyph } from "./icons.js";
 import { isTaskAsset, isTaskFile, taskDir, taskFile, taskOfPath, taskRelative } from "./layout.js";
+import { formatDateTime } from "./dates.js";
 
 // The sticky document dock: a thin bar of icon buttons that open the task's working sections, the document's
 // outgoing links grouped by source, and its backlinks — without scrolling away from what you're reading.
@@ -201,18 +202,18 @@ function dayLabel(time, now = Date.now()) {
   if (days === 0) return "Today";
   if (days === 1) return "Yesterday";
   const date = new Date(time);
-  if (days > 1 && days < 7) return date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: date.getFullYear() === new Date(now).getFullYear() ? undefined : "numeric" });
+  if (days > 1 && days < 7) return formatDateTime(date, undefined, { weekday: "long", month: "short", day: "numeric" });
+  return formatDateTime(date, undefined, { month: "short", day: "numeric", year: date.getFullYear() === new Date(now).getFullYear() ? undefined : "numeric" });
 }
 // Today's rows say how long ago; older rows sit under their day's heading, so they give the time of day.
 function timeLabel(time, now = Date.now()) {
-  if (startOfDay(time) !== startOfDay(now)) return new Date(time).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (startOfDay(time) !== startOfDay(now)) return formatDateTime(time, undefined, { hour: "numeric", minute: "2-digit" });
   const minutes = Math.round((now - time) / 60_000);
   return minutes < 1 ? "just now" : minutes < 60 ? `${minutes}m ago` : `${Math.round(minutes / 60)}h ago`;
 }
 // Folder rows have no day heading over them, so an older one names its day.
 const whenLabel = (time) => startOfDay(time) === startOfDay(Date.now()) ? timeLabel(time) : dayLabel(time);
-const stamp = (time) => new Date(time).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const stamp = (time) => formatDateTime(time, undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const words = (count) => count < 1000 ? `${count} words` : `${(count / 1000).toFixed(count < 10_000 ? 1 : 0).replace(/\.0$/, "")}k words`;
 const plural = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 

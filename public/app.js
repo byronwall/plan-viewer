@@ -24,7 +24,7 @@ import { MOVE_FILTERS, KIND_FILTERS, SORTS, GROUPS, attachScorePopover, moveCoun
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planForLink, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
-import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./dates.js";
+import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek, formatDateTime } from "./dates.js";
 import { dailyFile, isTaskAsset, taskFile, taskOfPath, taskRelative } from "./layout.js";
 
 const state = { documents: [], defaultPath: "", selectedPath: "", document: null, activeChunkId: "", openComposer: null, view: "document" };
@@ -144,12 +144,7 @@ elements.toaster.addEventListener("mouseleave", () => toasts.forEach(startToast)
 
 function formatDate(date, includeYear = false) {
   if (!date) return "";
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    ...(includeYear ? { year: "numeric" } : {}),
-  }).format(new Date(`${date}T12:00:00`));
+  return formatDateTime(`${date}T12:00:00`, "en-US", { weekday: "short", month: "short", day: "numeric", ...(includeYear ? { year: "numeric" } : {}) });
 }
 
 function dailyDocumentLabel(doc) {
@@ -261,7 +256,7 @@ function checkInReason(task, path) {
   return task.checkIn && task.checkIn <= localTodayKey() ? `Check-in date ${shortDate(task.checkIn)}` : "";
 }
 const statusRank = (doc) => checkInReason(doc.task, doc.path) ? -1 : TASK_STATUS_ORDER[doc.task.status];
-const shortDate = (date) => new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const shortDate = (date) => formatDateTime(`${date}T12:00:00`, "en-US", { month: "short", day: "numeric" });
 
 function statusPill(task, path) {
   const reason = checkInReason(task, path);
@@ -1637,7 +1632,7 @@ async function openStep(key) {
 async function reloadStepDialog() {
   const doc = dialogDoc, id = workItemDialog.dataset.item;
   if (!doc) return;
-  const [fresh] = await Promise.all([fetchTaskDocument(doc.path, true).catch(() => doc), loadSteps()]);
+  const [fresh] = await Promise.all([fetchTaskDocument(doc.path, true).catch(() => doc), loadSteps(true)]);
   if (state.document?.path === fresh.path) state.document = fresh;
   if (workItemDialog.open && workItemDialog.dataset.item === id) openWorkItem(id, fresh);
 }
@@ -2376,17 +2371,25 @@ const savedStepsGroup = () => { try { return localStorage.getItem("plan-viewer:s
 const stepsFilters = { move: "you", kind: "any", hidden: false, sort: "priority", group: savedStepsGroup() };
 let selectedStep = "";
 
-async function loadSteps() {
-  try {
-    const response = await fetch("/api/steps");
-    if (response.ok) stepsData = await response.json();
-  } catch {}
-  updateNavCounts();
-  return stepsData;
+// Callers that ask while a load is running share it (boot, the opening plan and the nav counts all ask at once).
+// After a write, `fresh` starts a new load, since one already running may have read the files before it.
+let stepsLoading = null;
+function loadSteps(fresh = false) {
+  if (fresh) stepsLoading = null;
+  const load = (stepsLoading ??= (async () => {
+    try {
+      const response = await fetch("/api/steps");
+      if (response.ok) stepsData = await response.json();
+    } catch {}
+    updateNavCounts();
+    return stepsData;
+  })());
+  load.finally(() => { if (stepsLoading === load) stepsLoading = null; });
+  return load;
 }
 
 async function refreshSteps() {
-  await loadSteps();
+  await loadSteps(true);
   if (state.view !== "steps") return;
   const y = window.scrollY;
   renderStepsPage();
@@ -2649,7 +2652,7 @@ async function refreshFromMarkdown(changedPaths) {
   const currentPath = state.selectedPath;
   for (const path of changedPaths) stepDocs.delete(path);
   // Steps derive from every task, so a task edit reloads them before anything that lists steps renders again.
-  if ([...changedPaths].some((path) => path.startsWith("tasks/"))) await loadSteps();
+  if ([...changedPaths].some((path) => path.startsWith("tasks/"))) await loadSteps(true);
   if (workItemDialog.open && dialogDoc && dialogDoc.path !== currentPath && changedPaths.has(dialogDoc.path)) reloadStepDialog();
   const currentChanged = changedPaths.has(currentPath);
   // Live refreshes keep the reader where they are: pin the first card still on screen to its current offset.
@@ -4853,7 +4856,7 @@ async function boot() {
     connectLiveUpdates();
     loadPlans().then(updateNavCounts, () => {});
     loadDiagrams();
-    loadSteps();
+    if (!stepsData) loadSteps();
     loadPrIndex().catch(() => {}); // so ⌘K lists PRs on its first paint instead of inserting them a moment later
     openOverlays(new URLSearchParams(location.search));
     if (issuesOn()) loadIssues().then(() => { renderFavorites(); updateNavCounts(); }).catch(() => {}); // ⌘K finds issues by key and title
