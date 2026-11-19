@@ -8,6 +8,23 @@ The viewer never edits your files. Your Markdown stays the source of truth, read
 
 ![Today's plan, with its scheduled tasks and the day's milestones as cards](docs/images/today.png)
 
+## Set it up with your agent
+
+You need [Node.js](https://nodejs.org) 22.6 or later and an agent such as [Claude Code](https://claude.com/claude-code) or [Codex](https://openai.com/codex/). There is nothing to install.
+
+```bash
+git clone https://github.com/byronwall/plan-viewer.git
+cd plan-viewer
+```
+
+Then start your agent in `plan-viewer` and tell it:
+
+```text
+Read docs/setup.md and set me up.
+```
+
+The agent creates your workspace in `../planning`, starts the viewer, asks you four questions, and writes today's plan and your first task. To do it yourself instead, see [Set it up by hand](#set-it-up-by-hand).
+
 ## What you get
 
 **Plans that read as work.** The viewer opens today's plan. Each milestone or section is a card, and scheduled tasks show how many of their steps wait on you, an agent or someone else. Tasks, PRs, commits, and Linear or Jira keys become links that show live titles and states.
@@ -36,24 +53,12 @@ The viewer never edits your files. Your Markdown stays the source of truth, read
 
 ![The ⌘K palette](docs/images/palette.png)
 
-## Try it
+## Set it up by hand
 
-You need [Node.js](https://nodejs.org) 22.6 or later. There are no dependencies to install.
+A workspace is a folder of Markdown plans beside your `plan-viewer` checkout. To start one:
 
 ```bash
 git clone https://github.com/byronwall/plan-viewer.git
-cd plan-viewer
-npm install
-npm run dev:demo
-```
-
-Open <http://127.0.0.1:4173>. The demo serves [`examples/workspace/`](examples/workspace), a small fictional team's week: five tasks, daily plans, reference notes, and a stand-in Jira so the Issues page has data. The Code view is empty until you track a repository (gear icon on the Code page).
-
-## Use it with your own plans
-
-A workspace is any folder laid out like the example. To start one beside your `plan-viewer` checkout:
-
-```bash
 mkdir planning && cd planning
 ../plan-viewer/cli.ts init
 ```
@@ -69,7 +74,7 @@ Nothing is installed: the workspace runs the checkout's `cli.ts` directly. `init
 
 Then run `../plan-viewer/cli.ts` in the workspace to start the viewer.
 
-Write today's plan at `daily/YYYY-MM-DD.md` and it opens on launch. The copied `AGENTS.md` (which `CLAUDE.md` imports) tells your agents how plans and tasks are written, so you can also just ask one to set the workspace up.
+Write today's plan at `daily/YYYY-MM-DD.md` and it opens on launch. The copied `AGENTS.md` (which `CLAUDE.md` imports) tells your agents how plans and tasks are written. [`examples/workspace/`](examples/workspace) is a full sample workspace: a small fictional team's week.
 
 ### Workspace layout
 
@@ -155,8 +160,8 @@ The editor, terminal, and Finder buttons also assume macOS. Reading plans works 
 The server is TypeScript that Node runs directly (`--experimental-strip-types`), and the browser client is plain ES modules in [`public/`](public). There is no build step and no runtime dependency.
 
 ```bash
-npm test        # runs every test against fixtures/planning
-npm run dev:demo  # serves examples/workspace
+npm test          # runs every test against fixtures/planning
+npm run dev:demo  # serves examples/workspace, a fictional sample workspace, on port 4173
 ```
 
 `npm install` enables a pre-commit hook that runs the tests. [`AGENTS.md`](AGENTS.md) maps features to files and lists the rules for changes; it is written for coding agents but is the fastest orientation for anyone. To refresh the screenshots above, see [`scripts/screenshots.mjs`](scripts/screenshots.mjs).

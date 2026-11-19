@@ -4,13 +4,14 @@ For agents changing the viewer. Content lives in separate planning workspaces; n
 
 ## Setup
 
-Node.js 22.6+ and nothing else. `npm install` (no packages; it enables the pre-commit hook), then `npm test` and `npm run dev:demo`. If you are setting up a planning workspace for someone rather than changing the viewer, follow the README's "Use it with your own plans": `plan-viewer init` creates the folders and agent guide and sets the hooks path.
+Node.js 22.6+ and nothing else. `npm install` (no packages; it enables the pre-commit hook), then `npm test` and `npm run dev:demo`. If you are setting up a planning workspace for someone rather than changing the viewer, follow `docs/setup.md`.
 
 ## Docs
 
 | File | Holds | Update when |
 | --- | --- | --- |
 | `README.md` | The product intro: what it does, screenshots, setup, commands. Keep it short; detail goes in `docs/`. | Setup, commands, or a headline feature changes. |
+| `docs/setup.md` | First-run setup, written for the user's agent; the README's setup prompt points at it. Names no workspace paths: it defers to the workspace `AGENTS.md`. | `init` or the first-run flow changes. |
 | `docs/guide.md` | Every page, shortcut, and behavior. | Any user-visible behavior changes. |
 | `docs/configuration.md` | Every `config/viewer.json` key and environment variable. | A key or variable is added or changed. |
 | `docs/code-view.md`, `docs/issues-plan.md`, `docs/plans-plan.md` | Design intent and plans for those surfaces. | Before adding a list/inspector/overview surface, read `code-view.md`. |
