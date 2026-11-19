@@ -1,0 +1,432 @@
+{
+  "schema_version": "0.5.0",
+  "initiative": {
+    "title": "First-run onboarding",
+    "slug": "first-run-onboarding",
+    "scale": "capability",
+    "current_phase": "execution",
+    "last_updated": "2026-11-18",
+    "summary": "A solo developer who clones plan-viewer from GitHub ends with a working workspace of their own without hand-holding; the demo-first path is reconsidered.",
+    "status": "active",
+    "next_action": "Merge stack #23; build m4 after the TASK-0040 Setup page merges"
+  },
+  "artifacts": {
+    "intent_brief": {
+      "path": "intent-brief.md",
+      "status": "current",
+      "updated_at": "2026-11-18"
+    },
+    "brainstorm": {
+      "path": "brainstorm.md",
+      "status": "not-requested",
+      "updated_at": null
+    },
+    "shape_brief": {
+      "path": "shape-brief.md",
+      "status": "current",
+      "updated_at": "2026-11-18"
+    },
+    "implementation_plan": {
+      "path": "implementation-plan.md",
+      "status": "current",
+      "updated_at": "2026-11-18"
+    }
+  },
+  "sources": [
+    {
+      "id": "S1",
+      "type": "transcript",
+      "location": "~/Projects/planning/tasks/TASK-0038.md",
+      "anchor": "Byron 2026-11-18 dictation: demo is not helping people",
+      "authority": "user"
+    },
+    {
+      "id": "S2",
+      "type": "repo",
+      "location": "README.md",
+      "anchor": "Try it / Use it with your own plans",
+      "authority": "repo"
+    },
+    {
+      "id": "S3",
+      "type": "repo",
+      "location": "init-workspace.ts",
+      "anchor": "initWorkspace",
+      "authority": "repo"
+    },
+    {
+      "id": "S4",
+      "type": "doc",
+      "location": "~/Projects/planning/tasks/TASK-0039.md, TASK-0040.md",
+      "anchor": "sibling initiatives",
+      "authority": "user"
+    },
+    {
+      "id": "qa-round-1",
+      "type": "question-round",
+      "location": "conversation",
+      "anchor": "1",
+      "authority": "user"
+    },
+    {
+      "id": "qa-round-2",
+      "type": "question-round",
+      "location": "conversation",
+      "anchor": "2",
+      "authority": "user"
+    },
+    {
+      "id": "qa-round-3",
+      "type": "question-round",
+      "location": "conversation",
+      "anchor": "3",
+      "authority": "user"
+    }
+  ],
+  "intent": {
+    "claims": [
+      {
+        "id": "C1",
+        "statement": "A new user ends the first run in their own workspace, not sample data.",
+        "kind": "goal",
+        "sources": [
+          "S1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C2",
+        "statement": "The demo-first path does not help new users and should be reconsidered.",
+        "kind": "goal",
+        "sources": [
+          "S1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C3",
+        "statement": "Audience: solo developers using Claude or Codex who clone from GitHub.",
+        "kind": "decision",
+        "sources": [
+          "S4"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C4",
+        "statement": "Integration setup goes through agent helpers, not an in-app wizard.",
+        "kind": "constraint",
+        "sources": [
+          "S4"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C5",
+        "statement": "Build on the TASK-0039 layout; no old-layout support.",
+        "kind": "constraint",
+        "sources": [
+          "S4"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C6",
+        "statement": "npm run demo becomes a contributor-only script named dev:demo; README no longer leads with it.",
+        "kind": "decision",
+        "sources": [
+          "qa-round-1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C7",
+        "statement": "The workspace lives in a sibling folder beside the plan-viewer clone.",
+        "kind": "decision",
+        "sources": [
+          "qa-round-1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C8",
+        "statement": "Setup is agent-first: README gives a prompt to paste into Claude or Codex in the clone.",
+        "kind": "decision",
+        "sources": [
+          "qa-round-1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C9",
+        "statement": "An empty workspace opens on a getting-started page whose items copy agent prompts or queue Up next notes.",
+        "kind": "decision",
+        "sources": [
+          "qa-round-1"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C10",
+        "statement": "Getting started is the top section of the TASK-0040 Settings page while the workspace is new; it shrinks to a chip once a daily plan and a task exist.",
+        "kind": "decision",
+        "sources": [
+          "qa-round-2",
+          "qa-round-3"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C11",
+        "statement": "The first-run agent runs init, starts the viewer, interviews the user briefly, and writes today plan plus one real task.",
+        "kind": "decision",
+        "sources": [
+          "qa-round-2"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C12",
+        "statement": "init creates no package.json; it sets core.hooksPath to the viewer hooks and writes the viewer path into the workspace AGENTS.md.",
+        "kind": "decision",
+        "sources": [
+          "qa-round-2",
+          "qa-round-3"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C13",
+        "statement": "README leads with pitch, one screenshot, then a one-line agent prompt pointing at docs/setup.md.",
+        "kind": "decision",
+        "sources": [
+          "qa-round-2",
+          "qa-round-3"
+        ],
+        "confidence": "high"
+      },
+      {
+        "id": "C14",
+        "statement": "Build the parts independent of TASK-0039/0040 now; the getting-started section waits for the settings page.",
+        "kind": "decision",
+        "sources": [
+          "qa-round-3"
+        ],
+        "confidence": "high"
+      }
+    ],
+    "themes": [],
+    "conflicts": [],
+    "human_questions": []
+  },
+  "brainstorm": {
+    "status": "not-requested",
+    "requested_count": 7,
+    "options": [],
+    "selected_option": null
+  },
+  "shape": {
+    "status": "current",
+    "appetite": "Small stack: plan PR, three build PRs now, one after TASK-0040",
+    "problem": null,
+    "recommended_shape": "Agent-first setup via docs/setup.md, init without package.json, demo renamed dev:demo, Getting started section on Setup page",
+    "success_moves": [
+      "Drop package.json so no package manager is a setup step",
+      "setup.md names no folder paths so it survives the layout change",
+      "Getting started joins the Setup page instead of a new page",
+      "Demo kept only for contributors"
+    ],
+    "first_proof": {
+      "question": "Can a fresh clone reach a working own workspace by following docs/setup.md alone?",
+      "artifact": "by-hand run in a temp folder",
+      "decision_rule": "Any step needing knowledge outside setup.md or workspace AGENTS.md gets added before the README points at it"
+    },
+    "rabbit_holes": [],
+    "open_decisions": []
+  },
+  "implementation": {
+    "status": "current",
+    "repository_snapshot": {
+      "root": "plan-viewer",
+      "revision": "a2fbb55",
+      "worktree_status": null,
+      "subsystems": [],
+      "test_commands": [],
+      "deployment_surfaces": []
+    },
+    "dependencies": [
+      {
+        "id": "D1",
+        "name": "TASK-0040 Setup page (PR 15 stack)",
+        "first_proof_role": "absent",
+        "seam": "?view=setup section",
+        "proof_strategy": "M4 builds after it merges"
+      },
+      {
+        "id": "D2",
+        "name": "TASK-0039 layout (PR 16 stack)",
+        "first_proof_role": "absent",
+        "seam": "workspace AGENTS.md owns paths",
+        "proof_strategy": "setup.md names no paths; init SCRIPTS conflict resolved by whichever merges second"
+      }
+    ],
+    "fast_local_loop": {
+      "command": "npm test"
+    },
+    "milestones": [
+      {
+        "id": "m1",
+        "title": "Demo for contributors only",
+        "outcome": "No user-facing text sends a new user to the demo",
+        "dependencies_introduced": [],
+        "proof": "npm run dev:demo serves examples/workspace; grep finds no run demo",
+        "valid_intermediate_state": "Viewer and docs unchanged except the script name",
+        "rollback": "Revert the rename",
+        "status": "active",
+        "evidence": [
+          "PR #20"
+        ]
+      },
+      {
+        "id": "m2",
+        "title": "init without a package manager",
+        "outcome": "A new workspace needs no install step",
+        "dependencies_introduced": [],
+        "proof": "init-workspace.test.ts and a by-hand temp run with a hook-checked commit",
+        "valid_intermediate_state": "Old workspaces with package.json keep working",
+        "rollback": "Revert init-workspace.ts",
+        "status": "active",
+        "evidence": [
+          "PR #21; init-workspace.test.ts; by-hand clone run"
+        ]
+      },
+      {
+        "id": "m3",
+        "title": "Agent setup and README lead",
+        "outcome": "The README first commands lead to the user own workspace",
+        "dependencies_introduced": [],
+        "proof": "Follow docs/setup.md literally in a temp folder",
+        "valid_intermediate_state": "Manual setup stays documented as a fallback",
+        "rollback": "Revert README and setup.md",
+        "status": "active",
+        "evidence": [
+          "PR #22; headless agent run from the README prompt"
+        ]
+      },
+      {
+        "id": "m4",
+        "title": "Getting started on Setup",
+        "outcome": "A new workspace first screen says what to do next",
+        "dependencies_introduced": [
+          "D1"
+        ],
+        "proof": "check-page on an empty workspace shows the section; screenshots",
+        "valid_intermediate_state": "Setup page works with or without the section",
+        "rollback": "Remove the section",
+        "status": "planned"
+      }
+    ],
+    "cut_line": [
+      "global plan-viewer command",
+      "scripted agent check of setup.md",
+      "migrating existing workspaces off package.json"
+    ],
+    "open_decisions": []
+  },
+  "history": [
+    {
+      "date": "2026-11-18",
+      "change": "Intent brief drafted from Byron dictation and repo reading."
+    },
+    {
+      "date": "2026-11-18",
+      "change": "Recorded question rounds 1-3."
+    },
+    {
+      "date": "2026-11-18",
+      "change": "Shape and plan written from rounds 1-3."
+    },
+    {
+      "date": "2026-11-18",
+      "change": "Shape and plan written from rounds 1-3."
+    },
+    {
+      "date": "2026-11-18",
+      "change": "Built m1-m3 as PRs 20-22 on stack 23."
+    }
+  ],
+  "closure": null,
+  "question_rounds": {
+    "rounds": [
+      {
+        "round": 1,
+        "theme": "goals",
+        "source": "qa-round-1",
+        "questions": [
+          {
+            "question": "What happens to npm run demo?",
+            "answer": "Contributors only, renamed so it is clearly dev:demo"
+          },
+          {
+            "question": "Where does the workspace live?",
+            "answer": "Sibling folder"
+          },
+          {
+            "question": "Who drives setup?",
+            "answer": "Agent prompt first"
+          },
+          {
+            "question": "First screen on an empty workspace?",
+            "answer": "Getting-started page"
+          }
+        ]
+      },
+      {
+        "round": 2,
+        "theme": "behavior",
+        "source": "qa-round-2",
+        "questions": [
+          {
+            "question": "Getting started vs settings page?",
+            "answer": "One page, two modes"
+          },
+          {
+            "question": "How far does the agent go?",
+            "answer": "Setup plus first plan and one task"
+          },
+          {
+            "question": "Workspace package manager?",
+            "answer": "Simplest thing; pnpm preferred but do not force it; no package.json is fine"
+          },
+          {
+            "question": "README lead: pitch, screenshot, agent setup?",
+            "answer": "Yes"
+          }
+        ]
+      },
+      {
+        "round": 3,
+        "theme": "boundaries",
+        "source": "qa-round-3",
+        "questions": [
+          {
+            "question": "No package.json; commands run ../plan-viewer/cli.ts?",
+            "answer": "Yes"
+          },
+          {
+            "question": "Where do setup instructions live?",
+            "answer": "docs/setup.md, one-line README prompt"
+          },
+          {
+            "question": "When does getting started shrink?",
+            "answer": "Once a daily plan and one task exist"
+          },
+          {
+            "question": "Order against TASK-0039/0040?",
+            "answer": "Independent parts now; getting-started section waits for TASK-0040"
+          }
+        ]
+      }
+    ]
+  }
+}
