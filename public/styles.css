@@ -937,7 +937,7 @@ button.task-list-id:hover { text-decoration: underline; }
 @media (min-width: 1300px) {
   .document-body { display: grid; grid-template-columns: minmax(620px, 1050px) minmax(240px, 1fr); grid-template-areas: "content toc"; align-items: start; gap: clamp(24px, 3vw, 44px); }
   .chunk-stack { grid-area: content; }
-  .tasks-page, .code-page, .plans-page, .diagrams-page { grid-area: auto; grid-column: 1 / -1; }
+  .tasks-page, .code-page, .plans-page, .diagrams-page, .setup-page { grid-area: auto; grid-column: 1 / -1; }
   .chunk-nav { grid-area: toc; container-type: inline-size; position: sticky; top: 24px; align-self: start; display: block; width: min(100%, 806px); height: calc(100vh - 48px); overflow: hidden; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 12px; background: #f8f9fb; }
   .chunk-nav-columns { height: 100%; }
   .chunk-nav-column:nth-child(n + 2) { display: none; }
@@ -3643,3 +3643,54 @@ div.step-row { cursor: pointer; }
 .today-lead-head h2 { margin: 0; font-size: 1rem; }
 
 .today-lead-more { display: inline-block; margin-top: 6px; color: var(--action-ink); font-size: .78rem; font-weight: 650; text-decoration: none; }
+
+/* Setup page (setup-page.js): integrations with a status dot on the left rail, then every setting in one table. */
+.library-page.setup-page { max-width: 1480px; }
+.setup { display: grid; gap: 28px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 20px 24px 24px; }
+.setup-section { display: grid; gap: 8px; min-width: 0; }
+.setup-section > header { display: flex; align-items: center; gap: 12px; min-height: 28px; }
+.setup-section h2 { margin: 0; font-size: .95rem; letter-spacing: -.01em; }
+.setup-sum { color: var(--muted); font-size: .8rem; }
+.setup-sum code, .setup-table code { font-size: .78rem; color: var(--body-ink); }
+.setup-recheck, .setup-help, .setup-reset { height: 24px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); padding: 0 8px; color: var(--body-ink); font-size: .76rem; font-weight: 600; white-space: nowrap; transition: background-color 140ms ease, border-color 140ms ease; }
+.setup-recheck { margin-left: auto; }
+.setup-reset { height: 20px; margin-left: 6px; padding: 0 6px; border-color: transparent; color: var(--action-ink); font-weight: 500; background: transparent; }
+@media (hover: hover) {
+  .setup-recheck:hover, .setup-help:hover { background: var(--hover-field); border-color: var(--line-strong); }
+  .setup-reset:hover { background: var(--selected); }
+}
+.setup-recheck:active, .setup-help:active, .setup-reset:active { background: var(--quiet-field); transform: scale(.97); }
+.setup-recheck:disabled { opacity: .45; cursor: not-allowed; }
+.setup-recheck:focus-visible, .setup-help:focus-visible, .setup-reset:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+.setup-ints { display: grid; grid-template-columns: 10px max-content minmax(180px, 1fr) minmax(200px, 1.3fr) max-content; column-gap: 14px; }
+.setup-int { display: contents; }
+.setup-int > * { display: flex; align-items: center; min-height: 34px; border-top: 1px solid var(--quiet-field); font-size: .84rem; }
+.setup-int:first-child > * { border-top: 0; }
+.setup-dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--quiet-text); }
+.setup-int[data-state="ok"] .setup-dot::before { background: var(--success); }
+.setup-int[data-state="missing"] .setup-dot::before { background: var(--danger); }
+.setup-int b { font-weight: 600; }
+.setup-int-detail { color: var(--body-ink); }
+.setup-int[data-state="missing"] .setup-int-detail { color: var(--danger); }
+.setup-int-enables { color: var(--muted); font-size: .8rem; }
+.setup-int .setup-help { align-self: center; }
+.setup-int[data-state="ok"] .setup-help { border-color: transparent; color: var(--muted); background: transparent; }
+.setup-filter { margin-left: auto; width: 220px; height: 26px; border: 1px solid var(--line); border-radius: 6px; padding: 0 8px; font-size: .8rem; }
+.setup-filter:focus-visible, .setup-input:focus-visible { outline: none; border-color: var(--action); box-shadow: 0 0 0 3px var(--selected); }
+.setup-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: .82rem; }
+.setup-col-key { width: 230px; }
+.setup-col-value { width: 280px; }
+.setup-col-source { width: 96px; }
+.setup-col-act { width: 96px; }
+.setup-table th, .setup-table td { padding: 4px 10px 4px 0; border-top: 1px solid var(--quiet-field); text-align: left; vertical-align: top; font-weight: 400; }
+.setup-table th[scope="row"] { padding-top: 7px; overflow-wrap: anywhere; }
+.setup-group th { padding: 14px 0 4px; border-top: 0; color: var(--label-text); font-size: .7rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.setup-note { margin-left: 6px; color: var(--status-waiting-ink); font-size: .7rem; }
+.setup-input { width: 100%; height: 26px; border: 1px solid var(--line); border-radius: 6px; padding: 0 7px; color: var(--ink); font-size: .8rem; background: var(--paper); }
+.setup-input::placeholder { color: var(--quiet-text); }
+.setup-check { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; color: var(--body-ink); cursor: pointer; }
+.setup-json { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; padding-top: 4px; overflow-wrap: anywhere; color: var(--body-ink); }
+.setup-source { padding-top: 7px !important; color: var(--body-ink); white-space: nowrap; }
+.setup-default { color: var(--quiet-text); }
+.setup-meaning { padding-top: 7px !important; color: var(--muted); line-height: 1.4; }
+.setup-act { text-align: right !important; padding-top: 5px !important; padding-right: 0 !important; }

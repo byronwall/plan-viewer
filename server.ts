@@ -19,7 +19,8 @@ import { createIssueTracker } from "./issues.ts";
 import { createPlans } from "./plans.ts";
 import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
-import { config, setConfig } from "./public/config.js";
+import { config, setConfig, withNote } from "./public/config.js";
+import { integrationPrompt, probeIntegrations, readRawConfig, setupData, settingMeanings, listSettings, settingPrompt, writeSetting, CONFIG_DOC } from "./setup.ts";
 import { CONFIG_FILE, DOC_ROOTS, dailyFile, isTaskAsset, isTaskFile, taskFile, taskOfPath } from "./public/layout.js";
 import { applyRule, closeNote, followUpNote, saveLaunchNote, loadSteps, markStepDone, pickChoice, planMentions, runStatement, saveNote, setStepNext, setTaskPriority, startStep } from "./steps.ts";
 import { editStep } from "./steps.ts"; // the Steps table's inline edits
@@ -1066,6 +1067,35 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (request.method === "GET" && url.pathname === "/api/version") return json(response, 200, await viewerVersion());
     if (request.method === "POST" && url.pathname === "/api/version/update") return json(response, 200, await updateViewer());
     if (request.method === "GET" && url.pathname === "/api/config") return json(response, 200, config());
+    // The Setup page: live integration checks, every setting, and helper prompts (setup.ts).
+    if (request.method === "GET" && url.pathname === "/api/setup") return json(response, 200, await setupData(ROOT, config()));
+    if (request.method === "POST" && url.pathname === "/api/setup/config") {
+      const body = await readJson(request);
+      viewerWrites.add(CONFIG_FILE);
+      await writeSetting(ROOT, String(body.key || ""), body.value, body.reset === true);
+      setConfig(loadConfig(ROOT));
+      return json(response, 200, { saved: true, config: config() });
+    }
+    // A helper's prompt: copied (`copy`), or drafted in the agent app from the note popover's quiet button. Enter in the
+    // popover saves the copied prompt through /api/notes instead.
+    if (request.method === "POST" && url.pathname === "/api/setup/agent") {
+      const body = await readJson(request);
+      const id = String(body.id || "");
+      let title = "", prompt = "";
+      if (body.kind === "setting") {
+        const setting = listSettings(await readRawConfig(ROOT).catch(() => ({})), config(), settingMeanings(await readFile(CONFIG_DOC, "utf8").catch(() => ""))).find((row) => row.key === id);
+        if (!setting) throw new Error(`${id} is not a setting.`);
+        title = `Configure ${id}`; prompt = settingPrompt(ROOT, setting);
+      } else {
+        const integration = (await probeIntegrations(ROOT, config())).find((row) => row.id === id);
+        if (!integration) throw new Error(`${id} is not an integration.`);
+        title = `Set up ${integration.label}`; prompt = integrationPrompt(ROOT, integration);
+      }
+      prompt = withNote(prompt, String(body.note || ""), config().user);
+      if (body.copy === true) return json(response, 200, { title, prompt });
+      if (process.env.PLAN_VIEWER_DRY_RUN === "1") return json(response, 200, { opened: true, dryRun: true, prompt });
+      return json(response, 200, { opened: true, ...(await getCodexApp().openDraft(ROOT, title, prompt, String(body.app || "codex"), [])) });
+    }
     if (request.method === "GET" && url.pathname === "/api/code") return json(response, 200, await codeDashboard.load(url.searchParams.has("refresh")));
     if (request.method === "GET" && url.pathname === "/api/code/plans") return json(response, 200, await plans.load(url.searchParams.has("refresh"), url.searchParams.has("worktrees")));
     if (request.method === "GET" && url.pathname === "/api/code/plan-map") return json(response, 200, await plans.map(url.searchParams.get("id") || ""));

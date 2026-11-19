@@ -13,6 +13,7 @@ const LAUNCHES = [
   ["issues.js", /requestDraft\((?:[^()]|\([^()]*\))*\)/g],
   ["plans.js", /planRequest\("plan-agent"(?:[^()]|\([^()]*\))*\)/g],
   ["app.js", /"\/api\/steps\/start"/g],
+  ["setup-page.js", /setupAgent\(\{[^}]*\}\)/g],
 ];
 const isCopy = (call) => /copy: true|, true\)$|, true, /.test(call) || /\(\s*skill,\s*keys,\s*copy/.test(call);
 

@@ -118,7 +118,7 @@ async function fetchGithub(keys: string[]) {
 }
 
 // Reads `KEY = "value"` from one [section] of the ignored config.toml.
-async function configValue(root: string, section: string, key: string) {
+export async function configValue(root: string, section: string, key: string) {
   const config = await readFile(process.env.LINEAR_CONFIG_PATH || join(root, "config.toml"), "utf8").catch(() => "");
   const body = config.split(/^\s*\[/m).find((part) => part.startsWith(`${section}]`)) || "";
   return body.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]+)"`, "m"))?.[1] || "";

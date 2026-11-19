@@ -18,6 +18,7 @@ import { installBrief } from "./brief.js";
 import { openNotePopover } from "./note-popover.js";
 import { comparePanels, inlineSvg, isDiffDiagram, sourceHtml } from "./diagram.js";
 import { diagramsPageHtml, filterDiagrams } from "./diagrams-page.js";
+import { renderSetupPage } from "./setup-page.js";
 import { bindOutbound, outboundPanel } from "./outbound.js";
 import { MOVE_FILTERS, KIND_FILTERS, SORTS, GROUPS, attachScorePopover, moveCounts, movePill, promptHtml, showStepLayer, stepActionsHtml, stepBodyHtml, stepInspectorHtml, stepKey, scheduledTasks, stepListHtml, stepRowHtml, stepTitleText, stepsTableHtml, stepsToolbarHtml, stepToggleHtml, taskStepsHtml, visibleSteps } from "./steps-page.js";
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
@@ -42,6 +43,7 @@ const elements = {
   stepsButton: document.querySelector("#open-steps"),
   outboxButton: document.querySelector("#open-outbox"),
   referenceButton: document.querySelector("#open-reference"),
+  setupButton: document.querySelector("#open-setup"),
   diagramsButton: document.querySelector("#open-diagrams"),
   activityButton: document.querySelector("#open-activity"),
   codeButton: document.querySelector("#open-code"),
@@ -168,6 +170,7 @@ function resetPageNavigation() {
   elements.stepsButton.setAttribute("aria-current", "false");
   elements.outboxButton.setAttribute("aria-current", "false");
   elements.referenceButton.setAttribute("aria-current", "false");
+  elements.setupButton.setAttribute("aria-current", "false");
   elements.diagramsButton.setAttribute("aria-current", "false");
   elements.codeButton.setAttribute("aria-current", "false");
   elements.plansButton.setAttribute("aria-current", "false");
@@ -175,7 +178,7 @@ function resetPageNavigation() {
   elements.slackButton.setAttribute("aria-current", "false");
   elements.chatThreadsButton.setAttribute("aria-current", "false");
   elements.activityButton.setAttribute("aria-current", "false");
-  elements.chunks.classList.remove("tasks-page", "steps-page", "library-page", "diagrams-page", "code-page", "plans-page", "issues-page", "slack-page", "activity-page");
+  elements.chunks.classList.remove("tasks-page", "steps-page", "library-page", "diagrams-page", "code-page", "plans-page", "issues-page", "slack-page", "activity-page", "setup-page");
 }
 
 function documentButton(doc, dailyChild = false) {
@@ -934,6 +937,28 @@ function renderChatThreadsPage() {
   elements.chunkNav.replaceChildren();
   document.querySelector("#chat-library-toggle").setAttribute("aria-expanded", "false");
   renderChatThreads(elements.chunks);
+}
+
+function showSetup() {
+  if (state.openComposer && elements.handoffPopover.matches(":popover-open") && !requestComposerClose()) return;
+  closeComposer();
+  history.pushState(null, "", "?view=setup");
+  renderSetup();
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+
+// Integrations and settings (setup-page.js); it fetches /api/setup itself, which runs the live checks.
+function renderSetup() {
+  state.view = "setup";
+  resetPageNavigation();
+  elements.setupButton.setAttribute("aria-current", "page");
+  for (const file of elements.documents.querySelectorAll('.document-link[aria-current="page"]')) file.setAttribute("aria-current", "false");
+  elements.title.textContent = "Setup";
+  elements.count.textContent = "";
+  elements.chunkNav.hidden = true;
+  elements.chunkNav.replaceChildren();
+  elements.chunks.classList.add("library-page", "setup-page");
+  renderSetupPage(elements.chunks, { showNotice });
 }
 
 function showActivity({ historyMode = "push" } = {}) {
@@ -2917,6 +2942,7 @@ elements.copyTaskPath.addEventListener("animationend", () => {
 });
 elements.tasksButton.addEventListener("click", () => showTasks());
 elements.referenceButton.addEventListener("click", () => showLibrary("reference"));
+elements.setupButton.addEventListener("click", showSetup);
 elements.diagramsButton.addEventListener("click", () => showDiagrams());
 elements.activityButton.addEventListener("click", () => showActivity());
 elements.codeButton.addEventListener("click", () => showCode());
@@ -3946,6 +3972,7 @@ const PAGES = [
   { title: "Diagrams", detail: "Every diagram in the workspace", icon: "plan", run: () => showDiagrams() },
   { title: "Plans", detail: "Initiatives in tracked repositories", icon: "initiative", run: () => showPlans() },
   { title: "Chat Threads", detail: "Active and completed Codex and Claude threads", icon: "history", run: showChatThreads },
+  { title: "Setup", detail: "Integrations, settings and their setup helpers", icon: "settings", run: showSetup },
   { title: "Local servers", detail: "Dev servers the viewer started: URLs, output, restart, stop", icon: "server", run: () => openServers(showNotice) },
   ...Object.entries(CODE_TABS).map(([tab, title]) => ({ title, detail: `Code · ${title}`, icon: tab === "prs" ? "pr" : tab === "commits" ? "branch" : "code", run: () => showCode({ tab: tab === "prs" ? "" : tab }) })),
   ...Object.entries(ISSUE_TABS).map(([tab, title]) => ({ title: tab === "all" ? "Issues" : `${title} issues`, detail: `Issues · ${title}`, icon: "issue", issues: true, run: () => showIssues({ tab: tab === "all" ? "" : tab }) })),
@@ -4332,6 +4359,7 @@ const VIEWS = Object.assign(Object.create(null), {
   plans: { boot: () => renderPlans(), back: () => showPlans({ historyMode: "none" }) },
   issues: { boot: () => renderIssues(), back: (params) => showIssues({ historyMode: "none", tab: params.get("tab") || "" }) },
   "chat-threads": { boot: renderChatThreadsPage, back: renderChatThreadsPage },
+  setup: { boot: renderSetup, back: renderSetup },
   slack: { boot: () => renderSlack(), back: () => showSlack({ historyMode: "none" }) },
   activity: { boot: () => renderActivity(), back: () => showActivity({ historyMode: "none" }), refresh: () => renderActivity() },
 });
@@ -4633,6 +4661,7 @@ function visitResult(href) {
   if (view === "plans") return page("initiative", "Plans", "Initiatives by repo and status");
   if (view === "issues") return page("issue", "Issues", ISSUE_TABS[params.get("tab") || "all"] || "All");
   if (view === "chat-threads") return page("history", "Chat Threads", "Codex and Claude");
+  if (view === "setup") return page("settings", "Setup", "Integrations and settings");
   if (view === "slack") return page("slack", "Slack", "Linked threads");
   if (view === "activity") return page("plan", "Activity", "Everything that changed");
   if (view === "diagrams") return page("plan", "Diagrams", "Every diagram in the workspace");
