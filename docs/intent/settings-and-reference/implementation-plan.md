@@ -10,9 +10,9 @@ last_updated: "2026-11-18"
 
 ## Plan at a glance
 
-Build waits for TASK-0039 (workspace layout) to land, by Byron's choice. That initiative decides where reference files and prompt overrides live, and each milestone below reads those paths.
+Build waits for TASK-0039 (workspace layout) to land, by Byron's choice. Its layout is decided (plan-viewer PR #14): `config/viewer.json` for settings, `config/` for files the tooling reads, `config/prompts/` for prompt overrides.
 
-The order puts the most useful and least coupled part first. Milestone 1 ships the Setup page with Integrations and Settings: it touches no prompt code and gives a new user an answer on day one. Milestone 2 adds Reference files, a small list driven by config keys and the new layout. Milestone 3 is the risky refactor: it moves every prompt into one registry with workspace overrides, while every launch button keeps sending the same text. Milestone 4 adds the three routine prompts and their launch buttons on top of that registry.
+The order puts the most useful and least coupled part first. Milestone 1 ships the Setup page with Integrations and Settings: it touches no prompt code and gives a new user an answer on day one. Milestone 2 adds Config files, a small list of what is in `config/`. Milestone 3 is the risky refactor: it moves every prompt into one registry with workspace overrides, while every launch button keeps sending the same text. Milestone 4 adds the three routine prompts and their launch buttons on top of that registry.
 
 Each milestone leaves a working page with one more section. Every milestone ships as one layer of a `gh stack`, with screenshots.
 
@@ -35,7 +35,7 @@ Each milestone leaves a working page with one more section. Every milestone ship
   - Integrations rows with helper buttons through `note-popover.js`; the prompt names the integration, its state and the keys to set.
   - Settings table from the defaults in `public/config.js` merged with the workspace config.
 - **Change — `/api/setup/config`**
-  - Writes one scalar key into `viewer.config.json`; refuses arrays, objects and unknown keys.
+  - Writes one scalar key into `config/viewer.json`; refuses arrays, objects and unknown keys.
 
 ### Desired end state
 
@@ -43,9 +43,9 @@ Each milestone leaves a working page with one more section. Every milestone ship
 - A helper saves an Up next note; editing `user` changes only that key on disk.
 - `docs/guide.md` and `docs/configuration.md` describe the page.
 
-## Milestone 2: Reference files
+## Milestone 2: Config files
 
-- **Change —** a list of reference files built from config keys (`code.reposFile`, `code.prNotesDir`) and the TASK-0039 layout (`slack-channels.md`, notes folder), each with purpose, key and an Open link to the document page.
+- **Change —** a list of the files in `config/` (`code-repos.json`, `slack-channels.md`, `retired-tasks.md`, other data JSON), each with purpose, the key that names it, and an Open link. `config/` is not a library group, so this is the only place they show.
 
 ### Desired end state
 
@@ -56,7 +56,7 @@ Each milestone leaves a working page with one more section. Every milestone ship
 - **Change — `prompts.ts` and `prompts/*.md` defaults in the viewer**
   - Each prompt: id, title, where it is sent from, placeholders, default text.
   - `buildCodexPrompt`, `buildWorkItemPrompt`, `NOTE_PROMPTS`, Plans Update and Retire, Slack Discuss, the review move and cleanup read the registry.
-  - A workspace override file wins when present.
+  - `config/prompts/<id>.md` wins when present.
   - Test: every existing prompt test still passes unchanged; an override changes the sent text.
 - **Change — Prompts section:** text, Default or Customized badge, Customize, Reset, diff against the default.
 
@@ -72,10 +72,6 @@ Each milestone leaves a working page with one more section. Every milestone ship
 ### Desired end state
 
 - Byron can start each routine from Setup and read its text first.
-
-## Open decisions and spikes
-
-- **Override location:** TASK-0039's layout decides the folder. Fallback: `reference/prompts/<id>.md`.
 
 ## Retire this initiative
 

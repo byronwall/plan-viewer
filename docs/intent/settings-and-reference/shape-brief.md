@@ -24,11 +24,11 @@ Setup page (?view=setup, one entry in VIEWS, linked from the rail and ⌘K)
 │   │   ├── What the row turns on: the pages and buttons that stay off without it
 │   │   └── Helper: note popover with a setup prompt (state, docs section, keys to set); never shows a token
 │   ├── Settings
-│   │   ├── Every viewer.config.json key: value, default, and whether it is set
-│   │   ├── Scalars (strings, numbers, booleans) edit in place and write viewer.config.json
+│   │   ├── Every config/viewer.json key: value, default, and whether it is set
+│   │   ├── Scalars (strings, numbers, booleans) edit in place and write config/viewer.json
 │   │   └── Arrays, objects and commands: an Open file button and a helper
-│   ├── Reference files
-│   │   └── Each file the viewer reads (repo list first): path, purpose, the key that names it, Open
+│   ├── Config files (config/, which is not a library group)
+│   │   └── Each file in config/ (repo list first): path, purpose, the key that names it, Open
 │   └── Prompts
 │       ├── Every prompt the viewer sends, from one registry: handoffs, PR notes, Plans Update and Retire,
 │       │   Slack Discuss, review move, cleanup, PR and issue skills
@@ -45,7 +45,7 @@ Setup page (?view=setup, one entry in VIEWS, linked from the rail and ⌘K)
 | Situation | Expected result |
 | --- | --- |
 | `gh` missing or signed out | GitHub row is red, says PRs, CI and GitHub issues are off, offers the helper. |
-| User edits `user` in place | `viewer.config.json` gains or changes only that key; the page reloads its config. |
+| User edits `user` in place | `config/viewer.json` gains or changes only that key; the page reloads its config. |
 | Prompt never customized | The viewer sends its built-in default; a viewer upgrade changes it. |
 | Prompt customized | The workspace file is sent; the row shows Customized and a diff to the current default. |
 | Daily review launched | Prompt asks for a day recap, stale and waiting tasks, agent flags retro, then a draft of tomorrow's plan. |
@@ -61,6 +61,6 @@ Setup page (?view=setup, one entry in VIEWS, linked from the rail and ⌘K)
 
 **First proof:** **Try:** the Integrations section with GitHub and Jira probes and their helpers, against the fixtures workspace. **Observe:** a signed-out `gh` (via a fake command) shows red with the right cost, and the helper saves an Up next note. **Decide:** if probes take over a second or need sign-in prompts, switch to presence-only states with an explicit Check button.
 
-**Open choices:** Where prompt overrides live on disk (TASK-0039 decides; likely next to `reference/`).
+**Layout:** TASK-0039 settled the paths. Settings live in `config/viewer.json`. Tool files live in `config/`. Prompt overrides are `config/prompts/<id>.md`. `reference/` prose stays on the Reference library page, not here.
 
 Intent: [intent-brief.md](intent-brief.md). Plan: [implementation-plan.md](implementation-plan.md).

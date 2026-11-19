@@ -32,8 +32,8 @@ The same place shows the reference files the viewer reads (the repo list first) 
 
 - Setup is done by an agent. Helpers produce a prompt; they do not run sign-ins or write tokens.
 - Helpers use the existing launch path: the note popover, `/api/notes` and copy-to-agent.
-- The viewer stays generic. Names of people, repos and tools stay in `viewer.config.json`.
-- Reference files and prompt files live where TASK-0039 puts them on disk.
+- The viewer stays generic. Names of people, repos and tools stay in the workspace config.
+- Files follow the TASK-0039 layout: `config/` holds what the tooling reads (`config/viewer.json`, `code-repos.json`, `slack-channels.md`, `retired-tasks.md`), and prompt overrides go in `config/prompts/`. `reference/` is prose and keeps its own library page.
 
 ### Must be avoided
 
@@ -55,7 +55,7 @@ The same place shows the reference files the viewer reads (the repo list first) 
 - Integrations get a live probe when the page opens, with Recheck.
 - Helpers use the note popover: Enter saves an Up next note, the quiet button opens a chat.
 - Daily plan, daily review and Up next sweep become prompts with launch buttons.
-- Build waits for the TASK-0039 layout.
+- Build waits for the TASK-0039 layout. That layout is now decided (plan-viewer PR #14).
 
 ## Current reality that matters
 
