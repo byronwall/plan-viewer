@@ -50,14 +50,14 @@ Ask these in one message:
 Use the answers and the workspace `AGENTS.md`:
 
 - Set `user` to their name in the workspace's viewer config file. `docs/configuration.md` in this checkout names the file and every other key; leave the others out for now.
-- Write one task for the piece of work from question 3: front matter, a short outcome, and a work breakdown of two to four steps. Use their project from question 2.
+- Write one task for the piece of work from question 3: front matter, a short outcome, and a work breakdown of two to four steps. Use their project from question 2. An active task needs a next action with a prompt for its first ready step; lint rejects it otherwise.
 - Write today's plan. Schedule the task, and add what they want to get done today from question 4.
 
 Then run the checks from the workspace `AGENTS.md` (`lint`, then `links`) and fix what they report.
 
 ## 7. Commit
 
-Commit the workspace. The pre-commit hook runs the same checks. If it fails, fix the files and commit again.
+Commit the workspace. If `git config user.name` or `git config user.email` is empty, ask the person for them and set them in the workspace repository; never make up an identity. The pre-commit hook runs the same checks. If it fails, fix the files and commit again.
 
 ## 8. Show the result
 
