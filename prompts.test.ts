@@ -24,6 +24,20 @@ test("a config/prompts/ copy overrides the default until Reset deletes it", asyn
   await rm(root, { recursive: true });
 });
 
+test("routines fill every slot for the day they start", async () => {
+  const { routinePrompt } = await import("./setup.ts");
+  const { setConfig } = await import("./public/config.js");
+  const cfg = setConfig({ user: "Ada" });
+  for (const id of ["daily-plan", "daily-review", "up-next-sweep"]) {
+    const text = routinePrompt("/work/planning", cfg, id, "2026-11-30", "http://localhost:4173");
+    assert.doesNotMatch(text, /\{[a-z][\w-]*\}/, `${id} leaves a slot unfilled`);
+  }
+  const review = routinePrompt("/work/planning", cfg, "daily-review", "2026-11-30", "http://localhost:4173");
+  assert.match(review, /daily\/2026-11-30\.md[\s\S]*daily\/2026-12-01\.md/, "today's plan, then tomorrow's across a month end");
+  assert.match(routinePrompt("/work/planning", cfg, "daily-plan", "2026-11-30", "http://localhost:4173"), /# Daily plan — November 30, 2026/);
+  setConfig({});
+});
+
 test("every default prompt names where it is sent from", () => {
   for (const row of listPrompts("/nonexistent")) {
     assert.ok(row.title && row.sent, `${row.id} needs title and sent front matter`);

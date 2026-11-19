@@ -104,7 +104,7 @@ function promptRow(row) {
     <b>${escapeHtml(row.title)}</b>
     <span class="setup-int-detail"><span>${escapeHtml(row.sent)}</span></span>
     <span class="setup-default">${row.customized ? "Customized" : "Default"}</span>
-    <span class="setup-acts"><button type="button" class="setup-help" data-setup-prompt="${escapeHtml(row.id)}">View</button>${helpButton("prompt", row.id, "Edit…")}${row.customized ? `<button type="button" class="setup-reset" data-setup-prompt-reset="${escapeHtml(row.id)}" title="Delete config/prompts/${escapeHtml(row.id)}.md so the default applies">Reset</button>` : ""}</span>
+    <span class="setup-acts">${row.routine ? helpButton("routine", row.id, "Start…") : ""}<button type="button" class="setup-help" data-setup-prompt="${escapeHtml(row.id)}">View</button>${helpButton("prompt", row.id, "Edit…")}${row.customized ? `<button type="button" class="setup-reset" data-setup-prompt-reset="${escapeHtml(row.id)}" title="Delete config/prompts/${escapeHtml(row.id)}.md so the default applies">Reset</button>` : ""}</span>
   </div>`;
 }
 
@@ -189,8 +189,10 @@ function draw() {
     <section class="setup-section" aria-labelledby="setup-prompts">
       <header><h2 id="setup-prompts">Prompts</h2>
         <span class="setup-sum">${data.prompts.filter((row) => row.customized).length} of ${data.prompts.length} customized · <code>config/prompts/</code></span></header>
-      <p class="library-intro">The words each button sends to an agent. The viewer fills the <span class="setup-slot">{slots}</span> with the file, step or your comment. <b>Edit…</b> makes your own copy in <code>config/prompts/</code>, which then wins; <b>Reset</b> deletes it.</p>
-      <div class="setup-prompts">${data.prompts.map(promptRow).join("")}${data.configured.map(configuredRow).join("")}</div>
+      <p class="library-intro">Routines first: <b>Start…</b> fills one in for today and opens the note popover. Then the words each button sends to an agent. The viewer fills the <span class="setup-slot">{slots}</span> with the file, step or your comment. <b>Edit…</b> makes your own copy in <code>config/prompts/</code>, which then wins; <b>Reset</b> deletes it.</p>
+      <div class="setup-prompts">${data.prompts.filter((row) => row.routine).map(promptRow).join("")}</div>
+      <h3 class="setup-sub">Every button</h3>
+      <div class="setup-prompts">${data.prompts.filter((row) => !row.routine).map(promptRow).join("")}${data.configured.map(configuredRow).join("")}</div>
     </section>
     <section class="setup-section" aria-labelledby="setup-settings">
       <header><h2 id="setup-settings">Settings</h2>
@@ -228,9 +230,9 @@ async function save(key, value, reset = false) {
 
 function help(button) {
   const kind = button.dataset.setupHelp, id = button.dataset.id;
-  const label = kind === "prompt" ? data.prompts.find((row) => row.id === id)?.title || id : kind !== "integration" ? id : data.integrations.find((row) => row.id === id)?.label || id;
+  const label = kind === "prompt" || kind === "routine" ? data.prompts.find((row) => row.id === id)?.title || id : kind !== "integration" ? id : data.integrations.find((row) => row.id === id)?.label || id;
   openNotePopover(button, {
-    heading: kind === "setting" ? `Configure ${label}` : kind === "prompt" ? `Edit the ${label} prompt` : kind === "file" ? `${button.textContent.replace("…", "")} ${label}` : `Set up ${label}`, notify,
+    heading: kind === "routine" ? `${label} for today` : kind === "setting" ? `Configure ${label}` : kind === "prompt" ? `Edit the ${label} prompt` : kind === "file" ? `${button.textContent.replace("…", "")} ${label}` : `Set up ${label}`, notify,
     prompt: async (note) => { const { prompt } = await setupAgent({ kind, id, note, copy: true }); if (kind === "prompt") load(); return prompt; },
     send: { label: `Open in ${agentName()}`, run: async (note) => { await setupAgent({ kind, id, note, app: agentApp() }); notify(`Drafted the ${label} setup in ${agentName()}. Review it and press Enter to send.`); } },
   });

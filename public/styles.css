@@ -3719,3 +3719,6 @@ div.step-row { cursor: pointer; }
 .setup-viewer header > span { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .setup-diff .is-add { color: var(--success-ink); }
 .setup-diff .is-del { color: var(--danger); text-decoration: line-through; }
+.setup-sub { margin: 10px 0 0; color: var(--label-text); font-size: .7rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.setup-prompt .setup-acts .setup-help[data-setup-help="routine"] { border-color: var(--action); background: var(--action); color: var(--paper); }
+@media (hover: hover) { .setup-prompt .setup-acts .setup-help[data-setup-help="routine"]:hover { background: var(--action-deep); border-color: var(--action-deep); } }

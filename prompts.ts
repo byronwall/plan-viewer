@@ -17,7 +17,7 @@ const IDS = readdirSync(DEFAULTS).filter((name) => name.endsWith(".md")).map((na
 export function parsePrompt(text: string) {
   const match = text.match(/^---\n([\s\S]*?)\n---\n\n?/);
   const meta = Object.fromEntries((match?.[1] || "").split("\n").map((line) => line.match(/^(\w+):\s*(.*)$/)).filter(Boolean).map((m) => [m![1], m![2]]));
-  return { title: meta.title || "", sent: meta.sent || "", body: text.slice(match?.[0].length || 0).replace(/\n$/, "") };
+  return { title: meta.title || "", sent: meta.sent || "", routine: meta.routine === "true", body: text.slice(match?.[0].length || 0).replace(/\n$/, "") };
 }
 
 const read = (path: string) => { try { return readFileSync(path, "utf8"); } catch { return null; } };
@@ -42,7 +42,7 @@ export function fillPrompt(root: string, id: string, values: Record<string, stri
 export function listPrompts(root: string) {
   return IDS.map((id) => {
     const template = promptTemplate(root, id);
-    return { id, title: template.title, sent: template.sent, body: template.body, fallback: template.fallback, customized: template.customized, slots: slots(template.fallback), path: `${OVERRIDES}/${id}.md` };
+    return { id, title: template.title, sent: template.sent, routine: template.routine, body: template.body, fallback: template.fallback, customized: template.customized, slots: slots(template.fallback), path: `${OVERRIDES}/${id}.md` };
   });
 }
 

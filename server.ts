@@ -21,7 +21,7 @@ import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig, withNote } from "./public/config.js";
 import { customizePrompt, fillPrompt, listPrompts, resetPrompt } from "./prompts.ts";
-import { filePrompt, integrationPrompt, promptEditPrompt, listConfigFiles, probeIntegrations, readConfigFile, readRawConfig, setupData, settingMeanings, listSettings, settingPrompt, writeSetting, CONFIG_DOC } from "./setup.ts";
+import { filePrompt, integrationPrompt, promptEditPrompt, routinePrompt, listConfigFiles, probeIntegrations, readConfigFile, readRawConfig, setupData, settingMeanings, listSettings, settingPrompt, writeSetting, CONFIG_DOC } from "./setup.ts";
 import { CONFIG_FILE, DOC_ROOTS, dailyFile, isTaskAsset, isTaskFile, taskFile, taskOfPath } from "./public/layout.js";
 import { applyRule, closeNote, followUpNote, saveLaunchNote, loadSteps, markStepDone, pickChoice, planMentions, runStatement, saveNote, setStepNext, setTaskPriority, startStep } from "./steps.ts";
 import { editStep } from "./steps.ts"; // the Steps table's inline edits
@@ -1091,7 +1091,11 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const body = await readJson(request);
       const id = String(body.id || "");
       let title = "", prompt = "";
-      if (body.kind === "prompt") {
+      if (body.kind === "routine") {
+        const entry = listPrompts(ROOT).find((row) => row.id === id && row.routine);
+        if (!entry) throw new Error(`No routine named ${id}.`);
+        title = `${entry.title} · ${todayDate()}`; prompt = routinePrompt(ROOT, config(), id, todayDate(), `http://${request.headers.host || `localhost:${config().port}`}`);
+      } else if (body.kind === "prompt") {
         const entry = listPrompts(ROOT).find((row) => row.id === id);
         if (!entry) throw new Error(`No prompt named ${id}.`);
         await customizePrompt(ROOT, id);
