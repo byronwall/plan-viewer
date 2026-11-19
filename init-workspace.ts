@@ -13,6 +13,7 @@ const SCRIPTS: Record<string, string> = {
   links: "plan-viewer links",
   move: "plan-viewer move",
   task: "plan-viewer task",
+  migrate: "plan-viewer migrate",
   prepare: "git config core.hooksPath node_modules/plan-viewer/hooks",
 };
 
