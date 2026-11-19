@@ -1,6 +1,6 @@
 // Outbound drafts: task assets whose front matter says what to send, where, and whether the user approved it.
 // The viewer reads them, records the user's Approve / Send back / Drop on the exact text shown, and runs the
-// workspace's configured send command. It never sends anything itself; `outbound.send` in viewer.config.json does.
+// workspace's configured send command. It never sends anything itself; `outbound.send` in config/viewer.json does.
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, readdir, stat, writeFile } from "node:fs/promises";
@@ -20,7 +20,7 @@ export interface OutboundDraft {
 
 const FRONT = /^---\n([\s\S]*?)\n---\n/;
 const BODY = /^<!-- (jira|send):start -->[ \t]*\n([\s\S]*?)\n?^<!-- \1:end -->[ \t]*$/m; // markers on their own lines only, so one quoted in the notes is not the body; mirrored in daily-planning's scripts/outbound.py
-const DRAFT_PATH = /^tasks\/TASK-\d{4}-assets\/.+\.md$/;
+const DRAFT_PATH = /^tasks\/(TASK-\d{4})\/(?!\1\.md$).+\.md$/;
 
 export function outboundFields(text: string): OutboundFields {
   const match = text.match(FRONT);
@@ -66,9 +66,9 @@ export async function listOutbound(root: string): Promise<OutboundDraft[]> {
   const drafts: OutboundDraft[] = [];
   const tasks = join(root, "tasks");
   for (const entry of await readdir(tasks, { withFileTypes: true }).catch(() => [])) {
-    if (!entry.isDirectory() || !/^TASK-\d{4}-assets$/.test(entry.name)) continue;
+    if (!entry.isDirectory() || !/^TASK-\d{4}$/.test(entry.name)) continue;
     for (const file of await readdir(join(tasks, entry.name), { recursive: true }).catch(() => [] as string[])) {
-      if (!String(file).endsWith(".md")) continue;
+      if (!String(file).endsWith(".md") || file === `${entry.name}.md`) continue;
       const path = `tasks/${entry.name}/${file}`;
       const absolute = join(root, path);
       const text = await readFile(absolute, "utf8").catch(() => "");
@@ -110,7 +110,7 @@ export async function approveOutbound(root: string, path: string, sha: string) {
   if (!["ready", "failed"].includes(fields.status)) throw new Error(`This draft is ${fields.status || "not ready"}, so it can't be approved.`);
   if (fields.send === "manual") throw new Error("This draft is sent by hand: copy it, send it, then mark it sent.");
   const command = config().outbound?.send || [];
-  if (!command.length) throw new Error("No sender is configured: set outbound.send in viewer.config.json.");
+  if (!command.length) throw new Error("No sender is configured: set outbound.send in config/viewer.json.");
   const current = outboundHash(text);
   if (current !== sha) {
     await writeFile(absolute, setOutboundFields(text, { status: "ready", approved: null, error: "Changed since you read it; read it again" }));

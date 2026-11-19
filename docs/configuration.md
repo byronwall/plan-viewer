@@ -12,9 +12,9 @@ Every setting is optional. A new workspace usually needs only the first few:
 
 That turns `#1234`, commit SHAs, and `ATL-12` in your Markdown into links with live titles and states. Add `code` settings when you want the Code view's buttons wired to your editor, terminal, and review skills, and `issues` when you want the Issues page.
 
-## `viewer.config.json`
+## `config/viewer.json`
 
-`viewer.config.json` at the workspace root holds everything that differs between people and teams. Every key is optional; missing keys fall back to the defaults in [`public/config.js`](../public/config.js). The viewer rereads it when it changes, and open pages pick up the change when reloaded; `port`, `code.reposFile` and `code.prNotesDir` still need a restart, and an edit that isn't valid JSON is logged and ignored. [`examples/workspace/viewer.config.json`](../examples/workspace/viewer.config.json) is a working example.
+`config/viewer.json` in the workspace holds everything that differs between people and teams. Every key is optional; missing keys fall back to the defaults in [`public/config.js`](../public/config.js). The viewer rereads it when it changes, and open pages pick up the change when reloaded; `port`, `code.reposFile` and `code.prNotesDir` still need a restart, and an edit that isn't valid JSON is logged and ignored. [`examples/workspace/config/viewer.json`](../examples/workspace/config/viewer.json) is a working example.
 
 ```json
 {
@@ -28,9 +28,9 @@ That turns `#1234`, commit SHAs, and `ATL-12` in your Markdown into links with l
     { "prefix": "OPS", "service": "jira", "url": "https://acme.atlassian.net/browse/{id}" }
   ],
   "code": {
-    "reposFile": "reference/code-repos.json",
+    "reposFile": "config/code-repos.json",
     "checkoutsDir": "~/repos",
-    "prNotesDir": "plans/pr-notes",
+    "prNotesDir": "reference/pr-notes",
     "editor": ["/usr/bin/open", "-n", "-b", "com.microsoft.VSCode", "--args", "{path}"],
     "terminal": { "label": "Terminal", "command": ["/usr/bin/open", "-a", "Terminal", "{path}"] },
     "prSkills": [{ "id": "code-review", "label": "Review", "icon": "review" }],

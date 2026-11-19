@@ -3,8 +3,8 @@ import test from 'node:test';
 import { contextScore, searchDocuments, searchPrs, termMatch, textScore } from './public/search.js';
 
 const documents = [
-  { title: 'Daily plan', path: 'daily/2026/10/01/plan.md', kind: 'Plan' },
-  { title: 'Deploy diagnostics', path: 'tasks/TASK-0021.md', kind: 'Task', task: { id: 'TASK-0021', project: 'Atlas', tags: ['Postgres'], summary: 'Find deployment errors', status: 'completed' } },
+  { title: 'Daily plan', path: 'daily/2026-10-01.md', kind: 'Plan' },
+  { title: 'Deploy diagnostics', path: 'tasks/TASK-0021/TASK-0021.md', kind: 'Task', task: { id: 'TASK-0021', project: 'Atlas', tags: ['Postgres'], summary: 'Find deployment errors', status: 'completed' } },
   { title: 'Atlas', path: 'reference/atlas.md', kind: 'Reference' },
 ];
 test('search matches terms across task metadata and includes completed tasks', () => {
@@ -60,7 +60,7 @@ test('fuzzy: a term with missing characters matches long runs, below exact match
   assert.ok(termMatch('sweeep', 'sweep findings') > 0, 'one typo in five characters');
   assert.equal(termMatch('swpfnd', 'sweep findings'), 0, 'scattered letters do not match');
   assert.equal(termMatch('swf', 'sweep findings'), 0, 'short terms must match as typed');
-  const notes = [{ title: '#1974 quick-view sweep findings', path: 'tasks/TASK-0080-assets/sweep-findings.md', kind: 'Task document' }, ...documents];
+  const notes = [{ title: '#1974 quick-view sweep findings', path: 'tasks/TASK-0080/sweep-findings.md', kind: 'Task document' }, ...documents];
   assert.deepEqual(searchDocuments(notes, 'sweepf'), [notes[0]]);
   assert.ok(textScore(['sweep'], 'Sweep findings') > textScore(['sweepf'], 'Sweep findings'));
   assert.ok(textScore(['sweepf'], 'Sweep findings') > textScore(['sweepf'], 'Other', 'sweep findings'));

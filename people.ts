@@ -1,7 +1,7 @@
 // One identity per person across GitHub, Jira, Linear and Slack, so every avatar shows the same picture.
 // Identifiers (`e:` email, `n:` normalized name, `l:` GitHub login) are joined whenever one source names two of them
 // together: a commit's author email, name and login; a Linear user's email and names; a Slack profile's email and
-// names; and `people` in viewer.config.json. Each group's picture is its Slack photo, else its GitHub avatar, else its
+// names; and `people` in config/viewer.json. Each group's picture is its Slack photo, else its GitHub avatar, else its
 // Linear avatar. Cached in the workspace's tmp/people-cache.json and rebuilt in the background once a day.
 import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -93,7 +93,7 @@ async function slackDirectorySources(): Promise<Source[]> {
   return found.map((person) => ({ ids: ids({ emails: [person.email], names: [person.name] }), slack: person.avatar, name: person.name }));
 }
 
-// `people` in viewer.config.json: [{ names, emails, github, avatar }] for anyone the sources can't join on their own.
+// `people` in config/viewer.json: [{ names, emails, github, avatar }] for anyone the sources can't join on their own.
 const configSources = (): Source[] => (config().people || []).map((entry: any) => ({ ids: ids({ emails: entry.emails, names: entry.names, logins: entry.github ? [entry.github] : [] }), login: entry.github || "", slack: entry.avatar || "", name: entry.names?.[0] || "" }));
 
 export function createPeople(root: string, { repos, slug }: { repos: () => Promise<string[]>; slug: (repo: string) => Promise<string> }) {

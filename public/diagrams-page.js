@@ -2,17 +2,18 @@
 // a table. Diagrams group by the day they were last saved (the default), by task, or by project; the groups, like the
 // diagrams in them, run newest first. A card opens the image viewer's diagram mode, with every diagram in its rail.
 import { diagramHref, documentHref, escapeHtml } from "./markdown.js";
+import { taskFile } from "./layout.js";
 
 const STATUS = { open: "Open", active: "Active", waiting: "Waiting", deferred: "Deferred", completed: "Completed" };
 export const DIAGRAM_GROUPS = [["", "Day"], ["task", "Task"], ["project", "Project"]];
 export const DIAGRAM_LAYOUTS = [["", "Cards"], ["large", "Large"], ["list", "List"]];
 
-// The task whose assets hold a diagram, else its folder (a plan topic, a day, reference).
-const placeOf = (diagram) => diagram.task || diagram.path.split("/").slice(0, diagram.path.startsWith("plans/") ? 2 : -1).join("/");
+// The task whose folder holds a diagram, else its own folder (under reference/ or daily/).
+const placeOf = (diagram) => diagram.task || diagram.path.split("/").slice(0, -1).join("/");
 
 function docOf(key, documents) {
-  return key.startsWith("TASK-") ? documents.find((doc) => doc.path === `tasks/${key}.md`)
-    : documents.find((doc) => doc.path === `${key}/README.md` || doc.path === `${key}/plan.md`);
+  return key.startsWith("TASK-") ? documents.find((doc) => doc.path === taskFile(key))
+    : documents.find((doc) => doc.path === `${key}/README.md`);
 }
 
 const dayKey = (time) => { const date = new Date(time); return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`; };
@@ -117,7 +118,7 @@ export function diagramsPageHtml(diagrams, documents, query, ago, { by = "", as 
   const groups = diagramGroups(diagrams, documents, by);
   const intro = all.length
     ? `${diagrams.length === all.length ? "" : `${diagrams.length} of `}${all.length} ${all.length === 1 ? "diagram" : "diagrams"}`
-    : "No diagrams yet. Write a <code>.draft</code> beside a task and embed it with <code>![What it shows](TASK-NNNN-assets/x.draft)</code>; it shows here and in the task.";
+    : "No diagrams yet. Write a <code>.draft</code> beside a task and embed it with <code>![What it shows](x.draft)</code>; it shows here and in the task.";
   const q = query.trim().toLowerCase();
   const controls = diagrams.length
     ? `${segment("Group", DIAGRAM_GROUPS, by, "data-diagrams-by")}${projects.size > 1 ? `<label class="diagram-control"><span class="diagram-control-label">Project</span><select class="diagram-project" aria-label="Filter by project"><option value="">All (${all.length})</option>${[...projects].sort(([a], [b]) => (a === NO_PROJECT) - (b === NO_PROJECT) || a.localeCompare(b)).map(([name, count]) => `<option value="${escapeHtml(name)}"${name === project ? " selected" : ""}>${escapeHtml(name)} (${count})</option>`).join("")}</select></label>` : ""}${segment("View", DIAGRAM_LAYOUTS, as, "data-diagrams-as")}<button class="diagram-fold-all" type="button" data-diagrams-fold-all="${fold ? "" : "1"}">${fold ? "Expand all" : "Collapse all"}</button><input class="diagram-filter" type="search" value="${escapeHtml(query)}" placeholder="Filter by title, task or file" aria-label="Filter diagrams (/)" spellcheck="false"><kbd class="diagram-filter-key">/</kbd>`

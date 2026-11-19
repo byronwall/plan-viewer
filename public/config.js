@@ -1,4 +1,4 @@
-// Per-workspace preferences, read from `<planning root>/viewer.config.json` and merged over these defaults.
+// Per-workspace preferences, read from `<planning root>/config/viewer.json` and merged over these defaults.
 // Shared by the server (which loads the file) and the browser (which fetches /api/config before rendering).
 export const DEFAULT_CONFIG = {
   // Browser tab and startup banner.
@@ -6,7 +6,7 @@ export const DEFAULT_CONFIG = {
   // Name used in agent prompts ("<user>'s commentary").
   user: "User",
   port: 4173,
-  // Folders under daily/, tasks/, plans/ or reference/ the library and lint skip (generated corpora).
+  // Folders under daily/, tasks/ or reference/ the library and lint skip (generated corpora).
   exclude: [],
   // People the identity index can't join on its own: [{ names, emails, github, avatar }], so every avatar matches.
   people: [],
@@ -27,11 +27,11 @@ export const DEFAULT_CONFIG = {
   traceUrl: "",
   code: {
     // Tracked repositories for the Code page; the gear menu edits this file.
-    reposFile: "reference/code-repos.json",
+    reposFile: "config/code-repos.json",
     // Where a repository named in a document (`<repo>@abc1234`) is looked for when it isn't tracked.
     checkoutsDir: "~/repos",
     // Local PR review notes, one Markdown file per PR.
-    prNotesDir: "plans/pr-notes",
+    prNotesDir: "reference/pr-notes",
     // Commands for the worktree open buttons; `{path}` is the worktree.
     editor: ["/usr/bin/open", "-n", "-b", "com.microsoft.VSCode", "--args", "{path}"],
     terminal: { label: "Terminal", command: ["/usr/bin/open", "-a", "Terminal", "{path}"] },

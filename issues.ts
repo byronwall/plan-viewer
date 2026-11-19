@@ -8,7 +8,7 @@ import { config, withNote } from "./public/config.js";
 import { fetchGithub, githubLogin } from "./github.ts";
 import { fetchLinear, linearClient } from "./linear.ts";
 
-// Jira issues for the Issues page (viewer.config.json `issues`), read through `acli` and cached in tmp/issues-cache.json.
+// Jira issues for the Issues page (config/viewer.json `issues`), read through `acli` and cached in tmp/issues-cache.json.
 // acli's search returns only a few fields, so a sync lists keys with search and reads each issue with `view --fields *all`.
 // Each refresh re-reads only what changed (`updated >= -Nm`), and the difference from the previous copy is the activity feed,
 // since acli exposes no changelog.

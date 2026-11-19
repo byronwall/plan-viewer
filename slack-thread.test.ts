@@ -64,11 +64,11 @@ test("a discussion draft hands the agent the thread as a file and names the docu
   process.env.PLAN_VIEWER_DRY_RUN = "1";
   t.after(() => { delete process.env.PLAN_VIEWER_DRY_RUN; });
   const threads = createSlackThreads(root, () => []);
-  await threads.discuss("codex", "https://acme.slack.com/archives/C0123/p1791473238675079?thread_ts=1791473016.225909", "Who owns the follow-up?", ["tasks/TASK-0001.md"]);
+  await threads.discuss("codex", "https://acme.slack.com/archives/C0123/p1791473238675079?thread_ts=1791473016.225909", "Who owns the follow-up?", ["tasks/TASK-0001/TASK-0001.md"]);
   const file = join(root, "tmp", "slack-threads", "C0123-1791473016.225909.md");
   assert.match(logged[0], /Slack thread in #acme-dev/);
   assert.match(logged[0], new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(logged[0], /`tasks\/TASK-0001\.md`/);
+  assert.match(logged[0], /`tasks\/TASK-0001\/TASK-0001\.md`/);
   assert.match(logged[0], /Who owns the follow-up\?$/);
   const transcript = await readFile(file, "utf8");
   assert.match(transcript, /## Grace · .*\n\n\[permalink\]\(https:\/\/acme\.slack\.com\/archives\/C0123\/p1791473238675079\?thread_ts=1791473016\.225909\) · reactions: \+1 \(1\)\n\nYes\./);

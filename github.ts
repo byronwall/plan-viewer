@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Issue } from "./issues.ts";
 
-// GitHub issues for the Issues page (viewer.config.json `issues.github`), one `gh issue list` per tracked repository, in
+// GitHub issues for the Issues page (config/viewer.json `issues.github`), one `gh issue list` per tracked repository, in
 // the same shape as Jira issues. Keys are `github:<owner>/<repo>#<number>`; `label` (`<repo>#<number>`) is what shows.
 
 const exec = promisify(execFile);

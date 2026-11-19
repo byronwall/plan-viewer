@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-// Local review notes on a PR, one Markdown file per PR under plans/pr-notes/ (viewer.config.json `code.prNotesDir`). The file stays readable and hand-editable
+// Local review notes on a PR, one Markdown file per PR under reference/pr-notes/ (config/viewer.json `code.prNotesDir`). The file stays readable and hand-editable
 // (an agent flips `status: draft` to `status: posted`); anything that doesn't parse as a note is kept verbatim.
 // A note on the whole file has line 0 and a "whole file" heading. `sig` is the viewer's hash of the file's diff when the note was
 // written, so the viewer can tell the file changed since (a quote can't, for a whole-file note).
@@ -39,7 +39,7 @@ const format = (preamble: string, entries: Entry[]) => `${preamble.replace(/\s+$
 
 const localStamp = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 
-export function createPrNotes(root: string, dir = "plans/pr-notes") {
+export function createPrNotes(root: string, dir = "reference/pr-notes") {
   const relative = (slug: string, number: number) => `${dir}/${slug.replace("/", "-")}-${number}.md`;
   const load = async (slug: string, number: number) => parseNotes(await readFile(join(root, relative(slug, number)), "utf8").catch(() => ""));
 

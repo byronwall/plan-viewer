@@ -7,7 +7,7 @@ Status: milestones 1–6 are built (Oct 21, 2026). [guide.md](guide.md#issues) d
 ## Decisions already made (Byron, Oct 21, 2026)
 
 - **Jobs:** all four. A triage queue, an epic and initiative map, the join between issues and code, and a my-work and activity feed.
-- **Scope:** `component = Modeler OR project = MOD`, with security-bot tickets hidden by default behind a toggle. The JQL lives in `viewer.config.json`. "Rel app" is the product; Jira has no product field for it.
+- **Scope:** `component = Modeler OR project = MOD`, with security-bot tickets hidden by default behind a toggle. The JQL lives in `config/viewer.json`. "Rel app" is the product; Jira has no product field for it.
 - **Writes:** read-only. Every change goes through an editable Codex or Claude draft that Byron sends himself.
 - **Docs:** live in `docs/`.
 
@@ -137,7 +137,7 @@ These facts constrain the design. The raw survey outputs are in the session scra
   - Links grouped by type, children with progress, and the Code block. Clicking a PR opens the PR overview, and `[`/`]` move to the previous and next sibling under the parent.
 - **⌘K:** issue keys and titles alongside PRs. A bare number matches both, and Enter opens the issue overview. Recently viewed includes issues.
 - **Agent drafts:** `1`–`N` run the configured issue skills, plus an open Discuss prompt. Each prompt lists the issue key, URL, parent, and linked PRs as bullets and names the skill explicitly.
-- **Config (`issues` in `viewer.config.json`):** `jql`, `hideLabels`, `skills`, `refreshMinutes`, and `site`. With no `jql`, the route is hidden.
+- **Config (`issues` in `config/viewer.json`):** `jql`, `hideLabels`, `skills`, `refreshMinutes`, and `site`. With no `jql`, the route is hidden.
 
 ## Milestones (thin slices, each shippable)
 

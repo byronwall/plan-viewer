@@ -5,17 +5,20 @@ This folder is a planning workspace read by [Plan Viewer](https://github.com/byr
 ## Layout
 
 ```text
-daily/YYYY/MM/DD/plan.md   # the day's plan
-tasks/TASK-NNNN.md         # one task per file
-tasks/TASK-NNNN-assets/    # files that belong to one task
-plans/<topic>/README.md    # cross-day topics; plans/README.md indexes them
-reference/                 # stable reference documents
+daily/YYYY-MM-DD.md            # the day's plan, one file per day
+tasks/TASK-NNNN/TASK-NNNN.md   # one task, with the files that belong to it beside it
+tasks/TASK-NNNN/notes/         # notes saved from the viewer for that task
+reference/                     # prose people and agents read; a folder per subject is fine
+reference/notes/               # notes tied to no task
+config/                        # what the tooling reads: viewer.json, data files, slack-channels.md
 ```
+
+Put a file where its rule says. Work on a task goes in its folder; standing knowledge goes in `reference/`; anything a script or the viewer reads goes in `config/`.
 
 ## Daily plans
 
 - Start with `# Daily plan — <Month D, YYYY>`.
-- List the day's tasks under `## Scheduled tasks`, one per line, linked relative to the plan: `- [TASK-0101](../../../../tasks/TASK-0101.md) — what to do on it today.`
+- List the day's tasks under `## Scheduled tasks`, one per line, linked relative to the plan: `- [TASK-0101](../tasks/TASK-0101/TASK-0101.md) — what to do on it today.`
 - Day-specific work can follow as `## Milestone N — <name>` sections; the viewer shows each one as a card that can be handed to an agent.
 - Record progress on the task itself: its `status`, and a dated bullet under `## Updates`. There is no separate done log.
 
@@ -39,7 +42,7 @@ check_in: 2026-10-28  # optional; the viewer's status menu writes it for waiting
 
 Then, in any order:
 
-- `## Work breakdown`: nested bullets `- W1.2: Title [status] (after: W1.1)`. IDs are unique within the task; `after` lists prerequisites. A trailing `{next}` (alone or beside the kind and size) marks a step Up next: when asked to process what's next, run `plan-viewer next`, work through those steps in order, and remove `next` once a step is done or handed to its own session. The same command lists open notes (`tasks/TASK-NNNN-assets/notes/*.md` or `reference/notes/*.md` with `note: open`): each holds a request saved from the viewer with its context; work it into its source, then set `note: done` and add a dated line saying what changed. A note with `step:` is a decision, approval or direction for that step (an approval of an outbound draft authorizes sending it, plus the follow-through); its prompt says what to do. A note is not a completion: afterwards set the step's status to what actually comes next, completing it only when the work finishes it or the note says so.
+- `## Work breakdown`: nested bullets `- W1.2: Title [status] (after: W1.1)`. IDs are unique within the task; `after` lists prerequisites. A trailing `{next}` (alone or beside the kind and size) marks a step Up next: when asked to process what's next, run `plan-viewer next`, work through those steps in order, and remove `next` once a step is done or handed to its own session. The same command lists open notes (`tasks/TASK-NNNN/notes/*.md` or `reference/notes/*.md` with `note: open`): each holds a request saved from the viewer with its context; work it into its source, then set `note: done` and add a dated line saying what changed. A note with `step:` is a decision, approval or direction for that step (an approval of an outbound draft authorizes sending it, plus the follow-through); its prompt says what to do. A note is not a completion: afterwards set the step's status to what actually comes next, completing it only when the work finishes it or the note says so.
 - `## Next actions`: a `###` heading per action, an optional `Work item: W1.2` line, and a fenced `prompt` block an agent can carry out on its own.
 - `## Updates`: dated bullets, newest first. Write `- **2026-10-13 — Title:** What changed.` Indent continuation paragraphs and nested lists by two spaces. Keep historical entries under their existing date headings.
 - `## Chats`: links to the conversations that worked on the task.
@@ -50,8 +53,8 @@ Take the next free number for a new task's ID, and update `updated:` whenever yo
 
 Default to drawing. When the work has a shape (a system, a flow or lifecycle, a matrix of cases, where something broke), draw it without being asked. Diagrams are cheap, and readers look at them before the prose. Draw one idea per diagram.
 
-- Write [draftably](https://github.com/byronwall/draftably) source to `tasks/TASK-NNNN-assets/<name>.draft`, with a title, a short takeaway subtitle and a legend row per color, and run `draftably check` until it is clean.
-- Embed it where it is discussed, as an image: `![What it shows](TASK-NNNN-assets/<name>.draft)`. The viewer shows it as a thumbnail captioned with the alt text (diagrams on consecutive lines share a row), draws it live from the source, and opens it beside its source on click. Don't export or commit a PNG for the viewer.
+- Write [draftably](https://github.com/byronwall/draftably) source to `tasks/TASK-NNNN/<name>.draft`, with a title, a short takeaway subtitle and a legend row per color, and run `draftably check` until it is clean.
+- Embed it where it is discussed, as an image: `![What it shows](<name>.draft)`. The viewer shows it as a thumbnail captioned with the alt text (diagrams on consecutive lines share a row), draws it live from the source, and opens it beside its source on click. Don't export or commit a PNG for the viewer.
 - The viewer renders neither Mermaid nor ASCII art; draw a `.draft` instead. Export a PNG (`draftably inspect <file> --png <out.png>`) only for somewhere outside the workspace, such as a PR.
 
 ## Checks
@@ -63,6 +66,6 @@ npm run lint    # task front matter, work breakdowns, action references
 npm run links   # broken links and unknown task IDs
 ```
 
-When `npm run links` names a Slack channel or DM that `reference/slack-channels.md` does not, look it up in Slack (one message of a channel shows its name; a DM shows who it is with) and add `- C…: #channel-name` or `- D…: @Person` there. Leave an entry blank rather than guessing.
+When `npm run links` names a Slack channel or DM that `config/slack-channels.md` does not, look it up in Slack (one message of a channel shows its name; a DM shows who it is with) and add `- C…: #channel-name` or `- D…: @Person` there. Leave an entry blank rather than guessing.
 
 Use `npm run move -- <from> <to>` to rename or move a file; it repairs every link to it. `npm run task -- TASK-0101` prints a task's context in compact form.

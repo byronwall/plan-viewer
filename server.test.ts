@@ -29,13 +29,13 @@ test("Slack refresh updates renamed channels, adds linked channels, and preserve
   assert.deepEqual(seen, ["C0ACME0001", "C0ACME0002"]);
 });
 
-test("Slack links take channel and DM names from reference/slack-channels.md without a token", async (t) => {
+test("Slack links take channel and DM names from config/slack-channels.md without a token", async (t) => {
   const previous = process.env.SLACK_TOKEN;
   delete process.env.SLACK_TOKEN;
   const root = await mkdtemp(join(tmpdir(), "slack-names-"));
   t.after(async () => { if (previous !== undefined) process.env.SLACK_TOKEN = previous; await rm(root, { recursive: true, force: true }); });
-  await mkdir(join(root, "reference"));
-  await writeFile(join(root, "reference", "slack-channels.md"), "- C0ACME0001: #team-atlas\n- D0ACME0001: @Alex Kim \n");
+  await mkdir(join(root, "config"));
+  await writeFile(join(root, "config", "slack-channels.md"), "- C0ACME0001: #team-atlas\n- D0ACME0001: @Alex Kim \n");
   const lookup = createLinkMetadataStore(root);
   const found = await lookup(["slack:C0ACME0001/1792589400.000100", "slack:D0ACME0001/1792526700.000200", "slack:D0ACME0002/1792420800.000300"]);
   assert.deepEqual(Object.values(found).map((meta) => meta.state), ["#team-atlas", "@Alex Kim", "Direct message"]);
@@ -58,12 +58,12 @@ test("Slack refresh rejects failed and mismatched lookups instead of returning p
 test("task documents carry their size and sections for the Documents popover", () => {
   const markdown = "# RCA\n\nTwo words.\n\n## Verdict\n\n![graph](graph.png)\n\n```sh\n## not a heading\n```\n\n## `Cursor` closed ##\n";
   assert.deepEqual(outline(markdown), { words: 7, images: 1, headings: ["Verdict", "Cursor closed"] });
-  assert.deepEqual(summarize("tasks/TASK-0001-assets/rca.md", markdown).outline?.headings, ["Verdict", "Cursor closed"]);
-  assert.equal(summarize("plans/notes.md", markdown).outline, undefined);
+  assert.deepEqual(summarize("tasks/TASK-0001/rca.md", markdown).outline?.headings, ["Verdict", "Cursor closed"]);
+  assert.equal(summarize("reference/notes.md", markdown).outline, undefined);
 });
 
 test("a half-written task is listed as invalid instead of breaking the library", () => {
-  const summary = summarize("tasks/TASK-0099.md", "---\nid: TASK-0099\ntitle: placeholder\n---\n");
+  const summary = summarize("tasks/TASK-0099/TASK-0099.md", "---\nid: TASK-0099\ntitle: placeholder\n---\n");
   assert.equal(summary.kind, "Invalid task");
   assert.equal(summary.task, undefined);
 });
@@ -118,20 +118,20 @@ test("uses stable Markdown anchors for document chunks", () => {
 
 test("resolves relative Markdown links and fragments inside the viewer", () => {
   assert.deepEqual(
-    resolveMarkdownLink("notes.md#milestone-4-implementation--preserve-report-totals", "daily/2026/07/31/plan.md"),
+    resolveMarkdownLink("notes.md#milestone-4-implementation--preserve-report-totals", "reference/atlas-orbit-boundary/README.md"),
     {
       kind: "document",
-      path: "daily/2026/07/31/notes.md",
+      path: "reference/atlas-orbit-boundary/notes.md",
       anchor: "milestone-4-implementation--preserve-report-totals",
     },
   );
   assert.deepEqual(
-    resolveMarkdownLink("../../../../plans/atlas-orbit-boundary/README.md", "daily/2026/07/31/notes.md"),
-    { kind: "document", path: "plans/atlas-orbit-boundary/README.md", anchor: "" },
+    resolveMarkdownLink("../reference/atlas-orbit-boundary/README.md", "daily/2026-07-31.md"),
+    { kind: "document", path: "reference/atlas-orbit-boundary/README.md", anchor: "" },
   );
   assert.deepEqual(
-    resolveMarkdownLink("../../../../tasks/TASK-0001.md", "daily/2026/08/03/plan.md"),
-    { kind: "document", path: "tasks/TASK-0001.md", anchor: "" },
+    resolveMarkdownLink("../tasks/TASK-0001/TASK-0001.md", "daily/2026-08-03.md"),
+    { kind: "document", path: "tasks/TASK-0001/TASK-0001.md", anchor: "" },
   );
 });
 
@@ -152,7 +152,7 @@ updated: 2026-08-04
 ## Updates
 
 - Created.`;
-  const parsed = parseTaskDocument("tasks/TASK-0042.md", source);
+  const parsed = parseTaskDocument("tasks/TASK-0042/TASK-0042.md", source);
   assert.deepEqual(parsed.task, {
     id: "TASK-0042",
     title: "Prove the loop",
@@ -181,8 +181,8 @@ created: 2026-08-03
 updated: 2026-08-03
 ---
 `;
-  assert.throws(() => parseTaskDocument("tasks/TASK-0041.md", source), /same TASK-0000 ID/);
-  assert.throws(() => parseTaskDocument("tasks/TASK-0042.md", source), /unsupported task status/);
+  assert.throws(() => parseTaskDocument("tasks/TASK-0041/TASK-0041.md", source), /same TASK-0000 ID/);
+  assert.throws(() => parseTaskDocument("tasks/TASK-0042/TASK-0042.md", source), /unsupported task status/);
 });
 
 test("reads a waiting task's check-in date", () => {
@@ -198,41 +198,41 @@ updated: 2026-08-03
 check_in: ${checkIn}
 ---
 `;
-  assert.equal(parseTaskDocument("tasks/TASK-0042.md", source("2026-08-10")).task.checkIn, "2026-08-10");
-  assert.throws(() => parseTaskDocument("tasks/TASK-0042.md", source("next week")), /check_in as YYYY-MM-DD/);
+  assert.equal(parseTaskDocument("tasks/TASK-0042/TASK-0042.md", source("2026-08-10")).task.checkIn, "2026-08-10");
+  assert.throws(() => parseTaskDocument("tasks/TASK-0042/TASK-0042.md", source("next week")), /check_in as YYYY-MM-DD/);
 });
 
 test("renders internal and external links with distinct safe behavior", () => {
-  const html = inlineMarkdown("See [Notes](notes.md#completed-outcomes) and [PR](https://github.com/example/repo/pull/1).", "daily/2026/07/31/plan.md");
+  const html = inlineMarkdown("See [Notes](../reference/notes.md#completed-outcomes) and [PR](https://github.com/example/repo/pull/1).", "daily/2026-07-31.md");
   assert.match(html, /class="markdown-document-link"/);
-  assert.match(html, /data-document-path="daily\/2026\/07\/31\/notes\.md"/);
+  assert.match(html, /data-document-path="reference\/notes\.md"/);
   assert.match(html, /data-document-anchor="completed-outcomes"/);
   assert.match(html, /class="markdown-external-link"/);
   assert.match(html, /target="_blank"/);
-  assert.doesNotMatch(inlineMarkdown("[unsafe](javascript:alert(1))", "daily/2026/07/31/plan.md"), /href=/);
+  assert.doesNotMatch(inlineMarkdown("[unsafe](javascript:alert(1))", "daily/2026-07-31.md"), /href=/);
 });
 
 test("links commit SHAs to GitHub, inferring the repository from earlier references", () => {
-  const commits = (source) => [...inlineMarkdown(source, "tasks/TASK-0001.md").matchAll(/href="https:\/\/github\.com\/acme\/([\w.-]+)\/commit\/(\w+)"/g)].map(([, repo, sha]) => `${repo}@${sha}`);
+  const commits = (source) => [...inlineMarkdown(source, "tasks/TASK-0001/TASK-0001.md").matchAll(/href="https:\/\/github\.com\/acme\/([\w.-]+)\/commit\/(\w+)"/g)].map(([, repo, sha]) => `${repo}@${sha}`);
   assert.deepEqual(commits("[#1831](https://github.com/acme/atlas/pull/1831) is at head 052702c8234c."), ["atlas@052702c8234c"]);
   assert.deepEqual(commits("Orbit#3072 landed as 1a2b3c4d and `9f8e7d6`."), ["Orbit@1a2b3c4d", "Orbit@9f8e7d6"]);
   assert.deepEqual(commits("Merged Orbit@abcdef1, then atlas head 0a1b2c3d4e5f."), ["Orbit@abcdef1", "Orbit@0a1b2c3d4e5f"]);
   assert.deepEqual(commits("Plain 7f3e2d1 defaults to Atlas; `orbit-legacy@deadbeef` is explicit."), ["atlas@7f3e2d1", "orbit-legacy@deadbeef"]);
   assert.deepEqual(commits("Not commits: decade, 20261013, #3157d5, 01a1350b-b433, ABCDEF1234, codex://threads/01a1350b."), []);
-  assert.doesNotMatch(renderMarkdown("### c4574f89: Connection dropped", "tasks/TASK-0001.md"), /commit/);
-  assert.match(renderMarkdown("### Shipped Orbit@abcdef1", "tasks/TASK-0001.md"), /Orbit\/commit\/abcdef1/);
+  assert.doesNotMatch(renderMarkdown("### c4574f89: Connection dropped", "tasks/TASK-0001/TASK-0001.md"), /commit/);
+  assert.match(renderMarkdown("### Shipped Orbit@abcdef1", "tasks/TASK-0001/TASK-0001.md"), /Orbit\/commit\/abcdef1/);
 });
 
 test("links 32-character trace IDs to the trace viewer, not GitHub", () => {
-  const html = inlineMarkdown("Traces: latest `e9aab31b90243f36078e89b9a8f81ad9`, bare 57eea4deae38e29b572a4a0cdc255b30.", "tasks/TASK-0001.md");
+  const html = inlineMarkdown("Traces: latest `e9aab31b90243f36078e89b9a8f81ad9`, bare 57eea4deae38e29b572a4a0cdc255b30.", "tasks/TASK-0001/TASK-0001.md");
   assert.doesNotMatch(html, /\/commit\//);
   assert.match(html, /href="https:\/\/acme\.observe\.test\/trace\/e9aab31b90243f36078e89b9a8f81ad9"/);
   assert.match(html, /href="https:\/\/acme\.observe\.test\/trace\/57eea4deae38e29b572a4a0cdc255b30"/);
 });
 
 test("links every item of a slash list with the first reference's prefix", () => {
-  const hrefs = (source) => [...inlineMarkdown(source, "tasks/TASK-0001.md").matchAll(/(?:href|data-document-path)="([^"?]+)"/g)].map(([, href]) => href.replace(/^https:\/\/[^/]+\//, ""));
-  assert.deepEqual(hrefs("Preserve TASK-0016/0017/0024."), ["tasks/TASK-0016.md", "tasks/TASK-0017.md", "tasks/TASK-0024.md"]);
+  const hrefs = (source) => [...inlineMarkdown(source, "tasks/TASK-0001/TASK-0001.md").matchAll(/(?:href|data-document-path)="([^"?]+)"/g)].map(([, href]) => href.replace(/^https:\/\/[^/]+\//, ""));
+  assert.deepEqual(hrefs("Preserve TASK-0016/0017/0024."), ["tasks/TASK-0016/TASK-0016.md", "tasks/TASK-0017/TASK-0017.md", "tasks/TASK-0024/TASK-0024.md"]);
   assert.deepEqual(hrefs("plus ATL-2733/2734 and OPS-54562/54852"), ["acme/issue/ATL-2733", "acme/issue/ATL-2734", "browse/OPS-54562", "browse/OPS-54852"]);
   assert.deepEqual(hrefs("#1831/#1872, Orbit#2738/2740"), ["acme/atlas/pull/1831", "acme/atlas/pull/1872", "acme/Orbit/pull/2738", "acme/Orbit/pull/2740"]);
   assert.deepEqual(hrefs("see https://linear.app/acme/issue/ATL-2312/fix-totals"), []);
@@ -245,12 +245,12 @@ test("a plan's focus lists its scheduled tasks with notes, and work headings for
 });
 
 test("renders repository-local Markdown images with accessible responsive markup", () => {
-  const source = "![Atlas onboarding flow](../plans/atlas-onboarding/assets/onboarding-flow.png)";
-  const html = renderMarkdown(source, "tasks/TASK-0001.md");
+  const source = "![Atlas onboarding flow](../../reference/atlas-onboarding/assets/onboarding-flow.png)";
+  const html = renderMarkdown(source, "tasks/TASK-0001/TASK-0001.md");
   assert.match(html, /^<figure class="markdown-figure"><button class="markdown-image-trigger" type="button"/);
   assert.match(html, /aria-label="Open Atlas onboarding flow in image viewer"/);
   assert.match(html, /<img class="markdown-image"/);
-  assert.match(html, /src="\/api\/asset\?path=plans%2Fatlas-onboarding%2Fassets%2Fonboarding-flow\.png"/);
+  assert.match(html, /src="\/api\/asset\?path=reference%2Fatlas-onboarding%2Fassets%2Fonboarding-flow\.png"/);
   assert.match(html, /alt="Atlas onboarding flow"/);
   assert.match(html, /loading="lazy" decoding="async"/);
   assert.doesNotMatch(html, /^<p>!/);
@@ -258,12 +258,12 @@ test("renders repository-local Markdown images with accessible responsive markup
 
 test("resolves only approved repository image assets", () => {
   assert.deepEqual(
-    resolveMarkdownAsset("../plans/atlas-onboarding/assets/onboarding-flow.svg", "tasks/TASK-0001.md"),
-    { kind: "asset", path: "plans/atlas-onboarding/assets/onboarding-flow.svg" },
+    resolveMarkdownAsset("../../reference/atlas-onboarding/assets/onboarding-flow.svg", "tasks/TASK-0001/TASK-0001.md"),
+    { kind: "asset", path: "reference/atlas-onboarding/assets/onboarding-flow.svg" },
   );
-  assert.deepEqual(resolveMarkdownAsset("https://example.com/diagram.png", "tasks/TASK-0001.md"), { kind: "unavailable" });
-  assert.deepEqual(resolveMarkdownAsset("../../outside.png", "tasks/TASK-0001.md"), { kind: "unavailable" });
-  assert.deepEqual(resolveMarkdownAsset("../plans/topic/notes.md", "tasks/TASK-0001.md"), { kind: "unavailable" });
+  assert.deepEqual(resolveMarkdownAsset("https://example.com/diagram.png", "tasks/TASK-0001/TASK-0001.md"), { kind: "unavailable" });
+  assert.deepEqual(resolveMarkdownAsset("../../../outside.png", "tasks/TASK-0001/TASK-0001.md"), { kind: "unavailable" });
+  assert.deepEqual(resolveMarkdownAsset("../../reference/topic/notes.md", "tasks/TASK-0001/TASK-0001.md"), { kind: "unavailable" });
   assert.deepEqual(resolveMarkdownAsset("https://uploads.linear.app/org/a/b", ""), { kind: "remote", href: "/api/linear-image?url=https%3A%2F%2Fuploads.linear.app%2Forg%2Fa%2Fb" });
 });
 
@@ -289,37 +289,37 @@ test("angle-bracket link destinations, as Linear writes them, stay live", () => 
 });
 
 test("links approved rendered and editable repository assets", () => {
-  const html = inlineMarkdown("[Open SVG](../plans/topic/diagram.svg) · [Edit source](../plans/topic/diagram.dot)", "tasks/TASK-0001.md");
-  assert.match(html, /class="markdown-asset-link" href="\/api\/asset\?path=plans%2Ftopic%2Fdiagram\.svg"/);
-  assert.match(html, /href="\/api\/asset\?path=plans%2Ftopic%2Fdiagram\.dot"/);
-  assert.equal(resolveMarkdownAttachment("../plans/topic/diagram.pdf", "tasks/TASK-0001.md").kind, "unavailable");
+  const html = inlineMarkdown("[Open SVG](../../reference/topic/diagram.svg) · [Edit source](../../reference/topic/diagram.dot)", "tasks/TASK-0001/TASK-0001.md");
+  assert.match(html, /class="markdown-asset-link" href="\/api\/asset\?path=reference%2Ftopic%2Fdiagram\.svg"/);
+  assert.match(html, /href="\/api\/asset\?path=reference%2Ftopic%2Fdiagram\.dot"/);
+  assert.equal(resolveMarkdownAttachment("../../reference/topic/diagram.pdf", "tasks/TASK-0001/TASK-0001.md").kind, "unavailable");
 });
 
 test("serves only traversal-safe repository image paths", () => {
-  const asset = safeAssetPath("plans/atlas-onboarding/assets/onboarding-flow.png");
-  assert.equal(asset.relative, "plans/atlas-onboarding/assets/onboarding-flow.png");
-  assert.match(asset.absolute, /plans\/atlas-onboarding\/assets\/onboarding-flow\.png$/);
+  const asset = safeAssetPath("reference/atlas-onboarding/assets/onboarding-flow.png");
+  assert.equal(asset.relative, "reference/atlas-onboarding/assets/onboarding-flow.png");
+  assert.match(asset.absolute, /reference\/atlas-onboarding\/assets\/onboarding-flow\.png$/);
   assert.throws(() => safeAssetPath("../outside.png"), /Invalid asset path/);
   assert.throws(() => safeAssetPath("viewer/public/index.html"), /Invalid asset path/);
-  assert.throws(() => safeAssetPath("plans/topic/diagram.pdf"), /Invalid asset path/);
-  assert.equal(safeAssetPath("plans/topic/diagram.dot").relative, "plans/topic/diagram.dot");
+  assert.throws(() => safeAssetPath("reference/topic/diagram.pdf"), /Invalid asset path/);
+  assert.equal(safeAssetPath("reference/topic/diagram.dot").relative, "reference/topic/diagram.dot");
 });
 
 test("embeds .draft diagrams as images drawn by the diagram command, and draws a failure as its error", async () => {
-  const html = inlineMarkdown("![Flow](TASK-0001-assets/flow.draft)", "tasks/TASK-0001.md");
-  assert.match(html, /data-diagram="tasks\/TASK-0001-assets\/flow\.draft"/);
-  assert.match(html, /src="\/api\/diagram\?path=tasks%2FTASK-0001-assets%2Fflow\.draft"/);
-  assert.match(inlineMarkdown("[flow](TASK-0001-assets/flow.draft)", "tasks/TASK-0001.md"), /href="\/api\/diagram\?path=/);
+  const html = inlineMarkdown("![Flow](flow.draft)", "tasks/TASK-0001/TASK-0001.md");
+  assert.match(html, /data-diagram="tasks\/TASK-0001\/flow\.draft"/);
+  assert.match(html, /src="\/api\/diagram\?path=tasks%2FTASK-0001%2Fflow\.draft"/);
+  assert.match(inlineMarkdown("[flow](flow.draft)", "tasks/TASK-0001/TASK-0001.md"), /href="\/api\/diagram\?path=/);
   assert.throws(() => safeAssetPath("../outside.draft"), /Invalid asset path/);
   const previous = config();
   try {
     setConfig({ ...previous, diagrams: { command: ["/bin/sh", "-c", 'echo "<svg>$1 $3</svg>"', "sh"] } });
-    assert.match(await renderDiagram("tasks/TASK-0001-assets/flow.draft"), /<svg>inspect --svg<\/svg>/);
-    await assert.rejects(renderDiagram("tasks/TASK-0001-assets/missing.draft"));
+    assert.match(await renderDiagram("tasks/TASK-0001/flow.draft"), /<svg>inspect --svg<\/svg>/);
+    await assert.rejects(renderDiagram("tasks/TASK-0001/missing.draft"));
     setConfig({ ...previous, diagrams: { command: ["/bin/sh", "-c", 'echo "line 2: unknown <thing>" >&2; exit 1', "sh"] } });
     const { utimes } = await import("node:fs/promises");
-    await utimes(join(ROOT, "tasks/TASK-0001-assets/flow.draft"), new Date(), new Date(Date.now() + 5000));
-    const failed = await renderDiagram("tasks/TASK-0001-assets/flow.draft");
+    await utimes(join(ROOT, "tasks/TASK-0001/flow.draft"), new Date(), new Date(Date.now() + 5000));
+    const failed = await renderDiagram("tasks/TASK-0001/flow.draft");
     assert.match(failed, /flow\.draft did not draw/);
     assert.match(failed, /unknown &lt;thing&gt;/);
   } finally {
@@ -329,7 +329,7 @@ test("embeds .draft diagrams as images drawn by the diagram command, and draws a
 
 test("the Diagrams page lists every .draft with its title and owning task", async () => {
   const diagrams = await listDiagrams();
-  const flow = diagrams.find((diagram) => diagram.path === "tasks/TASK-0001-assets/flow.draft");
+  const flow = diagrams.find((diagram) => diagram.path === "tasks/TASK-0001/flow.draft");
   assert.equal(flow?.title, "Fixture flow");
   assert.equal(flow?.task, "TASK-0001");
   assert.ok(diagrams.every((diagram) => diagram.path.endsWith(".draft")));
@@ -341,7 +341,7 @@ test("the Updates timeline preserves mixed history, Markdown blocks, and heading
     "",
     "### 2026-10-27",
     "",
-    "A first [reference](TASK-0002.md).",
+    "A first [reference](../TASK-0002/TASK-0002.md).",
     "",
     "- Plain bullet under the date.",
     "",
@@ -377,7 +377,7 @@ test("the Updates timeline preserves mixed history, Markdown blocks, and heading
   assert.equal(entries[2].body, "An older date-only bullet.");
   assert.match(entries[3].body, /^First note for the day\.\n- Nested detail\./);
   assert.match(entries[3].body, /Example/);
-  const html = renderUpdates(markdown, "tasks/TASK-0001.md");
+  const html = renderUpdates(markdown, "tasks/TASK-0001/TASK-0001.md");
   assert.ok(html);
   assert.match(html, /<p>Historical notes\.<\/p><ol class="update-timeline">/);
   assert.match(html, /id="2026-10-27"/);
@@ -397,7 +397,7 @@ test("same-day timeline entries follow the task's prepend or append convention",
 
 test("the world view lists a task's asset files by kind and its dated updates", async () => {
   const { tasks } = await listTaskWorld();
-  const flow = tasks["TASK-0001"]?.files.find((file) => file.path === "tasks/TASK-0001-assets/flow.draft");
+  const flow = tasks["TASK-0001"]?.files.find((file) => file.path === "tasks/TASK-0001/flow.draft");
   assert.equal(flow?.kind, "diagram");
   assert.ok(flow.modified > 0);
   assert.ok(Object.values(tasks).every((task) => task.updates.every((update) => /^\d{4}-\d{2}-\d{2}$/.test(update.date))));
@@ -410,10 +410,10 @@ test("the world view dates completed work by its last naming update, lists ready
     { id: "W1.2", title: "Next", status: "open", parent: "W1", deps: ["W1.1"], ready: true },
     { id: "W2", title: "Never named", status: "completed", parent: "", deps: [], ready: false },
   ];
-  const documents = [{ path: "tasks/TASK-0009.md", task: { id: "TASK-0009", created: "2026-10-01", referencedBy: [], work } }];
+  const documents = [{ path: "tasks/TASK-0009/TASK-0009.md", task: { id: "TASK-0009", created: "2026-10-01", referencedBy: [], work } }];
   const world = { tasks: { "TASK-0009": {
     updates: [{ date: "2026-10-02", title: "Started (W1.1)" }, { date: "2026-10-05", title: "Finished (W1.1, W3)" }],
-    files: [{ path: "tasks/TASK-0009-assets/flow.draft", kind: "diagram", modified: 0 }, { path: "tasks/TASK-0009-assets/flow.png", kind: "image", modified: 0 }],
+    files: [{ path: "tasks/TASK-0009/flow.draft", kind: "diagram", modified: 0 }, { path: "tasks/TASK-0009/flow.png", kind: "image", modified: 0 }],
   } } };
   const items = taskItems("TASK-0009", world, documents);
   const done = items.filter((item) => item.lane === "work" && !item.ready);
@@ -423,7 +423,7 @@ test("the world view dates completed work by its last naming update, lists ready
 });
 
 test("consecutive diagram embeds share one thumbnail strip; other images stay full figures", () => {
-  const html = renderMarkdown("Intro.\n\n![A](TASK-0001-assets/a.draft)\n\n![B](TASK-0001-assets/b.draft) ![C](TASK-0001-assets/c.draft)\n\nAfter.\n\n![Shot](TASK-0001-assets/shot.png)", "tasks/TASK-0001.md");
+  const html = renderMarkdown("Intro.\n\n![A](a.draft)\n\n![B](b.draft) ![C](c.draft)\n\nAfter.\n\n![Shot](shot.png)", "tasks/TASK-0001/TASK-0001.md");
   assert.equal((html.match(/class="diagram-strip"/g) || []).length, 1);
   assert.equal((html.match(/diagram-thumb"/g) || []).length, 3);
   assert.match(html, /<span class="diagram-thumb-caption">B<\/span>/);
@@ -431,9 +431,9 @@ test("consecutive diagram embeds share one thumbnail strip; other images stay fu
 });
 
 test("a diagram request names the source and the task that embeds it", async () => {
-  const prompt = buildDiagramPrompt(safeAssetPath("tasks/TASK-0001-assets/flow.draft"), "Make it read left to right.", await loadDocument("tasks/TASK-0001.md"));
-  assert.match(prompt, /Diagram source: tasks\/TASK-0001-assets\/flow\.draft \(/);
-  assert.match(prompt, /Embedded in: tasks\/TASK-0001\.md \(TASK-0001 · /);
+  const prompt = buildDiagramPrompt(safeAssetPath("tasks/TASK-0001/flow.draft"), "Make it read left to right.", await loadDocument("tasks/TASK-0001/TASK-0001.md"));
+  assert.match(prompt, /Diagram source: tasks\/TASK-0001\/flow\.draft \(/);
+  assert.match(prompt, /Embedded in: tasks\/TASK-0001\/TASK-0001\.md \(TASK-0001 · /);
   assert.match(prompt, /Make it read left to right\./);
   assert.match(prompt, /draftably check/);
 });
@@ -451,7 +451,7 @@ test("diagram source lines carry the id they declare and an edge's ends, for hov
 });
 
 test("keeps unavailable images readable without exposing an unsafe source", () => {
-  const html = renderMarkdown("![Unsafe diagram](javascript:alert(1))", "tasks/TASK-0001.md");
+  const html = renderMarkdown("![Unsafe diagram](javascript:alert(1))", "tasks/TASK-0001/TASK-0001.md");
   assert.match(html, /class="markdown-unavailable-image"/);
   assert.match(html, /aria-label="Unavailable image: Unsafe diagram"/);
   assert.doesNotMatch(html, /src=/);
@@ -516,17 +516,17 @@ test("builds a nested table-of-contents outline without treating code as heading
 });
 
 test("turns repository-local text paths into viewer links", () => {
-  const html = inlineMarkdown("Transcript: `daily/2026/07/31/orbit-cross-team-dependencies-transcript.txt`", "daily/2026/07/31/orbit-dependency-context.md");
+  const html = inlineMarkdown("Transcript: `reference/orbit-cross-team-dependencies-transcript.txt`", "reference/orbit-dependency-context.md");
   assert.match(html, /class="markdown-document-link code-file-link"/);
-  assert.match(html, /data-document-path="daily\/2026\/07\/31\/orbit-cross-team-dependencies-transcript\.txt"/);
-  assert.doesNotMatch(inlineMarkdown("`\/Users\/alex\/.codex\/attachments\/note.txt`", "daily/2026/07/31/plan.md"), /href=/);
+  assert.match(html, /data-document-path="reference\/orbit-cross-team-dependencies-transcript\.txt"/);
+  assert.doesNotMatch(inlineMarkdown("`\/Users\/alex\/.codex\/attachments\/note.txt`", "daily/2026-07-31.md"), /href=/);
 });
 
 test("renders GFM tables as semantic, scrollable tables", () => {
   const html = renderMarkdown(`| Step | Owner | Result |
 | --- | :---: | ---: |
 | Prepare | **Platform** | \`infra_ready\` |
-| Validate | Customer | [Runbook](https://example.com/runbook) |`, "tasks/TASK-0001.md");
+| Validate | Customer | [Runbook](https://example.com/runbook) |`, "tasks/TASK-0001/TASK-0001.md");
   assert.match(html, /class="markdown-table-scroll"/);
   assert.match(html, /<table><thead><tr>/);
   assert.match(html, /<th class="align-center" scope="col">Owner<\/th>/);
@@ -543,11 +543,11 @@ test("copies table rows as CSV and TSV", () => {
 });
 
 test("dispatch prompt identifies the source and preserves commentary", async () => {
-  const document = await loadDocument("daily/2026/07/31/plan.md");
+  const document = await loadDocument("daily/2026-07-31.md");
   const chunk = document.chunks.find((candidate) => candidate.title.startsWith("Milestone 2"));
   assert.ok(chunk);
   const prompt = buildCodexPrompt(document, chunk, "Please turn this into the next concrete action.");
-  assert.match(prompt, /daily\/2026\/07\/31\/plan\.md/);
+  assert.match(prompt, /daily\/2026-07-31\.md/);
   assert.match(prompt, /single-command `acme init` bootstrap/);
   assert.match(prompt, /Please turn this into the next concrete action/);
   assert.match(buildCodexPrompt(document, chunk, ""), /AGENTS\.md[\s\S]*commentary:\n\n$/, "a copied prompt ends at the commentary heading");
@@ -556,15 +556,15 @@ test("dispatch prompt identifies the source and preserves commentary", async () 
 });
 
 test("file handoff attaches the path without copying the file contents", async () => {
-  const document = await loadDocument("daily/2026/07/31/plan.md");
+  const document = await loadDocument("daily/2026-07-31.md");
   const prompt = buildDocumentCodexPrompt(document, "Review the whole file.");
-  assert.match(prompt, /Source file: daily\/2026\/07\/31\/plan\.md/);
+  assert.match(prompt, /Source file: daily\/2026-07-31\.md/);
   assert.match(prompt, /Review the whole file/);
   assert.doesNotMatch(prompt, /single-command `acme init` bootstrap/);
 });
 
 test("a selection handoff quotes the excerpt under its section", async () => {
-  const document = await loadDocument("daily/2026/07/31/plan.md");
+  const document = await loadDocument("daily/2026-07-31.md");
   const prompt = buildDocumentCodexPrompt(document, "Dig into this one.", "Error: cursor closed\nSeen: Oct 27", "Findings › c4574f89");
   assert.match(prompt, /Section: Findings › c4574f89/);
   assert.match(prompt, /> Error: cursor closed\n> Seen: Oct 27/);
@@ -590,8 +590,8 @@ test("global handoff carries no file or chunk context", () => {
 });
 
 test("a global handoff from a document page names the file and task", async () => {
-  const prompt = buildGlobalCodexPrompt("Close this issue.", await loadDocument("tasks/TASK-0001.md"));
-  assert.match(prompt, /Source file: tasks\/TASK-0001\.md\nTask: TASK-0001 · /);
+  const prompt = buildGlobalCodexPrompt("Close this issue.", await loadDocument("tasks/TASK-0001/TASK-0001.md"));
+  assert.match(prompt, /Source file: tasks\/TASK-0001\/TASK-0001\.md\nTask: TASK-0001 · /);
   assert.doesNotMatch(prompt, /No plan, file, or chunk context/);
 });
 
@@ -600,13 +600,13 @@ test("rejects traversal outside the Markdown library", async () => {
 });
 
 test("allows authored Markdown and text assets but ignores generated Linear exports", () => {
-  assert.equal(isViewableDocumentPath("daily/2026/07/31/artifacts/transcript.txt"), true);
-  assert.equal(isViewableDocumentPath("tasks/TASK-0032-assets/linear-review.md"), true);
-  assert.equal(isViewableDocumentPath("tasks/TASK-0032-assets/frames/still.jpg"), false);
-  assert.equal(isViewableDocumentPath("daily/2026/07/31/plan.md"), true);
-  assert.equal(isViewableDocumentPath("plans/topic/README.md"), true);
+  assert.equal(isViewableDocumentPath("reference/artifacts/transcript.txt"), true);
+  assert.equal(isViewableDocumentPath("tasks/TASK-0032/linear-review.md"), true);
+  assert.equal(isViewableDocumentPath("tasks/TASK-0032/frames/still.jpg"), false);
+  assert.equal(isViewableDocumentPath("daily/2026-07-31.md"), true);
+  assert.equal(isViewableDocumentPath("reference/topic/README.md"), true);
   assert.equal(isViewableDocumentPath("reference/repos.md"), true);
-  assert.equal(isViewableDocumentPath("tasks/TASK-0001.md"), true);
+  assert.equal(isViewableDocumentPath("tasks/TASK-0001/TASK-0001.md"), true);
   assert.equal(isViewableDocumentPath("tasks/notes.md"), false);
   assert.equal(isViewableDocumentPath("reference/linear/ATL-123.md"), false);
   assert.equal(isViewableDocumentPath("/Users/alex/.codex/attachments/pasted-text.txt"), false);
@@ -614,9 +614,9 @@ test("allows authored Markdown and text assets but ignores generated Linear expo
 });
 
 test("loads a task through the existing renderer without displaying front matter", async () => {
-  const document = await loadDocument("tasks/TASK-0001.md");
-  assert.equal(document.path, "tasks/TASK-0001.md");
-  assert.equal(document.absolutePath, join(ROOT, "tasks", "TASK-0001.md"));
+  const document = await loadDocument("tasks/TASK-0001/TASK-0001.md");
+  assert.equal(document.path, "tasks/TASK-0001/TASK-0001.md");
+  assert.equal(document.absolutePath, join(ROOT, "tasks", "TASK-0001", "TASK-0001.md"));
   assert.equal(document.kind, "Task");
   assert.equal(document.task?.id, "TASK-0001");
   assert.equal(document.task?.status, "active");
@@ -626,7 +626,7 @@ test("loads a task through the existing renderer without displaying front matter
 
 test("indexes tasks separately from daily documents", async () => {
   const documents = await listDocuments();
-  const task = documents.find((document) => document.path === "tasks/TASK-0001.md");
+  const task = documents.find((document) => document.path === "tasks/TASK-0001/TASK-0001.md");
   assert.equal(task?.group, "Tasks");
   assert.equal(task?.task?.project, "Atlas onboarding");
   assert.deepEqual(task?.task?.tags, ["onboarding", "design-review"]);
@@ -648,15 +648,15 @@ test("a PR's own text links bare #N and SHAs in that PR's repository, as GitHub 
 });
 
 test("the daily plan schedules the pilot by ID without copying its body", async () => {
-  const plan = await loadDocument("daily/2026/08/03/plan.md");
+  const plan = await loadDocument("daily/2026-08-03.md");
   const milestone = plan.chunks.find((chunk) => chunk.title.startsWith("Milestone 3"));
   assert.ok(milestone);
-  assert.match(milestone.markdown, /\[TASK-0001\]\(\.\.\/\.\.\/\.\.\/\.\.\/tasks\/TASK-0001\.md\)/);
+  assert.match(milestone.markdown, /\[TASK-0001\]\(\.\.\/tasks\/TASK-0001\/TASK-0001\.md\)/);
   assert.doesNotMatch(milestone.markdown, /updated technical design/);
 });
 
 test("loads repository text assets as one plain-text chunk", async () => {
-  const document = await loadDocument("daily/2026/07/31/orbit-cross-team-dependencies-transcript.txt");
+  const document = await loadDocument("reference/orbit-cross-team-dependencies-transcript.txt");
   assert.equal(document.format, "text");
   assert.equal(document.kind, "Text file");
   assert.equal(document.chunks.length, 1);
@@ -674,11 +674,11 @@ test("rejects invalid calendar dates", () => {
   assert.equal(parseDateKey("not-a-date"), null);
 });
 
-test("groups every file from the current day under Today", () => {
-  const paths = ["plan.md", "notes.md", "reference.md"].map((file) => `daily/2026/08/03/${file}`);
-  const currentDay = paths.map((path) => summarize(path, "# Daily file", "2026-08-03"));
-  assert.ok(currentDay.every((document) => document.group === "Today" && document.isToday));
-  assert.deepEqual(currentDay.map((document) => document.kind), ["Plan", "Daily note", "Daily note"]);
+test("groups the current day's plan under Today", () => {
+  const today = summarize("daily/2026-08-03.md", "# Daily file", "2026-08-03");
+  assert.ok(today.group === "Today" && today.isToday);
+  assert.equal(today.kind, "Plan");
+  assert.ok(!summarize("daily/2026-08-02.md", "# Daily file", "2026-08-03").isToday);
 });
 
 test("builds a Codex draft link pinned to the workspace", () => {
@@ -728,12 +728,12 @@ test("opens a Claude draft in the workspace folder when Claude is the agent", as
 
 test("extracts executable prompt blocks and preserves legacy nested actions", async () => {
   const { parseActions } = await import('./public/actions.js');
-  const actions = parseActions('### Prove the fix\n\nWork item: W1.1\n\n```prompt\nInspect /repo and reproduce the failure.\nRecord evidence.\n```', 'tasks/TASK-0042.md');
+  const actions = parseActions('### Prove the fix\n\nWork item: W1.1\n\n```prompt\nInspect /repo and reproduce the failure.\nRecord evidence.\n```', 'tasks/TASK-0042/TASK-0042.md');
   assert.equal(actions.length, 1);
   assert.equal(actions[0].workItem, 'W1.1');
   assert.equal(actions[0].prompt, 'Inspect /repo and reproduce the failure.\nRecord evidence.');
-  assert.equal(actions[0].sourcePath, 'tasks/TASK-0042.md');
-  const old = parseActions('- Reproduce it.\n  - Keep the evidence.\n- Verify it.', 'tasks/TASK-0042.md');
+  assert.equal(actions[0].sourcePath, 'tasks/TASK-0042/TASK-0042.md');
+  const old = parseActions('- Reproduce it.\n  - Keep the evidence.\n- Verify it.', 'tasks/TASK-0042/TASK-0042.md');
   assert.equal(old.length, 2);
   assert.match(old[0].prompt, /Keep the evidence/);
 });
@@ -771,7 +771,7 @@ test("work breakdown diagnostics explain unsupported statuses and how to repair 
 });
 
 test("a daily plan lists its scheduled tasks without deriving Next steps from them", async () => {
-  const plan = await loadDocument('daily/2026/10/01/plan.md');
+  const plan = await loadDocument('daily/2026-10-01.md');
   assert.ok(plan.chunks.some(c => /^scheduled tasks$/i.test(c.title)));
   assert.ok(!plan.chunks.some(c => c.id === 'scheduled-next-steps'));
   assert.equal(plan.scheduledActions, undefined);
@@ -780,7 +780,7 @@ test("a daily plan lists its scheduled tasks without deriving Next steps from th
 
 test("action handoff needs no extra typing and includes source, bounded prompt and context", async () => {
   const { buildActionPrompt } = await import('./server.ts');
-  const task = await loadDocument('tasks/TASK-0015.md');
+  const task = await loadDocument('tasks/TASK-0015/TASK-0015.md');
   const prompt = buildActionPrompt(task, task.nextActions[0], 'Focus on the released versions.');
   assert.ok(prompt.includes(task.absolutePath));
   assert.ok(prompt.includes(task.nextActions[0].prompt));
@@ -791,7 +791,7 @@ test("action handoff needs no extra typing and includes source, bounded prompt a
 
 test("action rendering escapes titles, prompts and graph labels", async () => {
   const { renderActions, renderWorkGraph, parseWorkBreakdown } = await import('./public/actions.js');
-  const html = renderActions([{ title: '<script>bad</script>', prompt: '<img src=x onerror=bad>', sourcePath: 'tasks/TASK-0001.md' }], 'next');
+  const html = renderActions([{ title: '<script>bad</script>', prompt: '<img src=x onerror=bad>', sourcePath: 'tasks/TASK-0001/TASK-0001.md' }], 'next');
   assert.doesNotMatch(html, /<script>|<img/);
   assert.match(html, /Draft action/);
   const graph = renderWorkGraph(parseWorkBreakdown('- W1: <script>bad</script> [open]'), [], 'work');
@@ -803,7 +803,7 @@ test("headings within fenced action prompts do not become task sections or split
   const markdown = '# Task\n\n## Next actions\n\n### Record findings\n\n```prompt\nUse this report format:\n## Evidence\n### Observation\nRecord results.\n```\n\n## Work breakdown\n\n- W1: Report [open]';
   const chunks = parseChunks(markdown);
   assert.deepEqual(chunks.map(c => c.title), ['Next actions', 'Work breakdown']);
-  const actions = parseActions(chunks[0].markdown, 'tasks/TASK-0042.md');
+  const actions = parseActions(chunks[0].markdown, 'tasks/TASK-0042/TASK-0042.md');
   assert.equal(actions.length, 1);
   assert.match(actions[0].prompt, /### Observation/);
 });
@@ -825,7 +825,7 @@ test("a task's steps say what they wait on beside the graph arrows", async () =>
 test("a waiting action stays openable and says what it waits on", async () => {
   const { renderActions, parseWorkBreakdown } = await import('./public/actions.js');
   const { taskStepsHtml } = await import('./public/steps-page.js');
-  const action = { title: 'Fix it', prompt: 'Apply the fix.', sourcePath: 'tasks/TASK-0001.md', workItem: 'W2', blocked: true, blockedReason: 'After W1' };
+  const action = { title: 'Fix it', prompt: 'Apply the fix.', sourcePath: 'tasks/TASK-0001/TASK-0001.md', workItem: 'W2', blocked: true, blockedReason: 'After W1' };
   const list = renderActions([action], 'next');
   assert.doesNotMatch(list, /disabled/);
   assert.match(list, /class="action-card is-waiting"[^>]*data-action-index="0"/);
@@ -837,7 +837,7 @@ test("a waiting action stays openable and says what it waits on", async () => {
 
 test("work item handoffs run or update any item and say when it is not ready", async () => {
   const { buildWorkItemPrompt } = await import("./server.ts");
-  const task = await loadDocument("tasks/TASK-0015.md");
+  const task = await loadDocument("tasks/TASK-0015/TASK-0015.md");
   const node = { ...task.work.nodes[0], ready: false, deps: [] };
   const run = buildWorkItemPrompt(task, node, "run", "");
   assert.match(run, /^Advance work item W1: Compare released versions/);
@@ -853,26 +853,26 @@ test("setTaskStatus rewrites only status and updated front matter", async () => 
   const { mkdtemp, mkdir, writeFile, readFile } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const root = await mkdtemp(join(tmpdir(), "task-status-"));
-  await mkdir(join(root, "tasks"));
+  await mkdir(join(root, "tasks", "TASK-0042"), { recursive: true });
   const body = "# T\n\nstatus: open stays in the body.\n";
-  await writeFile(join(root, "tasks/TASK-0042.md"), `---\nid: TASK-0042\ntitle: T\nsummary: S\nstatus: open\nproject: P\ntags: []\ncreated: 2026-01-01\nupdated: 2026-01-01\n---\n${body}`);
-  const task = await setTaskStatus("tasks/TASK-0042.md", "active", root, "2026-10-01");
+  await writeFile(join(root, "tasks/TASK-0042/TASK-0042.md"), `---\nid: TASK-0042\ntitle: T\nsummary: S\nstatus: open\nproject: P\ntags: []\ncreated: 2026-01-01\nupdated: 2026-01-01\n---\n${body}`);
+  const task = await setTaskStatus("tasks/TASK-0042/TASK-0042.md", "active", root, "2026-10-01");
   assert.equal(task.status, "active");
-  const contents = await readFile(join(root, "tasks/TASK-0042.md"), "utf8");
+  const contents = await readFile(join(root, "tasks/TASK-0042/TASK-0042.md"), "utf8");
   assert.match(contents, /^status: active$/m);
   assert.match(contents, /^updated: 2026-10-01$/m);
   assert.ok(contents.endsWith(body));
-  await assert.rejects(setTaskStatus("tasks/TASK-0042.md", "bogus", root));
-  await assert.rejects(setTaskStatus("daily/2026/10/01/plan.md", "open", root));
+  await assert.rejects(setTaskStatus("tasks/TASK-0042/TASK-0042.md", "bogus", root));
+  await assert.rejects(setTaskStatus("daily/2026-10-01.md", "open", root));
   // Waiting writes a check-in; picking it again pushes the date; leaving waiting drops the line.
-  assert.equal((await setTaskStatus("tasks/TASK-0042.md", "waiting", root, "2026-10-01")).checkIn, "2026-10-08");
-  assert.equal((await setTaskStatus("tasks/TASK-0042.md", "waiting", root, "2026-10-03", 14)).checkIn, "2026-10-17");
-  assert.equal((await readFile(join(root, "tasks/TASK-0042.md"), "utf8")).match(/^check_in:/gm)?.length, 1);
-  await setTaskStatus("tasks/TASK-0042.md", "open", root, "2026-10-04");
-  const reopened = await readFile(join(root, "tasks/TASK-0042.md"), "utf8");
+  assert.equal((await setTaskStatus("tasks/TASK-0042/TASK-0042.md", "waiting", root, "2026-10-01")).checkIn, "2026-10-08");
+  assert.equal((await setTaskStatus("tasks/TASK-0042/TASK-0042.md", "waiting", root, "2026-10-03", 14)).checkIn, "2026-10-17");
+  assert.equal((await readFile(join(root, "tasks/TASK-0042/TASK-0042.md"), "utf8")).match(/^check_in:/gm)?.length, 1);
+  await setTaskStatus("tasks/TASK-0042/TASK-0042.md", "open", root, "2026-10-04");
+  const reopened = await readFile(join(root, "tasks/TASK-0042/TASK-0042.md"), "utf8");
   assert.doesNotMatch(reopened, /check_in/);
   assert.ok(reopened.endsWith(body));
-  await assert.rejects(setTaskStatus("tasks/TASK-0042.md", "waiting", root, "2026-10-04", 0), /1 to 365 days/);
+  await assert.rejects(setTaskStatus("tasks/TASK-0042/TASK-0042.md", "waiting", root, "2026-10-04", 0), /1 to 365 days/);
 });
 
 test("a waiting task watches what its Next actions name and wakes when one moves", () => {
@@ -890,7 +890,7 @@ Check [OPS-7](https://acme.atlassian.net/browse/OPS-7) and whether [#12](https:/
 
 ## Updates
 `;
-  const watch = watchedReferences(body, "tasks/TASK-0042.md");
+  const watch = watchedReferences(body, "tasks/TASK-0042/TASK-0042.md");
   assert.deepEqual(watch.map((item) => item.key), ["jira:OPS-7", "github:acme/atlas#12"]);
   const task = { updated: "2026-10-20", watch } as any;
   const signals = waitingSignals(task, {
@@ -930,7 +930,7 @@ test("Claude Desktop session links are chat links", async () => {
 
 test("Codex conversation Markdown opens the existing chat and blocks other app commands", () => {
   const href = "codex://threads/019abcde-1234-7000-8000-123456789abc";
-  assert.deepEqual(resolveMarkdownLink(href, "tasks/TASK-0001.md"), { kind: "app", href });
+  assert.deepEqual(resolveMarkdownLink(href, "tasks/TASK-0001/TASK-0001.md"), { kind: "app", href });
   const html = inlineMarkdown(`[Resume implementation](${href})`);
   assert.match(html, /href="codex:\/\/threads\//);
   assert.match(html, /opens in Codex/);
@@ -940,15 +940,15 @@ test("Codex conversation Markdown opens the existing chat and blocks other app c
 
 test("task summaries expose chats from authoritative prose for daily plan references", async () => {
   const { readFile } = await import("node:fs/promises");
-  const source = await readFile(join(ROOT, "tasks/TASK-0001.md"), "utf8");
+  const source = await readFile(join(ROOT, "tasks/TASK-0001/TASK-0001.md"), "utf8");
   const href = "codex://threads/019abcde-1234-7000-8000-123456789abc";
-  const task = summarize("tasks/TASK-0001.md", `${source}\n\n## Chats\n\n- [Implementation](${href})`).task;
+  const task = summarize("tasks/TASK-0001/TASK-0001.md", `${source}\n\n## Chats\n\n- [Implementation](${href})`).task;
   assert.deepEqual(task?.chatLinks, [{ href, provider: "Codex", label: "Implementation" }]);
 });
 
 test("every viewer handoff requests verified conversation identity without guessing", async () => {
   const { buildActionPrompt } = await import("./server.ts");
-  const doc = await loadDocument("daily/2026/07/31/plan.md");
+  const doc = await loadDocument("daily/2026-07-31.md");
   for (const prompt of [buildCodexPrompt(doc, doc.chunks[0], "Continue"), buildDocumentCodexPrompt(doc, "Continue"), buildGlobalCodexPrompt("Continue"), buildActionPrompt(doc, { title: "Continue", prompt: "Read the task" }, "")]) {
     assert.match(prompt, /under ## Chats/);
     assert.match(prompt, /Do not guess IDs/);
@@ -965,23 +965,23 @@ test("Slack permalinks become desktop deep links that land on the message and it
 });
 
 test("an active task with only blocked actions explains what it is waiting on", async () => {
-  const task = await loadDocument("tasks/TASK-0002.md");
+  const task = await loadDocument("tasks/TASK-0002/TASK-0002.md");
   assert.ok(task.nextActions.every(action => action.blocked));
   assert.equal(task.nextActions[0].blockedReason, "After W1");
   assert.match(task.actionWarnings.join(" "), /no ready next action: “Compare released versions” \(W2 is open, after W1\)/);
-  assert.deepEqual((await loadDocument("tasks/TASK-0015.md")).actionWarnings, []);
+  assert.deepEqual((await loadDocument("tasks/TASK-0015/TASK-0015.md")).actionWarnings, []);
 });
 
 test("summarizes a document edit by lines and the headings they sit under", () => {
   const before = "# Plan\n\n## Goals\n\n- Ship it\n\n## Notes\n\nNothing yet\n";
   const after = "# Plan\n\n## Goals\n\n- Ship it\n- Test it\n\n## Notes\n\nFound the bug\n";
-  assert.deepEqual(describeChange("plans/x.md", before, after), {
-    path: "plans/x.md", title: "Plan", kind: "changed", added: 2, removed: 1,
+  assert.deepEqual(describeChange("reference/x.md", before, after), {
+    path: "reference/x.md", title: "Plan", kind: "changed", added: 2, removed: 1,
     sections: [{ title: "Goals", anchor: "goals" }, { title: "Notes", anchor: "notes" }],
     lines: ["- Test it", "Found the bug"],
   });
-  assert.equal(describeChange("plans/x.md", undefined, after).kind, "created");
-  assert.equal(describeChange("plans/x.md", before, undefined).kind, "deleted");
+  assert.equal(describeChange("reference/x.md", undefined, after).kind, "created");
+  assert.equal(describeChange("reference/x.md", before, undefined).kind, "deleted");
 });
 
 test("draws a diff diagram's panels side by side or stacked on request, and leaves other diagrams alone", () => {
@@ -999,21 +999,21 @@ test("draws a diff diagram's panels side by side or stacked on request, and leav
 });
 
 test("asset and diagram URLs carry the file's modification time so re-renders never reuse a stale picture", () => {
-  assert.equal(diagramHref("tasks/TASK-0001-assets/a.draft"), "/api/diagram?path=tasks%2FTASK-0001-assets%2Fa.draft");
-  assert.equal(diagramHref("tasks/TASK-0001-assets/a.draft", 1234.6), "/api/diagram?path=tasks%2FTASK-0001-assets%2Fa.draft&v=1235");
-  assert.equal(assetHref("tasks/TASK-0001-assets/a.png", 99), "/api/asset?path=tasks%2FTASK-0001-assets%2Fa.png&v=99");
+  assert.equal(diagramHref("tasks/TASK-0001/a.draft"), "/api/diagram?path=tasks%2FTASK-0001%2Fa.draft");
+  assert.equal(diagramHref("tasks/TASK-0001/a.draft", 1234.6), "/api/diagram?path=tasks%2FTASK-0001%2Fa.draft&v=1235");
+  assert.equal(assetHref("tasks/TASK-0001/a.png", 99), "/api/asset?path=tasks%2FTASK-0001%2Fa.png&v=99");
 });
 
 test("the source watcher reports saved images and diagrams apart from documents", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "watch-assets-"));
-  await mkdir(join(root, "tasks", "TASK-0001-assets"), { recursive: true });
+  await mkdir(join(root, "tasks", "TASK-0001"), { recursive: true });
   const seen: string[] = [];
   const close = watchMarkdownSources(() => {}, root, (path) => seen.push(`diagram ${path}`), (path) => seen.push(`asset ${path}`));
   t.after(async () => { close(); await rm(root, { recursive: true, force: true }); });
   await new Promise((resolve) => setTimeout(resolve, 100));
-  await writeFile(join(root, "tasks", "TASK-0001-assets", "shot.png"), "png");
-  await writeFile(join(root, "tasks", "TASK-0001-assets", "flow.draft"), "diagram \"Flow\"\n");
+  await writeFile(join(root, "tasks", "TASK-0001", "shot.png"), "png");
+  await writeFile(join(root, "tasks", "TASK-0001", "flow.draft"), "diagram \"Flow\"\n");
   for (let i = 0; i < 40 && !(seen.some((line) => line.startsWith("asset")) && seen.some((line) => line.startsWith("diagram"))); i++) await new Promise((resolve) => setTimeout(resolve, 50));
-  assert.ok(seen.includes("asset tasks/TASK-0001-assets/shot.png"), seen.join(", "));
-  assert.ok(seen.includes("diagram tasks/TASK-0001-assets/flow.draft"), seen.join(", "));
+  assert.ok(seen.includes("asset tasks/TASK-0001/shot.png"), seen.join(", "));
+  assert.ok(seen.includes("diagram tasks/TASK-0001/flow.draft"), seen.join(", "));
 });

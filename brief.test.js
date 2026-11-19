@@ -3,11 +3,11 @@ import test from 'node:test';
 import { loadBrief, splitBrief } from './public/brief.js';
 
 const store = () => { const items = new Map(); return { getItem: (key) => items.get(key) ?? null, setItem: (key, value) => items.set(key, value) }; };
-const search = (brief, path = 'tasks/TASK-0001.md') => `?${new URLSearchParams({ path, brief })}`;
+const search = (brief, path = 'tasks/TASK-0001/TASK-0001.md') => `?${new URLSearchParams({ path, brief })}`;
 
 test('a brief in the URL opens and remembers the document it came with', () => {
   const tab = store();
-  assert.deepEqual(loadBrief(search('Review the draft'), tab), { text: 'Review the draft', page: 'tasks/TASK-0001.md', dismissed: false });
+  assert.deepEqual(loadBrief(search('Review the draft'), tab), { text: 'Review the draft', page: 'tasks/TASK-0001/TASK-0001.md', dismissed: false });
   // Later navigation drops the parameter; the tab still has its brief.
   assert.equal(loadBrief('?view=issues', tab).text, 'Review the draft');
   assert.equal(loadBrief('?view=issues', store()), null);

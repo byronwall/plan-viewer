@@ -67,7 +67,7 @@ export function createLinkMetadataStore(root: string) {
     const channels = wanted.some((key) => key.startsWith("slack:") && !store[key]) ? await slackChannelNames(root) : new Map<string, string>();
     return Object.fromEntries(wanted.flatMap((key) => {
       if (store[key]) return [[key, store[key]]];
-      // Without a token, Slack rows still get their channel from reference/slack-channels.md (and DMs from their ID).
+      // Without a token, Slack rows still get their channel from config/slack-channels.md (and DMs from their ID).
       const channel = key.startsWith("slack:") ? key.slice("slack:".length).split("/")[0] : "";
       const name = channels.get(channel) || (channel.startsWith("D") ? "Direct message" : "");
       return name ? [[key, { title: "", state: name, tone: "open" as Tone, fetchedAt: Date.now() }]] : [];
@@ -172,7 +172,7 @@ const slackNames = new Map<string, Promise<string>>();
 // Hand-kept `- C0ACME0001: #channel-name` and `- D0ACME0001: @Person` lines; re-read on every lookup so edits show
 // up on the next page load.
 export async function slackChannelNames(root: string) {
-  const text = await readFile(join(root, "reference", "slack-channels.md"), "utf8").catch(() => "");
+  const text = await readFile(join(root, "config", "slack-channels.md"), "utf8").catch(() => "");
   return new Map([...text.matchAll(/^[-*][ \t]*`?([CDG][A-Z0-9]{8,})`?[ \t]*:[ \t]*(#[\w.-]+|@[^\n]*[^\s])/gm)].map(([, id, name]) => [id, name] as [string, string]));
 }
 

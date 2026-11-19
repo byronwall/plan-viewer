@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { parseActions, parseWorkBreakdown, STEP_FLAGS, STEP_SIZES } from "./public/actions.js";
 import { config, withNote } from "./public/config.js";
 import { draftFromText, outboundFields, type OutboundDraft } from "./outbound.ts";
+import { isTaskAsset, isTaskFile, notesFolder, taskFile as taskPathOf } from "./public/layout.js";
 
 export const OUTBOUND_KINDS = new Set(["jira-issue", "jira-comment", "jira-edit", "jira-transition", "it-ticket", "slack", "pr", "pr-comment", "review-request", "email"]);
 const CHOICES = new Set(["pick-one", "pick-any"]);
@@ -188,10 +189,10 @@ export async function listMachinery(root: string) {
   const out: { path: string; fields: Record<string, string>; draft?: OutboundDraft; modified: number }[] = [];
   const tasks = join(root, "tasks");
   for (const entry of await readdir(tasks, { withFileTypes: true }).catch(() => [])) {
-    if (!entry.isDirectory() || !/^TASK-\d{4}-assets$/.test(entry.name)) continue;
+    if (!entry.isDirectory() || !/^TASK-\d{4}$/.test(entry.name)) continue;
     for (const file of await readdir(join(tasks, entry.name), { recursive: true }).catch(() => [] as string[])) {
-      if (!String(file).endsWith(".md")) continue;
       const path = `tasks/${entry.name}/${file}`;
+      if (!path.endsWith(".md") || isTaskFile(path)) continue;
       const text = await readFile(join(root, path), "utf8").catch(() => "");
       if (!text.startsWith("---\n")) continue;
       const fields = outboundFields(text);
@@ -232,7 +233,7 @@ export async function loadSteps(root: string, tasks: TaskInput[], planOrder: str
 // Pick on a choice: the choice completes, picked options stay open as ordinary steps, the rest are deferred as
 // not picked, and the task gets a dated update. Only lines of that choice change.
 export async function pickChoice(root: string, path: string, choiceId: string, picked: string[], user: string, today: string) {
-  if (!/^tasks\/TASK-\d{4}\.md$/.test(path)) throw new Error("Only task files hold choices.");
+  if (!isTaskFile(path)) throw new Error("Only task files hold choices.");
   const absolute = resolve(root, path);
   if (!absolute.startsWith(resolve(root) + sep)) throw new Error("Invalid task path.");
   let markdown = await readFile(absolute, "utf8");
@@ -265,14 +266,14 @@ const READ_ONLY = /^\s*\(*\s*(select|with|show|describe|desc)\b/i;
 export const isReadOnlyStatement = (sql: string) => READ_ONLY.test(sql) && !sql.trim().replace(/;\s*$/, "").includes(";");
 
 function taskFile(root: string, path: string) {
-  if (!/^tasks\/TASK-\d{4}\.md$/.test(path)) throw new Error("Not a task file.");
+  if (!isTaskFile(path)) throw new Error("Not a task file.");
   const absolute = resolve(root, path);
   if (!absolute.startsWith(resolve(root) + sep)) throw new Error("Invalid task path.");
   return absolute;
 }
 
 function assetFile(root: string, path: string) {
-  if (!/^tasks\/TASK-\d{4}-assets\/.+\.md$/.test(path) || path.includes("..")) throw new Error("Not a task asset.");
+  if (!isTaskAsset(path) || !path.endsWith(".md") || path.includes("..")) throw new Error("Not a task asset.");
   return resolve(root, path);
 }
 
@@ -302,7 +303,7 @@ export function withUpdate(markdown: string, line: string) {
 async function completeStep(root: string, step: string, update: string, today: string) {
   const [, task, id] = step.trim().match(/^(TASK-\d{4})\s+(\S+)$/) || [];
   if (!task) return;
-  const absolute = taskFile(root, `tasks/${task}.md`);
+  const absolute = taskFile(root, taskPathOf(task));
   await writeFile(absolute, withStepStatus(await readFile(absolute, "utf8"), id, "completed", update, today));
 }
 
@@ -376,7 +377,7 @@ export async function runStatement(root: string, path: string, user: string, tod
   if (!fields.run) throw new Error("This step has no statement to run.");
   if (!isReadOnlyStatement(fields.run)) throw new Error("Only a single read-only statement runs from the viewer; copy this one and run it yourself.");
   const command = config().steps.run || [];
-  if (!command.length) throw new Error("No runner is configured: set steps.run in viewer.config.json.");
+  if (!command.length) throw new Error("No runner is configured: set steps.run in config/viewer.json.");
   const [file, ...args] = command.map((part: string) => part.replace(/\{(\w+)\}/g, (all, key) => ({ statement: fields.run, target: fields.target || "" } as Record<string, string>)[key] ?? all));
   let output = "", ok = true;
   try { output = (await promisify(execFile)(file, args, { cwd: root, timeout: 120_000, maxBuffer: 4_000_000 })).stdout; }
@@ -394,7 +395,7 @@ export async function applyRule(root: string, path: string, user: string, today:
   const rule = fields.apply?.trim();
   if (!rule) throw new Error("This step has no rule to apply.");
   const target = config().steps.settingsFile;
-  if (!target) throw new Error("No settings file is configured: set steps.settingsFile in viewer.config.json.");
+  if (!target) throw new Error("No settings file is configured: set steps.settingsFile in config/viewer.json.");
   const settingsPath = resolve(root, target);
   if (!settingsPath.startsWith(resolve(root) + sep)) throw new Error("steps.settingsFile must be inside the workspace.");
   const settings = JSON.parse(await readFile(settingsPath, "utf8").catch(() => "{}"));
@@ -415,7 +416,7 @@ export const activeRuns = () => [...runs].map(([key, run]) => ({ key, ...run }))
 
 export async function startStep(root: string, step: Step, today: string, next?: () => Promise<Step | undefined>, note = ""): Promise<{ started: boolean; key: string; pid?: number }> {
   const command = config().steps.start || [];
-  if (!command.length) throw new Error("No agent command is configured: set steps.start in viewer.config.json.");
+  if (!command.length) throw new Error("No agent command is configured: set steps.start in config/viewer.json.");
   if (step.move !== "agent" || step.running) throw new Error(`${step.task} ${step.id} isn't ready for an agent.`);
   if (runs.has(step.key)) throw new Error(`${step.key} is already running.`);
   if (runs.size >= config().steps.slots) throw new Error(`All ${config().steps.slots} agent slots are in use.`);
@@ -438,15 +439,15 @@ export async function startStep(root: string, step: Step, today: string, next?: 
 
 // --- Notes: a composer request saved for later instead of opened in an agent. The note holds the whole prompt the agent
 // would have received (source file, task, selection, the user's words, image paths), so it reads well days later. A
-// task's notes live in its assets, the rest in reference/notes/. Open notes are Up next until marked done.
+// task's notes live in its folder, the rest in reference/notes/. Open notes are Up next until marked done.
 
-export const notesFolder = (task: string) => task ? `tasks/${task}-assets/notes` : "reference/notes";
+export { notesFolder };
 const stamp = (date: Date) => date.toLocaleString("sv-SE").replace(" ", "-").replace(/:/g, "").slice(0, 17);
 
 // The note copies a chunk of its source verbatim, so relative links and image paths are re-pointed from the source's
 // folder to the note's. URLs, anchors, absolute and workspace-rooted (`tasks/…`) links resolve the same from anywhere.
 export const relinkFrom = (text: string, source: string, note: string) => !source ? text : text.replace(/(\]\()([^)\s#]+)/g, (match, open, link) =>
-  /^[a-z][\w+.-]*:/i.test(link) || link.startsWith("/") || /^(daily|tasks|plans|reference)\//.test(link) ? match
+  /^[a-z][\w+.-]*:/i.test(link) || link.startsWith("/") || /^(daily|tasks|reference|config)\//.test(link) ? match
     : open + posix.relative(posix.dirname(note), posix.join(posix.dirname(source), link)));
 
 // A launch button's prompt (Shakedown, Discuss, a cleanup review…) saved as an Up next note instead of opened as an
@@ -492,7 +493,7 @@ export async function saveNote(root: string, { commentary, prompt: text, source 
 export async function listNotes(root: string): Promise<Step[]> {
   const folders = [notesFolder("")];
   for (const entry of await readdir(join(root, "tasks"), { withFileTypes: true }).catch(() => [])) {
-    if (entry.isDirectory() && /^TASK-\d{4}-assets$/.test(entry.name)) folders.push(`tasks/${entry.name}/notes`);
+    if (entry.isDirectory() && /^TASK-\d{4}$/.test(entry.name)) folders.push(notesFolder(entry.name));
   }
   const notes: Step[] = [];
   for (const folder of folders) {
@@ -527,7 +528,7 @@ export async function listNotes(root: string): Promise<Step[]> {
 }
 
 export async function closeNote(root: string, path: string, user: string, today: string) {
-  if (!/^(tasks\/TASK-\d{4}-assets|reference)\/notes\/[^/]+\.md$/.test(path)) throw new Error("Not a note.");
+  if (!/^(tasks\/TASK-\d{4}|reference)\/notes\/[^/]+\.md$/.test(path)) throw new Error("Not a note.");
   const absolute = resolve(root, path);
   const text = await readFile(absolute, "utf8");
   const fields = outboundFields(text);
@@ -547,7 +548,7 @@ export async function followUpNote(root: string, { step, did, source = "", resul
   if (!config().steps.followUp) return null;
   const [, task, id] = step.trim().match(/^(TASK-\d{4})\s+(\S+)$/) || [];
   if (!task) return null;
-  const taskPath = `tasks/${task}.md`;
+  const taskPath = taskPathOf(task);
   const markdown = await readFile(join(root, taskPath), "utf8").catch(() => "");
   const node = parseWorkBreakdown(section(markdown, "Work breakdown")).nodes.find((n: { id: string }) => n.id === id);
   const machinery = source && source !== taskPath ? await readFile(join(root, source), "utf8").catch(() => "") : "";

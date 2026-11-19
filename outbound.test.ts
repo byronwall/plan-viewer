@@ -26,8 +26,8 @@ Hello [there](https://example.com).
 async function workspace(t: test.TestContext, text = DRAFT) {
   const root = await mkdtemp(join(tmpdir(), "outbound-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await mkdir(join(root, "tasks/TASK-0001-assets"), { recursive: true });
-  await writeFile(join(root, "tasks/TASK-0001-assets/comment.md"), text);
+  await mkdir(join(root, "tasks/TASK-0001"), { recursive: true });
+  await writeFile(join(root, "tasks/TASK-0001/comment.md"), text);
   return root;
 }
 
@@ -56,7 +56,7 @@ test("a draft's page renders its notes, with the outgoing text left to the panel
 
 test("Approve and send runs the configured sender only on the text that was read", async (t) => {
   const root = await workspace(t);
-  const path = "tasks/TASK-0001-assets/comment.md";
+  const path = "tasks/TASK-0001/comment.md";
   const file = join(root, path);
   const sha = outboundHash(DRAFT);
   setConfig({ outbound: { send: [process.execPath, "-e", `const fs=require("fs");const f=${JSON.stringify(file)};fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace("status: approved","status: sent\\nresult: https://example.com/c/1"));console.log(process.argv[1])`, "{sha}"] } });
@@ -79,14 +79,14 @@ test("a failing sender leaves the draft failed with its error, ready for Retry",
   const root = await workspace(t);
   setConfig({ outbound: { send: [process.execPath, "-e", "console.error('jira said no'); process.exit(1)"] } });
   t.after(() => setConfig({}));
-  const result = await approveOutbound(root, "tasks/TASK-0001-assets/comment.md", outboundHash(DRAFT));
+  const result = await approveOutbound(root, "tasks/TASK-0001/comment.md", outboundHash(DRAFT));
   assert.equal(result.draft.fields.status, "failed");
   assert.equal(result.draft.fields.error, "jira said no");
 });
 
 test("Send back keeps the feedback outside the markers; Drop and manual drafts", async (t) => {
   const root = await workspace(t);
-  const path = "tasks/TASK-0001-assets/comment.md";
+  const path = "tasks/TASK-0001/comment.md";
   setConfig({ user: "Pat" });
   t.after(() => setConfig({}));
   await assert.rejects(sendBackOutbound(root, path, "  "), /Write what should change/);

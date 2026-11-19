@@ -12,7 +12,7 @@ Node.js 22.6+ and nothing else. `npm install` (no packages; it enables the pre-c
 | --- | --- | --- |
 | `README.md` | The product intro: what it does, screenshots, setup, commands. Keep it short; detail goes in `docs/`. | Setup, commands, or a headline feature changes. |
 | `docs/guide.md` | Every page, shortcut, and behavior. | Any user-visible behavior changes. |
-| `docs/configuration.md` | Every `viewer.config.json` key and environment variable. | A key or variable is added or changed. |
+| `docs/configuration.md` | Every `config/viewer.json` key and environment variable. | A key or variable is added or changed. |
 | `docs/code-view.md`, `docs/issues-plan.md`, `docs/plans-plan.md` | Design intent and plans for those surfaces. | Before adding a list/inspector/overview surface, read `code-view.md`. |
 | `docs/images/` | README screenshots, made by `scripts/screenshots.mjs` from `examples/workspace/`. | A pictured screen changes visibly. |
 | `examples/workspace/` | The demo and the template for new workspaces, including the workspace-side `AGENTS.md`. | The content format changes (it must pass `plan-viewer lint` and `links`). |
@@ -23,8 +23,9 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 
 | Feature | Files |
 | --- | --- |
-| Per-workspace preferences (`viewer.config.json`) and their defaults, shared by server and browser | `public/config.js` |
-| `plan-viewer` subcommands | `cli.ts`; `init` is `init-workspace.ts` |
+| Per-workspace preferences (`config/viewer.json`) and their defaults, shared by server and browser | `public/config.js` |
+| `plan-viewer` subcommands | `cli.ts`; `init` is `init-workspace.ts`; `migrate` (older layout → current, dry run unless `--write`) is `migrate.ts` |
+| Workspace folder layout: task folder and file for an ID, the task of a path, daily file for a date, config paths (shared by server, checks and browser) | `public/layout.js` |
 | HTTP routes, document loading, task front matter, Codex handoff prompts | `server.ts` |
 | Next actions, work breakdown parser and graph, stalled-task reason (shared by server, lint and browser) | `public/actions.js` |
 | Markdown rendering, link and chat detection, heading IDs | `public/markdown.js` |
@@ -74,7 +75,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 
 ## Rules
 
-- Keep the viewer generic. Anything that names a person, organization, repository, tracker, tool path, or skill belongs in `viewer.config.json` with a neutral default in `public/config.js`, documented in `docs/configuration.md`. Fixtures, examples, and tests use the fictional `acme` organization.
+- Keep the viewer generic. Anything that names a person, organization, repository, tracker, tool path, or skill belongs in `config/viewer.json` with a neutral default in `public/config.js`, documented in `docs/configuration.md`. Fixtures, examples, and tests use the fictional `acme` organization.
 - Document behavior changes in `docs/guide.md` in the same commit, not in the README.
-- The workspace layout (`daily/`, `tasks/TASK-NNNN.md`, `plans/`, `reference/`) is the content format, not configuration.
+- The workspace layout (`daily/YYYY-MM-DD.md`, `tasks/TASK-NNNN/TASK-NNNN.md` with its files beside it, `reference/`, `config/`) is the content format, not configuration. Its path shapes live in `public/layout.js`; use those helpers instead of writing a path pattern. `migrate.ts` is the only code that knows the older layout.
 - Commit completed changes as you go on the existing branch, after `npm test` passes, and push each commit to `origin` right away (`git pull --no-rebase` first if the push is rejected). Don't leave commits sitting unpushed. Stage your files by name, never `git add -A` or `git add .`, and never `git checkout`/`git restore` a file you did not change: another session may be editing this checkout.
