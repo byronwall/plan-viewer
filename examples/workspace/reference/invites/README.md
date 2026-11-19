@@ -1,6 +1,6 @@
 # Workspace invites
 
-The design behind [TASK-0101](../../tasks/TASK-0101.md).
+The design behind [TASK-0101](../../tasks/TASK-0101/TASK-0101.md).
 
 ## Goals
 
