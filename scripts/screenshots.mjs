@@ -20,10 +20,10 @@ const only = process.argv[2]?.split(",");
 
 const workspace = await mkdtemp(join(tmpdir(), "plan-viewer-shots-"));
 await cp(join(repo, "examples/workspace"), workspace, { recursive: true });
-await writeFile(join(workspace, "reference/code-repos.json"), JSON.stringify({ repos: [repo] }));
-const config = JSON.parse(await readFile(join(workspace, "viewer.config.json"), "utf8"));
+await writeFile(join(workspace, "config/code-repos.json"), JSON.stringify({ repos: [repo] }));
+const config = JSON.parse(await readFile(join(workspace, "config/viewer.json"), "utf8"));
 config.issues.command = ["node", join(repo, "fixtures/jira/fake-acli.js")];
-await writeFile(join(workspace, "viewer.config.json"), JSON.stringify(config, null, 2));
+await writeFile(join(workspace, "config/viewer.json"), JSON.stringify(config, null, 2));
 
 const server = spawn(process.execPath, ["--experimental-strip-types", "--no-warnings", join(repo, "server.ts")], { env: { ...process.env, PLANNING_ROOT: workspace, PLAN_VIEWER_PORT: String(port) }, stdio: ["ignore", "pipe", "inherit"] });
 await new Promise((resolve) => server.stdout.on("data", (chunk) => /is ready/.test(chunk) && resolve()));
@@ -40,11 +40,11 @@ const codeReady = async (tab) => {
 const shots = {
   today: async () => { await page.goto(base); await settle(); },
   action: async () => {
-    await page.goto(`${base}/?path=tasks/TASK-0101.md`); await settle();
+    await page.goto(`${base}/?path=tasks/TASK-0101/TASK-0101.md`); await settle();
     await page.locator(".chunk-card .task-steps .step-layer:not([inert]) .step-row:visible").first().click(); await settle();
   },
   task: async () => {
-    await page.goto(`${base}/?path=tasks/TASK-0101.md`); await settle();
+    await page.goto(`${base}/?path=tasks/TASK-0101/TASK-0101.md`); await settle();
     await page.evaluate(() => {
       const heading = [...document.querySelectorAll(".chunk-card h2")].find((el) => el.textContent === "Steps");
       window.scrollTo({ top: (heading?.getBoundingClientRect().top ?? 0) + scrollY - 90, behavior: "instant" });

@@ -4,6 +4,7 @@
 import { SERVICE_ICONS, diagramHref, documentHref, escapeHtml, renderMarkdown } from "./markdown.js";
 import { GLYPHS, glyph } from "./icons.js";
 import { config, issuesOn } from "./config.js";
+import { isTaskAsset, taskFile, taskOfPath } from "./layout.js";
 import { handleIssueClick, issueInspector, issueLink, loadIssueDetail, loadIssues, openIssue } from "./issues.js";
 import { channelLabel, docsFor, fresh, lastActive, opener, permalink, threadDetail } from "./slack-page.js";
 import { openSlackThread } from "./slack.js";
@@ -14,7 +15,7 @@ const STRIP_DAYS = 14;
 export const SOURCES = { all: "All", tasks: "Tasks", daily: "Daily", topics: "Docs", diagrams: "Diagrams", jira: "Jira", linear: "Linear", github: "Issues", prs: "PRs", slack: "Slack" };
 const RANGES = { day: ["24h", DAY], week: ["7d", 7 * DAY], month: ["30d", 30 * DAY], all: ["All", Infinity] };
 const SOURCE_ICONS = { tasks: SERVICE_ICONS.task, daily: glyph("calendar", "service-icon is-stroke"), topics: glyph("file-text", "service-icon is-stroke"), diagrams: glyph("layout-panel-left", "service-icon is-stroke"), jira: SERVICE_ICONS.jira, linear: SERVICE_ICONS.linear, github: SERVICE_ICONS.github, prs: SERVICE_ICONS.github, slack: SERVICE_ICONS.slack };
-const DOC_SOURCE = { Tasks: "tasks", "Task documents": "tasks", Today: "daily", Daily: "daily", Topics: "topics", Reference: "topics" };
+const DOC_SOURCE = { Tasks: "tasks", "Task documents": "tasks", Today: "daily", Daily: "daily", Reference: "topics" };
 // State tones: what the colored state cell means at a glance.
 const TASK_TONES = { active: "progress", open: "quiet", waiting: "wait", blocked: "fail", completed: "pass", done: "pass", cancelled: "quiet", deferred: "quiet" };
 const ISSUE_TONES = { new: "quiet", indeterminate: "progress", done: "pass" };
@@ -51,8 +52,8 @@ function rows() {
     const change = ui.changes.find((candidate) => candidate.path === doc.path && candidate.kind !== "deleted");
     const task = doc.task;
     // A task's asset names its task in the key column (the container) and the task's title as where it lives.
-    const ownerId = doc.path.match(/^tasks\/(TASK-\d+)-assets\//)?.[1];
-    const owner = ownerId && ui.documents.find((candidate) => candidate.path === `tasks/${ownerId}.md`)?.task;
+    const ownerId = isTaskAsset(doc.path) ? taskOfPath(doc.path) : "";
+    const owner = ownerId && ui.documents.find((candidate) => candidate.path === taskFile(ownerId))?.task;
     const where = task ? task.project || "" : owner ? owner.title : doc.path.replace(/\/[^/]+$/, "/");
     out.push({
       id: `doc:${doc.path}`, kind: "doc", source: DOC_SOURCE[doc.group] || "topics", at: doc.modified, doc, change,
@@ -65,7 +66,7 @@ function rows() {
   }
   // Diagrams by their source file's save time, under the task whose assets hold them.
   for (const diagram of ui.diagrams || []) {
-    const owner = diagram.task && ui.documents.find((doc) => doc.path === `tasks/${diagram.task}.md`);
+    const owner = diagram.task && ui.documents.find((doc) => doc.path === taskFile(diagram.task));
     const task = owner?.task;
     out.push({
       id: `diagram:${diagram.path}`, kind: "diagram", source: "diagrams", at: diagram.modified, diagram, owner,

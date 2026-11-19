@@ -365,13 +365,13 @@ function ownActionsHtml(step, { startConfigured = false, runConfigured = false, 
   const note = (text) => compact ? "" : `<span class="step-choice-note">${text}</span>`;
   if (step.draft) return ""; // an outbound step's panel has its own Approve, Mark sent and Drop
   if (step.move === "agent" && !step.draft && !step.running) {
-    const why = !startConfigured ? "Set steps.start in viewer.config.json" : freeSlots < 1 ? "All agent slots are in use" : "";
+    const why = !startConfigured ? "Set steps.start in config/viewer.json" : freeSlots < 1 ? "All agent slots are in use" : "";
     return `<div class="outbound-actions step-actions">${button("start", "Start", true, why)}${note(step.prompt ? "Runs its prompt as a local agent session." : "No prompt: the agent gets the step title and the task.")}</div>`;
   }
   if (step.running) return `<p class="outbound-note">An agent is running this step.</p>`;
   if (f.apply) return `<div class="outbound-actions step-actions">${button("apply", "Apply", true)}${note("Adds it to the workspace's Claude settings.")}</div>`;
   if (step.move === "you-act") {
-    if (f.run && readOnly(f.run)) return `<div class="outbound-actions step-actions">${button("run", "Approve and run", true, runConfigured ? "" : "Set steps.run in viewer.config.json")}${button("done", "Mark done")}</div>`;
+    if (f.run && readOnly(f.run)) return `<div class="outbound-actions step-actions">${button("run", "Approve and run", true, runConfigured ? "" : "Set steps.run in config/viewer.json")}${button("done", "Mark done")}</div>`;
     return `<div class="outbound-actions step-actions">${f.run ? button("copy-statement", "Copy statement", true) : ""}${button("done", "Mark done", !f.run)}</div>`;
   }
   if (step.move === "you-decide" && step.kind === "decision") return `<div class="outbound-actions step-actions">${button("note", "Decide…", true)}${button("done", "Mark decided")}${note("Say what you decided; an agent records it and carries it out.")}</div>`;

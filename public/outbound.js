@@ -31,7 +31,7 @@ function buttons(draft) {
   const { status } = draft.fields;
   const send = (label, action = "approve") => config().outbound.send.length
     ? `<button type="button" class="outbound-primary" data-outbound-action="${action}">${label}</button>`
-    : `<button type="button" class="outbound-primary" disabled title="Set outbound.send in viewer.config.json">${label}</button>`;
+    : `<button type="button" class="outbound-primary" disabled title="Set outbound.send in config/viewer.json">${label}</button>`;
   const back = `<button type="button" class="outbound-secondary" data-outbound-action="open-feedback">Send back</button>`;
   const drop = `<button type="button" class="outbound-quiet" data-outbound-action="drop">Drop</button>`;
   if (status === "ready" && isManual(draft)) return `<button type="button" class="outbound-primary" data-outbound-action="copy">Copy text</button><button type="button" class="outbound-secondary" data-outbound-action="open-mark">Mark sent</button>${back}${drop}`;

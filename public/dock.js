@@ -1,5 +1,6 @@
 import { diagramHref, escapeHtml, isSlackLink, parseUpdates, relativeDate, SERVICE_ICONS } from "./markdown.js";
 import { glyph } from "./icons.js";
+import { isTaskAsset, isTaskFile, taskDir, taskFile, taskOfPath } from "./layout.js";
 
 // The sticky document dock: a thin bar of icon buttons that open the task's working sections, the document's
 // outgoing links grouped by source, and its backlinks — without scrolling away from what you're reading.
@@ -97,7 +98,7 @@ export function collectLinks(root, documents, selfPath = "", selector = ".chunk-
     if (path === selfPath) continue; // a document mentioning its own ID isn't a link out
     if (path) {
       const doc = byPath.get(path);
-      const group = /^tasks\/TASK-\d{4}\.md$/.test(path) ? "tasks" : "docs";
+      const group = isTaskFile(path) ? "tasks" : "docs";
       if (!groups.get(group).has(path)) groups.get(group).set(path, doc ? docItem(doc, path) : { path, label: "", detail: path });
       continue;
     }
@@ -145,13 +146,13 @@ function linkRow(item, icon = "") {
 const linkList = (rows, labeled, attrs = "") => `<div class="dock-source-list${labeled ? "" : " is-unlabeled"}" ${attrs}>${rows}</div>`;
 
 // Slack rows sit under their channel or DM, busiest first. Headers show the ID until a name arrives with the link
-// metadata (from reference/slack-channels.md, `- C…: #channel` or `- D…: @Person`, or from a Slack token).
+// metadata (from config/slack-channels.md, `- C…: #channel` or `- D…: @Person`, or from a Slack token).
 function slackChannels(group) {
   const channels = new Map();
   for (const item of group.items) channels.set(item.channel, [...(channels.get(item.channel) || []), item]);
   return [...channels].sort((a, b) => b[1].length - a[1].length).map(([channel, items]) => {
     const dm = channel.startsWith("D");
-    return `<section class="dock-channel"><h4 class="dock-channel-heading" data-slack-channel="${escapeHtml(channel)}" title="Name ${dm ? "this DM" : "this channel"} in reference/slack-channels.md: - ${escapeHtml(channel)}: ${dm ? "@Person" : "#channel-name"}"><span class="dock-channel-name is-unnamed">${dm ? `Direct message <code>${escapeHtml(channel)}</code>` : escapeHtml(channel)}</span><small>${items.length}</small></h4>${items.map((item) => linkRow(item)).join("")}</section>`;
+    return `<section class="dock-channel"><h4 class="dock-channel-heading" data-slack-channel="${escapeHtml(channel)}" title="Name ${dm ? "this DM" : "this channel"} in config/slack-channels.md: - ${escapeHtml(channel)}: ${dm ? "@Person" : "#channel-name"}"><span class="dock-channel-name is-unnamed">${dm ? `Direct message <code>${escapeHtml(channel)}</code>` : escapeHtml(channel)}</span><small>${items.length}</small></h4>${items.map((item) => linkRow(item)).join("")}</section>`;
   }).join("");
 }
 
@@ -226,10 +227,10 @@ const sortDocuments = (subDocuments, sort) => [...subDocuments].sort((a, b) => O
 
 // The task, then its documents in the Documents panel's order: what N and P step through from the task or any of them.
 export function taskDocumentSequence(path, documents) {
-  const taskId = path.match(/^tasks\/(TASK-\d{4})(?:\.md$|-assets\/)/)?.[1];
+  const taskId = taskOfPath(path);
   if (!taskId) return [];
-  const task = documents.find((candidate) => candidate.path === `tasks/${taskId}.md`);
-  const subs = sortDocuments(documents.filter((candidate) => candidate.path.startsWith(`tasks/${taskId}-assets/`)), documentSort());
+  const task = documents.find((candidate) => candidate.path === taskFile(taskId));
+  const subs = sortDocuments(documents.filter((candidate) => taskOfPath(candidate.path) === taskId && isTaskAsset(candidate.path)), documentSort());
   return subs.length ? [...(task ? [task] : []), ...subs] : [];
 }
 
@@ -284,12 +285,11 @@ export function renderDock({ doc, documents, links, body, steps = "", diagrams =
     .map((path) => documents.find((candidate) => candidate.path === path))
     .filter(Boolean)
     .sort((a, b) => (b.date || b.task?.updated || "").localeCompare(a.date || a.task?.updated || "") || a.path.localeCompare(b.path));
-  // Supporting documents an agent filed under the task's `TASK-NNNN-assets/` folder. An asset page lists its siblings
+  // Supporting documents an agent filed in the task's folder beside `TASK-NNNN.md`. An asset page lists its siblings
   // the same way, with the parent task first, so the task's other files are one click away.
-  const taskId = doc.task?.id || doc.path.match(/^tasks\/(TASK-\d{4})-assets\//)?.[1];
-  const assetsDir = `tasks/${taskId}-assets/`;
-  const parentTask = !doc.task && documents.find((candidate) => candidate.path === `tasks/${taskId}.md`);
-  const subDocuments = taskId ? documents.filter((candidate) => candidate.path.startsWith(assetsDir)) : [];
+  const taskId = doc.task?.id || taskOfPath(doc.path);
+  const parentTask = !doc.task && documents.find((candidate) => candidate.path === taskFile(taskId));
+  const subDocuments = taskId ? documents.filter((candidate) => taskOfPath(candidate.path) === taskId && isTaskAsset(candidate.path)) : [];
   const linkCount = links.reduce((sum, group) => sum + group.items.length, 0);
   const leaves = (doc.work?.nodes || []).filter((node) => !doc.work.nodes.some((child) => child.parent === node.id));
   const doneLeaves = leaves.filter((node) => node.status === "completed").length;
@@ -317,7 +317,8 @@ export function renderDock({ doc, documents, links, body, steps = "", diagrams =
   if (updates) add("updates", "Updates", ICONS.updates, `${entries?.length || countUpdates(updates.markdown) || ""}`, updates.title, latest ? `Latest ${relativeDate(latest)} · ${entries.length} ${entries.length === 1 ? "entry" : "entries"}` : "Recorded in the task", body(updates), updates.id);
   if (subDocuments.length) {
     const latest = Math.max(...subDocuments.map((sub) => sub.modified || 0));
-    add("documents", "Documents", ICONS.doc, `${subDocuments.length}`, "Task documents", `${subDocuments.length} in ${taskId}-assets${latest ? ` · last edited ${dayLabel(latest).toLowerCase()}` : ""}`, documentLists(subDocuments, doc.path, parentTask));
+    add("documents", "Documents", ICONS.doc, `${subDocuments.length}`, "Task documents", `${subDocuments.length} in ${taskDir(taskId)}/${latest
+ ? ` · last edited ${dayLabel(latest).toLowerCase()}` : ""}`, documentLists(subDocuments, doc.path, parentTask));
     items.at(-1).tools = sortSwitch();
   }
   if (diagrams.length) add("diagrams", "Diagrams", ICONS.diagram, `${diagrams.length}`, "Diagrams", `${diagrams.length} ${diagrams.length === 1 ? "diagram" : "diagrams"}${taskId ? ` for ${taskId}` : " on this page"} · opens beside its source`, `<div class="dock-diagrams">${diagrams.map((diagram) => `<a class="dock-diagram" href="?${escapeHtml(new URLSearchParams({ path: doc.path, diagram: diagram.path }).toString())}" data-diagram-link="${escapeHtml(diagram.path)}" title="${escapeHtml(diagram.path)}"><span class="dock-diagram-frame"><img src="${escapeHtml(diagramHref(diagram.path, diagram.modified))}" alt="" loading="lazy" decoding="async"></span><span class="dock-diagram-title">${escapeHtml(diagram.title)}</span>${diagram.embedded ? "" : '<span class="dock-diagram-note">Not embedded</span>'}</a>`).join("")}</div>`);

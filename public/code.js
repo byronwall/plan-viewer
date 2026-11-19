@@ -36,7 +36,7 @@ let host = null;
 
 export const codeTab = (value) => (value in TABS ? value : "prs");
 
-// Names here are the viewer's own (skills in viewer.config.json pick one by `icon`); glyphs come from icons.js.
+// Names here are the viewer's own (skills in config/viewer.json pick one by `icon`); glyphs come from icons.js.
 const ICONS = {
   doc: GLYPHS["file-text"],
   search: GLYPHS.search,
@@ -1841,7 +1841,7 @@ function highlightFile(file) {
 
 // ---------- local review notes ----------
 
-// Select code in a PR diff and press C (or the Comment button) to keep a note in plans/pr-notes/; the PR column lists
+// Select code in a PR diff and press C (or the Comment button) to keep a note in reference/pr-notes/; the PR column lists
 // them and drafts an agent prompt that posts them as a pending GitHub review or works through them.
 const noteScope = () => (diff.pr && diff.scope !== "all" && diff.scope !== "description" ? diff.scope : "");
 const prNotes = () => (diff.pr && diff.notes?.key === diff.pr.key ? diff.notes.list : []);

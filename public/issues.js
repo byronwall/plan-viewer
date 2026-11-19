@@ -5,7 +5,7 @@ import { ago, altKey, avatar, planning, planningSection, ciBadge, copied, copyPr
 import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { openNotePopover } from "./note-popover.js";
 
-// Issues page: Jira, Linear and GitHub issues in the configured scope (viewer.config.json `issues`), laid out like the Code page:
+// Issues page: Jira, Linear and GitHub issues in the configured scope (config/viewer.json `issues`), laid out like the Code page:
 // a dense list newest first, an inspector for the selected row, and a full overview on Enter. Read-only; changes go
 // through agent drafts.
 export const TABS = { all: "All", triage: "Triage", epics: "Epics", activity: "Activity", migration: "Migration" };
@@ -790,7 +790,7 @@ async function load(refresh = false) {
   if (refresh) ui.detail.clear();
   for (const key of ui.selected) if (!byKey().has(key)) ui.selected.delete(key);
   if (host?.isConnected) {
-    if (!data.enabled) host.innerHTML = `<section class="issue-loading"><p>No issue source configured. Set <code>issues.jql</code>, <code>issues.linear.teams</code> or <code>issues.github</code> in <code>viewer.config.json</code> to list issues here.</p></section>`;
+    if (!data.enabled) host.innerHTML = `<section class="issue-loading"><p>No issue source configured. Set <code>issues.jql</code>, <code>issues.linear.teams</code> or <code>issues.github</code> in <code>config/viewer.json</code> to list issues here.</p></section>`;
     render();
     host.dataset.issuesState = data.syncing ? "syncing" : "ready"; // agents wait on [data-issues-state="ready"]
     if (data.syncing) ui.poll = window.setTimeout(() => load().catch((error) => notify(error.message, true)), 2500);

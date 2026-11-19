@@ -12,7 +12,7 @@ test("notes round-trip through readable Markdown and keep hand-written text", as
   let { notes: list } = await notes.change("Org/repo", 7, { op: "add", title: "Fix it", note: { file: "a/b.py", side: "new", line: 3, end: 5, quote: "x = 1\ny = 2", body: "Why two?\n\nSecond paragraph." } });
   ({ notes: list } = await notes.change("Org/repo", 7, { op: "add", note: { file: "c.ts", side: "old", line: 9, commit: "abc1234", sig: "k3x9", body: "Gone?" } }));
   ({ notes: list } = await notes.change("Org/repo", 7, { op: "add", note: { file: "d.md", line: 0, body: "Whole thing reads well." } }));
-  const path = join(root, "plans/pr-notes/Org-repo-7.md");
+  const path = join(root, "reference/pr-notes/Org-repo-7.md");
   const text = await readFile(path, "utf8");
   assert.match(text, /· commit: abc1234 · sig: k3x9\n/);
   assert.match(text, /^# Review notes for Org\/repo#7\n/);

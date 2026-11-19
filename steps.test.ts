@@ -53,17 +53,17 @@ Draft the review comment.
 `;
 
 const draft = (step: string, kind: string, extra = "") => {
-  const path = `tasks/TASK-0001-assets/${kind}.md`;
+  const path = `tasks/TASK-0001/${kind}.md`;
   const text = `---\noutbound: ${kind}\ntarget: x\nstatus: ready\nstep: ${step}\n${extra}---\n\n# D\n\n<!-- send:start -->\nHi\n<!-- send:end -->\n`;
   return { path, fields: draftFromText(path, text)!.fields, draft: draftFromText(path, text)!, modified: 0 };
 };
 
 test("each open step gets one next move from its kind, status, prerequisites and machinery", () => {
-  const task = { path: "tasks/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: TASK };
+  const task = { path: "tasks/TASK-0001/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: TASK };
   const machinery = [
     draft("TASK-0001 W2", "jira-comment"),
     draft("TASK-0001 W10", "slack", "send: manual\n"),
-    { path: "tasks/TASK-0001-assets/drop.md", fields: { step: "TASK-0001 W4", kind: "byron", why: "the classifier refuses DROP", fix: "Approve and run" }, modified: 0 },
+    { path: "tasks/TASK-0001/drop.md", fields: { step: "TASK-0001 W4", kind: "byron", why: "the classifier refuses DROP", fix: "Approve and run" }, modified: 0 },
   ];
   const steps = deriveSteps([task], machinery, ["TASK-0001"], Date.parse("2026-11-12"));
   const move = Object.fromEntries(steps.map((s) => [s.id, `${s.move}:${s.reason}`]));
@@ -87,7 +87,7 @@ test("Up next adds and removes the next flag without touching kind, size or prer
   const flagged = withStepFlag(withStepFlag(TASK, "W7", "next", true), "W6", "next", true);
   assert.match(flagged, /^- W7: Later \[open\] \(after: W6\) \{next\}$/m);
   assert.match(flagged, /^- W6: Build it \[active\] \{agent, M, next\}$/m);
-  const steps = deriveSteps([{ path: "tasks/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: flagged }], []);
+  const steps = deriveSteps([{ path: "tasks/TASK-0001/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: flagged }], []);
   assert.deepEqual(steps.slice(0, 2).map((s) => [s.id, s.next, s.kind]), [["W6", true, "agent"], ["W7", true, ""]]);
   assert.equal(withStepFlag(flagged, "W6", "next", false), withStepFlag(TASK, "W7", "next", true));
   assert.equal(withStepFlag(withStepFlag(TASK, "W8", "next", true), "W8", "next", false), TASK);
@@ -100,19 +100,19 @@ test("a saved note keeps its prompt and images, waits under Up next, and leaves 
   await mkdir(join(root, "tmp"));
   await writeFile(join(root, "tmp", "shot.png"), "png");
   const now = new Date(2026, 10, 13, 14, 5, 9);
-  const task = await saveNote(root, { commentary: "Tighten the retry section\nand cite OPS-77", prompt: "Source file: tasks/TASK-0001.md\n\nTighten it", source: "tasks/TASK-0001.md", task: "TASK-0001", images: [join(root, "tmp", "shot.png")] }, now);
-  const loose = await saveNote(root, { commentary: "Idea for the plan", prompt: "Idea", source: "daily/2026/11/13.md" }, now);
-  assert.equal(task.path, "tasks/TASK-0001-assets/notes/2026-11-13-140509-tighten-the-retry-section.md");
+  const task = await saveNote(root, { commentary: "Tighten the retry section\nand cite OPS-77", prompt: "Source file: tasks/TASK-0001/TASK-0001.md\n\nTighten it", source: "tasks/TASK-0001/TASK-0001.md", task: "TASK-0001", images: [join(root, "tmp", "shot.png")] }, now);
+  const loose = await saveNote(root, { commentary: "Idea for the plan", prompt: "Idea", source: "daily/2026-11-13.md" }, now);
+  assert.equal(task.path, "tasks/TASK-0001/notes/2026-11-13-140509-tighten-the-retry-section.md");
   assert.equal(loose.path, "reference/notes/2026-11-13-140509-idea-for-the-plan.md");
-  assert.equal(await readFile(join(root, "tasks/TASK-0001-assets/notes/2026-11-13-140509-tighten-the-retry-section-1.png"), "utf8"), "png");
+  assert.equal(await readFile(join(root, "tasks/TASK-0001/notes/2026-11-13-140509-tighten-the-retry-section-1.png"), "utf8"), "png");
   await writeFile(join(root, "reference/notes/2026-11-13-140600-flag-x.md"), "---\nflag: open\nkind: agent-flag\n---\n\n# 🚩 x\n");
   await writeFile(join(root, "reference/notes/2026-11-13-140601-flag-y.md"), "---\nnote: open\nkind: agent-flag\n---\n\n# 🚩 y\n");
   const notes = await listNotes(root);
   // Agent flags list under their own move, never on Up next, whether they're open as `flag:` or `note:`.
   assert.deepEqual(notes.map((n) => [n.task, n.title, n.next, n.move, n.kind]), [["", "Idea for the plan", true, "agent", "note"], ["TASK-0001", "Tighten the retry section", true, "agent", "note"], ["", "x", false, "flags", "flag"], ["", "y", false, "flags", "flag"]]);
-  assert.match(notes[1].prompt!, /^Source file: tasks\/TASK-0001\.md[\s\S]*-1\.png$/m);
+  assert.match(notes[1].prompt!, /^Source file: tasks\/TASK-0001\/TASK-0001\.md[\s\S]*-1\.png$/m);
   const decided = await saveNote(root, { commentary: "Go with the fast path", prompt: "Resolve decision W3", task: "TASK-0001", step: "TASK-0001 W3" }, new Date(2026, 10, 13, 15, 0, 0));
-  const tasks = [{ path: "tasks/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: TASK }];
+  const tasks = [{ path: "tasks/TASK-0001/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: TASK }];
   const listed = (await loadSteps(root, tasks, [])).steps;
   const w3 = listed.filter((s) => s.key === "TASK-0001 W3" || s.path === decided.path);
   assert.deepEqual(w3.map((s) => [s.key, s.kind, s.status, s.move, s.reason, s.next, s.notes]), [["TASK-0001 W3", "pick-one", "open", "agent", "notes to process", true, [{ path: decided.path, title: "Go with the fast path" }]]]);
@@ -123,7 +123,7 @@ test("a saved note keeps its prompt and images, waits under Up next, and leaves 
   assert.match(await readFile(join(root, "reference/notes/2026-11-13-140600-flag-x.md"), "utf8"), /^flag: done$[\s\S]*Marked done \(Pat/m);
   assert.deepEqual((await listNotes(root)).map((n) => n.path), [loose.path, "reference/notes/2026-11-13-140601-flag-y.md"]);
   assert.match(await readFile(join(root, task.path), "utf8"), /^note: done$[\s\S]*2026-11-14 — Marked done \(Pat/m);
-  await assert.rejects(closeNote(root, "tasks/TASK-0001.md", "Pat", "2026-11-14"), /Not a note/);
+  await assert.rejects(closeNote(root, "tasks/TASK-0001/TASK-0001.md", "Pat", "2026-11-14"), /Not a note/);
 });
 
 test("a launch button saves its prompt as an Up next note, with the popover's comment on top", async (t) => {
@@ -144,68 +144,68 @@ test("a launch button saves its prompt as an Up next note, with the popover's co
 test("Pick completes the choice, defers the options not picked, and records the pick", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "steps-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await mkdir(join(root, "tasks"), { recursive: true });
-  await writeFile(join(root, "tasks/TASK-0001.md"), TASK);
-  await assert.rejects(pickChoice(root, "tasks/TASK-0001.md", "W3", [], "Pat", "2026-11-12"), /Pick exactly one/);
-  await assert.rejects(pickChoice(root, "tasks/TASK-0001.md", "W2", ["W3.1"], "Pat", "2026-11-12"), /isn't a choice/);
-  await pickChoice(root, "tasks/TASK-0001.md", "W3", ["W3.1"], "Pat", "2026-11-12");
-  const md = await readFile(join(root, "tasks/TASK-0001.md"), "utf8");
+  await mkdir(join(root, "tasks/TASK-0001"), { recursive: true });
+  await writeFile(join(root, "tasks/TASK-0001/TASK-0001.md"), TASK);
+  await assert.rejects(pickChoice(root, "tasks/TASK-0001/TASK-0001.md", "W3", [], "Pat", "2026-11-12"), /Pick exactly one/);
+  await assert.rejects(pickChoice(root, "tasks/TASK-0001/TASK-0001.md", "W2", ["W3.1"], "Pat", "2026-11-12"), /isn't a choice/);
+  await pickChoice(root, "tasks/TASK-0001/TASK-0001.md", "W3", ["W3.1"], "Pat", "2026-11-12");
+  const md = await readFile(join(root, "tasks/TASK-0001/TASK-0001.md"), "utf8");
   assert.match(md, /^- W3: Pick a path \[completed\] \{pick-one, S\}$/m);
   assert.match(md, /^ {2}- W3\.1: Fast — ships now \[open\] \{option, recommended\}$/m);
   assert.match(md, /^ {2}- W3\.2: Safe — waits a week \[deferred\] \{option, not picked\}$/m);
   assert.match(md, /^## Updates\n\n- \*\*2026-11-12 — Picked W3\.1 \(Fast\) for W3 \(Pat, in the viewer\):\*\* Pick a path\.\n/m);
   assert.match(md, /^updated: 2026-11-12$/m);
-  await assert.rejects(pickChoice(root, "tasks/TASK-0001.md", "W3", ["W3.1"], "Pat", "2026-11-12"), /already decided/);
+  await assert.rejects(pickChoice(root, "tasks/TASK-0001/TASK-0001.md", "W3", ["W3.1"], "Pat", "2026-11-12"), /already decided/);
 });
 
 test("Approve and run runs only a single read-only statement, records the output and completes the step", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "steps-run-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await mkdir(join(root, "tasks/TASK-0001-assets"), { recursive: true });
-  await writeFile(join(root, "tasks/TASK-0001.md"), TASK);
+  await mkdir(join(root, "tasks/TASK-0001"), { recursive: true });
+  await writeFile(join(root, "tasks/TASK-0001/TASK-0001.md"), TASK);
   const machinery = (run: string) => `---\nkind: byron\nstep: TASK-0001 W4\ntarget: dev\nrun: ${run}\n---\n\n# Check\n`;
   setConfig({ user: "Pat", steps: { run: [process.execPath, "-e", "console.log(JSON.stringify(process.argv.slice(1)))", "{target}", "{statement}"] } });
   t.after(() => setConfig({}));
-  await writeFile(join(root, "tasks/TASK-0001-assets/write.md"), machinery("drop schema X.Y"));
-  await assert.rejects(runStatement(root, "tasks/TASK-0001-assets/write.md", "Pat", "2026-11-12"), /Only a single read-only statement/);
-  await writeFile(join(root, "tasks/TASK-0001-assets/two.md"), machinery("select 1; drop schema X.Y"));
-  await assert.rejects(runStatement(root, "tasks/TASK-0001-assets/two.md", "Pat", "2026-11-12"), /Only a single read-only statement/);
-  await writeFile(join(root, "tasks/TASK-0001-assets/read.md"), machinery("select current_user()"));
-  const result = await runStatement(root, "tasks/TASK-0001-assets/read.md", "Pat", "2026-11-12");
+  await writeFile(join(root, "tasks/TASK-0001/write.md"), machinery("drop schema X.Y"));
+  await assert.rejects(runStatement(root, "tasks/TASK-0001/write.md", "Pat", "2026-11-12"), /Only a single read-only statement/);
+  await writeFile(join(root, "tasks/TASK-0001/two.md"), machinery("select 1; drop schema X.Y"));
+  await assert.rejects(runStatement(root, "tasks/TASK-0001/two.md", "Pat", "2026-11-12"), /Only a single read-only statement/);
+  await writeFile(join(root, "tasks/TASK-0001/read.md"), machinery("select current_user()"));
+  const result = await runStatement(root, "tasks/TASK-0001/read.md", "Pat", "2026-11-12");
   assert.equal(result.ok, true);
   assert.equal(result.output, '["dev","select current_user()"]');
-  assert.match(await readFile(join(root, "tasks/TASK-0001-assets/read.md"), "utf8"), /## Run, .* \(Pat, in the viewer\)\n\n```text\n\["dev","select current_user\(\)"\]\n```\n$/);
-  assert.match(await readFile(join(root, "tasks/TASK-0001.md"), "utf8"), /^- W4: Run the DROP in the console \[completed\] \{byron, S\}$/m);
+  assert.match(await readFile(join(root, "tasks/TASK-0001/read.md"), "utf8"), /## Run, .* \(Pat, in the viewer\)\n\n```text\n\["dev","select current_user\(\)"\]\n```\n$/);
+  assert.match(await readFile(join(root, "tasks/TASK-0001/TASK-0001.md"), "utf8"), /^- W4: Run the DROP in the console \[completed\] \{byron, S\}$/m);
 });
 
 test("Apply adds a drafted allow rule once to the workspace settings file", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "steps-apply-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await mkdir(join(root, "tasks/TASK-0001-assets"), { recursive: true });
-  await writeFile(join(root, "tasks/TASK-0001.md"), TASK);
-  await writeFile(join(root, "tasks/TASK-0001-assets/rule.md"), "---\nkind: decision\nstep: TASK-0001 W8\napply: Bash(python3 scripts/probe.py:*)\n---\n\n# Rule\n");
+  await mkdir(join(root, "tasks/TASK-0001"), { recursive: true });
+  await writeFile(join(root, "tasks/TASK-0001/TASK-0001.md"), TASK);
+  await writeFile(join(root, "tasks/TASK-0001/rule.md"), "---\nkind: decision\nstep: TASK-0001 W8\napply: Bash(python3 scripts/probe.py:*)\n---\n\n# Rule\n");
   setConfig({ steps: { settingsFile: ".claude/settings.json" } });
   t.after(() => setConfig({}));
-  assert.equal((await applyRule(root, "tasks/TASK-0001-assets/rule.md", "Pat", "2026-11-12")).added, true);
-  assert.equal((await applyRule(root, "tasks/TASK-0001-assets/rule.md", "Pat", "2026-11-12")).added, false);
+  assert.equal((await applyRule(root, "tasks/TASK-0001/rule.md", "Pat", "2026-11-12")).added, true);
+  assert.equal((await applyRule(root, "tasks/TASK-0001/rule.md", "Pat", "2026-11-12")).added, false);
   assert.deepEqual(JSON.parse(await readFile(join(root, ".claude/settings.json"), "utf8")), { permissions: { allow: ["Bash(python3 scripts/probe.py:*)"] } });
   setConfig({ steps: { settingsFile: "../outside.json" } });
-  await assert.rejects(applyRule(root, "tasks/TASK-0001-assets/rule.md", "Pat", "2026-11-12"), /inside the workspace/);
+  await assert.rejects(applyRule(root, "tasks/TASK-0001/rule.md", "Pat", "2026-11-12"), /inside the workspace/);
 });
 
 test("Start marks the step active, holds a slot until the run ends, and refuses past the slots", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "steps-start-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await mkdir(join(root, "tasks"), { recursive: true });
-  await writeFile(join(root, "tasks/TASK-0001.md"), TASK);
+  await mkdir(join(root, "tasks/TASK-0001"), { recursive: true });
+  await writeFile(join(root, "tasks/TASK-0001/TASK-0001.md"), TASK);
   setConfig({ steps: { start: [process.execPath, "-e", "setTimeout(() => {}, 300)", "{prompt}"], slots: 1 } });
   t.after(() => setConfig({}));
-  const task = { path: "tasks/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: TASK };
+  const task = { path: "tasks/TASK-0001/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: TASK };
   const [w11, w91] = ["W11", "W9.1"].map((id) => deriveSteps([task], []).find((s) => s.id === id)!);
   const started = await startStep(root, w11, "2026-11-12");
   assert.equal(started.started, true);
   assert.deepEqual(activeRuns().map((run) => run.key), ["TASK-0001 W11"]);
-  assert.match(await readFile(join(root, "tasks/TASK-0001.md"), "utf8"), /^- W11: Post the review \[active\]$/m);
+  assert.match(await readFile(join(root, "tasks/TASK-0001/TASK-0001.md"), "utf8"), /^- W11: Post the review \[active\]$/m);
   await assert.rejects(startStep(root, w91, "2026-11-12"), /All 1 agent slots are in use/);
   await new Promise((done) => setTimeout(done, 700));
   assert.deepEqual(activeRuns(), []);
@@ -214,30 +214,30 @@ test("Start marks the step active, holds a slot until the run ends, and refuses 
 test("a saved note re-points the copied chunk's relative links and images from its source to the note", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "notes-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const prompt = "[audit](TASK-0001-assets/audit.md) ![map](TASK-0001-assets/diagrams/1-map.draft) [plan](../plans/acme/README.md#goals) [other](TASK-0002.md) [web](https://acme.test/x) [here](#retry) [rooted](tasks/TASK-0003.md) `TASK-0001-assets/audit.md`";
-  const saved = await saveNote(root, { commentary: "Links", prompt, source: "tasks/TASK-0001.md", task: "TASK-0001" }, new Date(2026, 10, 13, 9, 0, 0));
+  const prompt = "[audit](audit.md) ![map](diagrams/1-map.draft) [plan](../../reference/acme/README.md#goals) [other](../TASK-0002/TASK-0002.md) [web](https://acme.test/x) [here](#retry) [rooted](tasks/TASK-0003/TASK-0003.md) `audit.md`";
+  const saved = await saveNote(root, { commentary: "Links", prompt, source: "tasks/TASK-0001/TASK-0001.md", task: "TASK-0001" }, new Date(2026, 10, 13, 9, 0, 0));
   const text = await readFile(join(root, saved.path), "utf8");
-  assert.ok(text.includes("[audit](../audit.md) ![map](../diagrams/1-map.draft) [plan](../../../plans/acme/README.md#goals) [other](../../TASK-0002.md) [web](https://acme.test/x) [here](#retry) [rooted](tasks/TASK-0003.md) `TASK-0001-assets/audit.md`"), text);
+  assert.ok(text.includes("[audit](../audit.md) ![map](../diagrams/1-map.draft) [plan](../../../reference/acme/README.md#goals) [other](../../TASK-0002/TASK-0002.md) [web](https://acme.test/x) [here](#retry) [rooted](tasks/TASK-0003/TASK-0003.md) `audit.md`"), text);
 });
 
 test("a note's pieces re-point links from their own documents, in a task's notes or in reference/notes", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "notes-pieces-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const at = new Date(2026, 10, 16, 9, 0, 0);
-  const pieces = [{ text: "Step: [draft](TASK-0001-assets/reply.md)", from: "tasks/TASK-0001.md" }, { text: "See [plan](plan.md)", from: "tasks/TASK-0001-assets/reply.md" }, { text: "Composed [as is](x.md)", from: "" }];
+  const pieces = [{ text: "Step: [draft](reply.md)", from: "tasks/TASK-0001/TASK-0001.md" }, { text: "See [plan](plan.md)", from: "tasks/TASK-0001/reply.md" }, { text: "Composed [as is](x.md)", from: "" }];
   const task = await readFile(join(root, (await saveNote(root, { commentary: "Pieces", prompt: pieces, task: "TASK-0001" }, at)).path), "utf8");
   assert.ok(task.includes("Step: [draft](../reply.md)\nSee [plan](../plan.md)\nComposed [as is](x.md)"), task);
   const loose = await readFile(join(root, (await saveNote(root, { commentary: "Loose", prompt: pieces }, at)).path), "utf8");
-  assert.ok(loose.includes("Step: [draft](../../tasks/TASK-0001-assets/reply.md)\nSee [plan](../../tasks/TASK-0001-assets/plan.md)"), loose);
+  assert.ok(loose.includes("Step: [draft](../../tasks/TASK-0001/reply.md)\nSee [plan](../../tasks/TASK-0001/plan.md)"), loose);
 });
 
 test("with steps.followUp, a finished step leaves an open follow-through note carrying the draft's own list", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "steps-follow-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await mkdir(join(root, "tasks", "TASK-0001-assets"), { recursive: true });
-  await writeFile(join(root, "tasks", "TASK-0001.md"), "---\ntitle: Ship it\n---\n\n## Work breakdown\n\n- W1: Reply on the PR ([draft](TASK-0001-assets/reply.md)) [completed] {pr-comment, S}\n");
-  await writeFile(join(root, "tasks", "TASK-0001-assets", "reply.md"), "---\noutbound: pr-comment\nstep: TASK-0001 W1\n---\n\n# Reply\n\n## After it's sent\n\n- Resolve the review thread\n- See [the plan](plan.md)\n");
-  const step = { step: "TASK-0001 W1", did: "approved and sent the pr-comment to #7", source: "tasks/TASK-0001-assets/reply.md", result: "https://github.com/acme/app/pull/7#c1" };
+  await mkdir(join(root, "tasks", "TASK-0001"), { recursive: true });
+  await writeFile(join(root, "tasks", "TASK-0001", "TASK-0001.md"), "---\ntitle: Ship it\n---\n\n## Work breakdown\n\n- W1: Reply on the PR ([draft](reply.md)) [completed] {pr-comment, S}\n");
+  await writeFile(join(root, "tasks", "TASK-0001", "reply.md"), "---\noutbound: pr-comment\nstep: TASK-0001 W1\n---\n\n# Reply\n\n## After it's sent\n\n- Resolve the review thread\n- See [the plan](plan.md)\n");
+  const step = { step: "TASK-0001 W1", did: "approved and sent the pr-comment to #7", source: "tasks/TASK-0001/reply.md", result: "https://github.com/acme/app/pull/7#c1" };
   assert.equal(await followUpNote(root, step), null); // off by default
   setConfig({ user: "Pat", steps: { followUp: true } });
   t.after(() => setConfig({}));
@@ -250,8 +250,7 @@ test("with steps.followUp, a finished step leaves an open follow-through note ca
   assert.match(text, /Result: https:\/\/github\.com\/acme\/app\/pull\/7#c1/);
   assert.match(text, /- Resolve the review thread/);
   assert.match(text, /\[the plan\]\(\.\.\/plan\.md\)/); // re-pointed from the draft's folder to the note's
-  // The step title comes from the task file, so its draft link is re-pointed from tasks/, not from the draft's folder
-  // (which once gave ../TASK-0001-assets/reply.md, i.e. tasks/TASK-0001-assets/TASK-0001-assets/reply.md).
+  // The step title comes from the task file, so its draft link is re-pointed from the task file's folder.
   assert.match(text, /^Step: W1: Reply on the PR \(\[draft\]\(\.\.\/reply\.md\)\)$/m);
   const [note] = await listNotes(root);
   assert.equal(note.noteFor, "TASK-0001 W1");
@@ -287,7 +286,7 @@ test("priority ranks a planned step that unblocks others above a P2 leaf, and P1
   assert.ok(scoreStep({ ...base, priority: "p3" }) < scoreStep({ ...base, size: "L" }));
   assert.ok(planned <= 99 && scoreStep({ ...base, priority: "p3", size: "L" }) >= 0);
   assert.deepEqual(planMentions("- [TASK-0140](x) W3.2: who approves; W1.2: review\n- TASK-0143 and TASK-0140"), ["TASK-0140", "TASK-0140 W3.2", "TASK-0140 W1.2", "TASK-0143"]);
-  const steps = deriveSteps([{ path: "tasks/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: TASK }], [], ["TASK-0001 W6"], Date.parse("2026-11-12"));
+  const steps = deriveSteps([{ path: "tasks/TASK-0001/TASK-0001.md", id: "TASK-0001", title: "Ship invites", status: "active", updated: "2026-11-10", markdown: TASK }], [], ["TASK-0001 W6"], Date.parse("2026-11-12"));
   assert.equal(steps.filter((step) => step.move !== "blocked")[0].id, "W6", "the step today's plan names, which unblocks W7, ranks first");
   // The waterfall's parts sum to the score, and the unblocks part names what waits, by title.
   const w6 = steps.find((step) => step.id === "W6")!;

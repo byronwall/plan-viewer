@@ -198,7 +198,7 @@ function toolJson(result: { content?: { type: string; text?: string }[]; isError
 // then tool calls on the `codex_apps` connector server.
 type ToolCall = (tool: string, args: Record<string, unknown>) => Promise<any>;
 async function withConnector<T>([program, ...args]: string[], use: (call: ToolCall) => Promise<T>, timeout = 60_000) {
-  if (!program) throw new Error("No Slack reader configured (slack.codex in viewer.config.json).");
+  if (!program) throw new Error("No Slack reader configured (slack.codex in config/viewer.json).");
   const child = spawn(program, args, { cwd: tmpdir(), stdio: ["pipe", "pipe", "ignore"] });
   const pending = new Map<number, (message: { result?: any; error?: { message: string } }) => void>();
   let failed: (error: Error) => void = () => {};

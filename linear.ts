@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { linearKey } from "./link-metadata.ts";
 import type { Issue } from "./issues.ts";
 
-// Linear issues and projects for the Issues page (viewer.config.json `issues.linear.teams`), in the same shape as Jira
+// Linear issues and projects for the Issues page (config/viewer.json `issues.linear.teams`), in the same shape as Jira
 // issues so every tab, the overview and the code join treat them alike. Keys are `linear:<identifier>` because Jira
 // projects can reuse a Linear team's prefix (Jira MOD-12 and Linear MOD-12 are different issues); `label` is what shows.
 

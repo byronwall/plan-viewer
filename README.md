@@ -47,7 +47,7 @@ npm install
 npm run demo
 ```
 
-Open <http://127.0.0.1:4173>. The demo serves [`examples/workspace/`](examples/workspace), a small fictional team's week: five tasks, daily plans, a topic, and a stand-in Jira so the Issues page has data. The Code view is empty until you track a repository (gear icon on the Code page).
+Open <http://127.0.0.1:4173>. The demo serves [`examples/workspace/`](examples/workspace), a small fictional team's week: five tasks, daily plans, reference notes, and a stand-in Jira so the Issues page has data. The Code view is empty until you track a repository (gear icon on the Code page).
 
 ## Use it with your own plans
 
@@ -62,27 +62,26 @@ node ../plan-viewer/cli.ts init
 
 - a git repository, which the pre-commit hook and `lint` need;
 - a `.gitignore` for `node_modules/`, `tmp/` (the viewer's caches) and `config.toml` (Linear and Slack tokens);
-- the `daily/`, `tasks/`, `plans/` and `reference/` folders;
+- the `config/`, `daily/`, `tasks/` and `reference/` folders;
 - `AGENTS.md` and `CLAUDE.md` from the example workspace;
-- a `package.json` with a `plan-viewer` dependency (`file:../plan-viewer`) and the `viewer`, `lint`, `links`, `move`, `task` and `prepare` scripts.
+- a `package.json` with a `plan-viewer` dependency (`file:../plan-viewer`) and the `viewer`, `lint`, `links`, `move`, `task`, `migrate` and `prepare` scripts.
 
 It never replaces an existing file or script, so you can run it again in a partly set up workspace. It prints what it did and what it skipped.
 
 Then run `npm install` and `npm run viewer`. Install with `npm`, not `pnpm`: pnpm copies `file:` packages into `node_modules`, where Node refuses to run TypeScript directly. The `prepare` script installs a pre-commit hook that lints staged plans and checks links.
 
-Write today's plan at `daily/YYYY/MM/DD/plan.md` and it opens on launch. The copied `AGENTS.md` (which `CLAUDE.md` imports) tells your agents how plans and tasks are written, so you can also just ask one to set the workspace up.
+Write today's plan at `daily/YYYY-MM-DD.md` and it opens on launch. The copied `AGENTS.md` (which `CLAUDE.md` imports) tells your agents how plans and tasks are written, so you can also just ask one to set the workspace up.
 
 ### Workspace layout
 
 ```text
-daily/YYYY/MM/DD/plan.md     # the day's plan; "## Scheduled tasks" links tasks
-daily/YYYY/MM/DD/*.md|.txt   # optional day notes
-tasks/TASK-0001.md           # one task: front matter, outcome, work breakdown, next actions, updates
-tasks/TASK-0001-assets/      # documents and images owned by that task
-plans/<topic>/               # cross-day topics (plans/README.md indexes them)
-reference/                   # stable reference documents
-viewer.config.json           # optional preferences
-config.toml                  # optional, git-ignored secrets: [linear] API_KEY, [slack] TOKEN
+daily/YYYY-MM-DD.md            # the day's plan; "## Scheduled tasks" links tasks
+tasks/TASK-0001/TASK-0001.md   # one task: front matter, outcome, work breakdown, next actions, updates
+tasks/TASK-0001/               # the task's documents, diagrams, images and notes/ sit beside it
+reference/                     # prose people and agents read; notes/ holds notes tied to no task
+config/viewer.json             # optional preferences
+config/                        # other files the tooling reads: code-repos.json, slack-channels.md, prompts/
+config.toml                    # optional, git-ignored secrets: [linear] API_KEY, [slack] TOKEN
 ```
 
 A task file looks like this:
@@ -127,7 +126,8 @@ Run each from the workspace (or set `PLANNING_ROOT`). `plan-viewer help` lists t
 | `plan-viewer init` | Sets up the folder as a workspace: git, `.gitignore`, folders, agent guide, and `package.json` scripts. Never replaces a file. |
 | `plan-viewer lint [paths…\|--staged]` | Checks task front matter, work breakdowns, and action references. |
 | `plan-viewer links [--fix\|--warm\|--refresh-slack]` | Reports broken links, unknown tasks, unlinked task assets, and unnamed Slack channels. |
-| `plan-viewer move <from> <to\|TASK-NNNN>` | Moves one file and repairs every link to it. `TASK-NNNN` moves it into that task's assets folder; the task must exist. |
+| `plan-viewer move <from> <to\|TASK-NNNN>` | Moves one file and repairs every link to it. `TASK-NNNN` moves it into that task's folder; the task must exist. |
+| `plan-viewer migrate [--write]` | Moves a workspace from the older layout (`tasks/TASK-NNNN.md` with `-assets/`, `daily/YYYY/MM/DD/`, `plans/`, `viewer.config.json`) to this one. Without `--write` it lists the moves and what to fix first. |
 | `plan-viewer task TASK-NNNN` | Prints a task's context in compact form for an agent. |
 | `plan-viewer next [--json]` | Prints the steps flagged Up next, for an agent thread to work through. |
 
@@ -138,7 +138,7 @@ Each one is off until you set it up, and credentials stay with their own tools:
 | For | You need |
 | --- | --- |
 | Agent handoffs | macOS with Codex Desktop or Claude Desktop. Pick one under **Agent** in the sidebar. |
-| PR and commit links, the Code view | [`gh`](https://cli.github.com), signed in, and `github` in `viewer.config.json`. |
+| PR and commit links, the Code view | [`gh`](https://cli.github.com), signed in, and `github` in `config/viewer.json`. |
 | Jira titles and the Issues page | [`acli`](https://developer.atlassian.com/cloud/acli/), signed in, and `issues.jql`. |
 | Linear titles and issues | `LINEAR_API_KEY`, or `[linear] API_KEY` in `config.toml`. |
 | Slack link titles | `SLACK_TOKEN`, or `[slack] TOKEN` in `config.toml`. |
@@ -148,7 +148,7 @@ The editor, terminal, and Finder buttons also assume macOS. Reading plans works 
 ## Documentation
 
 - [User guide](docs/guide.md): every page, shortcut, and behavior in detail.
-- [Configuration](docs/configuration.md): `viewer.config.json` and environment variables.
+- [Configuration](docs/configuration.md): `config/viewer.json` and environment variables.
 - [Code view design](docs/code-view.md), [Issues plan](docs/issues-plan.md), and [Plans plan](docs/plans-plan.md): why those surfaces work the way they do.
 
 ## Contributing

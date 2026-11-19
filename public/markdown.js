@@ -1,6 +1,7 @@
 import { decorate, lineClasses, markWords } from "./word-diff.js";
 import { escapeRegExp, githubSlug, referenceConfig } from "./config.js";
 import { brandMark, glyph } from "./icons.js";
+import { isTaskFile, taskFile } from "./layout.js";
 
 export function escapeHtml(value = "") {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -125,12 +126,12 @@ export function resolveMarkdownLink(href, currentPath) {
   if (!value) return { kind: "unavailable" };
 
   try {
-    const repositoryRelative = /^(daily|tasks|plans|reference)\//.test(value) ? `/${value}` : value;
+    const repositoryRelative = /^(daily|tasks|reference|config)\//.test(value) ? `/${value}` : value;
     const url = new URL(repositoryRelative, `https://plan-viewer.local/${currentPath}`);
     if (url.protocol === "http:" || url.protocol === "https:") {
       if (url.origin !== "https://plan-viewer.local") return { kind: "external", href: url.href };
       const path = safeDecode(url.pathname.slice(1));
-      if (!/^(daily|plans|reference)\/.+\.(md|txt)$/.test(path) && !/^tasks\/TASK-\d{4}(\.md|-assets\/.+\.(md|txt))$/.test(path)) return { kind: "unavailable" };
+      if (!/^(daily|reference)\/.+\.(md|txt)$/.test(path) && !/^tasks\/TASK-\d{4}\/.+\.(md|txt)$/.test(path)) return { kind: "unavailable" };
       return { kind: "document", path, anchor: safeDecode(url.hash.slice(1)) };
     }
     if (url.protocol === "mailto:") return { kind: "external", href: url.href };
@@ -152,12 +153,12 @@ export function resolveMarkdownAsset(href, currentPath) {
   if (/^\/api\/github-image\?[\w=&%./-]+$/.test(value)) return { kind: "remote", href: value };
 
   try {
-    const repositoryRelative = /^(daily|tasks|plans|reference)\//.test(value) ? `/${value}` : value;
+    const repositoryRelative = /^(daily|tasks|reference|config)\//.test(value) ? `/${value}` : value;
     const url = new URL(repositoryRelative, `https://plan-viewer.local/${currentPath}`);
     if (url.origin !== "https://plan-viewer.local" || url.search || url.hash) return { kind: "unavailable" };
     const path = safeDecode(url.pathname.slice(1));
-    if (/^(daily|tasks|plans|reference)\/.+\.draft$/i.test(path)) return { kind: "asset", path, diagram: true, href: diagramHref(path) };
-    if (!/^(daily|tasks|plans|reference)\/.+\.(?:png|jpe?g|gif|webp|svg)$/i.test(path)) return { kind: "unavailable" };
+    if (/^(daily|tasks|reference)\/.+\.draft$/i.test(path)) return { kind: "asset", path, diagram: true, href: diagramHref(path) };
+    if (!/^(daily|tasks|reference)\/.+\.(?:png|jpe?g|gif|webp|svg)$/i.test(path)) return { kind: "unavailable" };
     return { kind: "asset", path };
   } catch {
     return { kind: "unavailable" };
@@ -169,11 +170,11 @@ export function resolveMarkdownAttachment(href, currentPath) {
   if (!value) return { kind: "unavailable" };
 
   try {
-    const repositoryRelative = /^(daily|tasks|plans|reference)\//.test(value) ? `/${value}` : value;
+    const repositoryRelative = /^(daily|tasks|reference|config)\//.test(value) ? `/${value}` : value;
     const url = new URL(repositoryRelative, `https://plan-viewer.local/${currentPath}`);
     if (url.origin !== "https://plan-viewer.local" || url.search || url.hash) return { kind: "unavailable" };
     const path = safeDecode(url.pathname.slice(1));
-    if (!/^(daily|tasks|plans|reference)\/.+\.(?:png|jpe?g|gif|webp|svg|dot|draft)$/i.test(path)) return { kind: "unavailable" };
+    if (!/^(daily|tasks|reference)\/.+\.(?:png|jpe?g|gif|webp|svg|dot|draft)$/i.test(path)) return { kind: "unavailable" };
     return { kind: "asset", path };
   } catch {
     return { kind: "unavailable" };
@@ -214,12 +215,12 @@ function externalLink(href, label) {
 }
 
 function documentLink(link, label, className = "") {
-  const icon = /^tasks\/TASK-\d{4}\.md$/.test(link.path) ? SERVICE_ICONS.task : "";
+  const icon = isTaskFile(link.path) ? SERVICE_ICONS.task : "";
   const [shown, tip] = clipLabel(label);
   return `<a class="markdown-document-link${className}" href="${escapeHtml(documentHref(link.path, link.anchor))}" data-document-path="${escapeHtml(link.path)}" data-document-anchor="${escapeHtml(link.anchor)}"${tip}>${withIcon(icon, shown)}&#8288;</a>&#8288;`;
 }
 
-// References are driven by viewer.config.json (see config.js): a bare `#1234` is a PR in `github.defaultRepo`, `<repo>#1234` a PR in
+// References are driven by config/viewer.json (see config.js): a bare `#1234` is a PR in `github.defaultRepo`, `<repo>#1234` a PR in
 // one of `github.repos`, `<PREFIX>-1234` an issue in a configured tracker, and `TASK-0001` a planning task. IDs must stand alone,
 // not sit inside branch names or paths; text is already HTML-escaped, so skip `&#39;`-style entities.
 
@@ -300,7 +301,7 @@ export function pullRequestRefs(text) {
 function linkifyReferences(html, textBefore = "", bare = true) {
   const { refs } = referencePatterns();
   const pull = (repo) => (n, label) => externalLink(`https://github.com/${repoSlug(repo)}/pull/${n}`, label);
-  const task = (n, label) => documentLink({ path: `tasks/TASK-${n.padStart(4, "0")}.md`, anchor: "" }, label);
+  const task = (n, label) => documentLink({ path: taskFile(`TASK-${n.padStart(4, "0")}`), anchor: "" }, label);
   let output = linkifyCommits(html, textBefore, bare)
     .replace(new RegExp(`(^|[^\\w/-])${refs.ownerPattern}(${refs.repoNames})#(\\d+)${LIST}`, "gi"), (_, lead, name, n, rest) => {
       const repo = refs.repos[name.toLowerCase()];
@@ -325,7 +326,7 @@ function formatInlineText(value, currentPath, linkify = true, textBefore = "", b
     if (repo) {
       return commitLink(repo, commit[2], `<code>${commit[1] ? `${repo}@` : ""}${commit[2].slice(0, 8)}</code>`);
     }
-    const link = resolveMarkdownLink(/^TASK-\d{4}$/.test(code) ? `tasks/${code}.md` : code, currentPath);
+    const link = resolveMarkdownLink(/^TASK-\d{4}$/.test(code) ? taskFile(code) : code, currentPath);
     if (link.kind !== "document") return `<code>${code}</code>`;
     return documentLink(link, `<code>${code}</code>`, " code-file-link");
   });

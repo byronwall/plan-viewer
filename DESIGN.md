@@ -147,7 +147,7 @@ Work breakdowns show an indented scope tree followed by a horizontally scrollabl
 
 ### Navigation
 
-The everyday sidebar stays compact: one line per day, grouped as Today and then by month, with fixed Plan and Done slots (Notes when a day has no plan). A day's other files are reached from the breadcrumb's plan/done switcher and its "+N files" menu, never listed in the sidebar. Topics and Reference are top-level entries that open dedicated list pages; Topics groups each `plans/<topic>/` folder under its README. The active sidebar entry uses a pale blue field and dark blue text.
+The everyday sidebar stays compact: one line per day, grouped as Today and then by month; each day has one plan file. Reference is a top-level entry that opens a dedicated list page, which groups each `reference/<subject>/` folder under its README. The active sidebar entry uses a pale blue field and dark blue text.
 
 Tasks remain outside the daily document groups. A dedicated Tasks entry opens a compact unfinished-work index whose rows expose only stable ID, title, state, and last update. Inside plans, a task link reads as inline text: its color-coded stable ID and a short description. Hover or keyboard focus reveals a small metadata card with the full title, summary, project, tags, and last update. Opening it returns to the existing document renderer and handoff controls.
 

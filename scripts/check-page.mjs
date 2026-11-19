@@ -1,6 +1,6 @@
 // Headless check of one page, for when the browser pane can't reach a preview (parallel sessions, refused ports).
 //
-//   npm install --no-save playwright-core && node scripts/check-page.mjs "/?path=tasks/TASK-0101.md" [--shot out.png] [--eval "js"] [--wait selector]
+//   npm install --no-save playwright-core && node scripts/check-page.mjs "/?path=tasks/TASK-0101/TASK-0101.md" [--shot out.png] [--eval "js"] [--wait selector]
 //
 // Serves a temporary copy of examples/workspace (PLANNING_ROOT overrides) from this checkout on a free port, so it
 // never depends on a shared server another session may have restarted. Prints console errors, the --eval result as

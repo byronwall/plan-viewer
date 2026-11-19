@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -7,6 +7,7 @@ import { parseActions, parseWorkBreakdown, stalledTaskReason } from "./public/ac
 import { markdownFenceWarnings, parseUpdates } from "./public/markdown.js";
 import { isViewableDocumentPath, parseChunks, parseTaskDocument, ROOT } from "./server.ts";
 import { config } from "./public/config.js";
+import { isTaskFile, taskDir, taskFile, taskOfPath } from "./public/layout.js";
 import { outboundFields } from "./outbound.ts";
 
 const STEP_KINDS = new Set(["agent", "check-in", "decision", "byron", "pick-one", "pick-any", "do-all", "jira-issue", "jira-comment", "jira-edit", "jira-transition", "it-ticket", "slack", "pr", "pr-comment", "review-request", "email"]);
@@ -102,7 +103,7 @@ export function draftErrors(path: string, text: string, taskMarkdown: string | n
   if (["pr-comment", "review-request"].includes(fields.outbound) && !PR_TARGET.test((fields.target || "").trim())) errors.push(`target “${fields.target || ""}” isn't a PR the sender can parse: #2233, PyRel#3929 or https://github.com/RelationalAI/modeler/pull/2233.`);
   const [, task, id] = (fields.step || "").match(/^(TASK-\d{4})\s+(\S+)$/) || [];
   if (!task) { errors.push("outbound drafts name their step: `step: TASK-0000 W1.2`."); return errors; }
-  if (!path.startsWith(`tasks/${task}-assets/`)) errors.push(`its step ${task} ${id} belongs to another task's assets.`);
+  if (!path.startsWith(`${taskDir(task)}/`) || isTaskFile(path)) errors.push(`its step ${task} ${id} belongs to another task's folder.`);
   if (taskMarkdown === null) return errors;
   const node = parseWorkBreakdown(taskMarkdown.match(/^## Work breakdown\s*$([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] || "").nodes.find((n: { id: string }) => n.id === id);
   if (!node) errors.push(`its step ${task} ${id} isn't in that task's work breakdown.`);
@@ -144,7 +145,7 @@ export function completedTaskWarnings(path: string, before: string | null, after
 
 export function planningErrors(path: string, markdown: string): string[] {
   try {
-    const parsed = /^tasks\/TASK-\d{4}\.md$/.test(path) ? parseTaskDocument(path, markdown) : undefined;
+    const parsed = isTaskFile(path) ? parseTaskDocument(path, markdown) : undefined;
     const body = parsed ? parsed.body : markdown;
     const chunks = parseChunks(body);
     const work = parseWorkBreakdown(chunks.find(chunk => /^work breakdown$/i.test(chunk.title))?.markdown || "");
@@ -180,11 +181,15 @@ export async function checkPlanning(args: string[], root = ROOT) {
   const listed = args.length && !staged
     ? args.map(path => relative(root, resolve(root, path)).replaceAll("\\", "/"))
     : (await git(staged ? ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"] : ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])).split("\0").filter(Boolean);
+  // The older layout (tasks/TASK-NNNN.md, -assets folders, daily/YYYY/MM/DD/, plans/, viewer.config.json) is not read at all.
+  const old = listed.find((path) => /^tasks\/TASK-\d{4}(\.md|-assets\/)|^daily\/\d{4}\/|^plans\/|^viewer\.config\.json$/.test(path))
+    || (await access(resolve(root, "viewer.config.json")).then(() => "viewer.config.json", () => ""));
+  if (old) return { files: 0, errors: [`${old}: this workspace uses the older folder layout. Run plan-viewer migrate, fix what it lists, then plan-viewer migrate --write.`], warnings: [] };
   const paths = [...new Set(listed)].filter(path => path.endsWith(".md") && isViewableDocumentPath(path));
   // Diagrams are checked when they are staged or named, so a diagram you touch gets grounded and old ones don't fail
   // the full-corpus run.
   const diagrams = (staged || args.length) && config().steps.groundReferencesFrom ? [...new Set(listed)].filter(path => path.endsWith(".draft")) : [];
-  if (args.length && !staged && paths.length + diagrams.length !== new Set(listed).size) throw new Error("Pass authored Markdown paths under daily/, tasks/, plans/ or reference/ (outside the folders viewer.config.json excludes).");
+  if (args.length && !staged && paths.length + diagrams.length !== new Set(listed).size) throw new Error("Pass authored Markdown paths under daily/, tasks/ or reference/ (outside the folders config/viewer.json excludes).");
   const errors: string[] = [];
   for (const path of diagrams) {
     try {
@@ -200,7 +205,7 @@ export async function checkPlanning(args: string[], root = ROOT) {
       errors.push(...planningErrors(path, markdown).map(error => `${path}: ${error}`));
       const step = outboundFields(markdown).step?.match(/^(TASK-\d{4})\s/)?.[1];
       if (step) {
-        const taskMarkdown = await (staged ? git(["show", `:tasks/${step}.md`]) : readFile(resolve(root, `tasks/${step}.md`), "utf8")).catch(() => null);
+        const taskMarkdown = await (staged ? git(["show", `:${taskFile(step)}`]) : readFile(resolve(root, taskFile(step)), "utf8")).catch(() => null);
         errors.push(...draftErrors(path, markdown, taskMarkdown).map(error => `${path}: ${error}`));
       }
     } catch (error) {
@@ -214,12 +219,12 @@ export async function checkPlanning(args: string[], root = ROOT) {
     const added = (await git(["diff", "--cached", "--name-only", "--diff-filter=A", "-z"])).split("\0").filter(Boolean);
     const assetsOf = new Map<string, string[]>();
     for (const path of added) {
-      const id = path.match(/^tasks\/(TASK-\d{4})-assets\//)?.[1];
-      if (id) assetsOf.set(id, [...(assetsOf.get(id) || []), path]);
+      const id = taskOfPath(path);
+      if (id && !isTaskFile(path)) assetsOf.set(id, [...(assetsOf.get(id) || []), path]);
     }
-    const ids = new Set([...listed.map((path) => path.match(/^tasks\/(TASK-\d{4})\.md$/)?.[1]).filter((id): id is string => !!id), ...assetsOf.keys()]);
+    const ids = new Set([...listed.filter(isTaskFile).map(taskOfPath), ...assetsOf.keys()]);
     for (const id of ids) {
-      const path = `tasks/${id}.md`;
+      const path = taskFile(id);
       const [before, after] = await Promise.all([git(["show", `HEAD:${path}`]).catch(() => null), git(["show", `:${path}`]).catch(() => null)]);
       warnings.push(...completedTaskWarnings(path, before, after, assetsOf.get(id)).map((warning) => `${path}: ${warning}`));
     }

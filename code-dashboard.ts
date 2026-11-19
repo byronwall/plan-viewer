@@ -19,7 +19,7 @@ const BACKGROUND_MS = 10 * 60_000; // keeps PRs current for ⌘K without the Cod
 const STALE_MS = 14 * 24 * 60 * 60_000;
 const LOGIN_RETRY_MS = 60 * 60_000; // an email GitHub could not name yet; its commits may since have been pushed
 
-// The review skills run against PRs (viewer.config.json `code.prSkills`), each under the tracked repo's
+// The review skills run against PRs (config/viewer.json `code.prSkills`), each under the tracked repo's
 // `.claude/skills/<id>/`, then an open "Discuss" prompt about the PR for the user to finish.
 export const prSkills = () => [...config().code.prSkills, { id: "discuss", label: "Discuss" }];
 

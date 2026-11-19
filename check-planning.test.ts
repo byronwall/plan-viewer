@@ -8,7 +8,7 @@ import test from "node:test";
 import { checkPlanning, completedTaskWarnings, planningErrors } from "./check-planning.ts";
 import { fileURLToPath } from "node:url";
 
-const taskPath = "tasks/TASK-0042.md";
+const taskPath = "tasks/TASK-0042/TASK-0042.md";
 const source = `---
 id: TASK-0042
 title: Prove the loop
@@ -52,9 +52,9 @@ test("planning lint rejects viewer diagnostics and broken action references with
 });
 
 test("planning lint flags fences the viewer would show as text or that never close", () => {
-  assert.deepEqual(planningErrors("plans/a/b.md", "1. Step:\n\n   ```text\n   x\n   ```\n\n2. Next\n"), []);
-  assert.ok(planningErrors("plans/a/b.md", "Para\n\n  ```text\n  x\n  ```\n").some(error => error.includes("Line 3: this fence is indented but not inside a list item")));
-  assert.ok(planningErrors("plans/a/b.md", "Intro\n\n```text\nx\n").some(error => error.includes("Line 3: this fence is never closed")));
+  assert.deepEqual(planningErrors("reference/a/b.md", "1. Step:\n\n   ```text\n   x\n   ```\n\n2. Next\n"), []);
+  assert.ok(planningErrors("reference/a/b.md", "Para\n\n  ```text\n  x\n  ```\n").some(error => error.includes("Line 3: this fence is indented but not inside a list item")));
+  assert.ok(planningErrors("reference/a/b.md", "Intro\n\n```text\nx\n").some(error => error.includes("Line 3: this fence is never closed")));
 });
 
 test("planning lint flags an active task whose only next actions are blocked", () => {
@@ -82,7 +82,7 @@ test("planning lint and the commit hook check the index rather than the correcte
   const run = promisify(execFile);
   const git = (args: string[]) => run("git", args, { cwd: root });
   await git(["init", "--quiet"]);
-  await mkdir(join(root, "tasks"));
+  await mkdir(join(root, "tasks", "TASK-0042"), { recursive: true });
   await mkdir(join(root, "reference", "linear"), { recursive: true });
   await writeFile(join(root, "reference", "linear", "generated.md"), "## Work breakdown\n\n- W1: Generated [done]\n");
   await writeFile(join(root, taskPath), source.replace("Reproduce [open]", "Reproduce [done]"));
@@ -101,14 +101,14 @@ test("planning lint and the commit hook check the index rather than the correcte
   await git(["add", taskPath]);
   assert.deepEqual(await checkPlanning(["--staged"], root), { files: 1, errors: [], warnings: [] });
   assert.match((await run(hook, [], { cwd: root, env })).stdout, /ok\s+1 planning files/);
-  // Links are checked in the index too: another session's unstaged assets folder must not block the commit.
-  await mkdir(join(root, "tasks", "TASK-0099-assets"));
-  await writeFile(join(root, "tasks", "TASK-0099-assets", "draft.sql"), "select 1;\n");
+  // Links are checked in the index too: another session's unstaged task folder must not block the commit.
+  await mkdir(join(root, "tasks", "TASK-0099"));
+  await writeFile(join(root, "tasks", "TASK-0099", "draft.sql"), "select 1;\n");
   await run(hook, [], { cwd: root, env });
-  await git(["add", "tasks/TASK-0099-assets"]);
-  await assert.rejects(run(hook, [], { cwd: root, env }), error => error.code === 1 && error.stderr.includes("no parent tasks/TASK-0099.md"));
-  await git(["rm", "-r", "--cached", "--quiet", "tasks/TASK-0099-assets"]);
-  await rm(join(root, "tasks", "TASK-0099-assets"), { recursive: true });
+  await git(["add", "tasks/TASK-0099"]);
+  await assert.rejects(run(hook, [], { cwd: root, env }), error => error.code === 1 && error.stderr.includes("no tasks/TASK-0099/TASK-0099.md"));
+  await git(["rm", "-r", "--cached", "--quiet", "tasks/TASK-0099"]);
+  await rm(join(root, "tasks", "TASK-0099"), { recursive: true });
   await writeFile(join(root, taskPath), source.replace("Reproduce [open]", "Reproduce [done]"));
   assert.deepEqual((await checkPlanning(["--staged"], root)).errors, []);
   assert.ok((await checkPlanning([taskPath], root)).errors.length > 0);
@@ -136,13 +136,13 @@ test("step lint: known kinds, waiting only on others, choices with one default, 
   assert.deepEqual(stepErrors({ created: "2026-11-12" }, parseWorkBreakdown("- W4: No size [open] {agent}").nodes, []), []);
   const draft = (status: string) => `---\noutbound: slack\ntarget: x\nstatus: ${status}\nstep: TASK-0001 W1\n---\n\n# D\n`;
   const task = (status: string) => `## Work breakdown\n\n- W1: Reply [${status}] {slack, S}\n`;
-  assert.deepEqual(draftErrors("tasks/TASK-0001-assets/d.md", draft("ready"), task("open")), []);
-  assert.match(draftErrors("tasks/TASK-0001-assets/d.md", draft("ready"), task("completed"))[0], /completed but its draft is ready/);
-  assert.match(draftErrors("tasks/TASK-0001-assets/d.md", draft("sent"), task("open"))[0], /sent but TASK-0001 W1 is open/);
-  assert.match(draftErrors("tasks/TASK-0002-assets/d.md", draft("ready"), task("open"))[0], /another task's assets/);
+  assert.deepEqual(draftErrors("tasks/TASK-0001/d.md", draft("ready"), task("open")), []);
+  assert.match(draftErrors("tasks/TASK-0001/d.md", draft("ready"), task("completed"))[0], /completed but its draft is ready/);
+  assert.match(draftErrors("tasks/TASK-0001/d.md", draft("sent"), task("open"))[0], /sent but TASK-0001 W1 is open/);
+  assert.match(draftErrors("tasks/TASK-0002/d.md", draft("ready"), task("open"))[0], /another task's folder/);
   const pr = (target: string) => `---\noutbound: pr-comment\ntarget: ${target}\nstatus: ready\nstep: TASK-0001 W1\n---\n\n# D\n`;
-  for (const ok of ["#2233", "PyRel#3929", "https://github.com/acme/app/pull/2104", "https://github.com/acme/app/pull/7/files#diff-1"]) assert.deepEqual(draftErrors("tasks/TASK-0001-assets/d.md", pr(ok), task("open")), [], ok);
-  for (const bad of ["2233", "https://github.com/acme/app/issues/1"]) assert.match(draftErrors("tasks/TASK-0001-assets/d.md", pr(bad), task("open"))[0], /isn't a PR the sender can parse/, bad);
+  for (const ok of ["#2233", "PyRel#3929", "https://github.com/acme/app/pull/2104", "https://github.com/acme/app/pull/7/files#diff-1"]) assert.deepEqual(draftErrors("tasks/TASK-0001/d.md", pr(ok), task("open")), [], ok);
+  for (const bad of ["2233", "https://github.com/acme/app/issues/1"]) assert.match(draftErrors("tasks/TASK-0001/d.md", pr(bad), task("open"))[0], /isn't a PR the sender can parse/, bad);
 });
 
 test("reference lint: step titles on new tasks and diagram labels say what each reference is", async (t) => {
@@ -154,7 +154,7 @@ test("reference lint: step titles on new tasks and diagram labels say what each 
   assert.deepEqual(ungroundedReferences("Merge #1954"), ["#1954"]);
   assert.deepEqual(ungroundedReferences("Merge #1954, the stacked review PR"), []);
   assert.deepEqual(ungroundedReferences("Decide whether W7.1 is done now that #2285 closed for #2288"), ["W7.1", "#2285", "#2288"]);
-  assert.deepEqual(ungroundedReferences("Name the role on the PyRel path ([Jira draft](TASK-0001-assets/a.md#x))"), []);
+  assert.deepEqual(ungroundedReferences("Name the role on the PyRel path ([Jira draft](a.md#x))"), []);
   assert.deepEqual(ungroundedReferences("Retry acme@0123abc and PyRel#12"), ["acme@0123abc", "PyRel#12"]);
   const nodes = parseWorkBreakdown("- W1: Merge #1954 [open] {agent, S}\n- W2: Merge #1954, the stacked review PR [open] {agent, S}").nodes;
   assert.deepEqual(stepErrors({ created: "2026-11-16" }, nodes, []).map((e) => e.split(":")[0]), ["W1"]);
@@ -196,9 +196,9 @@ test("voice lint: diagram headings that describe the drawing, leak the brief, or
 test("completed-task lint warns when a commit piles updates, open steps or assets onto a completed task", async t => {
   const done = source.replace("status: open", "status: completed").replaceAll("[open]", "[completed]") + "\n## Updates\n\n- **2026-10-14 — Closed:** Done.\n";
   const late = done.replace("[completed]\n  - W1.1", "[completed]\n  - W1.3: Chase the follow-up PR [open]\n  - W1.1") + "- **2026-11-18 — PR feedback:** More work landed here.\n";
-  const [warning] = completedTaskWarnings(taskPath, done, late, ["tasks/TASK-0042-assets/gate/report.md", "tasks/TASK-0042-assets/notes/2026-11-18-note.md"]);
+  const [warning] = completedTaskWarnings(taskPath, done, late, ["tasks/TASK-0042/gate/report.md", "tasks/TASK-0042/notes/2026-11-18-note.md"]);
   assert.match(warning, /^TASK-0042 is completed, but this commit adds 1 dated update \(2026-11-18 PR feedback\), 1 open step \(W1\.3\), 1 asset \(gate\/report\.md\)\./);
-  assert.deepEqual(completedTaskWarnings(taskPath, done, done, ["tasks/TASK-0042-assets/notes/a.md"]), [], "a saved note on a completed task is fine");
+  assert.deepEqual(completedTaskWarnings(taskPath, done, done, ["tasks/TASK-0042/notes/a.md"]), [], "a saved note on a completed task is fine");
   assert.deepEqual(completedTaskWarnings(taskPath, source, late), [], "completing the task in this commit is fine");
   assert.deepEqual(completedTaskWarnings(taskPath, done, late.replace("status: completed", "status: active")), [], "reopening it is fine");
   assert.deepEqual(completedTaskWarnings(taskPath, done, late.replace("tags: []", "tags: [retired]")), [], "retiring it is fine");
@@ -208,13 +208,13 @@ test("completed-task lint warns when a commit piles updates, open steps or asset
   t.after(() => rm(root, { recursive: true, force: true }));
   const git = (args: string[]) => promisify(execFile)("git", args, { cwd: root });
   await git(["init", "--quiet"]);
-  await mkdir(join(root, "tasks", "TASK-0042-assets"), { recursive: true });
+  await mkdir(join(root, "tasks", "TASK-0042"), { recursive: true });
   await writeFile(join(root, taskPath), done);
   await git(["add", taskPath]);
   await git(["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "done"]);
-  await writeFile(join(root, "tasks", "TASK-0042-assets", "report.md"), "# Report\n");
-  await git(["add", "tasks/TASK-0042-assets/report.md"]);
+  await writeFile(join(root, "tasks", "TASK-0042", "report.md"), "# Report\n");
+  await git(["add", "tasks/TASK-0042/report.md"]);
   const onlyAsset = await checkPlanning(["--staged"], root);
   assert.deepEqual(onlyAsset.errors, []);
-  assert.match(onlyAsset.warnings.join("\n"), /tasks\/TASK-0042\.md: TASK-0042 is completed, but this commit adds 1 asset \(report\.md\)/);
+  assert.match(onlyAsset.warnings.join("\n"), /tasks\/TASK-0042\/TASK-0042\.md: TASK-0042 is completed, but this commit adds 1 asset \(report\.md\)/);
 });

@@ -20,6 +20,7 @@ import { createPlans } from "./plans.ts";
 import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig } from "./public/config.js";
+import { CONFIG_FILE, DOC_ROOTS, dailyFile, isTaskAsset, isTaskFile, taskFile, taskOfPath } from "./public/layout.js";
 import { applyRule, closeNote, followUpNote, saveLaunchNote, loadSteps, markStepDone, pickChoice, planMentions, runStatement, saveNote, setStepNext, setTaskPriority, startStep } from "./steps.ts";
 import { editStep } from "./steps.ts"; // the Steps table's inline edits
 import { approveOutbound, draftFromText, dropOutbound, listOutbound, markOutboundSent, outboundFields, sendBackOutbound, stripFrontMatter } from "./outbound.ts";
@@ -30,13 +31,13 @@ export const ROOT = resolve(process.env.PLANNING_ROOT || process.cwd());
 setConfig(loadConfig(ROOT));
 const WORKSPACE = basename(ROOT);
 
-// A missing viewer.config.json means defaults; a broken one stops the viewer rather than silently dropping preferences.
+// A missing config/viewer.json means defaults; a broken one stops the viewer rather than silently dropping preferences.
 export function loadConfig(root: string) {
   try {
-    return JSON.parse(readFileSync(join(root, "viewer.config.json"), "utf8"));
+    return JSON.parse(readFileSync(join(root, CONFIG_FILE), "utf8"));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
-    throw new Error(`viewer.config.json: ${(error as Error).message}`);
+    throw new Error(`${CONFIG_FILE}: ${(error as Error).message}`);
   }
 }
 
@@ -141,7 +142,7 @@ export function markdownHeadingId(value: string) {
 type DocumentSummary = {
   path: string;
   title: string;
-  group: "Today" | "Daily" | "Tasks" | "Topics" | "Reference";
+  group: "Today" | "Daily" | "Tasks" | "Task documents" | "Reference";
   format: "markdown" | "text";
   date?: string;
   kind: string;
@@ -246,13 +247,13 @@ function todayPath() {
     day: "2-digit",
   }).formatToParts(new Date());
   const get = (type: string) => parts.find((part) => part.type === type)?.value;
-  return `daily/${get("year")}/${get("month")}/${get("day")}/plan.md`;
+  return dailyFile(`${get("year")}-${get("month")}-${get("day")}`);
 }
 
 // Rewrites only the status and updated lines of a task's front matter. Waiting sets `check_in` (`days` out, or the
 // configured default); any other status drops it.
 export async function setTaskStatus(path: string, status: string, root = ROOT, today = todayDate(), days = config().checkInDays) {
-  if (!/^tasks\/TASK-\d{4}\.md$/.test(path)) throw new Error("Only task files can change status.");
+  if (!isTaskFile(path)) throw new Error("Only task files can change status.");
   if (!TASK_STATUSES.has(status as TaskStatus)) throw new Error(`Unsupported task status “${status}”.`);
   if (!Number.isInteger(days) || days < 1 || days > 365) throw new Error("A check-in must be 1 to 365 days out.");
   const file = join(root, path);
@@ -298,7 +299,7 @@ export function waitingSignals(task: TaskSummary, metadata: Record<string, { tit
 }
 
 function todayDate() {
-  return todayPath().slice("daily/".length, -"/plan.md".length).replaceAll("/", "-");
+  return todayPath().slice("daily/".length, -".md".length);
 }
 
 // `steps.followUp`: a click that finished a step leaves an open note for an agent to reconcile the ripple. Writing the
@@ -336,16 +337,16 @@ async function walkDocuments(directory: string, extensions: string[] | null = ["
 
 export function isViewableDocumentPath(path: string) {
   const normalized = path.replaceAll("\\", "/");
-  return (/^(daily|plans|reference)\/.+\.(md|txt)$/.test(normalized)
+  return (/^(daily|reference)\/.+\.(md|txt)$/.test(normalized)
     && !isExcluded(normalized))
-    || /^tasks\/TASK-\d{4}(\.md|-assets\/.+\.(md|txt))$/.test(normalized);
+    || /^tasks\/TASK-\d{4}\/.+\.(md|txt)$/.test(normalized);
 }
 
 export function watchMarkdownSources(onChange: (path: string) => void, root = ROOT, onDiagram?: (path: string) => void, onAsset?: (path: string) => void) {
   const watchers: FSWatcher[] = [];
   const pending = new Map<string, NodeJS.Timeout>();
 
-  for (const source of ["daily", "tasks", "plans", "reference"]) {
+  for (const source of DOC_ROOTS) {
     try {
       const watcher = watch(join(root, source), { recursive: true }, (_event, fileName) => {
         if (!fileName) return;
@@ -417,7 +418,7 @@ export function describeChange(path: string, before: string | undefined, after: 
 }
 
 async function seedSnapshots() {
-  const paths = (await Promise.all(["daily", "tasks", "plans", "reference"].map(walkDocuments))).flat().filter(isViewableDocumentPath);
+  const paths = (await Promise.all(DOC_ROOTS.map((folder) => walkDocuments(folder)))).flat().filter(isViewableDocumentPath);
   await Promise.all(paths.map(async (path) => snapshots.set(path, await readFile(join(ROOT, path), "utf8").catch(() => ""))));
 }
 
@@ -441,23 +442,21 @@ export function summarize(path: string, contents: string, currentDate = todayDat
   const format = extname(path) === ".txt" ? "text" : "markdown";
   const fileName = path.split("/").at(-1) || path;
   const title = format === "markdown" ? titleFromMarkdown(contents, fileName) : fileName;
-  const dateMatch = path.match(/^daily\/(\d{4})\/(\d{2})\/(\d{2})\/(.+)\.(md|txt)$/);
-  const isToday = dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` === currentDate : false;
-  if (dateMatch) {
-    const [, year, month, day, name] = dateMatch;
+  const date = path.match(/^daily\/(\d{4}-\d{2}-\d{2})\.(md|txt)$/)?.[1];
+  const isToday = date === currentDate;
+  if (date) {
     return {
       path,
       title,
       group: isToday ? "Today" : "Daily",
       format,
-      date: `${year}-${month}-${day}`,
-      kind: format === "text" ? "Text file" : name === "plan" ? "Plan" : "Daily note",
+      date,
+      kind: format === "text" ? "Text file" : "Plan",
       isToday,
-      ...(format === "markdown" && name === "plan" ? { focus: planFocus(contents) } : {}),
+      ...(format === "markdown" ? { focus: planFocus(contents) } : {}),
     };
   }
-  const taskAsset = path.match(/^tasks\/(TASK-\d{4})-assets\//);
-  if (taskAsset) return { path, title, group: "Task documents", format, kind: `${taskAsset[1]} document`, isToday: false, outline: outline(contents) };
+  if (isTaskAsset(path)) return { path, title, group: "Task documents", format, kind: `${taskOfPath(path)} document`, isToday: false, outline: outline(contents) };
   if (path.startsWith("tasks/")) {
     // A half-written task (an agent reserving its ID) must not take the whole library down; `lint` still reports it.
     try {
@@ -467,7 +466,6 @@ export function summarize(path: string, contents: string, currentDate = todayDat
       return { path, title, group: "Reference", format, kind: "Invalid task", isToday: false };
     }
   }
-  if (path.startsWith("plans/")) return { path, title, group: "Topics", format, kind: format === "text" ? "Text file" : "Topic", isToday: false };
   return { path, title, group: "Reference", format, kind: format === "text" ? "Text file" : "Reference", isToday: false };
 }
 
@@ -475,7 +473,7 @@ export function repositoryLinkPath(from: string, target: string) {
   if (/^[a-z][\w+.-]*:/i.test(target)) return "";
   try {
     const decoded = decodeURIComponent(target);
-    return /^(daily|tasks|plans|reference)\//.test(decoded) ? decoded : join(dirname(from), decoded).split(sep).join("/");
+    return /^(daily|tasks|reference|config)\//.test(decoded) ? decoded : join(dirname(from), decoded).split(sep).join("/");
   } catch {
     return "";
   }
@@ -509,26 +507,26 @@ async function slackIndex() {
 // Every `.draft` diagram in the workspace for the Diagrams page: its title and subtitle from the source, when it
 // changed, and the task whose assets hold it.
 export async function listDiagrams() {
-  const paths = (await Promise.all(["daily", "tasks", "plans", "reference"].map((folder) => walkDocuments(folder, [".draft"])))).flat();
+  const paths = (await Promise.all(DOC_ROOTS.map((folder) => walkDocuments(folder, [".draft"])))).flat();
   const diagrams = await Promise.all(paths.map(async (path) => {
     const [contents, { mtimeMs }] = await Promise.all([readFile(join(ROOT, path), "utf8"), stat(join(ROOT, path))]);
     const quoted = (keyword: string) => contents.match(new RegExp(`^\\s*${keyword}\\s+"((?:[^"\\\\]|\\\\.)*)"`, "m"))?.[1]?.replace(/\\(.)/g, "$1") || "";
-    return { path, title: quoted("diagram") || basename(path, ".draft"), subtitle: quoted("subtitle"), modified: mtimeMs, task: path.match(/^tasks\/(TASK-\d{4})-assets\//)?.[1] || "" };
+    return { path, title: quoted("diagram") || basename(path, ".draft"), subtitle: quoted("subtitle"), modified: mtimeMs, task: taskOfPath(path) };
   }));
   return diagrams.sort((a, b) => b.modified - a.modified);
 }
 
 const WORLD_KINDS: Record<string, string> = { ".md": "document", ".txt": "document", ".draft": "diagram", ".png": "image", ".jpg": "image", ".jpeg": "image", ".gif": "image", ".webp": "image", ".svg": "image" };
 
-// Each task's world view: every file in its assets folder (kind and when it last changed) and its dated Updates entries.
+// Each task's world view: every other file in its folder (kind and when it last changed) and its dated Updates entries.
 export async function listTaskWorld() {
   const tasks: Record<string, { files: { path: string; kind: string; modified: number }[]; updates: { date: string; title: string }[] }> = {};
   const entry = (id: string) => (tasks[id] ||= { files: [], updates: [] });
   const paths = await walkDocuments("tasks", null);
   await Promise.all(paths.map(async (path) => {
-    const id = path.match(/^tasks\/(TASK-\d{4})(-assets\/|\.md$)/)?.[1];
+    const id = taskOfPath(path);
     if (!id) return;
-    if (path.endsWith(`${id}.md`)) {
+    if (isTaskFile(path)) {
       const contents = await readFile(join(ROOT, path), "utf8");
       const updates = parseChunks(contents).find((chunk) => /^updates$/i.test(chunk.title));
       for (const { date, title } of parseUpdates(updates?.markdown).entries) entry(id).updates.push({ date, title: title || "Task update" });
@@ -541,7 +539,7 @@ export async function listTaskWorld() {
 }
 
 export async function listDocuments() {
-  const paths = (await Promise.all([walkDocuments("daily"), walkDocuments("tasks"), walkDocuments("plans"), walkDocuments("reference")])).flat().filter(isViewableDocumentPath);
+  const paths = (await Promise.all(DOC_ROOTS.map((folder) => walkDocuments(folder)))).flat().filter(isViewableDocumentPath);
   const files = await Promise.all(paths.map(async (path) => {
     const { mtimeMs, birthtimeMs } = await stat(join(ROOT, path));
     return { path, contents: await readFile(join(ROOT, path), "utf8"), modified: mtimeMs, created: birthtimeMs };
@@ -557,7 +555,7 @@ export async function listDocuments() {
     backlinks.get(target)!.add(from);
   };
   for (const { path, contents } of files) {
-    for (const [, n] of contents.matchAll(/TASK-(\d{4})/gi)) addBacklink(`tasks/TASK-${n}.md`, path);
+    for (const [, n] of contents.matchAll(/TASK-(\d{4})/gi)) addBacklink(taskFile(`TASK-${n}`), path);
     for (const [, target] of contents.matchAll(/\]\(([^)\s#]+)/g)) addBacklink(repositoryLinkPath(path, target), path);
     for (const [, target] of contents.matchAll(/`((?:daily|tasks|plans|reference)\/[^`\s]+)`/g)) addBacklink(target, path);
   }
@@ -592,7 +590,7 @@ export async function listDocuments() {
   return docs.sort((a, b) => {
     if (a.isToday !== b.isToday) return a.isToday ? -1 : 1;
     if ((a.group === "Today" || a.group === "Daily") && (b.group === "Today" || b.group === "Daily")) {
-      const kindOrder = { Plan: 0, "Daily note": 1 };
+      const kindOrder = { Plan: 0 };
       return (b.date || "").localeCompare(a.date || "")
         || (kindOrder[a.kind as keyof typeof kindOrder] ?? 2) - (kindOrder[b.kind as keyof typeof kindOrder] ?? 2)
         || a.title.localeCompare(b.title);
@@ -655,7 +653,7 @@ function safeDocumentPath(requested: string) {
 
 export function safeAssetPath(requested: string) {
   const normalized = normalize(requested).replaceAll("\\", "/");
-  if (normalized.startsWith("../") || normalized.includes("/../") || !/^(daily|tasks|plans|reference)\/.+/.test(normalized) || !ASSET_EXTENSIONS.has(extname(normalized).toLowerCase())) throw new Error("Invalid asset path.");
+  if (normalized.startsWith("../") || normalized.includes("/../") || !/^(daily|tasks|reference)\/.+/.test(normalized) || !ASSET_EXTENSIONS.has(extname(normalized).toLowerCase())) throw new Error("Invalid asset path.");
   const absolute = resolve(ROOT, normalized);
   if (!absolute.startsWith(ROOT + sep)) throw new Error("Invalid asset path.");
   return { relative: normalized, absolute };
@@ -964,10 +962,11 @@ const escapeXml = (value: string) => value.replace(/[&<>"]/g, (char) => ({ "&": 
 
 // Every open step of every unfinished task, highest priority first (the Steps page, the Today lead and `plan-viewer next`).
 export async function stepsIndex() {
-  const files = (await readdir(join(ROOT, "tasks"))).filter((name) => /^TASK-\d{4}\.md$/.test(name));
-  const tasks = (await Promise.all(files.map(async (name) => {
-    const path = `tasks/${name}`;
-    const markdown = await readFile(join(ROOT, path), "utf8");
+  const ids = (await readdir(join(ROOT, "tasks")).catch(() => [])).filter((name) => /^TASK-\d{4}$/.test(name));
+  const tasks = (await Promise.all(ids.map(async (id) => {
+    const path = taskFile(id);
+    const markdown = await readFile(join(ROOT, path), "utf8").catch(() => null);
+    if (markdown === null) return null;
     try {
       const { task } = parseTaskDocument(path, markdown);
       return { path, id: task.id, title: task.title, status: task.status, updated: task.updated, markdown };
@@ -1270,13 +1269,13 @@ export function startServer(port = PORT) {
   const closeWatchers = watchMarkdownSources(broadcastMarkdownChange, ROOT, send("diagram"), send("asset"));
   codeDashboard.startBackgroundRefresh();
   issueTracker.startBackgroundRefresh();
-  // Edits to viewer.config.json apply without a restart; pages pick them up on their next load. A broken edit keeps the
+  // Edits to config/viewer.json apply without a restart; pages pick them up on their next load. A broken edit keeps the
   // previous settings. `port`, `code.reposFile` and `code.prNotesDir` are read once, at startup.
-  const configPath = join(ROOT, "viewer.config.json");
+  const configPath = join(ROOT, CONFIG_FILE);
   watchFile(configPath, { interval: 1000 }, () => {
     try {
       setConfig(loadConfig(ROOT));
-      console.log("Reloaded viewer.config.json");
+      console.log(`Reloaded ${CONFIG_FILE}`);
     } catch (error) {
       console.error(`${(error as Error).message}; keeping the previous settings`);
     }
@@ -1287,7 +1286,7 @@ export function startServer(port = PORT) {
   });
   server.on("error", (error: NodeJS.ErrnoException) => {
     if (error.code !== "EADDRINUSE") throw error;
-    console.error(`Port ${port} is in use, maybe by another viewer. Set PLAN_VIEWER_PORT or "port" in viewer.config.json to use another.`);
+    console.error(`Port ${port} is in use, maybe by another viewer. Set PLAN_VIEWER_PORT or "port" in config/viewer.json to use another.`);
     process.exit(1);
   });
   server.listen(port, "127.0.0.1", () => {

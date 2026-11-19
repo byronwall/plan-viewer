@@ -50,7 +50,7 @@ export async function initWorkspace(dir: string) {
     done.push(`added to .gitignore: ${missing.join(", ")}`);
   } else skipped.push(".gitignore covers node_modules/, tmp/, config.toml");
 
-  for (const dir of ["daily", "tasks", "plans", "reference"]) {
+  for (const dir of ["config", "daily", "tasks", "reference"]) {
     if (await exists(dir)) skipped.push(`${dir}/ exists`);
     else { await mkdir(join(root, dir), { recursive: true }); done.push(`created ${dir}/`); }
   }

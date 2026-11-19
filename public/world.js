@@ -6,6 +6,7 @@ import { announceClosed, createOverlay, setOverlayParams } from "./overlay.js";
 import { assetHref, diagramHref, documentHref, escapeHtml } from "./markdown.js";
 import { localTodayKey } from "./dates.js";
 import { workStatusIcon } from "./actions.js";
+import { taskDir, taskFile } from "./layout.js";
 import { showStepLayer, stepListHtml } from "./steps-page.js";
 
 // Work first (what got done, and today what is ready), then the pictures, so the top of the canvas is where the task
@@ -52,7 +53,7 @@ const codeSpans = (text) => escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</co
 
 // Everything one task holds, each item with its lane and local day. Asset dates are when the file last changed.
 export function taskItems(id, world, documents) {
-  const task = documents.find((doc) => doc.path === `tasks/${id}.md`)?.task;
+  const task = documents.find((doc) => doc.path === taskFile(id))?.task;
   const entry = world.tasks[id] || { files: [], updates: [] };
   const items = [];
   if (task?.created) items.push({ lane: "updates", day: task.created, title: "Task created", created: true });
@@ -72,7 +73,7 @@ export function taskItems(id, world, documents) {
   const today = localTodayKey();
   for (const node of ready.slice(0, READY_SHOWN)) items.push({ lane: "work", day: today, node, title: node.title, ready: true });
   if (ready.length > READY_SHOWN) items.push({ lane: "work", day: today, more: ready.length - READY_SHOWN, ready: true });
-  const folder = `tasks/${id}-assets/`;
+  const folder = `${taskDir(id)}/`;
   // A picture exported beside its `.draft` (flow.png next to flow.draft) is the same drawing; the diagram stands for it.
   const drafts = new Set(entry.files.filter((file) => file.kind === "diagram").map((file) => file.path.replace(/\.draft$/, "")));
   for (const file of entry.files) {
@@ -202,9 +203,9 @@ const backButton = `<button type="button" class="code-bar-button world-back" dat
 // Leaves the world for the task's page, wherever the world was opened from.
 function openTask() {
   leaving = true;
-  host.open(`tasks/${current.id}.md`);
+  host.open(taskFile(current.id));
 }
-const openTaskButton = (id) => `<a class="code-bar-button is-primary world-open" href="${escapeHtml(documentHref(`tasks/${id}.md`, ""))}" data-world-open-task title="Open ${escapeHtml(id)} as the page (Enter)">Open task <kbd>↵</kbd></a>`;
+const openTaskButton = (id) => `<a class="code-bar-button is-primary world-open" href="${escapeHtml(documentHref(taskFile(id), ""))}" data-world-open-task title="Open ${escapeHtml(id)} as the page (Enter)">Open task <kbd>↵</kbd></a>`;
 
 // A task's Today column: its open steps as the shared step list (You first when anything waits on you), eight a segment,
 // each opening the step dialog over the world; "+N more" opens the dialog on the task, whose rail lists them all.
@@ -219,7 +220,7 @@ export async function openTaskWorld(id, day = "") {
   const box = shell("is-task");
   current = { id, day };
   setOverlayParams({ world: id, "world-day": day });
-  const task = host.documents().find((doc) => doc.path === `tasks/${id}.md`)?.task;
+  const task = host.documents().find((doc) => doc.path === taskFile(id))?.task;
   const scroller = box.querySelector('[data-w="scroller"]');
   const title = `<code>${escapeHtml(id)}</code>${escapeHtml(task?.title || "")}`;
   box.querySelector('[data-w="head"]').innerHTML = head(title, "Loading files…", openTaskButton(id), backButton, false);

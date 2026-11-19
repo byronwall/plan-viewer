@@ -29,7 +29,7 @@ test("the dialog's compact actions drop the notes beside the buttons", () => {
 });
 
 test('an allow rule shows once, in the body, not again beside Apply', () => {
-  const rule = step({ move: 'you-decide', kind: '', machinery: { path: 'tasks/TASK-0101-assets/allow.md', fields: { apply: 'Bash(git status)' } } });
+  const rule = step({ move: 'you-decide', kind: '', machinery: { path: 'tasks/TASK-0101/allow.md', fields: { apply: 'Bash(git status)' } } });
   // Counted as visible text: the code block's copy button keeps its source in an attribute.
   assert.equal((stepBodyHtml(rule) + stepActionsHtml(rule)).split('>Bash(git status)<').length - 1, 1);
 });
@@ -63,7 +63,7 @@ test("a task's Steps group rows under workstreams, pill only what waits on you, 
 
 test("a plan's scheduled tasks keep each task's note as Markdown, whichever separator the plan uses", () => {
   const { rows, rest } = scheduledTasks([
-    '- [TASK-0101](../../../../tasks/TASK-0101.md): merge #12, then [ask](https://example.com) about `W2`.',
+    '- [TASK-0101](../tasks/TASK-0101/TASK-0101.md): merge #12, then [ask](https://example.com) about `W2`.',
     '  - and check the flag',
     '- TASK-0102 — File the issues.',
     '- [TASK-0103](../TASK-0103.md)',
@@ -101,7 +101,7 @@ test('a short step list opens on the first mover with anything waiting and caps 
 });
 
 test('every step but a note offers Note…, a decision words it as Decide…', () => {
-  const draft = step({ kind: 'jira-issue', draft: { path: 'tasks/TASK-0101-assets/issue.md', fields: {} } });
+  const draft = step({ kind: 'jira-issue', draft: { path: 'tasks/TASK-0101/issue.md', fields: {} } });
   assert.match(stepActionsHtml(draft), /data-step-action="note"[^>]*>Note…/);
   assert.equal(stepActionsHtml(step()).match(/data-step-action="note"/g).length, 1);
   assert.doesNotMatch(stepActionsHtml(step({ kind: 'note', move: 'agent' })), /data-step-action="note"/);
@@ -110,8 +110,8 @@ test('every step but a note offers Note…, a decision words it as Decide…', (
 test('the Steps table edits in place and groups by task with the task priority in its header', async () => {
   const { stepsTableHtml } = await import('./public/steps-page.js');
   const rows = [
-    step({ key: 'TASK-0101 W1', task: 'TASK-0101', taskTitle: 'Roll out invites', path: 'tasks/TASK-0101.md', status: 'open', size: 'S', score: 80, priority: 'p1', age: 2 }),
-    step({ key: 'TASK-0102 W3', task: 'TASK-0102', id: 'W3', taskTitle: 'Billing fix', path: 'tasks/TASK-0102.md', status: 'active', size: 'M', score: 60, priority: 'p2', age: 0, move: 'agent', kind: 'agent', reason: 'ready' }),
+    step({ key: 'TASK-0101 W1', task: 'TASK-0101', taskTitle: 'Roll out invites', path: 'tasks/TASK-0101/TASK-0101.md', status: 'open', size: 'S', score: 80, priority: 'p1', age: 2 }),
+    step({ key: 'TASK-0102 W3', task: 'TASK-0102', id: 'W3', taskTitle: 'Billing fix', path: 'tasks/TASK-0102/TASK-0102.md', status: 'active', size: 'M', score: 60, priority: 'p2', age: 0, move: 'agent', kind: 'agent', reason: 'ready' }),
   ];
   const flat = stepsTableHtml(rows, { move: 'all', group: 'none' }, '');
   assert.match(flat, /data-step-edit="size"[\s\S]*?<option value="S" selected>/);
@@ -121,6 +121,6 @@ test('the Steps table edits in place and groups by task with the task priority i
   const grouped = stepsTableHtml(rows, { move: 'all', group: 'task' }, '');
   assert.equal((grouped.match(/class="step-group"/g) || []).length, 2);
   assert.ok(grouped.indexOf('Roll out invites') < grouped.indexOf('Billing fix'), 'groups follow their top step');
-  assert.match(grouped, /data-task-priority="p1" data-path="tasks\/TASK-0101.md" aria-pressed="true"/);
+  assert.match(grouped, /data-task-priority="p1" data-path="tasks\/TASK-0101\/TASK-0101.md" aria-pressed="true"/);
   assert.doesNotMatch(grouped, /step-task-name/);
 });

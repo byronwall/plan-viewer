@@ -1,6 +1,6 @@
 // Link hygiene for planning documents: `npm run links -- [--fix] [--warm] [--refresh-slack]`.
-//   default  report broken repository links, unknown TASK IDs (minus reference/retired-tasks.md), files in daily/ other than plan.md, and Slack channels or DMs without a name
-//   --fix    add newly linked Slack channel and DM IDs to reference/slack-channels.md as blank entries to fill in
+//   default  report broken repository links, unknown TASK IDs (minus config/retired-tasks.md), files in daily/ other than YYYY-MM-DD.md, and Slack channels or DMs without a name
+//   --fix    add newly linked Slack channel and DM IDs to config/slack-channels.md as blank entries to fill in
 //   --warm   prefetch GitHub/Linear/Jira/Slack titles into the viewer cache and list references that resolve to nothing
 //   --refresh-slack  refresh listed and linked Slack channel names using SLACK_TOKEN or config.toml
 // Exits 1 when a broken link or unknown task remains, so agents can run it as a final check.
@@ -11,16 +11,17 @@ import { listDocuments, repositoryLinkPath, ROOT } from "./server.ts";
 import { metadataKey } from "./public/dock.js";
 import { slashListItems } from "./public/markdown.js";
 import { githubSlug, referenceConfig } from "./public/config.js";
+import { configPath, taskDir, taskFile } from "./public/layout.js";
 
 const args = new Set(process.argv.slice(2));
 const unknown = [...args].filter((arg) => !["--fix", "--warm", "--refresh-slack"].includes(arg));
 if (unknown.length) throw new Error(`unknown ${unknown.join(" ")}. Usage: npm run links -- [--fix] [--warm] [--refresh-slack]`);
-const CHANNELS = join(ROOT, "reference", "slack-channels.md");
+const CHANNELS = join(ROOT, configPath("slack-channels.md"));
 const exists = (path: string) => access(join(ROOT, path)).then(() => true, () => false);
 const stripCode = (text: string) => text.replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, "");
 
-// IDs removed on purpose (reference/retired-tasks.md) may still be mentioned historically.
-const retired = new Set([...(await readFile(join(ROOT, "reference", "retired-tasks.md"), "utf8").catch(() => "")).matchAll(/^[-*]\s+TASK-(\d{4})\b/gm)].map(([, id]) => id));
+// IDs removed on purpose (config/retired-tasks.md) may still be mentioned historically.
+const retired = new Set([...(await readFile(join(ROOT, configPath("retired-tasks.md")), "utf8").catch(() => "")).matchAll(/^[-*]\s+TASK-(\d{4})\b/gm)].map(([, id]) => id));
 const docs = await listDocuments();
 const files = await Promise.all(docs.map(async (doc) => ({ path: doc.path, text: await readFile(join(ROOT, doc.path), "utf8") })));
 const errors: string[] = [];
@@ -32,42 +33,40 @@ for (const { path, text } of files) {
   for (const [, target] of prose.matchAll(/\]\(([^)\s#]+)/g)) {
     if (target.startsWith("/")) continue;
     const resolved = repositoryLinkPath(path, target);
-    if (!/^(daily|tasks|plans|reference)\//.test(resolved) || await exists(resolved)) continue;
+    if (!/^(daily|tasks|reference|config)\//.test(resolved) || await exists(resolved)) continue;
     // Missing planning documents and assets are broken; other files are usually code in another repository.
     if (/\.(md|txt|png|jpe?g|gif|webp|svg|dot)$/i.test(resolved)) errors.push(`${path}: link to missing ${resolved}`);
     else notes.push(`${path}: ${target} is not in this repository; link it with an absolute path or a GitHub URL`);
   }
   const taskIds = [...prose.matchAll(/(?<![\w/-])TASK-(\d{4})((?:\/#?\d+)*)(?![\w-]|\.\w)/gi)].flatMap(([, id, rest]) => [id, ...slashListItems(rest).map((n) => n.padStart(4, "0"))]);
   for (const id of new Set(taskIds)) {
-    if (!retired.has(id) && !await exists(`tasks/TASK-${id}.md`)) errors.push(`${path}: TASK-${id} has no tasks/TASK-${id}.md`);
+    if (!retired.has(id) && !await exists(taskFile(`TASK-${id}`))) errors.push(`${path}: TASK-${id} has no ${taskFile(`TASK-${id}`)}`);
   }
 }
 
-// Task assets need an existing parent task, and each top-level entry must be linked from that task
-// or from a document in the same assets folder (so the parent stays the entry point).
-for (const folder of (await readdir(join(ROOT, "tasks")).catch(() => [])).filter((name) => /^TASK-\d{4}-assets$/.test(name))) {
-  const id = folder.slice(0, 9);
-  const parent = files.find((file) => file.path === `tasks/${id}.md`);
-  if (!parent) { errors.push(`tasks/${folder}: no parent tasks/${id}.md; move the assets or restore the task`); continue; }
-  const siblings = files.filter((file) => file.path.startsWith(`tasks/${folder}/`));
-  for (const entry of await readdir(join(ROOT, "tasks", folder))) {
-    if (entry.startsWith(".")) continue;
+// A task folder needs its task file, and each other top-level entry (but notes/) must be linked from that task
+// or from a document beside it (so the task stays the entry point).
+for (const id of (await readdir(join(ROOT, "tasks")).catch(() => [])).filter((name) => /^TASK-\d{4}$/.test(name))) {
+  const parent = files.find((file) => file.path === taskFile(id));
+  if (!parent) { errors.push(`${taskDir(id)}: no ${taskFile(id)}; move its files into another task or restore the task`); continue; }
+  const siblings = files.filter((file) => file.path.startsWith(`${taskDir(id)}/`) && file !== parent);
+  for (const entry of await readdir(join(ROOT, taskDir(id)))) {
+    if (entry.startsWith(".") || entry === `${id}.md` || entry === "notes") continue;
     const names = [entry, encodeURI(entry)];
-    const linked = names.some((name) => parent.text.includes(`${folder}/${name}`) || siblings.some((file) => file.path !== `tasks/${folder}/${entry}` && file.text.includes(name)));
-    if (!linked) errors.push(`tasks/${folder}/${entry}: not linked from tasks/${id}.md or a document beside it`);
+    const linked = names.some((name) => parent.text.includes(name) || siblings.some((file) => file.path !== `${taskDir(id)}/${entry}` && file.text.includes(name)));
+    if (!linked) errors.push(`${taskDir(id)}/${entry}: not linked from ${taskFile(id)} or a document beside it`);
   }
 }
 
-// A daily folder holds only plan.md: progress lives on the task (status and `## Updates`), documents in its assets.
+// daily/ holds one plan per day, daily/YYYY-MM-DD.md: progress lives on the task (status and `## Updates`), documents in its folder.
 for (const entry of await readdir(join(ROOT, "daily"), { recursive: true, withFileTypes: true }).catch(() => [])) {
-  if (!entry.isFile() || entry.name === "plan.md" || entry.name.startsWith(".")) continue;
+  if (!entry.isFile() || entry.name.startsWith(".")) continue;
   const path = join(entry.parentPath, entry.name).slice(ROOT.length + 1);
-  errors.push(entry.name.toLowerCase() === "done.md"
-    ? `${path}: done logs are retired; record progress on the task (status and ## Updates) and delete this file`
-    : `${path}: a daily folder holds only plan.md; move this to its task with npm run move -- ${path} TASK-NNNN`);
+  if (/^daily\/\d{4}-\d{2}-\d{2}\.md$/.test(path)) continue;
+  errors.push(`${path}: daily/ holds only daily/YYYY-MM-DD.md plans; move this to its task with npm run move -- ${path} TASK-NNNN`);
 }
 
-// Every linked Slack channel and DM needs a name in reference/slack-channels.md: `- C…: #channel` or `- D…: @Person`.
+// Every linked Slack channel and DM needs a name in config/slack-channels.md: `- C…: #channel` or `- D…: @Person`.
 let channelText = await readFile(CHANNELS, "utf8").catch(() => "");
 const linked = new Map<string, number>();
 for (const { text } of files) for (const [, id] of text.matchAll(/slack\.com\/archives\/([CDG][A-Z0-9]{8,})/g)) linked.set(id, (linked.get(id) || 0) + 1);
@@ -76,7 +75,7 @@ if (args.has("--refresh-slack")) {
     const refreshed = await refreshSlackChannels(ROOT, channelText, [...linked.keys()].filter((id) => !id.startsWith("D")));
     await writeFile(CHANNELS, refreshed);
     channelText = refreshed;
-    notes.push("Refreshed Slack channel names in reference/slack-channels.md.");
+    notes.push("Refreshed Slack channel names in config/slack-channels.md.");
   } catch (error) {
     errors.push(`Slack channel refresh failed; existing names preserved: ${error instanceof Error ? error.message : "lookup failed"}`);
   }
@@ -85,16 +84,16 @@ const listed = new Map([...channelText.matchAll(/^[-*][ \t]*`?([CDG][A-Z0-9]{8,}
 const unlisted = [...linked.keys()].filter((id) => !listed.has(id));
 if (unlisted.length && args.has("--fix")) {
   await writeFile(CHANNELS, `${channelText.trimEnd()}\n${unlisted.map((id) => `- ${id}:`).join("\n")}\n`);
-  notes.push(`Added ${unlisted.length} Slack channel or DM ID(s) to reference/slack-channels.md; look each up in Slack and fill in its #channel or @Person.`);
+  notes.push(`Added ${unlisted.length} Slack channel or DM ID(s) to config/slack-channels.md; look each up in Slack and fill in its #channel or @Person.`);
 } else if (unlisted.length) {
-  notes.push(`Slack channels or DMs missing from reference/slack-channels.md; look each up in Slack and add it as - ID: #channel or - ID: @Person (--fix adds blank entries): ${unlisted.join(", ")}`);
+  notes.push(`Slack channels or DMs missing from config/slack-channels.md; look each up in Slack and add it as - ID: #channel or - ID: @Person (--fix adds blank entries): ${unlisted.join(", ")}`);
 }
 const unnamed = [...linked.keys()].filter((id) => listed.has(id) && !listed.get(id));
 if (unnamed.length) notes.push(`Slack channels or DMs without a #channel or @Person name (${unnamed.length}): ${unnamed.sort((a, b) => linked.get(b)! - linked.get(a)!).map((id) => `${id} (${linked.get(id)} links)`).join(", ")}`);
 
 // Warm the same cache the viewer reads, and surface references the source systems don't recognise.
 if (args.has("--warm")) {
-  // Same conventions the viewer auto-links, from viewer.config.json: bare #1234 is the default repo, <repo>#1234 a named one, <PREFIX>-1 a tracker.
+  // Same conventions the viewer auto-links, from config/viewer.json: bare #1234 is the default repo, <repo>#1234 a named one, <PREFIX>-1 a tracker.
   const refs = referenceConfig();
   const bare = (text: string) => [
     ...(refs.defaultSlug ? [...text.matchAll(/(?:^|[^\w&/#])#(\d{3,})\b/g)].map(([, n]) => `github:${refs.defaultSlug}#${n}`) : []),

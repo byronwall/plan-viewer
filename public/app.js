@@ -24,6 +24,7 @@ import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } fr
 import { cachedPlans, loadPlans, openPlan, planForLink, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./dates.js";
+import { dailyFile, isTaskAsset, taskFile, taskOfPath, taskRelative } from "./layout.js";
 
 const state = { documents: [], defaultPath: "", selectedPath: "", document: null, activeChunkId: "", openComposer: null, view: "document" };
 
@@ -40,7 +41,6 @@ const elements = {
   tasksButton: document.querySelector("#open-tasks"),
   stepsButton: document.querySelector("#open-steps"),
   outboxButton: document.querySelector("#open-outbox"),
-  topicsButton: document.querySelector("#open-topics"),
   referenceButton: document.querySelector("#open-reference"),
   diagramsButton: document.querySelector("#open-diagrams"),
   activityButton: document.querySelector("#open-activity"),
@@ -167,7 +167,6 @@ function resetPageNavigation() {
   elements.tasksButton.setAttribute("aria-current", "false");
   elements.stepsButton.setAttribute("aria-current", "false");
   elements.outboxButton.setAttribute("aria-current", "false");
-  elements.topicsButton.setAttribute("aria-current", "false");
   elements.referenceButton.setAttribute("aria-current", "false");
   elements.diagramsButton.setAttribute("aria-current", "false");
   elements.codeButton.setAttribute("aria-current", "false");
@@ -409,7 +408,7 @@ let selectedTaskPath = "";
 // `?view=tasks&task=TASK-0035` restores the selected row on refresh and history navigation.
 const taskFromUrl = () => {
   const id = new URLSearchParams(location.search).get("task");
-  return /^TASK-\d{4}$/.test(id || "") ? `tasks/${id}.md` : "";
+  return /^TASK-\d{4}$/.test(id || "") ? taskFile(id) : "";
 };
 // Matches the .tasks-page container query that shows the detail pane.
 const taskPaneVisible = () => elements.chunks.clientWidth >= 1000;
@@ -568,11 +567,11 @@ async function renderTaskDetail() {
     <p class="task-detail-meta"><span>${escapeHtml(task.project)}</span><span>Updated ${escapeHtml(formatDate(task.updated))}</span>${task.tags.map((tag) => `<span class="task-detail-tag">${escapeHtml(tag)}</span>`).join("")}</p>`;
   // Chats are the lowest-value links here, so they wait behind a disclosure at the end.
   const chats = task.chatLinks?.length ? `<details class="task-detail-chats"><summary>Chats <span>${task.chatLinks.length}</span></summary>${renderChatLinks(task.chatLinks)}</details>` : "";
-  // References group by what they are: days (plan/done/notes on one line), other tasks, then topics and notes.
+  // References group by what they are: days, other tasks, then reference and notes.
   const referenced = references.map((path) => state.documents.find((doc) => doc.path === path) || { path, title: path });
   const days = new Map();
   for (const doc of referenced.filter((doc) => doc.date)) days.set(doc.date, [...(days.get(doc.date) || []), doc]);
-  const dayRows = [...days].map(([date, docs]) => `<li class="ref-day"><span>${escapeHtml(formatDate(date))}</span><span class="ref-day-files">${docs.sort((a, b) => dailyRank(a.path) - dailyRank(b.path)).map((doc) => docLink(doc.path, escapeHtml(dailyDocumentLabel(doc)), "ref-chip")).join("")}</span></li>`).join("");
+  const dayRows = [...days].map(([date, docs]) => `<li class="ref-day"><span>${escapeHtml(formatDate(date))}</span><span class="ref-day-files">${docs.map((doc) => docLink(doc.path, escapeHtml(dailyDocumentLabel(doc)), "ref-chip")).join("")}</span></li>`).join("");
   const taskRows = referenced.filter((doc) => doc.task).map((doc) => `<li>${docLink(doc.path, `<code>${escapeHtml(doc.task.id)}</code><span>${escapeHtml(doc.task.title)}</span>`, "ref-row")}</li>`).join("");
   const otherRows = referenced.filter((doc) => !doc.date && !doc.task).map((doc) => `<li>${docLink(doc.path, `<span>${escapeHtml(doc.title)}</span>`, "ref-row")}</li>`).join("");
   const refGroup = (label, rows) => rows ? `<div class="ref-group"><h5>${label}</h5><ul>${rows}</ul></div>` : "";
@@ -660,10 +659,9 @@ function showTasks({ historyMode = "push" } = {}) {
   loadContentCounts();
 }
 
-// Topics and Reference get their own pages instead of sidebar lists. Topics group each `plans/<topic>/` folder under its README.
+// Reference gets its own page instead of a sidebar list. A folder under reference/ groups its files under its README.
 const LIBRARY_VIEWS = {
-  topics: { group: "Topics", title: "Topics", intro: "Cross-day planning work, one folder per topic." },
-  reference: { group: "Reference", title: "Reference", intro: "Repository maps, conventions and other cross-day facts." },
+  reference: { group: "Reference", title: "Reference", intro: "Conventions, standing notes and other cross-day facts." },
 };
 
 function libraryRow(doc, label = doc.title, detail = doc.path) {
@@ -695,27 +693,21 @@ function renderLibraryPage(view) {
   elements.chunkNav.hidden = true;
   elements.chunkNav.replaceChildren();
   elements.chunks.classList.add("library-page");
-  let body;
-  let intro = config.intro;
-  if (view === "topics") {
-    const index = docs.find((doc) => doc.path === "plans/README.md");
-    if (index) intro += ` Index: <a class="markdown-document-link library-index" href="${escapeHtml(documentHref(index.path, ""))}" data-document-path="${escapeHtml(index.path)}" data-document-anchor="">plans/README.md</a>`;
-    const folders = new Map();
-    for (const doc of docs.filter((candidate) => candidate !== index)) {
-      const folder = doc.path.split("/").length > 2 ? doc.path.split("/")[1] : "";
-      if (!folders.has(folder)) folders.set(folder, []);
-      folders.get(folder).push(doc);
-    }
-    body = [...folders].map(([folder, files]) => {
-      const readme = files.find((doc) => doc.path.endsWith("/README.md") || doc.path === "plans/README.md");
-      const rest = files.filter((doc) => doc !== readme);
-      const folderPath = `plans/${folder}/`;
-      return `<section class="library-group"><h2>${readme ? libraryRow(readme, readme.title, folderPath) : `<span class="library-row"><strong>${escapeHtml(folder)}</strong><code>${escapeHtml(folderPath)}</code></span>`}</h2>${rest.length ? `<div class="library-children">${rest.map((doc) => libraryRow(doc, doc.title, doc.path.slice(folderPath.length))).join("")}</div>` : ""}</section>`;
-    }).join("");
-  } else {
-    body = `<section class="library-group">${docs.map((doc) => libraryRow(doc)).join("")}</section>`;
+  const folders = new Map();
+  for (const doc of docs) {
+    const folder = doc.path.split("/").length > 2 ? doc.path.split("/")[1] : "";
+    if (!folders.has(folder)) folders.set(folder, []);
+    folders.get(folder).push(doc);
   }
-  elements.chunks.innerHTML = `<section class="library-list" aria-label="${config.title}"><p class="library-intro">${intro}</p>${body || '<p class="library-intro">Nothing here yet.</p>'}</section>`;
+  // Loose files first, then each folder under its README.
+  const body = [...folders].sort(([a], [b]) => (a ? 1 : 0) - (b ? 1 : 0) || a.localeCompare(b)).map(([folder, files]) => {
+    if (!folder) return `<section class="library-group">${files.map((doc) => libraryRow(doc)).join("")}</section>`;
+    const folderPath = `reference/${folder}/`;
+    const readme = files.find((doc) => doc.path === `${folderPath}README.md`);
+    const rest = files.filter((doc) => doc !== readme);
+    return `<section class="library-group"><h2>${readme ? libraryRow(readme, readme.title, folderPath) : `<span class="library-row"><strong>${escapeHtml(folder)}</strong><code>${escapeHtml(folderPath)}</code></span>`}</h2>${rest.length ? `<div class="library-children">${rest.map((doc) => libraryRow(doc, doc.title, doc.path.slice(folderPath.length))).join("")}</div>` : ""}</section>`;
+  }).join("");
+  elements.chunks.innerHTML = `<section class="library-list" aria-label="${config.title}"><p class="library-intro">${config.intro}</p>${body || '<p class="library-intro">Nothing here yet.</p>'}</section>`;
 }
 
 // Every `.draft` in the workspace; read on load and again when one is saved, created or deleted.
@@ -1603,7 +1595,7 @@ async function openStep(key) {
   if (!task && id) return openWorkItem(id, state.document); // a work breakdown in a document that is not a task
   if (!/^TASK-\d{4}$/.test(task)) return;
   try {
-    const [doc] = await Promise.all([fetchTaskDocument(`tasks/${task}.md`), stepsData || loadSteps()]);
+    const [doc] = await Promise.all([fetchTaskDocument(taskFile(task)), stepsData || loadSteps()]);
     const steps = stepsData?.steps.filter((step) => step.task === task) || [];
     const leaves = doc.work.nodes.filter((n) => !doc.work.nodes.some((child) => child.parent === n.id));
     const first = id || steps.find((step) => MOVE_FILTERS.you.includes(step.move))?.id
@@ -2057,7 +2049,7 @@ function scheduledTasksHtml(doc, chunk) {
 function dockDiagrams(doc) {
   const known = new Map((state.diagrams || []).map((diagram) => [diagram.path, diagram]));
   const embedded = [...new Set([...elements.chunks.querySelectorAll(".chunk-card [data-diagram]")].map((trigger) => trigger.dataset.diagram))];
-  const taskId = doc.task?.id || doc.path.match(/^tasks\/(TASK-\d{4})-assets\//)?.[1];
+  const taskId = doc.task?.id || taskOfPath(doc.path);
   const rest = taskId ? (state.diagrams || []).filter((diagram) => diagram.task === taskId && !embedded.includes(diagram.path)).map((diagram) => diagram.path) : [];
   return [...embedded.map((path) => ({ path, embedded: true })), ...rest.map((path) => ({ path, embedded: false }))]
     .map((item) => ({ ...item, modified: known.get(item.path)?.modified, title: known.get(item.path)?.title || elements.chunks.querySelector(`[data-diagram="${CSS.escape(item.path)}"] img`)?.alt || item.path.split("/").pop().replace(/\.draft$/, "") }));
@@ -2093,12 +2085,11 @@ function syncDockStuck() {
 
 const dirname = (path) => path.slice(0, path.lastIndexOf("/"));
 
-// The object a nested file belongs to: a task's assets folder → the task, a day's folder → that day's plan,
-// a topic folder → its README. Walks up so deeper files (`linear-review/source-session.md`) still find it.
+// The object a nested file belongs to: a file in a task's folder → the task, a file in a reference folder → its
+// README. Walks up so deeper files (`linear-review/source-session.md`) still find it.
 function parentDocument(path) {
-  const task = path.match(/^tasks\/(TASK-\d{4})-assets\//);
-  const candidates = task ? [`tasks/${task[1]}.md`] : [];
-  for (let dir = dirname(path); dir.includes("/"); dir = dirname(dir)) candidates.push(`${dir}/plan.md`, `${dir}/README.md`);
+  const candidates = isTaskAsset(path) ? [taskFile(taskOfPath(path))] : [];
+  for (let dir = dirname(path); dir.includes("/") && !candidates.length; dir = dirname(dir)) candidates.push(`${dir}/README.md`);
   return candidates.filter((candidate) => candidate !== path).map((candidate) => state.documents.find((doc) => doc.path === candidate)).find(Boolean);
 }
 
@@ -2110,35 +2101,19 @@ const docCrumb = (path, label, current = false) => current
   : `<a class="crumb" href="${escapeHtml(documentHref(path, ""))}" data-crumb-path="${escapeHtml(path)}">${escapeHtml(label)}</a>`;
 const copyCrumb = (value, label = value) => `<button class="crumb crumb-copy" type="button" data-copy-value="${escapeHtml(value)}" title="Copy ${escapeHtml(value)}">${escapeHtml(label)}</button>`;
 
-const dailyRank = (path) => /^daily\/\d{4}\/\d{2}\/\d{2}\/plan\.md$/.test(path) ? 0 : 1;
-
 function documentBreadcrumb(doc) {
   if (doc.task) return [viewCrumb("tasks", "Tasks"), copyCrumb(doc.task.id)].join(crumbSeparator) + statusPill(doc.task, doc.path);
-  const daily = doc.path.match(/^daily\/(\d{4})\/(\d{2})\/(\d{2})\//);
-  if (daily) {
-    const key = `${daily[1]}-${daily[2]}-${daily[3]}`;
-    const siblings = state.documents.filter((candidate) => candidate.path.startsWith(daily[0]))
-      .sort((a, b) => dailyRank(a.path) - dailyRank(b.path) || a.path.localeCompare(b.path));
-    const label = parseDateKey(key)?.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) || key;
-    // The plan is a tab; the day's other files sit behind one "+N" menu so long days never crowd the crumb row.
-    const pinned = siblings.filter((sibling) => dailyRank(sibling.path) === 0);
-    const extra = siblings.filter((sibling) => dailyRank(sibling.path) === 1);
-    const extraCurrent = extra.some((sibling) => sibling.path === doc.path);
-    const menu = extra.length
-      ? `<button class="crumb${extraCurrent ? " is-current" : ""}" type="button" popovertarget="day-files" style="anchor-name: --day-files">${extraCurrent ? escapeHtml(dailyDocumentLabel(doc)) : `+${extra.length} ${extra.length === 1 ? "file" : "files"}`} <span aria-hidden="true">⌄</span></button>
-        <div id="day-files" class="day-files-menu" popover style="position-anchor: --day-files">${extra.map((sibling) => docCrumb(sibling.path, dailyDocumentLabel(sibling), sibling.path === doc.path)).join("")}</div>`
-      : "";
-    const tabs = siblings.length > 1 ? `<span class="crumb-siblings">${pinned.map((sibling) => docCrumb(sibling.path, sibling.kind.toLowerCase(), sibling.path === doc.path)).join("")}${menu}</span>` : "";
-    const plan = siblings.find((sibling) => sibling.path.endsWith("/plan.md"));
-    return (plan ? docCrumb(plan.path, label, plan.path === doc.path) : `<span class="crumb">${escapeHtml(label)}</span>`) + tabs;
+  if (doc.date) {
+    const label = parseDateKey(doc.date)?.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) || doc.date;
+    return docCrumb(doc.path, label, true);
   }
   const parent = parentDocument(doc.path);
   if (parent) {
-    const parentLabel = parent.task ? parent.task.id : parent.date ? `${parent.kind} · ${parent.date}` : parent.title;
-    return [docCrumb(parent.path, parentLabel), copyCrumb(doc.path, doc.path.slice(dirname(parent.path).length + 1).replace(/^TASK-\d{4}-assets\//, ""))].join(crumbSeparator);
+    const parentLabel = parent.task ? parent.task.id : parent.title;
+    return [docCrumb(parent.path, parentLabel), copyCrumb(doc.path, parent.task ? taskRelative(doc.path) : doc.path.slice(dirname(parent.path).length + 1))].join(crumbSeparator);
   }
-  const root = doc.path.startsWith("plans/") ? viewCrumb("topics", "Topics") : doc.path.startsWith("reference/") ? viewCrumb("reference", "Reference") : "";
-  return [root, copyCrumb(doc.path, doc.path.replace(/^(plans|reference)\//, ""))].filter(Boolean).join(crumbSeparator);
+  const root = doc.path.startsWith("reference/") ? viewCrumb("reference", "Reference") : "";
+  return [root, copyCrumb(doc.path, doc.path.replace(/^reference\//, ""))].filter(Boolean).join(crumbSeparator);
 }
 
 // A task and its documents read in order: ‹ 3 of 14 › beside the crumbs, and P / N, wrapping from the last to the first.
@@ -2941,7 +2916,6 @@ elements.copyTaskPath.addEventListener("animationend", () => {
   elements.copyTaskPath.classList.remove("is-copied");
 });
 elements.tasksButton.addEventListener("click", () => showTasks());
-elements.topicsButton.addEventListener("click", () => showLibrary("topics"));
 elements.referenceButton.addEventListener("click", () => showLibrary("reference"));
 elements.diagramsButton.addEventListener("click", () => showDiagrams());
 elements.activityButton.addEventListener("click", () => showActivity());
@@ -3750,7 +3724,7 @@ const shortcuts = [
   { group: "Read", row: "document", keys: ["P"], run: () => stepTaskDocument(-1) },
   { group: "Read", row: "day", keys: ["]"], label: "Next / previous day’s plan", run: () => stepDay(1) },
   { group: "Read", row: "day", keys: ["["], run: () => stepDay(-1) },
-  { group: "Find and keep", keys: ["⌘K", "Ctrl+K", "/"], label: "Search", hint: "pages, plans, tasks, topics, reference, PRs", run: openSearch },
+  { group: "Find and keep", keys: ["⌘K", "Ctrl+K", "/"], label: "Search", hint: "pages, plans, tasks, reference, PRs", run: openSearch },
   { group: "Find and keep", keys: ["⌘D", "Ctrl+D"], label: "Favorite what’s open", hint: "listed at the top of the sidebar" },
   { group: "Agent drafts", keys: ["C"], label: "Draft the hovered action or section", hint: "or the selected text; elsewhere a blank draft", run: openCursorComposer },
   { group: "Agent drafts", keys: ["D"], label: "Draft about the current file", run: openDocumentComposer },
@@ -3814,7 +3788,7 @@ function openCursorComposer() {
 }
 
 function goToToday() {
-  const todayPath = `daily/${localTodayKey().replaceAll("-", "/")}/plan.md`;
+  const todayPath = dailyFile(localTodayKey());
   if (state.documents.some(doc => doc.path === todayPath)) selectDocument(todayPath);
   else showNotice("There is no plan for today yet.");
 }
@@ -3886,8 +3860,7 @@ const SEARCH_ICONS = {
 
 function searchIconKey(doc) {
   if (doc.kind === "Task") return "task";
-  if (doc.kind === "Plan" || doc.kind === "Daily note") return "plan";
-  if (doc.kind === "Topic") return "topic";
+  if (doc.kind === "Plan") return "plan";
   if (doc.kind === "Reference") return "reference";
   return "file";
 }
@@ -3969,7 +3942,7 @@ const PAGES = [
   { title: "Today", detail: "Today’s plan", icon: "plan", run: goToToday },
   { title: "Tasks", detail: "All tasks", icon: "task", run: () => showTasks() },
   { title: "Activity", detail: "Everything that changed, newest first", icon: "plan", run: () => showActivity() },
-  ...Object.entries(LIBRARY_VIEWS).map(([view, { title, intro }]) => ({ title, detail: intro, icon: title === "Topics" ? "topic" : "reference", run: () => showLibrary(view) })),
+  ...Object.entries(LIBRARY_VIEWS).map(([view, { title, intro }]) => ({ title, detail: intro, icon: "reference", run: () => showLibrary(view) })),
   { title: "Diagrams", detail: "Every diagram in the workspace", icon: "plan", run: () => showDiagrams() },
   { title: "Plans", detail: "Initiatives in tracked repositories", icon: "initiative", run: () => showPlans() },
   { title: "Chat Threads", detail: "Active and completed Codex and Claude threads", icon: "history", run: showChatThreads },
@@ -3989,7 +3962,7 @@ function rankedMatches(query, prs, me) {
   const terms = query.toLowerCase().replace(/^#/, "").split(/\s+/).filter(Boolean);
   const numeric = /^(?:[a-z][\w.-]*\s*)?#?\d+$/i.test(query);
   // A bare number (`0138`, `#2270`, `task-0138`) is nearly always an ID to open: the task, PR or issue key it names
-  // exactly leads, above work items and documents that only mention it (`TASK-0138-assets/…`). A leading zero can only
+  // exactly leads, above work items and documents that only mention it (`TASK-0138/notes.md`). A leading zero can only
   // be a task number, so `0138` never matches PR #138.
   const digits = query.trim().match(/^(?:task-?)?#?(\d{1,6})$/i)?.[1] || "";
   const exactTask = digits.length <= 4 && digits ? `TASK-${digits.padStart(4, "0")}` : "";
@@ -4493,8 +4466,8 @@ const OVERLAYS = [
     closed: (params) => { const doc = state.documents.find((candidate) => candidate.path === params.get("peek")); return ["document", doc ? `${doc.task ? `${doc.task.id} ` : ""}${doc.task?.title || doc.title}` : params.get("peek")]; } },
   { param: "step", extra: ["graph"],
     open: (params) => openStep(params.get("step")),
-    result: (params) => { const [task, id] = params.get("step").split(":"); const doc = state.documents.find((candidate) => candidate.path === `tasks/${task}.md`); const work = doc?.task?.work?.find((candidate) => candidate.id === id); return work ? workResult({ work, doc }, []) : { icon: "list", title: escapeHtml(params.get("step").replace(":", " ")), detail: "Step", side: "Step" }; },
-    closed: (params) => { const [task, id] = params.get("step").split(":"); const doc = state.documents.find((candidate) => candidate.path === `tasks/${task}.md`); return ["step", `${task} ${id} ${doc?.task?.work?.find((candidate) => candidate.id === id)?.title || ""}`.trim()]; } },
+    result: (params) => { const [task, id] = params.get("step").split(":"); const doc = state.documents.find((candidate) => candidate.path === taskFile(task)); const work = doc?.task?.work?.find((candidate) => candidate.id === id); return work ? workResult({ work, doc }, []) : { icon: "list", title: escapeHtml(params.get("step").replace(":", " ")), detail: "Step", side: "Step" }; },
+    closed: (params) => { const [task, id] = params.get("step").split(":"); const doc = state.documents.find((candidate) => candidate.path === taskFile(task)); return ["step", `${task} ${id} ${doc?.task?.work?.find((candidate) => candidate.id === id)?.title || ""}`.trim()]; } },
   { param: "pr", extra: ["file", "scope"],
     open: (params) => { const pr = params.get("pr").split("#"); if (pr.length === 2) openPrOverlay(pr[0], Number(pr[1]), params.get("file") || "", params.get("scope") || ""); },
     result: (params) => { const [slug, number] = params.get("pr").split("#"); return prResult(findPr(slug, Number(number)) || { slug, number: Number(number) }, []); },
@@ -4528,12 +4501,12 @@ OVERLAYS.push({ param: "table", extra: ["table-size", "table-fill"], page: true,
   closed: (params) => ["table", `Table ${Number(params.get("table"))}`] });
 OVERLAYS.push({ param: "world", extra: ["world-day"],
   open: (params) => params.get("world") === "all" ? openPortfolio(portfolioTasks()) : /^TASK-\d{4}$/.test(params.get("world")) && openTaskWorld(params.get("world"), params.get("world-day") || ""),
-  result: (params) => { const id = params.get("world"); const doc = state.documents.find((candidate) => candidate.path === `tasks/${id}.md`); return { icon: "file", title: escapeHtml(id === "all" ? "All tasks" : `${id} ${doc?.task?.title || ""}`), detail: "World view", side: "World" }; },
+  result: (params) => { const id = params.get("world"); const doc = state.documents.find((candidate) => candidate.path === taskFile(id)); return { icon: "file", title: escapeHtml(id === "all" ? "All tasks" : `${id} ${doc?.task?.title || ""}`), detail: "World view", side: "World" }; },
   closed: (params) => ["world view", params.get("world") === "all" ? "All tasks" : params.get("world")] });
 const portfolioTasks = () => taskDocuments().tasks.map((doc) => ({ id: doc.task.id, title: doc.task.title, status: doc.task.status }));
 // W opens the world of the task in view (a task or one of its documents), else every task's.
 function openWorld() {
-  const id = state.view === "document" && state.selectedPath.match(/^tasks\/(TASK-\d{4})(\.md|-assets\/)/)?.[1];
+  const id = state.view === "document" && taskOfPath(state.selectedPath);
   if (id) openTaskWorld(id);
   else openPortfolio(portfolioTasks());
 }
@@ -4655,7 +4628,7 @@ function visitResult(href) {
   const view = params.get("view");
   const doc = (path) => state.documents.find((candidate) => candidate.path === path);
   const page = (icon, title, detail) => ({ icon, title: escapeHtml(title), detail: escapeHtml(detail), side: "Page" });
-  if (view === "tasks") return doc(`tasks/${params.get("task")}.md`) ? docResult(doc(`tasks/${params.get("task")}.md`), []) : page("list", "Tasks", "Every task by status");
+  if (view === "tasks") return doc(taskFile(params.get("task"))) ? docResult(doc(taskFile(params.get("task"))), []) : page("list", "Tasks", "Every task by status");
   if (view === "code") return page("code", "Code", CODE_TABS[params.get("tab") || "prs"] || "Pull requests");
   if (view === "plans") return page("initiative", "Plans", "Initiatives by repo and status");
   if (view === "issues") return page("issue", "Issues", ISSUE_TABS[params.get("tab") || "all"] || "All");
@@ -4663,7 +4636,7 @@ function visitResult(href) {
   if (view === "slack") return page("slack", "Slack", "Linked threads");
   if (view === "activity") return page("plan", "Activity", "Everything that changed");
   if (view === "diagrams") return page("plan", "Diagrams", "Every diagram in the workspace");
-  if (view in LIBRARY_VIEWS) return page(view === "topics" ? "topic" : "reference", LIBRARY_VIEWS[view].title, LIBRARY_VIEWS[view].intro);
+  if (view in LIBRARY_VIEWS) return page("reference", LIBRARY_VIEWS[view].title, LIBRARY_VIEWS[view].intro);
   const path = params.get("path") || state.defaultPath;
   // A work item dialog (`?item=`) is its own place, not the task behind it.
   const work = doc(path)?.task?.work?.find((candidate) => candidate.id === params.get("item"));
@@ -4842,7 +4815,7 @@ async function boot() {
   }
 }
 
-// viewer.config.json drives reference links and labels, so it loads before anything renders.
+// config/viewer.json drives reference links and labels, so it loads before anything renders.
 try {
   setConfig(await fetch("/api/config").then((response) => response.json()));
   document.title = config().title;

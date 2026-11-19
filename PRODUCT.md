@@ -20,13 +20,13 @@ The viewer treats the workspace's structured Markdown as an interface: files bec
 
 ## Operating Context
 
-The app runs locally on a Mac against one planning workspace, configured by its `viewer.config.json`. All document edits happen through agents. Codex Desktop or Claude Desktop, picked in the sidebar, is the destination for dispatched work.
+The app runs locally on a Mac against one planning workspace, configured by its `config/viewer.json`. All document edits happen through agents. Codex Desktop or Claude Desktop, picked in the sidebar, is the destination for dispatched work.
 
 ## Capabilities and Constraints
 
-- Read Markdown and plain-text files under `daily/`, `tasks/`, `plans/`, and authored `reference/` paths without modifying them; omit configured generated folders from the viewer.
+- Read Markdown and plain-text files under `daily/`, `tasks/` and authored `reference/` paths without modifying them; omit configured generated folders from the viewer.
 - Prefer today's `daily/YYYY/MM/DD/plan.md` on launch.
-- Keep the everyday sidebar to one line per day with fixed Plan and Done slots; reach a day's other files from its breadcrumb, and give Topics and Reference their own pages.
+- Keep the everyday sidebar to one line per day, and give Reference its own page.
 - List unfinished file-backed tasks on a dedicated route and enrich ordinary task links in daily plans from each task file's current summary metadata.
 - Interpret milestone headings and numbered priority headings as chunks; fall back to second-level sections for general Markdown.
 - Watch authored Markdown and plain-text assets, refreshing in place while preserving reading position and unsent commentary.
