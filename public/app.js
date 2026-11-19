@@ -1,6 +1,6 @@
 import { contextScore, fuzzyChunks, searchDocuments, searchPrs, termMatch, textScore } from "./search.js";
 import { isSettled, renderActions, renderWorkGraph, showDoneToggle, workDiagnostics, workStatusIcon, workStatusLabel } from "./actions.js";
-import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDocumentSort, selectDockSource, taskDocumentSequence, toggleDocumentNested, updateDocumentBrowser } from "./dock.js";
+import { applyLinkMetadata, collectLinks, documentFolder, metadataKey, openDocumentFolder, renderDock, selectDocumentSort, selectDockSource, taskDocumentSequence, toggleDocumentNested, updateDocumentBrowser } from "./dock.js";
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
 import { savedTableFill, savedTableSize, sizeTableViewer, validTableSize } from "./table-size.js";
@@ -2079,7 +2079,8 @@ function dockDiagrams(doc) {
 
 // Panels repeat chunk content, so their copies drop ids (SVG markers excepted) to keep anchors and jumps unique.
 function renderDocumentDock(doc) {
-  if (doc.format === "text") return;
+  // A plain-text file in a task folder still gets the dock, so its Documents panel and folder crumbs reach its siblings.
+  if (doc.format === "text" && !taskOfPath(doc.path)) return;
   const links = collectLinks(elements.chunks, state.documents, doc.path);
   elements.chunks.insertAdjacentHTML("afterbegin", renderDock({ doc, documents: state.documents, links, body: chunk => chunkBody(doc, chunk), steps: showsSteps(doc) ? taskStepsPanel(doc, false) : "", diagrams: dockDiagrams(doc) }));
   for (const node of elements.chunks.querySelectorAll(".doc-dock-panel-body [id]")) if (node.localName !== "marker") node.removeAttribute("id");
@@ -2133,6 +2134,7 @@ const viewCrumb = (view, label) => `<a class="crumb" href="?view=${view}" data-c
 const docCrumb = (path, label, current = false) => current
   ? `<a class="crumb is-current" href="${escapeHtml(documentHref(path, ""))}" aria-current="page">${escapeHtml(label)}</a>`
   : `<a class="crumb" href="${escapeHtml(documentHref(path, ""))}" data-crumb-path="${escapeHtml(path)}">${escapeHtml(label)}</a>`;
+const folderCrumb = (folder, label) => `<button class="crumb crumb-folder" type="button" data-crumb-folder="${escapeHtml(folder)}" aria-haspopup="dialog" title="Browse ${escapeHtml(folder)}/ in Documents">${escapeHtml(label)}</button>`;
 const copyCrumb = (value, label = value) => `<button class="crumb crumb-copy" type="button" data-copy-value="${escapeHtml(value)}" title="Copy ${escapeHtml(value)}">${escapeHtml(label)}</button>`;
 
 function documentBreadcrumb(doc) {
@@ -2144,7 +2146,12 @@ function documentBreadcrumb(doc) {
   const parent = parentDocument(doc.path);
   if (parent) {
     const parentLabel = parent.task ? parent.task.id : parent.title;
-    return [docCrumb(parent.path, parentLabel), copyCrumb(doc.path, parent.task ? taskRelative(doc.path) : doc.path.slice(dirname(parent.path).length + 1))].join(crumbSeparator);
+    // A task document's folders are crumbs of their own that open the Documents panel on that folder.
+    if (parent.task) {
+      const folders = documentFolder(doc.path).split("/").filter(Boolean);
+      return [docCrumb(parent.path, parentLabel), ...folders.map((name, index) => folderCrumb(folders.slice(0, index + 1).join("/"), name)), copyCrumb(doc.path, doc.path.split("/").at(-1))].join(crumbSeparator);
+    }
+    return [docCrumb(parent.path, parentLabel), copyCrumb(doc.path, doc.path.slice(dirname(parent.path).length + 1))].join(crumbSeparator);
   }
   const root = doc.path.startsWith("reference/") ? viewCrumb("reference", "Reference") : "";
   return [root, copyCrumb(doc.path, doc.path.replace(/^reference\//, ""))].filter(Boolean).join(crumbSeparator);
@@ -3038,6 +3045,11 @@ elements.meta.addEventListener("click", async (event) => {
     selectDocument(doc.dataset.crumbPath);
     return;
   }
+  const folder = event.target.closest("[data-crumb-folder]");
+  if (folder) {
+    openDocumentFolder(elements.chunks, folder.dataset.crumbFolder);
+    return;
+  }
   if (event.target.closest(".crumb.is-current") && plainClick) {
     event.preventDefault();
     window.scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
@@ -3327,7 +3339,10 @@ elements.chunks.addEventListener("click", (event) => {
   }
   const docFolder = event.target.closest("[data-doc-folder]");
   if (docFolder) {
-    updateDocumentBrowser(docFolder.closest(".doc-dock-panel"), { folder: docFolder.dataset.docFolder });
+    const panel = docFolder.closest(".doc-dock-panel");
+    updateDocumentBrowser(panel, { folder: docFolder.dataset.docFolder });
+    // The clicked row or crumb is redrawn away, so focus lands in the filter, where ↓ reaches the new rows.
+    panel.querySelector("[data-doc-filter]")?.focus({ preventScroll: true });
     return;
   }
   const docNested = event.target.closest("[data-doc-nested]");
@@ -3411,6 +3426,8 @@ elements.chunks.addEventListener("click", (event) => {
 elements.chunks.addEventListener("toggle", (event) => {
   if (!event.target.matches?.(".doc-dock-panel")) return;
   elements.chunks.querySelector(`[popovertarget="${event.target.id}"]`)?.setAttribute("aria-expanded", String(event.newState === "open"));
+  // A panel holds its height while open so a shorter list never pulls it up; closing lets it fit its content again.
+  if (event.newState === "closed") event.target.style.minHeight = "";
   // The Documents panel opens with its filter focused, so typing narrows the list at once.
   if (event.newState === "open") event.target.querySelector("[data-doc-filter]")?.focus({ preventScroll: true });
 }, true);
@@ -3418,13 +3435,32 @@ elements.chunks.addEventListener("toggle", (event) => {
 elements.chunks.addEventListener("input", (event) => {
   if (event.target.matches?.("[data-doc-filter]")) updateDocumentBrowser(event.target.closest(".doc-dock-panel"), { filter: event.target.value });
 });
+// Esc clears a typed filter before it closes the panel, Backspace in an empty one climbs a folder, and ↑ on the first row
+// returns to the filter.
 elements.chunks.addEventListener("keydown", (event) => {
-  if (!event.target.matches?.("[data-doc-filter]") || !["ArrowDown", "Enter"].includes(event.key) || event.isComposing) return;
-  const first = event.target.closest(".doc-dock-panel").querySelector("[data-doc-list] .dock-link");
-  if (!first) return;
-  event.preventDefault();
-  if (event.key === "Enter") first.click();
-  else first.focus();
+  if (event.isComposing) return;
+  const panel = event.target.closest?.(".doc-dock-panel-documents");
+  const filter = panel?.querySelector("[data-doc-filter]");
+  if (!filter) return;
+  const rows = [...panel.querySelectorAll(".dock-source-list:not([hidden]) .dock-link")];
+  if (event.target !== filter) {
+    if (event.key === "ArrowUp" && event.target === rows[0]) { event.preventDefault(); event.stopPropagation(); filter.focus(); }
+    return;
+  }
+  if (event.key === "Escape" && filter.value) {
+    event.preventDefault();
+    filter.value = "";
+    updateDocumentBrowser(panel, { filter: "" });
+  } else if (event.key === "Backspace" && !filter.value) {
+    const up = [...panel.querySelectorAll("[data-doc-crumbs] [data-doc-folder]")].at(-1);
+    if (up) { event.preventDefault(); updateDocumentBrowser(panel, { folder: up.dataset.docFolder }); }
+  } else if (event.key === "ArrowDown" || event.key === "Enter") {
+    const first = panel.querySelector("[data-doc-list] .dock-link");
+    if (!first) return;
+    event.preventDefault();
+    if (event.key === "Enter") first.click();
+    else first.focus();
+  }
 });
 elements.handoffPopover.addEventListener("click", (event) => {
   const toggle = event.target.closest(".context-toggle");

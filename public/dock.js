@@ -239,15 +239,18 @@ function documentRow(sub, currentPath, sort, { folder = "", showPath = false, te
   const when = sub.created && Math.abs(sub.modified - sub.created) > 60_000 ? `Edited ${stamp(sub.modified)} · created ${stamp(sub.created)}` : `Created ${stamp(sub.created || sub.modified)}`;
   // Below the folder being browsed, the row leads with where it sits, so two summary.txt files read apart.
   const where = showPath ? documentFolder(sub.path).slice(folder ? folder.length + 1 : 0) : "";
+  // Name has no day headings, so an older row names its day; a row with no sections keeps its facts on one line.
+  const label = time && (sort === "name" ? whenLabel(time) : timeLabel(time));
+  const size = `${words(count)}${images ? ` · ${images} ${images === 1 ? "image" : "images"}` : ""}`;
   return `<a class="markdown-document-link dock-link dock-doc"${sub.path === currentPath ? ' aria-current="page"' : ""} href="?${new URLSearchParams({ path: sub.path })}" data-document-path="${escapeHtml(sub.path)}" data-document-anchor="" title="${escapeHtml(`${taskRelative(sub.path)}\n${when}`)}">`
     + `<span class="dock-link-icon">${ICONS.doc}</span>`
     + `<span class="dock-link-detail">${where ? `<span class="dock-doc-path">${marked(`${where}/`, terms)}</span>` : ""}${marked(sub.title, terms).replace(/`([^`]+)`/g, "<code>$1</code>")}${sections.length ? `<span class="dock-doc-sections">${sections.map(escapeHtml).join('<span aria-hidden="true"> · </span>')}</span>` : ""}</span>`
-    + `<span class="dock-doc-facts">${time ? `<time datetime="${new Date(time).toISOString()}">${timeLabel(time)}</time>` : ""}<span>${words(count)}${images ? ` · ${images} ${images === 1 ? "image" : "images"}` : ""}</span></span>`
+    + `<span class="dock-doc-facts${sections.length ? "" : " is-inline"}"><span>${size}</span>${time ? `<time datetime="${new Date(time).toISOString()}">${label}</time>` : ""}</span>`
     + `<span class="dock-link-out" aria-hidden="true">→</span></a>`;
 }
 
 function folderRow(entry) {
-  return `<button type="button" class="dock-link dock-doc dock-folder" data-doc-folder="${escapeHtml(entry.path)}" title="Open ${escapeHtml(entry.path)}/">`
+  return `<button type="button" class="dock-link dock-doc dock-folder" data-doc-folder="${escapeHtml(entry.path)}">`
     + `<span class="dock-link-icon">${ICONS.folder}</span>`
     + `<span class="dock-link-detail"><span class="dock-folder-name">${escapeHtml(entry.name)}/</span><span class="dock-folder-count">${plural(entry.count, "file")}${entry.folders ? ` · ${plural(entry.folders, "folder")}` : ""}</span></span>`
     + `<span class="dock-doc-facts">${entry.latest ? `<time datetime="${new Date(entry.latest).toISOString()}">${whenLabel(entry.latest)}</time>` : ""}</span>`
@@ -334,7 +337,7 @@ function crumbsHtml(state) {
 
 const filterPlaceholder = (state) => {
   const { total } = browseDocuments(state.subDocuments, { folder: state.folder });
-  return `Filter ${plural(total, "file")}${state.folder ? ` in ${state.folder}/` : ""}`;
+  return `Filter ${plural(total, "file")}`;
 };
 
 function documentLists(subDocuments, currentPath, parentTask, taskId) {
@@ -379,6 +382,16 @@ export function updateDocumentBrowser(panel, change = {}) {
   if (filter) filter.placeholder = filterPlaceholder(state);
   panel.querySelector("[data-doc-nested]")?.setAttribute("aria-pressed", String(documentNested()));
   if (moved || "filter" in change) panel.scrollTop = 0;
+}
+
+// A folder crumb above the title: open the Documents panel browsing that folder, with the filter cleared.
+export function openDocumentFolder(root, folder) {
+  const panel = root.querySelector("#dock-documents");
+  if (!panel) return;
+  updateDocumentBrowser(panel, { folder, filter: "" });
+  const filter = panel.querySelector("[data-doc-filter]");
+  if (filter) filter.value = "";
+  if (!panel.matches(":popover-open")) panel.showPopover();
 }
 
 // A sort switch click: redraw the list in that order and remember it for every task.
@@ -465,7 +478,7 @@ export function renderDock({ doc, documents, links, body, steps = "", diagrams =
     <span class="doc-dock-title" aria-hidden="true">${escapeHtml(doc.task ? `${doc.task.id} · ${doc.title}` : doc.title)}</span>
     <div class="doc-dock-buttons" role="toolbar" aria-label="Document overview"><button type="button" class="doc-dock-button doc-dock-draft" data-dock-draft aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false" title="Open an agent draft for ${escapeHtml(doc.path)}"><span class="doc-dock-icon">${ICONS.draft}</span><span class="doc-dock-label">Draft</span></button>${taskId ? `<button type="button" class="doc-dock-button" data-world-task-open="${escapeHtml(taskId)}" aria-haspopup="dialog" title="Everything filed for ${escapeHtml(taskId)} on one timeline (W)"><span class="doc-dock-icon">${ICONS.world}</span><span class="doc-dock-label">World</span></button>` : ""}<span class="doc-dock-divider" aria-hidden="true"></span>${items.map((item) => `<button type="button" class="doc-dock-button" ${item.workItem ? `data-work-item="${escapeHtml(item.workItem)}" aria-haspopup="dialog" aria-controls="work-item-dialog"` : `popovertarget="dock-${item.key}" aria-expanded="false" style="anchor-name: --dock-${item.key}"`} title="${escapeHtml(item.meta)}"><span class="doc-dock-icon">${item.icon}</span><span class="doc-dock-label">${escapeHtml(item.label)}</span>${item.badge && item.badge !== "0" ? `<span class="doc-dock-badge">${escapeHtml(item.badge)}</span>` : ""}</button>`).join("")}</div>
   </div>${items.filter((item) => !item.workItem).map((item) => `<div class="doc-dock-panel doc-dock-panel-${item.key}" id="dock-${item.key}" popover style="position-anchor: --dock-${item.key}" role="dialog" aria-label="${escapeHtml(item.title)}">
-    ${item.bare ? "" : `<header class="doc-dock-panel-header"><span class="doc-dock-icon">${item.icon}</span><div><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.meta)}</p></div>${item.tools || ""}${item.jump ? `<button type="button" class="doc-dock-jump" data-dock-jump="${escapeHtml(item.jump)}">Go to section <span aria-hidden="true">↓</span></button>` : ""}</header>`}
+    ${item.bare ? "" : `<header class="doc-dock-panel-header"><span class="doc-dock-icon">${item.icon}</span><div class="doc-dock-panel-title"><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.meta)}</p></div>${item.tools || ""}${item.jump ? `<button type="button" class="doc-dock-jump" data-dock-jump="${escapeHtml(item.jump)}">Go to section <span aria-hidden="true">↓</span></button>` : ""}</header>`}
     ${LAZY_PANELS.has(item.key) ? `<div class="doc-dock-panel-body" data-lazy>${lazyPanels.set(`dock-${item.key}`, item.content) && ""}</div>` : `<div class="doc-dock-panel-body">${item.content}</div>`}
   </div>`).join("")}</div>`;
 }
