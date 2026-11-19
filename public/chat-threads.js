@@ -45,9 +45,9 @@ function modelCell(thread) {
   const hue = FAMILY_HUES[model.family] ?? hueOf(model.family);
   const level = EFFORT[thread.effort];
   const effort = thread.effort
-    ? `<span class="chat-effort" data-level="${level ?? 0}" data-tip="Reasoning effort: ${escapeHtml(thread.effort)}">${"<i></i>".repeat(5)}<span>${escapeHtml(thread.effort)}</span></span>`
+    ? `<span class="chat-effort" data-level="${level ?? 0}" data-tip="Reasoning effort: ${escapeHtml(thread.effort)}${level === undefined ? "" : ` (${level} of 5)`}" aria-label="Reasoning effort: ${escapeHtml(thread.effort)}">${"<i></i>".repeat(5)}</span>`
     : "";
-  return `<span class="chat-model" style="--hue:${hue}" data-tip="${escapeHtml(thread.model)}"><i aria-hidden="true"></i>${escapeHtml(model.name)}</span>${effort}`;
+  return `<div class="chat-model-line"><span class="chat-model" style="--hue:${hue}" data-tip="${escapeHtml(thread.model)}"><i aria-hidden="true"></i>${escapeHtml(model.name)}</span>${effort}</div>`;
 }
 
 const folder = (thread) => thread.cwd.split(/[\\/]/).filter(Boolean).at(-1) || "";
@@ -113,6 +113,16 @@ export function renderChatThreads(root) {
     setOverlayParams({ find: search.value, app: app === "all" ? "" : app, group: group === "status" ? "" : group, order: order === "recent" ? "" : order, threads: "" });
   }
 
+  // How a thread started rides on its app mark as a corner badge, so titles stay clean and the cue sits in one place.
+  function appCell(thread) {
+    const app = thread.provider === "Claude" ? "Claude Code" : "Codex";
+    const [badge, how] = thread.kind === "automation" ? ["calendar-clock", "started by a Codex automation"]
+      : thread.kind === "agent" && !thread.parent ? ["network", "started by another agent"]
+      : thread.source === "CLI" ? ["terminal", `started from the ${thread.provider === "Claude" ? "claude" : "codex"} command line`]
+      : ["", thread.source === "Desktop" ? "desktop app" : thread.source.toLowerCase()];
+    return `<span class="chat-app" data-tip="${app} · ${how}" aria-label="${app}, ${how}">${appMark(thread.provider)}${badge ? `<i class="chat-app-badge">${glyph(badge)}</i>` : ""}</span>`;
+  }
+
   function threadCell(thread, query, kids, depth, open) {
     const mark = (value) => {
       const text = value || "";
@@ -123,25 +133,20 @@ export function renderChatThreads(root) {
     const spawned = thread.kind === "subagent";
     const lead = spawned
       ? `${glyph("bot", "code-icon chat-kind")}${thread.nickname ? `<b>${mark(thread.nickname)}</b>` : ""}`
-      : `<span class="chat-app" data-tip="${thread.provider === "Claude" ? "Claude Code" : "Codex"} · ${escapeHtml(thread.source)}">${appMark(thread.provider)}</span>`;
+      : appCell(thread);
     // Long prompts used as titles often start with an absolute path; home reads as ~.
     const label = (spawned && thread.role && thread.title.toLowerCase() === thread.role.replaceAll("_", " ").toLowerCase() ? thread.role.replaceAll("_", " ") : thread.title).replace(/\/Users\/[^/\s]+/g, "~");
     const text = `<span class="chat-title-text">${mark(label)}</span>`;
     const name = thread.url
       ? `<a class="chat-thread-link" href="${escapeHtml(thread.url)}" aria-label="Open ${escapeHtml(thread.title)} in ${thread.provider}">${text}</a>`
       : `<span class="chat-thread-link is-closed" tabindex="0" data-tip="Opens in Claude Desktop after the terminal session exits">${text}</span>`;
-    const tags = [
-      thread.source === "CLI" ? `<span class="chat-tag" data-tip="Started from the ${thread.provider === "Claude" ? "claude" : "codex"} command line">${icon("terminal")}CLI</span>` : "",
-      thread.kind === "automation" ? `<span class="chat-tag" data-tip="Started by a Codex automation">${glyph("calendar-clock")}Automation</span>` : "",
-      thread.kind === "agent" && !thread.parent ? `<span class="chat-tag" data-tip="Started by another agent">${glyph("network")}Spawned</span>` : "",
-    ].join("");
     let toggle = "";
     if (kids.length) {
       const running = kids.filter(live).length;
       const noun = kids.every((kid) => kid.kind === "subagent") ? "subagent" : kids.every((kid) => kid.kind !== "subagent") ? "session" : "agent";
       toggle = `<button type="button" class="chat-kids" data-chat-toggle="${escapeHtml(thread.id)}" aria-expanded="${open}">${glyph("chevron-right", "code-icon chat-caret")}${kids.length} ${noun}${kids.length === 1 ? "" : "s"}${running ? ` <em>${running} live</em>` : ""}</button>`;
     }
-    return `<td class="chat-thread-cell" style="--depth:${depth}"><div class="chat-title">${lead}${name}${tags}${toggle}</div></td>`;
+    return `<td class="chat-thread-cell" style="--depth:${depth}"><div class="chat-title">${lead}${name}${toggle}</div></td>`;
   }
 
   // A finished thread whose spawned threads still run shows a faint spinner, so the Running section never shows only checks.
