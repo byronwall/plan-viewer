@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { configValue } from "./link-metadata.ts";
 import { linearClient } from "./linear.ts";
-import { listPrompts } from "./prompts.ts";
+import { fillPrompt, listPrompts } from "./prompts.ts";
 import { DEFAULT_CONFIG } from "./public/config.js";
 import { CONFIG_DIR, CONFIG_FILE, configPath } from "./public/layout.js";
 
@@ -240,6 +240,17 @@ Slots the viewer fills: ${prompt.slots.map((slot) => `{${slot}}`).join(", ") || 
 The default is ${join(VIEWER, "prompts", `${prompt.id}.md`)}; keep its front matter.
 
 Ask the user what should change before you edit it. The viewer reads the file on every use, so no restart is needed.`;
+}
+
+// A routine (daily plan, daily review, Up next sweep) filled for a given day: the commands and paths it names.
+export function routinePrompt(root: string, cfg: any, id: string, today: string, url: string) {
+  const day = new Date(`${today}T12:00:00`);
+  const tomorrow = new Date(day.getTime() + 86_400_000);
+  const iso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return fillPrompt(root, id, {
+    user: cfg.user, root, today, tomorrow: iso(tomorrow), "today-long": day.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }),
+    cli: `node ${join(VIEWER, "cli.ts")}`, "viewer-url": url, "check-in-days": cfg.checkInDays, "repos-file": cfg.code.reposFile,
+  });
 }
 
 export function filePrompt(root: string, file: ConfigFile) {
