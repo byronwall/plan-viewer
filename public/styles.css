@@ -378,9 +378,9 @@ a.library-row:hover { background: var(--quiet-field); } /* a folder with no READ
 .markdown-diff-add mark.code-word { background: #a8e2bd; } .markdown-diff-del mark.code-word { background: #f5b8b3; }
 .markdown-diff-add mark.code-space { background: #c9eed6; } .markdown-diff-del mark.code-space { background: #f8cfcb; }
 .markdown-figure { margin: 18px 0 22px; }
-.markdown-image-trigger { display: block; width: 100%; border: 0; border-radius: 9px; background: transparent; padding: 0; cursor: zoom-in; }
+.markdown-image-trigger { display: block; width: fit-content; max-width: 100%; border: 0; border-radius: 9px; background: transparent; padding: 0; cursor: zoom-in; }
 .markdown-image-trigger:focus-visible { outline: 3px solid rgba(49, 87, 213, .3); outline-offset: 3px; }
-.markdown-image { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
+.markdown-image { display: block; width: auto; max-width: 100%; height: auto; max-height: 90vh; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
 .markdown-image-trigger:hover .markdown-image { border-color: #aeb8ca; }
 .markdown-unavailable-image { display: block; border: 1px dashed var(--line-strong); border-radius: 9px; background: var(--hover-field); padding: 14px 16px; color: var(--muted); font-size: .84rem; }
 /* The tools sit like a tab on the table's top edge, in space the top margin always reserves, so they never cover headers or shift content. */
