@@ -55,20 +55,19 @@ A workspace is any folder laid out like the example. To start one beside your `p
 
 ```bash
 mkdir planning && cd planning
-node ../plan-viewer/cli.ts init
+../plan-viewer/cli.ts init
 ```
 
 `init` sets up what the viewer and your agents need:
 
-- a git repository, which the pre-commit hook and `lint` need;
-- a `.gitignore` for `node_modules/`, `tmp/` (the viewer's caches) and `config.toml` (Linear and Slack tokens);
+- a git repository, with its hooks path set to the checkout's `hooks/`, so each commit lints staged plans and checks links;
+- a `.gitignore` for `tmp/` (the viewer's caches) and `config.toml` (Linear and Slack tokens);
 - the `config/`, `daily/`, `tasks/` and `reference/` folders;
-- `AGENTS.md` and `CLAUDE.md` from the example workspace;
-- a `package.json` with a `plan-viewer` dependency (`file:../plan-viewer`) and the `viewer`, `lint`, `links`, `move`, `task`, `migrate` and `prepare` scripts.
+- `AGENTS.md` and `CLAUDE.md` from the example workspace, with the real path to `cli.ts` in their commands.
 
-It never replaces an existing file or script, so you can run it again in a partly set up workspace. It prints what it did and what it skipped.
+Nothing is installed: the workspace runs the checkout's `cli.ts` directly. `init` never replaces an existing file or setting, so you can run it again in a partly set up workspace. It prints what it did and what it skipped.
 
-Then run `npm install` and `npm run viewer`. Install with `npm`, not `pnpm`: pnpm copies `file:` packages into `node_modules`, where Node refuses to run TypeScript directly. The `prepare` script installs a pre-commit hook that lints staged plans and checks links.
+Then run `../plan-viewer/cli.ts` in the workspace to start the viewer.
 
 Write today's plan at `daily/YYYY-MM-DD.md` and it opens on launch. The copied `AGENTS.md` (which `CLAUDE.md` imports) tells your agents how plans and tasks are written, so you can also just ask one to set the workspace up.
 
@@ -123,7 +122,7 @@ Run each from the workspace (or set `PLANNING_ROOT`). `plan-viewer help` lists t
 | Command | Does |
 | --- | --- |
 | `plan-viewer serve` | Starts the viewer at `http://127.0.0.1:4173`, restarting itself when the viewer's code changes. |
-| `plan-viewer init` | Sets up the folder as a workspace: git, `.gitignore`, folders, agent guide, and `package.json` scripts. Never replaces a file. |
+| `plan-viewer init` | Sets up the folder as a workspace: git and its hooks path, `.gitignore`, folders, and the agent guide. Nothing to install. Never replaces a file. |
 | `plan-viewer lint [paths…\|--staged]` | Checks task front matter, work breakdowns, and action references. |
 | `plan-viewer links [--fix\|--warm\|--refresh-slack]` | Reports broken links, unknown tasks, unlinked task assets, and unnamed Slack channels. |
 | `plan-viewer move <from> <to\|TASK-NNNN>` | Moves one file and repairs every link to it. `TASK-NNNN` moves it into that task's folder; the task must exist. |

@@ -62,10 +62,12 @@ Default to drawing. When the work has a shape (a system, a flow or lifecycle, a 
 Run these after editing and fix what they report:
 
 ```bash
-npm run lint    # task front matter, work breakdowns, action references
-npm run links   # broken links and unknown task IDs
+../plan-viewer/cli.ts lint    # task front matter, work breakdowns, action references
+../plan-viewer/cli.ts links   # broken links and unknown task IDs
 ```
 
-When `npm run links` names a Slack channel or DM that `config/slack-channels.md` does not, look it up in Slack (one message of a channel shows its name; a DM shows who it is with) and add `- C…: #channel-name` or `- D…: @Person` there. Leave an entry blank rather than guessing.
+When `links` names a Slack channel or DM that `config/slack-channels.md` does not, look it up in Slack (one message of a channel shows its name; a DM shows who it is with) and add `- C…: #channel-name` or `- D…: @Person` there. Leave an entry blank rather than guessing.
 
-Use `npm run move -- <from> <to>` to rename or move a file; it repairs every link to it. `npm run task -- TASK-0101` prints a task's context in compact form.
+Use `../plan-viewer/cli.ts move <from> <to>` to rename or move a file; it repairs every link to it. `../plan-viewer/cli.ts task TASK-0101` prints a task's context in compact form. `../plan-viewer/cli.ts migrate` checks a workspace from the old folder layout and lists the moves (a dry run); add `--write` to make them.
+
+Start the viewer with `../plan-viewer/cli.ts` (it serves http://127.0.0.1:4173). `../plan-viewer/cli.ts help` lists every command.

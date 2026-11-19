@@ -4,7 +4,7 @@ For agents changing the viewer. Content lives in separate planning workspaces; n
 
 ## Setup
 
-Node.js 22.6+ and nothing else. `npm install` (no packages; it enables the pre-commit hook), then `npm test` and `npm run dev:demo`. If you are setting up a planning workspace for someone rather than changing the viewer, follow the README's "Use it with your own plans": `plan-viewer init` creates the folders, agent guide and scripts.
+Node.js 22.6+ and nothing else. `npm install` (no packages; it enables the pre-commit hook), then `npm test` and `npm run dev:demo`. If you are setting up a planning workspace for someone rather than changing the viewer, follow the README's "Use it with your own plans": `plan-viewer init` creates the folders and agent guide and sets the hooks path.
 
 ## Docs
 
