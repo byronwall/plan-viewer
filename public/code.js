@@ -65,7 +65,11 @@ const ICONS = {
   fail: GLYPHS["x"],
   pending: GLYPHS["clock"],
   settings: GLYPHS["settings"],
-  local: GLYPHS["laptop"],
+  local: GLYPHS["folder-git-2"],
+  merge: GLYPHS["git-merge"],
+  unknown: GLYPHS["circle-help"],
+  progress: GLYPHS["circle-dot-dashed"],
+  todo: GLYPHS["circle"],
   draft: GLYPHS["pen-line"],
   preview: GLYPHS["globe"],
   diff: GLYPHS["file-diff"],
@@ -76,7 +80,7 @@ const ICONS = {
   minimize: GLYPHS["minimize"],
   keyboard: GLYPHS["keyboard"],
 };
-const icon = (name) => `<svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ICONS.review}</svg>`;
+const icon = (name) => `<svg class="code-icon" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ICONS.unknown}</svg>`;
 const iconButton = (name, tip, attrs) => `<button type="button" class="code-icon-button" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}" ${attrs}>${icon(name)}</button>`;
 const copyButton = (value, tip) => iconButton("copy", tip, `data-code-copy="${escapeHtml(value)}"`);
 // One-line, width-capped branch name; click copies the full name.
@@ -211,7 +215,7 @@ const REVIEW = { APPROVED: ["approved", "Approved"], CHANGES_REQUESTED: ["change
 const reviewTag = (pr) => { const [kind, label] = REVIEW[pr.reviewDecision] || ["", ""]; return kind ? `<span class="code-tag code-tag-${kind}">${label}</span>` : ""; };
 // One icon per row for the states that change what to do next, named on hover; an ordinary "needs review" stays blank.
 // Approval is a ringed check so it never reads as the bare CI check beside the PR number.
-const PR_STATES = { MERGED: ["merged", "branch"], CLOSED: ["fail", "fail"], draft: ["draft", "draft"], CHANGES_REQUESTED: ["fail", "diff"], APPROVED: ["pass", "approved"], mine: ["review", "review"], requested: ["requested", "person"] };
+const PR_STATES = { MERGED: ["merged", "merge"], CLOSED: ["fail", "fail"], draft: ["draft", "draft"], CHANGES_REQUESTED: ["fail", "diff"], APPROVED: ["pass", "approved"], mine: ["review", "review"], requested: ["requested", "person"] };
 // Bots (Copilot, anything[bot]) are requested automatically, so they don't count as asking someone for a review.
 const humanReviewers = (pr) => (pr.reviewers || []).filter((login) => !/copilot|\[bot\]$/i.test(login));
 // People other than you (and the author) whose latest review approves, so a request of you reads as either the
@@ -1544,7 +1548,7 @@ function prStatus(pr) {
     REVIEW_REQUIRED: ["quiet", "review", "Needs review"],
   }[pr.reviewDecision];
   return [
-    { MERGED: sideStatus("merged", "branch", "Merged"), CLOSED: sideStatus("quiet", "fail", "Closed") }[pr.state] || "",
+    { MERGED: sideStatus("merged", "merge", "Merged"), CLOSED: sideStatus("quiet", "fail", "Closed") }[pr.state] || "",
     pr.draft ? sideStatus("quiet", "draft", "Draft") : "",
     ci ? sideStatus(ci[0], ci[0], ci[1]) : "",
     review && (!pr.state || pr.state === "OPEN") ? sideStatus(...review) : "",
@@ -1625,7 +1629,7 @@ function wtColumn() {
   const pr = detail?.pr || (ui.data ? prFor(tree) : null);
   const commits = wtCommits();
   const prValue = pr
-    ? `<button type="button" class="code-side-pr" data-diff-pr="${escapeHtml(prKey(pr.slug, pr.number))}" data-tip="Open the pull request (W)">${ciBadge(pr)}<b>#${pr.number}</b><span>${escapeHtml(pr.title || "")}</span></button>${{ MERGED: sideStatus("merged", "branch", "Merged"), CLOSED: sideStatus("quiet", "fail", "Closed") }[pr.state] || ""}`
+    ? `<button type="button" class="code-side-pr" data-diff-pr="${escapeHtml(prKey(pr.slug, pr.number))}" data-tip="Open the pull request (W)">${ciBadge(pr)}<b>#${pr.number}</b><span>${escapeHtml(pr.title || "")}</span></button>${{ MERGED: sideStatus("merged", "merge", "Merged"), CLOSED: sideStatus("quiet", "fail", "Closed") }[pr.state] || ""}`
     : `<span class="code-muted">None for this branch</span>`;
   return sideFacts([
     ["Path", `<button type="button" class="code-path code-side-path" data-code-copy="${escapeHtml(path)}" data-tip="${escapeHtml(path)} · click to copy">${escapeHtml(shortPath(path))}</button>`],

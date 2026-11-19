@@ -15,7 +15,7 @@ const DAY = 86_400_000;
 const STRIP_DAYS = 14;
 export const SOURCES = { all: "All", tasks: "Tasks", daily: "Daily", topics: "Docs", diagrams: "Diagrams", jira: "Jira", linear: "Linear", github: "Issues", prs: "PRs", slack: "Slack" };
 const RANGES = { day: ["24h", DAY], week: ["7d", 7 * DAY], month: ["30d", 30 * DAY], all: ["All", Infinity] };
-const SOURCE_ICONS = { tasks: SERVICE_ICONS.task, daily: glyph("calendar", "service-icon is-stroke"), topics: glyph("file-text", "service-icon is-stroke"), diagrams: glyph("layout-panel-left", "service-icon is-stroke"), jira: SERVICE_ICONS.jira, linear: SERVICE_ICONS.linear, github: SERVICE_ICONS.github, prs: SERVICE_ICONS.github, slack: SERVICE_ICONS.slack };
+const SOURCE_ICONS = { tasks: SERVICE_ICONS.task, daily: glyph("calendar", "service-icon is-stroke"), topics: glyph("file-text", "service-icon is-stroke"), diagrams: glyph("workflow", "service-icon is-stroke"), jira: SERVICE_ICONS.jira, linear: SERVICE_ICONS.linear, github: SERVICE_ICONS.github, prs: SERVICE_ICONS.github, slack: SERVICE_ICONS.slack };
 const DOC_SOURCE = { Tasks: "tasks", "Task documents": "tasks", Today: "daily", Daily: "daily", Reference: "topics" };
 // State tones: what the colored state cell means at a glance.
 const TASK_TONES = { active: "progress", open: "quiet", waiting: "wait", blocked: "fail", completed: "pass", done: "pass", cancelled: "quiet", deferred: "quiet" };

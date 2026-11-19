@@ -388,7 +388,7 @@ const stepTally = (id) => { const steps = stepsData?.steps.filter((step) => step
 let contentCounts = {};
 let contentCountsAsked = false;
 const contentCount = (doc, kind) => contentCounts[doc.task.id]?.[kind] || 0;
-const CONTENT_KINDS = [["document", "file-text", "document"], ["diagram", "layout-panel-left", "diagram"], ["image", "image", "image"]];
+const CONTENT_KINDS = [["document", "file-text", "document"], ["diagram", "workflow", "diagram"], ["image", "image", "image"]];
 // One aligned slot per kind, so the column reads as three: an icon and its count, blank when there are none.
 const contentCell = (doc) => {
   const parts = CONTENT_KINDS.map(([kind, glyph, noun]) => [contentCount(doc, kind), glyph, noun]);
@@ -3956,6 +3956,10 @@ const SEARCH_ICONS = {
   initiative: GLYPHS["flag"],
   server: GLYPHS["server"],
   slack: GLYPHS["messages-square"],
+  chats: GLYPHS["bot-message-square"],
+  settings: GLYPHS.settings,
+  activity: GLYPHS.activity,
+  diagram: GLYPHS.workflow,
 };
 
 function searchIconKey(doc) {
@@ -4041,11 +4045,11 @@ function searchIssues(query, terms) {
 const PAGES = [
   { title: "Today", detail: "Today’s plan", icon: "plan", run: goToToday },
   { title: "Tasks", detail: "All tasks", icon: "task", run: () => showTasks() },
-  { title: "Activity", detail: "Everything that changed, newest first", icon: "plan", run: () => showActivity() },
+  { title: "Activity", detail: "Everything that changed, newest first", icon: "activity", run: () => showActivity() },
   ...Object.entries(LIBRARY_VIEWS).map(([view, { title, intro }]) => ({ title, detail: intro, icon: "reference", run: () => showLibrary(view) })),
-  { title: "Diagrams", detail: "Every diagram in the workspace", icon: "plan", run: () => showDiagrams() },
+  { title: "Diagrams", detail: "Every diagram in the workspace", icon: "diagram", run: () => showDiagrams() },
   { title: "Plans", detail: "Initiatives in tracked repositories", icon: "initiative", run: () => showPlans() },
-  { title: "Chat Threads", detail: "Active and completed Codex and Claude threads", icon: "history", run: showChatThreads },
+  { title: "Chat Threads", detail: "Active and completed Codex and Claude threads", icon: "chats", run: showChatThreads },
   { title: "Setup", detail: "Integrations, settings and their setup helpers", icon: "settings", run: showSetup },
   { title: "Local servers", detail: "Dev servers the viewer started: URLs, output, restart, stop", icon: "server", run: () => openServers(showNotice) },
   ...Object.entries(CODE_TABS).map(([tab, title]) => ({ title, detail: `Code · ${title}`, icon: tab === "prs" ? "pr" : tab === "commits" ? "branch" : "code", run: () => showCode({ tab: tab === "prs" ? "" : tab }) })),
@@ -4771,11 +4775,11 @@ function visitResult(href) {
   if (view === "code") return page("code", "Code", CODE_TABS[params.get("tab") || "prs"] || "Pull requests");
   if (view === "plans") return page("initiative", "Plans", "Initiatives by repo and status");
   if (view === "issues") return page("issue", "Issues", ISSUE_TABS[params.get("tab") || "all"] || "All");
-  if (view === "chat-threads") return page("history", "Chat Threads", "Codex and Claude");
+  if (view === "chat-threads") return page("chats", "Chat Threads", "Codex and Claude");
   if (view === "setup") return page("settings", "Setup", "Integrations and settings");
   if (view === "slack") return page("slack", "Slack", "Linked threads");
-  if (view === "activity") return page("plan", "Activity", "Everything that changed");
-  if (view === "diagrams") return page("plan", "Diagrams", "Every diagram in the workspace");
+  if (view === "activity") return page("activity", "Activity", "Everything that changed");
+  if (view === "diagrams") return page("diagram", "Diagrams", "Every diagram in the workspace");
   if (view in LIBRARY_VIEWS) return page("reference", LIBRARY_VIEWS[view].title, LIBRARY_VIEWS[view].intro);
   const path = params.get("path") || state.defaultPath;
   // A work item dialog (`?item=`) is its own place, not the task behind it.

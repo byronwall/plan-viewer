@@ -14,7 +14,7 @@ const ICONS = {
   backlinks: glyph("corner-up-left", "dock-glyph"),
   doc: glyph("file-text", "dock-glyph"),
   folder: glyph("folder", "dock-glyph"),
-  diagram: glyph("layout-panel-left", "dock-glyph"),
+  diagram: glyph("workflow", "dock-glyph"),
   chat: glyph("message-square", "dock-glyph"),
   web: glyph("globe", "dock-glyph"),
   world: glyph("chart-gantt", "dock-glyph"),
