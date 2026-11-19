@@ -4,7 +4,7 @@ For agents changing the viewer. Content lives in separate planning workspaces; n
 
 ## Setup
 
-Node.js 22.6+ and nothing else. `npm install` (no packages; it enables the pre-commit hook), then `npm test` and `npm run demo`. If you are setting up a planning workspace for someone rather than changing the viewer, follow the README's "Use it with your own plans": `plan-viewer init` creates the folders, agent guide and scripts.
+Node.js 22.6+ and nothing else. `npm install` (no packages; it enables the pre-commit hook), then `npm test` and `npm run dev:demo`. If you are setting up a planning workspace for someone rather than changing the viewer, follow the README's "Use it with your own plans": `plan-viewer init` creates the folders, agent guide and scripts.
 
 ## Docs
 
@@ -60,14 +60,14 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 ## Commands
 
 - `npm test` runs every `*.test.*` file against `fixtures/planning/` (set by `PLANNING_ROOT`), never live planning files. It should always be green; a failure is yours.
-- `npm run demo` serves `examples/workspace/` on 4173 (`PLAN_VIEWER_PORT` to change). `fixtures/` is for tests only; keep demo content in `examples/`. Against a real workspace, run `node /path/to/plan-viewer/cli.ts <serve|init|lint|links|move|task>` from that workspace.
+- `npm run dev:demo` serves `examples/workspace/` on 4173 (`PLAN_VIEWER_PORT` to change). `fixtures/` is for tests only; keep demo content in `examples/`. Against a real workspace, run `node /path/to/plan-viewer/cli.ts <serve|init|lint|links|move|task>` from that workspace.
 - `PLAN_VIEWER_DRY_RUN=1` makes agent handoffs validate and log without opening Codex or Claude (the response carries the `prompt`), for testing the draft flow.
 - `npm install --no-save playwright-core && node scripts/screenshots.mjs [name,…]` regenerates `docs/images/` with installed Chrome; then `oxipng -o 4 --strip safe docs/images/*.png`.
 - `.githooks/pre-commit` (enabled by `npm install`) runs `npm test` on the staged files, bounded so a hang can never hold `.git/index.lock` for long: 30 s per test, `--test-force-exit` past leaked timers, stdin closed, and a watchdog that kills the run after `PLAN_VIEWER_HOOK_TIMEOUT` seconds (default 180) and prints the last 40 lines. A test that leaves a child or timer running must stop it in `t.after`. `hooks/pre-commit` is the hook planning workspaces install; it is not this repository's.
 
 ## Gotchas
 
-- `plan-viewer serve` and `npm run demo` restart themselves when a `*.ts` file changes (`node --watch`); client changes in `public/` need only a reload.
+- `plan-viewer serve` and `npm run dev:demo` restart themselves when a `*.ts` file changes (`node --watch`); client changes in `public/` need only a reload.
 - Byron's own viewer runs on 4173; leave it alone. Preview with `.claude/launch.json`: `demo` (4176) or `workspace` (4177, the real planning workspace whose path is in the ignored `.claude/workspace`, or `PLAN_VIEWER_WORKSPACE`). Never edit `launch.json`; parallel sessions share it, and `preview_start` reuses a running server. If the pane refuses the port it lands on, or a shared server is down, don't poll it: read `preview_logs`, then check the page with `node scripts/check-page.mjs "/?path=…" [--shot f.png] [--eval js] [--wait sel]`, which serves `examples/workspace` from this checkout on a free port.
 - `html` has `scroll-behavior: smooth`, so a plain `window.scrollTo(0, y)` animates and may not move at all in a background preview pane. Use `window.scrollTo({ top: y, behavior: "instant" })`. The library rail (`nav.documents`) scrolls on its own.
 - `/api/issues` answers from cache; the first live sync takes about two minutes. Wait for `[data-issues-state="ready"]`. `acli jira workitem search --fields key` returns nulls, so searches ask for `status`.
