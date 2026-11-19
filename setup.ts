@@ -13,7 +13,7 @@ import { configValue } from "./link-metadata.ts";
 import { linearClient } from "./linear.ts";
 import { fillPrompt, listPrompts } from "./prompts.ts";
 import { DEFAULT_CONFIG } from "./public/config.js";
-import { CONFIG_DIR, CONFIG_FILE, configPath } from "./public/layout.js";
+import { CONFIG_DIR, CONFIG_FILE, configPath, taskFile } from "./public/layout.js";
 
 const VIEWER = fileURLToPath(new URL(".", import.meta.url));
 export const CONFIG_DOC = join(VIEWER, "docs", "configuration.md");
@@ -262,8 +262,28 @@ ${docLine} Ask the user what should change before you edit it, and keep the form
 }
 
 export async function setupData(root: string, cfg: any, deps: Deps = DEPS) {
-  const [integrations, raw, doc, files] = await Promise.all([probeIntegrations(root, cfg, deps), readRawConfig(root).catch(() => ({})), readFile(CONFIG_DOC, "utf8").catch(() => ""), listConfigFiles(root, cfg)]);
-  return { file: CONFIG_FILE, integrations, settings: listSettings(raw, cfg, settingMeanings(doc)), files, prompts: listPrompts(root), configured: configuredPrompts(cfg) };
+  const [integrations, raw, doc, files, start] = await Promise.all([probeIntegrations(root, cfg, deps), readRawConfig(root).catch(() => ({})), readFile(CONFIG_DOC, "utf8").catch(() => ""), listConfigFiles(root, cfg), gettingStarted(root)]);
+  return { file: CONFIG_FILE, integrations, settings: listSettings(raw, cfg, settingMeanings(doc)), files, prompts: listPrompts(root), configured: configuredPrompts(cfg), start };
+}
+
+// Getting started on the Setup page: whether the workspace has any daily plan and any task yet.
+export async function gettingStarted(root: string) {
+  const names = (dir: string) => readdir(join(root, dir)).catch(() => [] as string[]);
+  const [days, tasks] = await Promise.all([names("daily"), names("tasks")]);
+  return {
+    plan: days.some((name) => /^\d{4}-\d{2}-\d{2}\.md$/.test(name)),
+    task: tasks.some((name) => /^TASK-\d{4}$/.test(name) && existsSync(join(root, taskFile(name)))),
+  };
+}
+
+// The Getting started helper for a first task: the same interview docs/setup.md runs, for one task.
+export function firstTaskPrompt(root: string) {
+  const cli = `node ${join(VIEWER, "cli.ts")}`;
+  return `Write the first task for the Plan Viewer workspace at ${root}.
+
+Ask the user for one real piece of work they want to track and which project it belongs to. Write it as a task, following the workspace AGENTS.md for where the file goes and its format: front matter, a short outcome, a work breakdown of two to four steps, and a next action with a prompt for the first ready step (lint rejects an active task without one).
+
+Then run \`${cli} lint\` and \`${cli} links\` from the workspace, fix what they report, and commit. If \`git config user.name\` or \`user.email\` is empty, ask the user for them; never make up an identity.`;
 }
 
 // Prompts that live in settings rather than in prompts/: issue skills carry their own text, PR skills name a skill.

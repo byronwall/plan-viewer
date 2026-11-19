@@ -21,7 +21,7 @@ import { createSlackThreads, slackThreadRef } from "./slack-thread.ts";
 import { linearImage } from "./linear.ts";
 import { config, setConfig, withNote } from "./public/config.js";
 import { customizePrompt, fillPrompt, listPrompts, resetPrompt } from "./prompts.ts";
-import { filePrompt, integrationPrompt, promptEditPrompt, routinePrompt, listConfigFiles, probeIntegrations, readConfigFile, readRawConfig, setupData, settingMeanings, listSettings, settingPrompt, writeSetting, CONFIG_DOC } from "./setup.ts";
+import { filePrompt, firstTaskPrompt, integrationPrompt, promptEditPrompt, routinePrompt, listConfigFiles, probeIntegrations, readConfigFile, readRawConfig, setupData, settingMeanings, listSettings, settingPrompt, writeSetting, CONFIG_DOC } from "./setup.ts";
 import { CONFIG_FILE, DOC_ROOTS, dailyFile, isTaskAsset, isTaskFile, taskFile, taskOfPath } from "./public/layout.js";
 import { applyRule, closeNote, followUpNote, saveLaunchNote, loadSteps, markStepDone, pickChoice, planMentions, runStatement, saveNote, setStepNext, setTaskPriority, startStep } from "./steps.ts";
 import { editStep } from "./steps.ts"; // the Steps table's inline edits
@@ -1104,6 +1104,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         const file = (await listConfigFiles(ROOT, config())).find((row) => row.path === id && !row.secret);
         if (!file) throw new Error(`${id} is not a config file the page shows.`);
         title = `${file.exists ? "Update" : "Create"} ${id}`; prompt = filePrompt(ROOT, file);
+      } else if (body.kind === "start" && id === "task") {
+        title = "Write the first task"; prompt = firstTaskPrompt(ROOT);
       } else if (body.kind === "setting") {
         const setting = listSettings(await readRawConfig(ROOT).catch(() => ({})), config(), settingMeanings(await readFile(CONFIG_DOC, "utf8").catch(() => ""))).find((row) => row.key === id);
         if (!setting) throw new Error(`${id} is not a setting.`);

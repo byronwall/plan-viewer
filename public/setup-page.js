@@ -162,6 +162,33 @@ async function promptAction(id, action) {
   } catch (error) { notify(error.message, true); }
 }
 
+// Getting started: shown at the top while the workspace has no daily plan or no task. Each missing item hands its
+// work to an agent through the same note popover as the rest of the page; your name jumps to its setting.
+function startRow(done, label, detail, action) {
+  return `<div class="setup-int" data-state="${done ? "ok" : "unused"}">
+    <span class="setup-dot" aria-label="${done ? "Done" : "To do"}"></span>
+    <b>${label}</b>
+    <span class="setup-int-detail"><span>${detail}</span></span>
+    <span class="setup-int-enables">${done ? "Done" : ""}</span>
+    ${done ? "<span></span>" : action}
+  </div>`;
+}
+
+function startSection() {
+  const named = data.settings.find((row) => row.key === "user")?.set;
+  if (!data.start || (data.start.plan && data.start.task)) return "";
+  const done = [data.start.plan, data.start.task, named].filter(Boolean).length;
+  return `<section class="setup-section" aria-labelledby="setup-start">
+      <header><h2 id="setup-start">Getting started</h2><span class="setup-sum">${done} of 3 done</span></header>
+      <p class="library-intro">This workspace is new. Each button saves a prompt for your agent as an Up next note, or opens it in ${escapeHtml(agentName())} now. <code>docs/setup.md</code> in the viewer's checkout covers the whole first run. This section goes away once there is a daily plan and a task.</p>
+      <div class="setup-ints">
+        ${startRow(data.start.task, "A first task", "One real piece of work, with its steps.", helpButton("start", "task", "Write…"))}
+        ${startRow(data.start.plan, "Today's plan", "What you want to get done today, with tasks scheduled. The viewer opens on it.", helpButton("routine", "daily-plan", "Write…"))}
+        ${startRow(named, "Your name", "The <code>user</code> setting: who the viewer means by you.", '<button type="button" class="setup-help" data-setup-focus="user">Set…</button>')}
+      </div>
+    </section>`;
+}
+
 function draw() {
   const query = host.querySelector(".setup-filter")?.value || "";
   const counts = { ok: 0, missing: 0, unused: 0 };
@@ -173,6 +200,7 @@ function draw() {
     groups.get(group).push(row);
   }
   host.innerHTML = `<section class="setup">
+    ${startSection()}
     <section class="setup-section" aria-labelledby="setup-integrations">
       <header><h2 id="setup-integrations">Integrations</h2>
         <span class="setup-sum">${counts.ok} working · ${counts.missing} not working · ${counts.unused} not set up</span>
@@ -230,9 +258,9 @@ async function save(key, value, reset = false) {
 
 function help(button) {
   const kind = button.dataset.setupHelp, id = button.dataset.id;
-  const label = kind === "prompt" || kind === "routine" ? data.prompts.find((row) => row.id === id)?.title || id : kind !== "integration" ? id : data.integrations.find((row) => row.id === id)?.label || id;
+  const label = kind === "start" ? "first task" : kind === "prompt" || kind === "routine" ? data.prompts.find((row) => row.id === id)?.title || id : kind !== "integration" ? id : data.integrations.find((row) => row.id === id)?.label || id;
   openNotePopover(button, {
-    heading: kind === "routine" ? `${label} for today` : kind === "setting" ? `Configure ${label}` : kind === "prompt" ? `Edit the ${label} prompt` : kind === "file" ? `${button.textContent.replace("…", "")} ${label}` : `Set up ${label}`, notify,
+    heading: kind === "start" ? "Write the first task" : kind === "routine" ? `${label} for today` : kind === "setting" ? `Configure ${label}` : kind === "prompt" ? `Edit the ${label} prompt` : kind === "file" ? `${button.textContent.replace("…", "")} ${label}` : `Set up ${label}`, notify,
     prompt: async (note) => { const { prompt } = await setupAgent({ kind, id, note, copy: true }); if (kind === "prompt") load(); return prompt; },
     send: { label: `Open in ${agentName()}`, run: async (note) => { await setupAgent({ kind, id, note, app: agentApp() }); notify(`Drafted the ${label} setup in ${agentName()}. Review it and press Enter to send.`); } },
   });
@@ -245,9 +273,13 @@ function install() {
   const onPage = (event) => event.target.closest?.(".setup-page .setup");
   document.addEventListener("click", (event) => {
     if (!onPage(event)) return;
-    const target = event.target.closest("[data-setup-help], [data-setup-reset], [data-setup-recheck], [data-setup-view], [data-setup-prompt], [data-setup-prompt-reset]");
+    const target = event.target.closest("[data-setup-help], [data-setup-reset], [data-setup-recheck], [data-setup-view], [data-setup-prompt], [data-setup-prompt-reset], [data-setup-focus]");
     if (!target) return;
-    if ("setupView" in target.dataset) viewFile(target.dataset.setupView);
+    if ("setupFocus" in target.dataset) {
+      const input = host.querySelector(`[data-setting="${target.dataset.setupFocus}"]`);
+      input?.scrollIntoView({ block: "center", behavior: "instant" });
+      input?.focus();
+    } else if ("setupView" in target.dataset) viewFile(target.dataset.setupView);
     else if ("setupPrompt" in target.dataset) viewPrompt(target.dataset.setupPrompt);
     else if ("setupPromptReset" in target.dataset) promptAction(target.dataset.setupPromptReset, "reset");
     else if ("setupHelp" in target.dataset) help(target);

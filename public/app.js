@@ -25,7 +25,7 @@ import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } fr
 import { cachedPlans, loadPlans, openPlan, planForLink, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
 import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./dates.js";
-import { dailyFile, isTaskAsset, taskFile, taskOfPath, taskRelative } from "./layout.js";
+import { dailyFile, dateOfPath, isTaskAsset, isTaskFile, taskFile, taskOfPath, taskRelative } from "./layout.js";
 
 const state = { documents: [], defaultPath: "", selectedPath: "", document: null, activeChunkId: "", openComposer: null, view: "document" };
 
@@ -220,7 +220,7 @@ function renderLibrary() {
     sections.push(`<section class="document-group"><h2 class="group-label">${label}</h2>${rows.join("")}</section>`);
   }
   hideLinkTip();
-  elements.documents.innerHTML = sections.join("") || `<p class="empty-library">No planning documents found.</p>`;
+  elements.documents.innerHTML = sections.join("") || `<p class="empty-library">No daily plans yet.</p>`;
   if (elements.searchDialog.open) renderSearchResults();
 }
 
@@ -4826,7 +4826,10 @@ async function boot() {
       || state.documents.find((doc) => doc.path === body.defaultPath)?.path
       || state.documents[0]?.path;
     renderLibrary();
+    // A new workspace (no daily plan or no task yet) opens on Setup, whose Getting started section says what to do.
+    const started = state.documents.some((doc) => dateOfPath(doc.path)) && state.documents.some((doc) => isTaskFile(doc.path));
     if (VIEWS[requestedView]) { VIEWS[requestedView].boot(); restoreSavedScroll(); }
+    else if (!requested && !started) { history.replaceState(null, "", "?view=setup"); renderSetup(); }
     else if (initial) await selectDocument(initial, { historyMode: "none", anchor: locationAnchor(), scrollY: savedScrollPosition() });
     else showNotice("No supported files were found under daily, tasks, plans, or reference.", true);
     connectLiveUpdates();
