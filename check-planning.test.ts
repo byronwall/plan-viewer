@@ -218,3 +218,25 @@ test("completed-task lint warns when a commit piles updates, open steps or asset
   assert.deepEqual(onlyAsset.errors, []);
   assert.match(onlyAsset.warnings.join("\n"), /tasks\/TASK-0042\/TASK-0042\.md: TASK-0042 is completed, but this commit adds 1 asset \(report\.md\)/);
 });
+
+test("an old-layout workspace can still commit, so migrate --write gets the clean tree it needs", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "planning-old-layout-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const run = promisify(execFile);
+  const git = (args: string[]) => run("git", args, { cwd: root });
+  await git(["init", "--quiet"]);
+  await mkdir(join(root, "tasks", "TASK-0042-assets"), { recursive: true });
+  await writeFile(join(root, "viewer.config.json"), "{}\n");
+  await writeFile(join(root, "tasks", "TASK-0042.md"), source.replace("Reproduce [open]", "Reproduce [done]"));
+  await writeFile(join(root, "tasks", "TASK-0042-assets", "notes.md"), "# Notes\n\n[missing](nowhere.md)\n");
+  await git(["add", "-A"]);
+  const lint = await checkPlanning(["--staged"], root);
+  assert.deepEqual(lint.errors, []);
+  assert.match(lint.warnings.join("\n"), /older folder layout/);
+  assert.match((await checkPlanning([], root)).errors.join("\n"), /older folder layout/, "the full lint still says to migrate");
+  const hook = fileURLToPath(new URL("hooks/pre-commit", import.meta.url));
+  const env = { ...process.env };
+  for (const name of ["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "PLANNING_ROOT"]) delete env[name];
+  const { stderr } = await run(hook, [], { cwd: root, env });
+  assert.match(stderr, /warn\s+.*older folder layout/);
+});

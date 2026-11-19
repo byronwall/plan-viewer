@@ -184,7 +184,11 @@ export async function checkPlanning(args: string[], root = ROOT) {
   // The older layout (tasks/TASK-NNNN.md, -assets folders, daily/YYYY/MM/DD/, plans/, viewer.config.json) is not read at all.
   const old = listed.find((path) => /^tasks\/TASK-\d{4}(\.md|-assets\/)|^daily\/\d{4}\/|^plans\/|^viewer\.config\.json$/.test(path))
     || (await access(resolve(root, "viewer.config.json")).then(() => "viewer.config.json", () => ""));
-  if (old) return { files: 0, errors: [`${old}: this workspace uses the older folder layout. Run plan-viewer migrate, fix what it lists, then plan-viewer migrate --write.`], warnings: [] };
+  // A commit still has to go through, because migrate --write needs a clean tree: staged checks warn and pass.
+  if (old) {
+    const message = `${old}: this workspace uses the older folder layout. Run plan-viewer migrate, fix what it lists, then plan-viewer migrate --write.`;
+    return staged ? { files: 0, errors: [], warnings: [`${message} Nothing staged was checked.`] } : { files: 0, errors: [message], warnings: [] };
+  }
   const paths = [...new Set(listed)].filter(path => path.endsWith(".md") && isViewableDocumentPath(path));
   // Diagrams are checked when they are staged or named, so a diagram you touch gets grounded and old ones don't fail
   // the full-corpus run.
