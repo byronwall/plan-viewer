@@ -22,6 +22,7 @@
     "prompts/",
     "hooks/",
     "examples/workspace/",
+    "!examples/workspace/tmp/",
     "docs/configuration.md"
   ],
   "engines": {
