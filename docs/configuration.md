@@ -58,6 +58,7 @@ The viewer's **Setup** page lists every key below with its value and edits the t
 | `code.reposFile` | Tracked repositories for the Code page, as `{ "repos": ["/absolute/path/to/checkout"] }`; the gear menu writes it. Each checkout needs a GitHub `origin` and a signed-in `gh` for PRs and CI. |
 | `code.checkoutsDir` | Where a repository named in a document is found when it isn't tracked. |
 | `code.prNotesDir` | Local PR review notes, one Markdown file per PR. |
+| `code.worktreeDir` | Where **Check out** puts a PR's new worktree when its repository has no `code.run.worktree` command, relative to the repository: `{name}` is the repository folder and `{branch}` the branch with slashes as dashes (default `../{name}-worktrees/{branch}`). |
 | `code.editor`, `code.terminal.command` | Commands for the worktree buttons (`E`, `X`); `{path}` is the worktree. |
 | `code.prSkills` | Review skills drafted against a PR (`1`…`N`). Each `id` is a skill under the repository's `.claude/skills/`, or a global one under `~/.agents/skills/` (or `~/.claude/skills/`); `icon` names a built-in icon. An open "Discuss" prompt always follows. |
 | `code.postNotesSkill` | Skill the "Post as review" notes prompt tells the agent to follow. |

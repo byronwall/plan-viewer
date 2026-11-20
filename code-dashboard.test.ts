@@ -62,3 +62,28 @@ test("prDiscussion merges comments oldest first, flags bots and drops bare appro
   assert.deepEqual(list.map((item) => [item.id, item.bot]), [["line-2", false], ["comment-1", true], ["review-4", false]]);
   assert.equal(list[0].path, "src/a.py");
 });
+
+test("checkoutPr adds a worktree for a branch only on origin, then reuses it", async (t) => {
+  const { mkdtemp, mkdir, writeFile, rm, realpath } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { execFileSync } = await import("node:child_process");
+  const { createCodeDashboard } = await import("./code-dashboard.ts");
+  const base = await realpath(await mkdtemp(join(tmpdir(), "checkout-")));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { stdio: "pipe", env: { ...process.env, GIT_AUTHOR_NAME: "a", GIT_AUTHOR_EMAIL: "a@acme.test", GIT_COMMITTER_NAME: "a", GIT_COMMITTER_EMAIL: "a@acme.test" } }).toString();
+  const origin = join(base, "origin.git"), repo = join(base, "app"), root = join(base, "planning");
+  execFileSync("git", ["init", "-q", "--bare", "-b", "main", origin]);
+  execFileSync("git", ["clone", "-q", origin, repo], { stdio: "pipe" });
+  git(repo, "commit", "-q", "--allow-empty", "-m", "first");
+  git(repo, "push", "-q", "origin", "HEAD:main", "HEAD:refs/heads/acme/feature");
+  await mkdir(join(root, "config"), { recursive: true });
+  await writeFile(join(root, "config/code-repos.json"), JSON.stringify({ repos: [repo] }));
+  const dashboard = createCodeDashboard(root);
+  const first = await dashboard.checkoutPr(repo, "acme/feature");
+  assert.deepEqual(first, { path: join(base, "app-worktrees/acme-feature"), created: true });
+  assert.equal(git(first.path, "rev-parse", "--abbrev-ref", "HEAD").trim(), "acme/feature");
+  assert.equal(git(first.path, "rev-parse", "--abbrev-ref", "@{upstream}").trim(), "origin/acme/feature");
+  assert.deepEqual(await dashboard.checkoutPr(repo, "acme/feature"), { ...first, created: false });
+  await assert.rejects(dashboard.checkoutPr(repo, "--force"), /Not a branch name/);
+});

@@ -436,20 +436,33 @@ export function createCodeDashboard(root: string) {
     if (!hasRun(runRepo(path))) throw new Error(`${path} has no local run command.`);
     return runs.start(path, config().code.run.command);
   }
-  async function runPr(repo: string, branch: string) {
+  // A PR's branch in a worktree of its tracked repo: the one that has it already, else a new one made by the repo's
+  // `code.run.worktree` command when it has one (its own setup), else by `git worktree add` at `code.worktreeDir`.
+  async function checkoutPr(repo: string, branch: string) {
     await knownWorktree(repo);
     const existing = lastWorktrees.find((tree) => tree.repo === repo && tree.branch === branch);
-    if (existing) return startRun(existing.path);
-    const { worktree } = config().code.run || {};
-    if (!hasRun(repo) || !worktree) throw new Error(`No worktree for ${branch}, and ${repo} has no worktree command.`);
-    if (!/^[\w./-]+$/.test(branch) || branch.startsWith("-")) throw new Error("Not a branch name.");
+    if (existing) return { path: existing.path, created: false };
+    if (!/^[\w./-]+$/.test(branch) || branch.startsWith("-") || branch.includes("..")) throw new Error("Not a branch name.");
     await git(repo, ["fetch", "origin", branch]).catch(() => {});
-    await runCommand(worktree, { branch, cwd: repo }).catch((error) => { throw new Error(`${worktree.join(" ")} failed for ${branch}: ${(error.stderr || error.stdout || error.message).trim().split("\n").pop()}`); });
+    const { worktree } = config().code.run || {};
+    const failed = (what: string) => (error: any) => { throw new Error(`${what} failed for ${branch}: ${(error.stderr || error.stdout || error.message).trim().split("\n").pop()}`); };
+    if (hasRun(repo) && worktree) await runCommand(worktree, { branch, cwd: repo }).catch(failed(worktree.join(" ")));
+    else {
+      const name = repo.replace(/\/+$/, "").split("/").pop() || "repo";
+      const dir = resolve(repo, (config().code.worktreeDir || "../{name}-worktrees/{branch}").replaceAll("{name}", name).replaceAll("{branch}", branch.replaceAll("/", "-")));
+      if (existsSync(dir)) throw new Error(`${dir} already exists; remove it or check ${branch} out there yourself.`);
+      const local = await git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).then(() => true, () => false);
+      await git(repo, local ? ["worktree", "add", dir, branch] : ["worktree", "add", "--track", "-b", branch, dir, `origin/${branch}`]).catch(failed("git worktree add"));
+    }
     const blocks = (await git(repo, ["worktree", "list", "--porcelain"])).trim().split("\n\n");
     const path = blocks.find((block) => block.includes(`branch refs/heads/${branch}\n`) || block.endsWith(`branch refs/heads/${branch}`))?.match(/^worktree (.+)$/m)?.[1];
-    if (!path) throw new Error(`${worktree.join(" ")} finished but no worktree has ${branch} checked out.`);
+    if (!path) throw new Error(`The checkout finished but no worktree has ${branch} checked out.`);
     await load(true);
-    return startRun(path);
+    return { path, created: true };
+  }
+  async function runPr(repo: string, branch: string) {
+    if (!hasRun(repo)) throw new Error(`${repo} has no local server command.`);
+    return startRun((await checkoutPr(repo, branch)).path);
   }
   const stopRun = (path: string) => runs.stop(path);
   async function restartRun(path: string) {
@@ -963,5 +976,5 @@ export function createCodeDashboard(root: string) {
     return { before: old, after: now };
   }
 
-  return { notes: prNotes, readRepos, githubSlug, load, localDir, prIndex, worktreeIndex, startBackgroundRefresh, commits, commitDetail, commitSummary, diff, fileContent, fileSides, lineCounts, worktreeDetail, prDetail, launchSession, addRepo, removeRepo, open, openPreview, startRun, runPr, stopRun, restartRun, allRuns, runLog, launchAgent, removeWorktrees, cleanupPrompt, launchCleanup };
+  return { notes: prNotes, readRepos, githubSlug, load, localDir, prIndex, worktreeIndex, startBackgroundRefresh, commits, commitDetail, commitSummary, diff, fileContent, fileSides, lineCounts, worktreeDetail, prDetail, launchSession, addRepo, removeRepo, open, openPreview, startRun, checkoutPr, runPr, stopRun, restartRun, allRuns, runLog, launchAgent, removeWorktrees, cleanupPrompt, launchCleanup };
 }

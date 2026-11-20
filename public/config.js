@@ -32,6 +32,9 @@ export const DEFAULT_CONFIG = {
     checkoutsDir: "~/repos",
     // Local PR review notes, one Markdown file per PR.
     prNotesDir: "reference/pr-notes",
+    // Where Check out puts a PR's worktree when the repo has no `run.worktree` command: relative to the repo, with the
+    // repo's folder `{name}` and the branch `{branch}` (slashes as dashes) filled.
+    worktreeDir: "../{name}-worktrees/{branch}",
     // Commands for the worktree open buttons; `{path}` is the worktree.
     editor: ["/usr/bin/open", "-n", "-b", "com.microsoft.VSCode", "--args", "{path}"],
     terminal: { label: "Terminal", command: ["/usr/bin/open", "-a", "Terminal", "{path}"] },

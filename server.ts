@@ -1165,6 +1165,11 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       if (action === "preview") return json(response, 200, await codeDashboard.openPreview(String(body.repo || ""), String(body.number || "")).then(() => ({ opened: true })));
       if (action === "run") return json(response, 200, await (body.path ? codeDashboard.startRun(String(body.path)) : codeDashboard.runPr(String(body.repo || ""), String(body.branch || ""))));
       if (action === "restart-run") return json(response, 200, await codeDashboard.restartRun(String(body.path || "")));
+      if (action === "checkout") {
+        const result = await codeDashboard.checkoutPr(String(body.repo || ""), String(body.branch || ""));
+        if (body.open) await codeDashboard.open(String(body.open), result.path);
+        return json(response, 200, result);
+      }
       if (action === "stop-run") return json(response, 200, (codeDashboard.stopRun(String(body.path || "")), { stopped: true }));
       if (action === "open") return json(response, 200, await codeDashboard.open(String(body.kind || ""), String(body.path || "")).then(() => ({ opened: true })));
       const paths = Array.isArray(body.paths) ? body.paths.map(String).slice(0, 500) : [];
