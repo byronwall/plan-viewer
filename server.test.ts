@@ -276,6 +276,13 @@ test("GitHub bodies: raw img and details tags render, attachment images go throu
   assert.doesNotMatch(renderMarkdown('<img src="javascript:alert(1)">', ""), /<img/);
 });
 
+test("HTML comments on their own lines render nothing, so previews hide outbound send markers", () => {
+  const html = renderMarkdown("<!-- send:start -->\nGoes out.\n<!-- send:end -->\n\n<!--\nTemplate hint\n-->\nAfter.\n\n```\n<!-- kept -->\n```", "");
+  assert.doesNotMatch(html, /send:|Template hint/);
+  assert.match(html, /<p>Goes out\.<\/p>.*<p>After\.<\/p>/s);
+  assert.match(html, /&lt;!-- kept --&gt;/);
+});
+
 test("Linear mention tags render as links, pull requests to GitHub", () => {
   const html = renderMarkdown('Runner: <pull-request id="a9" href="https://linear.app/acme/review/x">acme/atlas#12</pull-request> after <issue id="b1" href="https://linear.app/acme/issue/ATL-3/y">ATL-3</issue>, ask <user id="c2">Avery</user>.', "");
   assert.match(html, /href="https:\/\/github\.com\/acme\/atlas\/pull\/12"/);
