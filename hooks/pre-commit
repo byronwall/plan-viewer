@@ -1,10 +1,15 @@
 #!/bin/sh
 # Pre-commit hook for a planning workspace: staged planning Markdown must lint and links must resolve.
-# `plan-viewer init` installs it by pointing the workspace's core.hooksPath at this folder.
+# `plan-viewer init` points the workspace's core.hooksPath at this folder in a clone. Installed from npm, init copies
+# this file into the workspace's .githooks/, where no cli.ts sits beside it, so it runs the viewer through npx.
 set -e
 cli="$(dirname "$0")/../cli.ts"
-node() { command node --experimental-strip-types --no-warnings=ExperimentalWarning "$@"; }
-node "$cli" lint --staged
+if [ -f "$cli" ]; then
+  pv() { node --experimental-strip-types --no-warnings=ExperimentalWarning "$cli" "$@"; }
+else
+  pv() { npx --yes plan-viewer "$@"; }
+fi
+pv lint --staged
 # On the older layout lint only warns and nothing else can be checked; let the commit through so migrate can run.
 if [ -e viewer.config.json ] || [ -n "$(git ls-files -- viewer.config.json 'plans/*' 'daily/[0-9][0-9][0-9][0-9]/*' 'tasks/TASK-[0-9][0-9][0-9][0-9].md' 'tasks/TASK-[0-9][0-9][0-9][0-9]-assets/*' | head -1)" ]; then exit 0; fi
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
@@ -13,5 +18,5 @@ if echo "$staged" | grep -qE '^(daily|tasks|plans|reference)/.*\.md$'; then
   index=$(mktemp -d)
   trap 'rm -rf "$index"' EXIT
   git checkout-index -a --prefix="$index/"
-  links=$(PLANNING_ROOT="$index" node "$cli" links) || { echo "$links" | grep -v '^note' >&2; echo "plan-viewer links failed on the staged files; fix the errors above" >&2; exit 1; }
+  links=$(PLANNING_ROOT="$index" pv links) || { echo "$links" | grep -v '^note' >&2; echo "plan-viewer links failed on the staged files; fix the errors above" >&2; exit 1; }
 fi

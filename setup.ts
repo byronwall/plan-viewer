@@ -17,6 +17,8 @@ import { CONFIG_DIR, CONFIG_FILE, configPath, taskFile } from "./public/layout.j
 
 const VIEWER = fileURLToPath(new URL(".", import.meta.url));
 export const CONFIG_DOC = join(VIEWER, "docs", "configuration.md");
+// The command that runs the viewer, for prompts: npx for an npm install, this checkout's cli.ts for a clone.
+const CLI = VIEWER.includes("/node_modules/") ? "npx plan-viewer" : `node ${join(VIEWER, "cli.ts")}`;
 
 export type Run = (command: string, args: string[]) => Promise<{ code: number; out: string }>;
 export type Deps = { run: Run; env: Record<string, string | undefined>; linear: (root: string) => Promise<string>; exists: (path: string) => boolean };
@@ -249,7 +251,7 @@ export function routinePrompt(root: string, cfg: any, id: string, today: string,
   const iso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   return fillPrompt(root, id, {
     user: cfg.user, root, today, tomorrow: iso(tomorrow), "today-long": day.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }),
-    cli: `node ${join(VIEWER, "cli.ts")}`, "viewer-url": url, "check-in-days": cfg.checkInDays, "repos-file": cfg.code.reposFile,
+    cli: CLI, "viewer-url": url, "check-in-days": cfg.checkInDays, "repos-file": cfg.code.reposFile,
   });
 }
 
@@ -278,7 +280,7 @@ export async function gettingStarted(root: string) {
 
 // The Getting started helper for a first task: the same interview docs/setup.md runs, for one task.
 export function firstTaskPrompt(root: string) {
-  const cli = `node ${join(VIEWER, "cli.ts")}`;
+  const cli = CLI;
   return `Write the first task for the Plan Viewer workspace at ${root}.
 
 Ask the user for one real piece of work they want to track and which project it belongs to. Write it as a task, following the workspace AGENTS.md for where the file goes and its format: front matter, a short outcome, a work breakdown of two to four steps, and a next action with a prompt for the first ready step (lint rejects an active task without one).

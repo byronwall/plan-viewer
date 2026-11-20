@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { execFile, spawn } from "node:child_process";
 import { readFileSync, unwatchFile, watch, watchFile, type FSWatcher } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -66,9 +66,12 @@ const viewerWrites = new Set<string>();
 // The viewer's own checkout: what it runs, what is on disk, and how far origin is ahead (fetched at most every five minutes).
 const VIEWER = fileURLToPath(new URL(".", import.meta.url));
 const viewerGit = async (...args: string[]) => (await promisify(execFile)("git", args, { cwd: VIEWER, timeout: 60_000 })).stdout.trim();
-const runningHead = await viewerGit("rev-parse", "HEAD").catch(() => "");
+// An npm install is no checkout, and git would find the workspace's repository above node_modules instead: no version.
+const checkout = await viewerGit("rev-parse", "--show-toplevel").then(async (top) => await realpath(top) === await realpath(VIEWER), () => false);
+const runningHead = checkout ? await viewerGit("rev-parse", "HEAD").catch(() => "") : "";
 let lastFetch = 0;
 async function viewerVersion() {
+  if (!checkout) return { running: "", head: "", behind: 0, watched: Boolean(process.env.PLAN_VIEWER_WATCHED) };
   if (Date.now() - lastFetch > 5 * 60_000) {
     lastFetch = Date.now();
     await viewerGit("fetch", "--quiet").catch(() => {});
@@ -79,6 +82,7 @@ async function viewerVersion() {
 // Pulls when origin is ahead, then restarts: under `plan-viewer serve`, `node --watch` restarts when a loaded file's
 // mtime changes, so touching this file restarts the server even when the pull only changed client files.
 async function updateViewer() {
+  if (!checkout) throw new Error("This viewer was installed from npm; run npx plan-viewer@latest to update it.");
   const version = await viewerVersion();
   if (version.behind) await viewerGit("pull", "--ff-only").catch((error) => {
     throw new Error(String(error.stderr || error.message).split("\n").filter((line) => line && !line.startsWith("hint:")).join(" "));

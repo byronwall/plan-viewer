@@ -2,9 +2,11 @@
 // Starts a git repository (the hook and lint need one), points its hooks at this checkout's hooks/, ignores what the
 // viewer writes and the tokens in config.toml, creates the content folders, and copies the example agent guide with
 // the real path to cli.ts in its commands. Nothing is installed: the workspace runs this checkout's cli.ts directly.
+// Installed from npm (`npx plan-viewer init`), the viewer sits under node_modules or npx's cache, which can move: the
+// guide's commands use `npx plan-viewer`, and the hook is copied into the workspace's .githooks/.
 // Never replaces a file or setting; prints what it did and what it skipped.
 import { execFileSync } from "node:child_process";
-import { access, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { access, chmod, copyFile, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,9 +18,11 @@ export async function initWorkspace(dir: string) {
   if (root === viewer) fail("this is the plan-viewer checkout; run init from your planning workspace");
   // The example guide assumes the workspace sits beside the checkout. Use a relative path when the two are close, so
   // moving both keeps working, and the absolute path when they are far apart.
+  const npm = viewer.includes("/node_modules/");
   const near = relative(root, viewer);
   const base = near.split("/").filter(part => part === "..").length > 2 ? viewer : near;
-  const cli = `${base}/cli.ts`;
+  const cli = npm ? "npx plan-viewer" : `${base}/cli.ts`;
+  const hooksDir = npm ? ".githooks" : `${base}/hooks`;
   const exists = (path: string) => access(join(root, path)).then(() => true, () => false);
   const done: string[] = [];
   const skipped: string[] = [];
@@ -35,7 +39,16 @@ export async function initWorkspace(dir: string) {
     let hooks = "";
     try { hooks = git(["config", "core.hooksPath"]); } catch { /* unset */ }
     if (hooks) skipped.push(`git hooks path is already ${hooks}`);
-    else { git(["config", "core.hooksPath", `${base}/hooks`]); done.push(`set the git hooks path to ${base}/hooks`); }
+    else {
+      if (npm && !await exists(".githooks/pre-commit")) {
+        await mkdir(join(root, ".githooks"), { recursive: true });
+        await copyFile(join(viewer, "hooks/pre-commit"), join(root, ".githooks/pre-commit"));
+        await chmod(join(root, ".githooks/pre-commit"), 0o755);
+        done.push("copied the pre-commit hook to .githooks/");
+      }
+      git(["config", "core.hooksPath", hooksDir]);
+      done.push(`set the git hooks path to ${hooksDir}`);
+    }
   }
 
   // tmp/ holds the viewer's caches; config.toml holds Linear and Slack tokens.
