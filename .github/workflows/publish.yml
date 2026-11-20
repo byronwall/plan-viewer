@@ -1,5 +1,5 @@
 # Publishes the package to npm when a version tag (v0.2.0) is pushed. The tag must match package.json's version.
-# Needs the NPM_TOKEN repository secret: an npm automation (or granular publish) token for the plan-viewer package.
+# Needs the NPM_TOKEN repository secret: an npm automation (or granular publish) token for the planboard package.
 name: Publish to npm
 
 on:

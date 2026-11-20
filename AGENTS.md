@@ -1,4 +1,4 @@
-# Plan Viewer: agent guide
+# Planboard: agent guide
 
 For agents changing the viewer. Content lives in separate planning workspaces; never add real workspace content here.
 
@@ -16,7 +16,7 @@ Node.js 22.6+ and nothing else. `npm install` (no packages; it enables the pre-c
 | `docs/configuration.md` | Every `config/viewer.json` key and environment variable. | A key or variable is added or changed. |
 | `docs/code-view.md`, `docs/issues-plan.md`, `docs/plans-plan.md` | Design intent and plans for those surfaces. | Before adding a list/inspector/overview surface, read `code-view.md`. |
 | `docs/images/` | README screenshots, made by `scripts/screenshots.mjs` from `examples/workspace/`; the Chat Threads shot answers `/api/chat-threads` with the fictional threads in `scripts/chat-threads-sample.mjs`, never real sessions. | A pictured screen changes visibly. |
-| `examples/workspace/` | The demo and the template for new workspaces, including the workspace-side `AGENTS.md`. | The content format changes (it must pass `plan-viewer lint` and `links`). |
+| `examples/workspace/` | The demo and the template for new workspaces, including the workspace-side `AGENTS.md`. | The content format changes (it must pass `planboard lint` and `links`). |
 
 ## Layout
 
@@ -25,8 +25,8 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 | Feature | Files |
 | --- | --- |
 | Per-workspace preferences (`config/viewer.json`) and their defaults, shared by server and browser | `public/config.js` |
-| `plan-viewer` subcommands | `cli.ts`; `init` is `init-workspace.ts`; `migrate` (older layout → current, dry run unless `--write`) is `migrate.ts` |
-| npm package: `bin.js` is the `npx plan-viewer` entry (Node won't strip types under `node_modules`, so it registers a load hook that does); `files` in `package.json` lists what ships; an install under `node_modules` gets `npx plan-viewer` in `init`'s guide and Setup prompts, a hook copied to `.githooks/`, and no version button; `.github/workflows/publish.yml` publishes on a `v*` tag | `bin.js`, `package.json` |
+| `planboard` subcommands | `cli.ts`; `init` is `init-workspace.ts`; `migrate` (older layout → current, dry run unless `--write`) is `migrate.ts` |
+| npm package: `bin.js` is the `npx planboard` entry (Node won't strip types under `node_modules`, so it registers a load hook that does); `files` in `package.json` lists what ships; an install under `node_modules` gets `npx planboard` in `init`'s guide and Setup prompts, a hook copied to `.githooks/`, and no version button; `.github/workflows/publish.yml` publishes on a `v*` tag | `bin.js`, `package.json` |
 | Workspace folder layout: task folder and file for an ID, the task of a path, daily file for a date, config paths (shared by server, checks and browser) | `public/layout.js` |
 | HTTP routes, document loading, task front matter, Codex handoff prompts | `server.ts` |
 | Next actions, work breakdown parser and graph, stalled-task reason (shared by server, lint and browser) | `public/actions.js` |
@@ -63,7 +63,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 ## Commands
 
 - `npm test` runs every `*.test.*` file against `fixtures/planning/` (set by `PLANNING_ROOT`), never live planning files. It should always be green; a failure is yours.
-- `npm run dev:demo` serves `examples/workspace/` on 4173 (`PLAN_VIEWER_PORT` to change). `fixtures/` is for tests only; keep demo content in `examples/`. Against a real workspace, run `node /path/to/plan-viewer/cli.ts <serve|init|lint|links|move|task>` from that workspace.
+- `npm run dev:demo` serves `examples/workspace/` on 4173 (`PLAN_VIEWER_PORT` to change). `fixtures/` is for tests only; keep demo content in `examples/`. Against a real workspace, run `node /path/to/planboard/cli.ts <serve|init|lint|links|move|task>` from that workspace.
 - `PLAN_VIEWER_DRY_RUN=1` makes agent handoffs validate and log without opening Codex or Claude (the response carries the `prompt`), for testing the draft flow.
 - `npm install --no-save playwright-core && node scripts/screenshots.mjs [name,…]` regenerates `docs/images/` with installed Chrome; then `oxipng -o 4 --strip safe docs/images/*.png`.
 - `.githooks/pre-commit` (enabled by `npm install`) runs `npm test` on the staged files, bounded so a hang can never hold `.git/index.lock` for long: 30 s per test, `--test-force-exit` past leaked timers, stdin closed, and a watchdog that kills the run after `PLAN_VIEWER_HOOK_TIMEOUT` seconds (default 180) and prints the last 40 lines. A test that leaves a child or timer running must stop it in `t.after`. `hooks/pre-commit` is the hook planning workspaces install; it is not this repository's.
@@ -72,7 +72,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 
 - A new file the server reads at run time (beside `public/`, `prompts/`, `hooks/`, `examples/workspace/` and `docs/configuration.md`) must be added to `files` in `package.json`, or the npm package lacks it. Check with `npm pack --dry-run`.
 
-- `plan-viewer serve` and `npm run dev:demo` restart themselves when a `*.ts` file changes (`node --watch`); client changes in `public/` need only a reload.
+- `planboard serve` and `npm run dev:demo` restart themselves when a `*.ts` file changes (`node --watch`); client changes in `public/` need only a reload.
 - `serve` caches the document index and the Steps index (`memo.ts`) until a file under `daily/`, `tasks/`, `reference/` or `config/` changes or a write request (any POST not in `READ_ONLY_POSTS` in `server.ts`) runs. A new endpoint that writes workspace files through a GET, or a read-only POST every page sends, must account for that. Format dates with `formatDateTime` from `public/dates.js`, not `toLocaleDateString`, in anything that renders a list.
 - The server imports some `public/` modules (`dock.js`, `markdown.js`, `actions.js`, `config.js` and others), so top-level code there must not touch `document` or `window` (`globalThis.document?.…`); one that does crashes `serve`, Byron's included.
 - Byron's own viewer runs on 4173; leave it alone. Preview with `.claude/launch.json`: `demo` (4176) or `workspace` (4177, the real planning workspace whose path is in the ignored `.claude/workspace`, or `PLAN_VIEWER_WORKSPACE`). Never edit `launch.json`; parallel sessions share it, and `preview_start` reuses a running server. If the pane refuses the port it lands on, or a shared server is down, don't poll it: read `preview_logs`, then check the page with `node scripts/check-page.mjs "/?path=…" [--shot f.png] [--eval js] [--wait sel]`, which serves `examples/workspace` from this checkout on a free port.

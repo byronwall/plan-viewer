@@ -176,9 +176,9 @@ export async function checkPlanning(args: string[], root = ROOT) {
     throw new Error("Usage: npm run lint -- [planning Markdown paths | --staged]");
   }
   const git = async (argv: string[]) => (await promisify(execFile)("git", argv, { cwd: root, maxBuffer: 16 * 1024 * 1024 }).catch(error => {
-    throw /not a git repository/.test(error.stderr) ? new Error("not a git repository; run plan-viewer init") : error;
+    throw /not a git repository/.test(error.stderr) ? new Error("not a git repository; run planboard init") : error;
   })).stdout;
-  // A staged rename is checked only for errors its old version didn't have, so a reorganization (plan-viewer migrate, a
+  // A staged rename is checked only for errors its old version didn't have, so a reorganization (planboard migrate, a
   // move) commits even when older files predate a rule.
   const renamedFrom = new Map<string, string>();
   let listed: string[];
@@ -202,7 +202,7 @@ export async function checkPlanning(args: string[], root = ROOT) {
     || (await access(resolve(root, "viewer.config.json")).then(() => "viewer.config.json", () => ""));
   // A commit still has to go through, because migrate --write needs a clean tree: staged checks warn and pass.
   if (old) {
-    const message = `${old}: this workspace uses the older folder layout. Run plan-viewer migrate, fix what it lists, then plan-viewer migrate --write.`;
+    const message = `${old}: this workspace uses the older folder layout. Run planboard migrate, fix what it lists, then planboard migrate --write.`;
     return staged ? { files: 0, errors: [], warnings: [`${message} Nothing staged was checked.`] } : { files: 0, errors: [message], warnings: [] };
   }
   const paths = [...new Set(listed)].filter(path => path.endsWith(".md") && isViewableDocumentPath(path));

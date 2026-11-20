@@ -216,7 +216,7 @@ async function withConnector<T>([program, ...args]: string[], use: (call: ToolCa
   })]);
   const timer = setTimeout(() => failed(new Error("The Slack read timed out.")), timeout);
   try {
-    await call("initialize", { clientInfo: { name: "plan-viewer", version: "1" } });
+    await call("initialize", { clientInfo: { name: "planboard", version: "1" } });
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "initialized" })}\n`);
     const { thread } = await call("thread/start", { ephemeral: true, cwd: tmpdir(), sandbox: "read-only", approvalPolicy: "never" });
     return await use((tool, toolArgs) => call("mcpServer/tool/call", { threadId: thread.id, server: "codex_apps", tool, arguments: toolArgs }));

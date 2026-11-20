@@ -1,9 +1,9 @@
 #!/usr/bin/env -S node --experimental-strip-types --no-warnings=ExperimentalWarning
-// `plan-viewer [serve|init|lint|links|move|task|next|migrate] …`, run from a planning workspace (or with PLANNING_ROOT set).
+// `planboard [serve|init|lint|links|move|task|next|migrate] …`, run from a planning workspace (or with PLANNING_ROOT set).
 import { fileURLToPath } from "node:url";
 
 const COMMANDS: Record<string, string> = { serve: "server.ts", lint: "check-planning.ts", links: "check-links.ts", move: "move-doc.ts", task: "task-context.ts", init: "init-workspace.ts", next: "next-steps.ts", migrate: "migrate.ts" };
-const HELP = `Usage: plan-viewer <command> [args], run from a planning workspace (or with PLANNING_ROOT set)
+const HELP = `Usage: planboard <command> [args], run from a planning workspace (or with PLANNING_ROOT set)
 
   serve                                     open the viewer (the default)
   init                                      set up this folder as a workspace
@@ -41,7 +41,7 @@ if (command === "serve" && process.env.PLAN_VIEWER_WATCH !== "0" && !process.env
   } catch (error) {
     // A plain Error or a system error (ENOENT, a failed git) is the user's to fix: one line. A TypeError and the like is a bug: keep the stack.
     if (error?.constructor !== Error && !error?.code) throw error;
-    console.error(`plan-viewer ${command}: ${error.message.trim()}`);
+    console.error(`planboard ${command}: ${error.message.trim()}`);
     process.exit(1);
   }
 }

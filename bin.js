@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// The npm entry point (`npx plan-viewer …`). Node refuses to strip types from files under node_modules, so this
+// The npm entry point (`npx planboard …`). Node refuses to strip types from files under node_modules, so this
 // registers a load hook that strips them itself, then runs cli.ts. A clone runs cli.ts directly and never loads this.
-// `plan-viewer serve` passes this file to its watched child with `--import`, which registers the hook there too.
+// `planboard serve` passes this file to its watched child with `--import`, which registers the hook there too.
 import { readFileSync, realpathSync } from "node:fs";
 import { registerHooks, stripTypeScriptTypes } from "node:module";
 import { fileURLToPath } from "node:url";

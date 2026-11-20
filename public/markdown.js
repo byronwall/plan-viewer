@@ -441,7 +441,7 @@ export function inlineMarkdown(value, currentPath = "", bare = true) {
         : linkedImage(target, currentPath) ? `<a class="markdown-asset-link" href="${escapeHtml(assetHref(attachment.path))}" data-image-link="${escapeHtml(attachment.path)}" target="_blank" rel="noreferrer">${label}</a>`
         : `<a class="markdown-asset-link" href="${escapeHtml(assetHref(attachment.path))}" target="_blank" rel="noreferrer">${label}&#8288;<span class="external-mark" aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>`);
     } else {
-      output.push(`<span class="markdown-unavailable-link" title="This target is not available in the plan viewer">${label}</span>`);
+      output.push(`<span class="markdown-unavailable-link" title="This target is not available in Planboard">${label}</span>`);
     }
     cursor = match.index + match[0].length;
   }
@@ -529,7 +529,7 @@ export function markdownListEnd(lines, index) {
 }
 
 // Fence problems the renderer can't show as code: an indented fence outside a list item renders as text, and an
-// unclosed fence swallows the rest of the document. `plan-viewer lint` reports these.
+// unclosed fence swallows the rest of the document. `planboard lint` reports these.
 export function markdownFenceWarnings(markdown) {
   const lines = markdown.split(/\r?\n/);
   const warnings = [];

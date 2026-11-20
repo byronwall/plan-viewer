@@ -356,7 +356,7 @@ export function stepActionsHtml(step, context = {}) {
   if (step.kind === "flag") return `<div class="outbound-actions step-actions">${button("done", "Mark done", true)}${context.compact ? "" : '<span class="step-choice-note">The daily retro works flags into a finding or a fix; mark it done when that\'s handled.</span>'}</div>`;
   if (step.kind === "note") return `<div class="outbound-actions step-actions">${button("done", "Mark done", true)}${context.compact ? "" : '<span class="step-choice-note">An agent works it into its source; mark it done when that\'s handled.</span>'}</div>`;
   const own = ownActionsHtml(step, context);
-  const next = `<button type="button" class="outbound-secondary step-next-toggle" data-step-action="next" aria-pressed="${Boolean(step.next)}" title="${step.next ? "Take it off the Up next queue" : "Queue it for an agent thread: plan-viewer next lists it"}">${step.next ? "● Up next" : "Up next"}</button>`;
+  const next = `<button type="button" class="outbound-secondary step-next-toggle" data-step-action="next" aria-pressed="${Boolean(step.next)}" title="${step.next ? "Take it off the Up next queue" : "Queue it for an agent thread: planboard next lists it"}">${step.next ? "● Up next" : "Up next"}</button>`;
   const note = step.kind === "decision" ? "" : `<button type="button" class="outbound-secondary" data-step-action="note" title="Approve, decide or direct it in your own words; an agent carries it through from Up next">Note…</button>`;
   return own.includes('class="outbound-actions') ? own.replace(/<\/div>$/, `${note}${next}</div>`) : `${own}<div class="outbound-actions step-actions">${note}${next}</div>`;
 }

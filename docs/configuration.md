@@ -18,7 +18,7 @@ The viewer's **Setup** page lists every key below with its value and edits the t
 
 ```json
 {
-  "title": "Daily Plan Viewer",
+  "title": "Daily Planboard",
   "user": "Alex",
   "port": 4173,
   "exclude": ["reference/linear"],
@@ -102,7 +102,7 @@ Every prompt the viewer sends is a Markdown file in the viewer's [`prompts/`](..
 | Variable | Meaning |
 | --- | --- |
 | `PLANNING_ROOT` | Workspace to serve or check. Defaults to the current directory. |
-| `PLAN_VIEWER_PORT` | Port for `plan-viewer serve`, over `port` in the config. |
+| `PLAN_VIEWER_PORT` | Port for `planboard serve`, over `port` in the config. |
 | `PLAN_VIEWER_WATCH=0` | Run the server without `node --watch` (it otherwise restarts itself when the viewer's own code changes). |
 | `PLAN_VIEWER_DRY_RUN=1` | Validate agent handoffs and log them without opening Codex or Claude; the dispatch response carries the generated `prompt`. Useful when testing. |
 | `LINEAR_API_KEY` | Linear key for titles, states, and the Issues page. `[linear] API_KEY` in `config.toml` works too. |

@@ -2770,7 +2770,7 @@ updateButton.addEventListener("click", async () => {
   const result = await fetch("/api/version/update", { method: "POST" }).then((response) => response.json()).catch((error) => ({ error: error.message }));
   if (result.error || !result.watched) {
     updateButton.disabled = false;
-    showNotice(result.error ? "Couldn't update the viewer" : "Pulled the latest viewer; restart it to run it", Boolean(result.error), { description: result.error || "This server isn't running under plan-viewer serve, which restarts itself." });
+    showNotice(result.error ? "Couldn't update the viewer" : "Pulled the latest viewer; restart it to run it", Boolean(result.error), { description: result.error || "This server isn't running under planboard serve, which restarts itself." });
     return checkViewerVersion();
   }
   // Wait for the restarted server to report the new commit, then load the new client.
@@ -2780,7 +2780,7 @@ updateButton.addEventListener("click", async () => {
     if (version?.running === result.head) return location.reload();
   }
   updateButton.disabled = false;
-  showNotice("The viewer didn't come back on the new version", true, { description: "Check the terminal running plan-viewer serve." });
+  showNotice("The viewer didn't come back on the new version", true, { description: "Check the terminal running planboard serve." });
 });
 checkViewerVersion();
 setInterval(checkViewerVersion, 5 * 60_000);

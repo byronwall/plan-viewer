@@ -1,5 +1,5 @@
 ---
-name: Daily Plan Viewer
+name: Daily Planboard
 description: A focused local reading desk for turning Markdown milestones into Codex work.
 colors:
   ink: "#18212f"
@@ -97,7 +97,7 @@ components:
     padding: "14px 22px 16px"
 ---
 
-# Design System: Daily Plan Viewer
+# Design System: Daily Planboard
 
 ## Overview
 

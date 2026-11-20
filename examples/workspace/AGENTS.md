@@ -1,6 +1,6 @@
 # Planning workspace: agent guide
 
-This folder is a planning workspace read by [Plan Viewer](https://github.com/byronwall/plan-viewer). Markdown here is the source of truth; the viewer only reads it. Copy this file into your own workspace and adjust it.
+This folder is a planning workspace read by [Planboard](https://github.com/byronwall/planboard). Markdown here is the source of truth; the viewer only reads it. Copy this file into your own workspace and adjust it.
 
 ## Layout
 
@@ -42,7 +42,7 @@ check_in: 2026-10-28  # optional; the viewer's status menu writes it for waiting
 
 Then, in any order:
 
-- `## Work breakdown`: nested bullets `- W1.2: Title [status] (after: W1.1)`. IDs are unique within the task; `after` lists prerequisites. A trailing `{next}` (alone or beside the kind and size) marks a step Up next: when asked to process what's next, run `plan-viewer next`, work through those steps in order, and remove `next` once a step is done or handed to its own session. The same command lists open notes (`tasks/TASK-NNNN/notes/*.md` or `reference/notes/*.md` with `note: open`): each holds a request saved from the viewer with its context; work it into its source, then set `note: done` and add a dated line saying what changed. A note with `step:` is a decision, approval or direction for that step (an approval of an outbound draft authorizes sending it, plus the follow-through); its prompt says what to do. A note is not a completion: afterwards set the step's status to what actually comes next, completing it only when the work finishes it or the note says so.
+- `## Work breakdown`: nested bullets `- W1.2: Title [status] (after: W1.1)`. IDs are unique within the task; `after` lists prerequisites. A trailing `{next}` (alone or beside the kind and size) marks a step Up next: when asked to process what's next, run `planboard next`, work through those steps in order, and remove `next` once a step is done or handed to its own session. The same command lists open notes (`tasks/TASK-NNNN/notes/*.md` or `reference/notes/*.md` with `note: open`): each holds a request saved from the viewer with its context; work it into its source, then set `note: done` and add a dated line saying what changed. A note with `step:` is a decision, approval or direction for that step (an approval of an outbound draft authorizes sending it, plus the follow-through); its prompt says what to do. A note is not a completion: afterwards set the step's status to what actually comes next, completing it only when the work finishes it or the note says so.
 - `## Next actions`: a `###` heading per action, an optional `Work item: W1.2` line, and a fenced `prompt` block an agent can carry out on its own.
 - `## Updates`: dated bullets, newest first. Write `- **2026-10-13 — Title:** What changed.` Indent continuation paragraphs and nested lists by two spaces. Keep historical entries under their existing date headings.
 - `## Chats`: links to the conversations that worked on the task.
@@ -62,12 +62,12 @@ Default to drawing. When the work has a shape (a system, a flow or lifecycle, a 
 Run these after editing and fix what they report:
 
 ```bash
-../plan-viewer/cli.ts lint    # task front matter, work breakdowns, action references
-../plan-viewer/cli.ts links   # broken links and unknown task IDs
+../planboard/cli.ts lint    # task front matter, work breakdowns, action references
+../planboard/cli.ts links   # broken links and unknown task IDs
 ```
 
 When `links` names a Slack channel or DM that `config/slack-channels.md` does not, look it up in Slack (one message of a channel shows its name; a DM shows who it is with) and add `- C…: #channel-name` or `- D…: @Person` there. Leave an entry blank rather than guessing.
 
-Use `../plan-viewer/cli.ts move <from> <to>` to rename or move a file; it repairs every link to it. `../plan-viewer/cli.ts task TASK-0101` prints a task's context in compact form. `../plan-viewer/cli.ts migrate` checks a workspace from the old folder layout and lists the moves (a dry run); add `--write` to make them.
+Use `../planboard/cli.ts move <from> <to>` to rename or move a file; it repairs every link to it. `../planboard/cli.ts task TASK-0101` prints a task's context in compact form. `../planboard/cli.ts migrate` checks a workspace from the old folder layout and lists the moves (a dry run); add `--write` to make them.
 
-Start the viewer with `../plan-viewer/cli.ts` (it serves http://127.0.0.1:4173). `../plan-viewer/cli.ts help` lists every command.
+Start the viewer with `../planboard/cli.ts` (it serves http://127.0.0.1:4173). `../planboard/cli.ts help` lists every command.

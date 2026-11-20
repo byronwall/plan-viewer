@@ -1,4 +1,4 @@
-// `plan-viewer next [--json]`: the steps flagged Up next (`{next}`), for an orchestrating agent thread to pick up.
+// `planboard next [--json]`: the steps flagged Up next (`{next}`), for an orchestrating agent thread to pick up.
 // Each prints with who moves next, its file and its prompt; the thread works it or spawns a session for it. Open notes
 // (saved from the composer) come first, then steps by priority score: work each into its source, then set `note: done` in its front matter.
 import { join } from "node:path";

@@ -79,10 +79,10 @@ async function viewerVersion() {
   const [head, behind] = await Promise.all([viewerGit("rev-parse", "HEAD"), viewerGit("rev-list", "--count", "HEAD..@{u}").then(Number, () => 0)]);
   return { running: runningHead, head, behind, watched: Boolean(process.env.PLAN_VIEWER_WATCHED) };
 }
-// Pulls when origin is ahead, then restarts: under `plan-viewer serve`, `node --watch` restarts when a loaded file's
+// Pulls when origin is ahead, then restarts: under `planboard serve`, `node --watch` restarts when a loaded file's
 // mtime changes, so touching this file restarts the server even when the pull only changed client files.
 async function updateViewer() {
-  if (!checkout) throw new Error("This viewer was installed from npm; run npx plan-viewer@latest to update it.");
+  if (!checkout) throw new Error("This viewer was installed from npm; run npx planboard@latest to update it.");
   const version = await viewerVersion();
   if (version.behind) await viewerGit("pull", "--ff-only").catch((error) => {
     throw new Error(String(error.stderr || error.message).split("\n").filter((line) => line && !line.startsWith("hint:")).join(" "));
@@ -828,7 +828,7 @@ async function dispatchToCodex(path: string, scope: string, chunkId: string, com
   if (scope === "global") {
     const prompt = buildGlobalCodexPrompt(commentary, path ? await loadDocument(path) : undefined);
     dispatchLog(requestId, "validated", { scope, path, commentaryLength: commentary.length });
-    return openDraft("Plan viewer command", prompt);
+    return openDraft("Planboard command", prompt);
   }
   const document = await loadDocument(path);
   if (scope === "document") {
@@ -968,7 +968,7 @@ export async function renderDiagram(requested: string, panels = "") {
 
 const escapeXml = (value: string) => value.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]!);
 
-// Every open step of every unfinished task, highest priority first (the Steps page, the Today lead and `plan-viewer next`).
+// Every open step of every unfinished task, highest priority first (the Steps page, the Today lead and `planboard next`).
 export const stepsIndex = memo(readSteps, () => todayPath());
 
 async function readSteps() {

@@ -18,7 +18,7 @@ import { CONFIG_DIR, CONFIG_FILE, configPath, taskFile } from "./public/layout.j
 const VIEWER = fileURLToPath(new URL(".", import.meta.url));
 export const CONFIG_DOC = join(VIEWER, "docs", "configuration.md");
 // The command that runs the viewer, for prompts: npx for an npm install, this checkout's cli.ts for a clone.
-const CLI = VIEWER.includes("/node_modules/") ? "npx plan-viewer" : `node ${join(VIEWER, "cli.ts")}`;
+const CLI = VIEWER.includes("/node_modules/") ? "npx planboard" : `node ${join(VIEWER, "cli.ts")}`;
 
 export type Run = (command: string, args: string[]) => Promise<{ code: number; out: string }>;
 export type Deps = { run: Run; env: Record<string, string | undefined>; linear: (root: string) => Promise<string>; exists: (path: string) => boolean };
@@ -170,7 +170,7 @@ const docLine = `The viewer's settings are documented in ${CONFIG_DOC}.`;
 
 // The prompt a helper hands to the agent: what is wrong, what it turns on, and how to fix it without handling secrets.
 export function integrationPrompt(root: string, integration: Integration) {
-  return `Set up ${integration.label} for the Plan Viewer workspace at ${root}.
+  return `Set up ${integration.label} for the Planboard workspace at ${root}.
 
 Current state: ${integration.state === "ok" ? "working" : integration.state === "missing" ? "not working" : "not set up"} (${integration.detail}).
 It turns on: ${integration.enables}.
@@ -181,7 +181,7 @@ ${docLine} Sign-ins and tokens belong to the user: ask them to run a sign-in or 
 }
 
 export function settingPrompt(root: string, setting: Setting) {
-  return `Configure \`${setting.key}\` in ${join(root, CONFIG_FILE)} for the Plan Viewer workspace at ${root}.
+  return `Configure \`${setting.key}\` in ${join(root, CONFIG_FILE)} for the Planboard workspace at ${root}.
 
 Meaning: ${setting.meaning || "see the docs"}
 Current value: ${JSON.stringify(setting.value)}${setting.set ? "" : " (the default; the key is not in the file)"}
@@ -195,8 +195,8 @@ export type ConfigFile = { path: string; purpose: string; key: string; exists: b
 
 const KNOWN: Record<string, { purpose: string; key?: string }> = {
   [CONFIG_FILE]: { purpose: "Settings: everything in the Settings section above." },
-  [configPath("slack-channels.md")]: { purpose: "Names for Slack channel and DM IDs in links. `plan-viewer links` reports IDs missing here." },
-  [configPath("retired-tasks.md")]: { purpose: "Task IDs removed on purpose, so `plan-viewer links` stops reporting them as unknown." },
+  [configPath("slack-channels.md")]: { purpose: "Names for Slack channel and DM IDs in links. `planboard links` reports IDs missing here." },
+  [configPath("retired-tasks.md")]: { purpose: "Task IDs removed on purpose, so `planboard links` stops reporting them as unknown." },
   "config.toml": { purpose: "Linear and Slack tokens (`[linear] API_KEY`, `[slack] TOKEN`). Ignored by git; the viewer never shows it." },
 };
 
@@ -235,7 +235,7 @@ export async function readConfigFile(root: string, cfg: any, path: string) {
 }
 
 export function promptEditPrompt(root: string, prompt: { id: string; title: string; sent: string; slots: string[] }) {
-  return `Edit the "${prompt.title}" prompt in ${join(root, "config/prompts", `${prompt.id}.md`)} for the Plan Viewer workspace at ${root}.
+  return `Edit the "${prompt.title}" prompt in ${join(root, "config/prompts", `${prompt.id}.md`)} for the Planboard workspace at ${root}.
 
 The viewer sends it from: ${prompt.sent}.
 Slots the viewer fills: ${prompt.slots.map((slot) => `{${slot}}`).join(", ") || "none"}. Keep each slot you still want; a slot you remove is no longer sent, and text in braces that is not a slot stays as written.
@@ -256,7 +256,7 @@ export function routinePrompt(root: string, cfg: any, id: string, today: string,
 }
 
 export function filePrompt(root: string, file: ConfigFile) {
-  return `${file.exists ? "Update" : "Create"} ${file.path} in the Plan Viewer workspace at ${root}.
+  return `${file.exists ? "Update" : "Create"} ${file.path} in the Planboard workspace at ${root}.
 
 What it is for: ${file.purpose}${file.key ? `\nThe \`${file.key}\` setting names this file.` : ""}
 
@@ -281,7 +281,7 @@ export async function gettingStarted(root: string) {
 // The Getting started helper for a first task: the same interview docs/setup.md runs, for one task.
 export function firstTaskPrompt(root: string) {
   const cli = CLI;
-  return `Write the first task for the Plan Viewer workspace at ${root}.
+  return `Write the first task for the Planboard workspace at ${root}.
 
 Ask the user for one real piece of work they want to track and which project it belongs to. Write it as a task, following the workspace AGENTS.md for where the file goes and its format: front matter, a short outcome, a work breakdown of two to four steps, and a next action with a prompt for the first ready step (lint rejects an active task without one).
 

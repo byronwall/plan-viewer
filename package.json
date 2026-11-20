@@ -1,5 +1,5 @@
 {
-  "name": "plan-viewer",
+  "name": "planboard",
   "version": "0.1.0",
   "description": "A local reading desk for Markdown daily plans, tasks, and the code they touch.",
   "keywords": [
@@ -9,10 +9,10 @@
     "codex",
     "claude-code"
   ],
-  "repository": "github:byronwall/plan-viewer",
+  "repository": "github:byronwall/planboard",
   "type": "module",
   "bin": {
-    "plan-viewer": "bin.js"
+    "planboard": "bin.js"
   },
   "files": [
     "bin.js",

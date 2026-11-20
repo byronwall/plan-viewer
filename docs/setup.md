@@ -1,6 +1,6 @@
 # Set up a planning workspace (for agents)
 
-A person asked you to set them up with Plan Viewer. They either cloned this repository and started you in it, or started you in an empty folder and asked for `npx plan-viewer`. Follow these steps in order. When you finish, the person has their own planning workspace open in the viewer, with today's plan and one real task in it.
+A person asked you to set them up with Planboard. They either cloned this repository and started you in it, or started you in an empty folder and asked for `npx planboard`. Follow these steps in order. When you finish, the person has their own planning workspace open in the viewer, with today's plan and one real task in it.
 
 Talk to the person as you go. Ask only the questions listed here, and say what each step did.
 
@@ -8,7 +8,7 @@ Talk to the person as you go. Ask only the questions listed here, and say what e
 
 Run `node --version`. The viewer needs Node.js 22.6 or later from a clone, and 22.15 or later from npm. If it is older or missing, stop and tell the person to install a current Node.js from <https://nodejs.org>. Nothing else needs to be installed.
 
-In the steps below, `../plan-viewer/cli.ts` is the clone's command. With no clone, use `npx plan-viewer` in its place, run from the workspace.
+In the steps below, `../planboard/cli.ts` is the clone's command. With no clone, use `npx planboard` in its place, run from the workspace.
 
 ## 2. Make the workspace folder
 
@@ -23,20 +23,20 @@ mkdir -p ../planning
 Run init from inside the workspace folder:
 
 ```bash
-cd ../planning && ../plan-viewer/cli.ts init
+cd ../planning && ../planboard/cli.ts init
 ```
 
-With no clone, run `npx --yes plan-viewer init` in the workspace instead. If the checkout's folder is not named `plan-viewer`, use its real path. The last line `init` prints names the command that starts the viewer, with the right path. `init` starts a git repository, sets up a pre-commit hook so each commit checks the plans, and copies `AGENTS.md` and `CLAUDE.md`, with that same command in their checks. Read the workspace's new `AGENTS.md` now. It says where every file goes and how plans and tasks are written. Follow it for the rest of this setup.
+With no clone, run `npx --yes planboard init` in the workspace instead. If the checkout's folder is not named `planboard`, use its real path. The last line `init` prints names the command that starts the viewer, with the right path. `init` starts a git repository, sets up a pre-commit hook so each commit checks the plans, and copies `AGENTS.md` and `CLAUDE.md`, with that same command in their checks. Read the workspace's new `AGENTS.md` now. It says where every file goes and how plans and tasks are written. Follow it for the rest of this setup.
 
 ## 4. Start the viewer
 
 From the workspace folder, start the viewer as a background process, so it keeps running while you work:
 
 ```bash
-../plan-viewer/cli.ts
+../planboard/cli.ts
 ```
 
-It prints `Plan Viewer is ready … at http://127.0.0.1:4173`. If the port is busy, set `PLAN_VIEWER_PORT` to another port. Give the person the URL and ask them to open it. The page is mostly empty for now.
+It prints `Planboard is ready … at http://127.0.0.1:4173`. If the port is busy, set `PLAN_VIEWER_PORT` to another port. Give the person the URL and ask them to open it. The page is mostly empty for now.
 
 ## 5. Ask the person four questions
 
@@ -67,4 +67,4 @@ Ask the person to reload the viewer. It opens today's plan, with the task as a c
 
 - To add work, they ask you (or any agent in the workspace) to write tasks and plans. The viewer never edits files.
 - The optional integrations (GitHub pull requests, Jira, Linear, Slack, and agent handoffs from the viewer) are in the README's "Optional integrations" table. Each one is off until it is set up.
-- The command `init` printed (`../plan-viewer/cli.ts` or `npx plan-viewer`) starts the viewer again later. Pulling the checkout updates a clone; `npx plan-viewer@latest` updates an npm install.
+- The command `init` printed (`../planboard/cli.ts` or `npx planboard`) starts the viewer again later. Pulling the checkout updates a clone; `npx planboard@latest` updates an npm install.

@@ -1,6 +1,6 @@
-# Plan Viewer
+# Planboard
 
-**Your plans are Markdown files. Plan Viewer turns them into one work queue that you and your coding agents share.**
+**Your plans are Markdown files. Planboard turns them into one work queue that you and your coding agents share.**
 
 It reads a folder of daily plans and tasks and shows what is next, who it waits on, and the PRs, issues and agent threads around it. Any step goes to [Codex](https://openai.com/codex/) or [Claude](https://claude.com/download) with its context in one click. Nothing runs until you press Send.
 
@@ -13,23 +13,23 @@ The viewer never edits your files. Your Markdown stays the source of truth, read
 You need [Node.js](https://nodejs.org) 22.15 or later. In an empty folder, run:
 
 ```bash
-npx plan-viewer init
+npx planboard init
 ```
 
 ```bash
-npx plan-viewer
+npx planboard
 ```
 
-`init` makes the folder a workspace, and the second command serves it at `http://127.0.0.1:4173`. The page is mostly empty until you write a plan. The viewer runs on your machine and reads your folder. It has no account, no database and no build step. To update it later, run `npx plan-viewer@latest`.
+`init` makes the folder a workspace, and the second command serves it at `http://127.0.0.1:4173`. The page is mostly empty until you write a plan. The viewer runs on your machine and reads your folder. It has no account, no database and no build step. To update it later, run `npx planboard@latest`.
 
 To look at a sample workspace first (a fictional team's week), clone the repository and run the demo on `http://127.0.0.1:4173`:
 
 ```bash
-git clone https://github.com/byronwall/plan-viewer.git
+git clone https://github.com/byronwall/planboard.git
 ```
 
 ```bash
-cd plan-viewer && npm run dev:demo
+cd planboard && npm run dev:demo
 ```
 
 ## Set it up with your agent
@@ -37,14 +37,14 @@ cd plan-viewer && npm run dev:demo
 An agent such as [Claude Code](https://claude.com/claude-code) or [Codex](https://openai.com/codex/) can do the setup and write your first plan. Start it in an empty folder and tell it:
 
 ```text
-Read https://github.com/byronwall/plan-viewer/blob/main/docs/setup.md and set me up with npx plan-viewer.
+Read https://github.com/byronwall/planboard/blob/main/docs/setup.md and set me up with npx planboard.
 ```
 
-To work from a clone instead (Node.js 22.6 or later), clone the repository, start your agent in `plan-viewer`, and tell it `Read docs/setup.md and set me up.`
+To work from a clone instead (Node.js 22.6 or later), clone the repository, start your agent in `planboard`, and tell it `Read docs/setup.md and set me up.`
 
 ```bash
-git clone https://github.com/byronwall/plan-viewer.git
-cd plan-viewer
+git clone https://github.com/byronwall/planboard.git
+cd planboard
 ```
 
 The agent creates your workspace (`../planning` beside a clone), starts the viewer, asks you four questions, and writes today's plan and your first task. To do it yourself instead, see [Set it up by hand](#set-it-up-by-hand).
@@ -57,7 +57,7 @@ The agent creates your workspace (`../planning` beside a clone), starts the view
 
 ![A step, with what it waits on and its prompt, ready for an agent](docs/images/action.png)
 
-**Tasks with real structure.** A task file can carry a work breakdown with prerequisites. The viewer lists its steps by who moves next, with a dependency graph one click away, and marks what is ready and what waits on prerequisites. `plan-viewer lint` keeps every task valid.
+**Tasks with real structure.** A task file can carry a work breakdown with prerequisites. The viewer lists its steps by who moves next, with a dependency graph one click away, and marks what is ready and what waits on prerequisites. `planboard lint` keeps every task valid.
 
 ![A task's steps](docs/images/task.png)
 
@@ -83,12 +83,12 @@ The agent creates your workspace (`../planning` beside a clone), starts the view
 
 ## Set it up by hand
 
-A workspace is a folder of Markdown plans. Run `npx plan-viewer init` in it, as in [Try it](#try-it). From a clone, keep the workspace beside the checkout and run its `cli.ts` instead:
+A workspace is a folder of Markdown plans. Run `npx planboard init` in it, as in [Try it](#try-it). From a clone, keep the workspace beside the checkout and run its `cli.ts` instead:
 
 ```bash
-git clone https://github.com/byronwall/plan-viewer.git
+git clone https://github.com/byronwall/planboard.git
 mkdir planning && cd planning
-../plan-viewer/cli.ts init
+../planboard/cli.ts init
 ```
 
 `init` sets up what the viewer and your agents need:
@@ -96,11 +96,11 @@ mkdir planning && cd planning
 - a git repository with a pre-commit hook that lints staged plans and checks links. From a clone, the hooks path is the checkout's `hooks/`. From npm, `init` copies the hook into the workspace's `.githooks/`, and the hook runs the viewer through `npx`;
 - a `.gitignore` for `tmp/` (the viewer's caches) and `config.toml` (Linear and Slack tokens);
 - the `config/`, `daily/`, `tasks/` and `reference/` folders;
-- `AGENTS.md` and `CLAUDE.md` from the example workspace, with the command that runs the viewer (`npx plan-viewer`, or the path to the clone's `cli.ts`).
+- `AGENTS.md` and `CLAUDE.md` from the example workspace, with the command that runs the viewer (`npx planboard`, or the path to the clone's `cli.ts`).
 
 `init` never replaces an existing file or setting, so you can run it again in a partly set up workspace. It prints what it did and what it skipped.
 
-Then run `npx plan-viewer` (or `../plan-viewer/cli.ts` from a clone) in the workspace to start the viewer.
+Then run `npx planboard` (or `../planboard/cli.ts` from a clone) in the workspace to start the viewer.
 
 Write today's plan at `daily/YYYY-MM-DD.md` and it opens on launch. The copied `AGENTS.md` (which `CLAUDE.md` imports) tells your agents how plans and tasks are written. [`examples/workspace/`](examples/workspace) is a full sample workspace: a small fictional team's week.
 
@@ -150,18 +150,18 @@ Send the invite email from POST /invites through the mailer and add a test.
 
 ### Commands
 
-Run each from the workspace (or set `PLANNING_ROOT`), as `npx plan-viewer <command>` or, from a clone, `../plan-viewer/cli.ts <command>`. `plan-viewer help` lists them. A mistake, such as a missing file or a busy port, prints one line and exits 1.
+Run each from the workspace (or set `PLANNING_ROOT`), as `npx planboard <command>` or, from a clone, `../planboard/cli.ts <command>`. `planboard help` lists them. A mistake, such as a missing file or a busy port, prints one line and exits 1.
 
 | Command | Does |
 | --- | --- |
-| `plan-viewer serve` | Starts the viewer at `http://127.0.0.1:4173`, restarting itself when the viewer's code changes. It is the default command. |
-| `plan-viewer init` | Sets up the folder as a workspace: git and its pre-commit hook, `.gitignore`, folders, and the agent guide. Never replaces a file. |
-| `plan-viewer lint [paths…\|--staged]` | Checks task front matter, work breakdowns, and action references. |
-| `plan-viewer links [--fix\|--warm\|--refresh-slack]` | Reports broken links, unknown tasks, unlinked task assets, and unnamed Slack channels. |
-| `plan-viewer move <from> <to\|TASK-NNNN>` | Moves one file and repairs every link to it. `TASK-NNNN` moves it into that task's folder; the task must exist. |
-| `plan-viewer migrate [--write]` | Moves a workspace from the older layout (`tasks/TASK-NNNN.md` with `-assets/`, `daily/YYYY/MM/DD/`, `plans/`, `viewer.config.json`) to this one. Without `--write` it lists the moves and what to fix first. |
-| `plan-viewer task TASK-NNNN` | Prints a task's context in compact form for an agent. |
-| `plan-viewer next [--json]` | Prints the steps flagged Up next, for an agent thread to work through. |
+| `planboard serve` | Starts the viewer at `http://127.0.0.1:4173`, restarting itself when the viewer's code changes. It is the default command. |
+| `planboard init` | Sets up the folder as a workspace: git and its pre-commit hook, `.gitignore`, folders, and the agent guide. Never replaces a file. |
+| `planboard lint [paths…\|--staged]` | Checks task front matter, work breakdowns, and action references. |
+| `planboard links [--fix\|--warm\|--refresh-slack]` | Reports broken links, unknown tasks, unlinked task assets, and unnamed Slack channels. |
+| `planboard move <from> <to\|TASK-NNNN>` | Moves one file and repairs every link to it. `TASK-NNNN` moves it into that task's folder; the task must exist. |
+| `planboard migrate [--write]` | Moves a workspace from the older layout (`tasks/TASK-NNNN.md` with `-assets/`, `daily/YYYY/MM/DD/`, `plans/`, `viewer.config.json`) to this one. Without `--write` it lists the moves and what to fix first. |
+| `planboard task TASK-NNNN` | Prints a task's context in compact form for an agent. |
+| `planboard next [--json]` | Prints the steps flagged Up next, for an agent thread to work through. |
 
 ### Optional integrations
 

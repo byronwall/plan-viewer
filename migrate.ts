@@ -1,4 +1,4 @@
-// `plan-viewer migrate [--write]`: move a workspace from the older layout to the one in public/layout.js, in one shot.
+// `planboard migrate [--write]`: move a workspace from the older layout to the one in public/layout.js, in one shot.
 //
 //   tasks/TASK-0101.md, tasks/TASK-0101-assets/*  → tasks/TASK-0101/TASK-0101.md, tasks/TASK-0101/*
 //   daily/2026/11/18/plan.md                      → daily/2026-11-18.md
@@ -18,7 +18,7 @@ import { promisify } from "node:util";
 const ROOT = resolve(process.env.PLANNING_ROOT || process.cwd());
 const args = process.argv.slice(2);
 const write = args.includes("--write");
-if (args.some((arg) => arg !== "--write")) throw new Error("Usage: plan-viewer migrate [--write]");
+if (args.some((arg) => arg !== "--write")) throw new Error("Usage: planboard migrate [--write]");
 
 const run = (cmd: string, cmdArgs: string[]) => promisify(execFile)(cmd, cmdArgs, { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 });
 const OLD_ROOTS = ["tasks", "daily", "plans", "reference"];
@@ -141,13 +141,13 @@ if (write && dirty) fixFirst.push("The git working tree has uncommitted changes.
 if (fixFirst.length) {
   console.log(`\nFix first (${fixFirst.length}):`);
   for (const item of fixFirst) console.log(`  ${item}`);
-  console.log(`\nFix the list above, then run plan-viewer migrate again.${write ? " Nothing was changed." : ""}`);
+  console.log(`\nFix the list above, then run planboard migrate again.${write ? " Nothing was changed." : ""}`);
   process.exit(1);
 }
 if (!write) {
   const left = await leftovers();
   if (left.length) console.log(`\nAfter --write, update these lines that name the old layout (${left.length}):\n${left.map((line) => `  ${line}`).join("\n")}`);
-  console.log(`\nDry run; nothing changed.${moves.size ? ` Run plan-viewer migrate --write to apply.${dirty ? " Commit your changes first." : ""}` : ""}`);
+  console.log(`\nDry run; nothing changed.${moves.size ? ` Run planboard migrate --write to apply.${dirty ? " Commit your changes first." : ""}` : ""}`);
   process.exit(0);
 }
 
@@ -170,4 +170,4 @@ if (stranded.length) console.log(`\nThese old folders still hold files the migra
 const left = await leftovers();
 console.log(`\nMigrated ${moves.size} file(s) and rewrote ${contents.size}.`);
 if (left.length) console.log(`\nUpdate these lines that still name the old layout (${left.length}):\n${left.map((line) => `  ${line}`).join("\n")}`);
-console.log("\nNext: run plan-viewer lint and plan-viewer links, review git diff --stat, then commit.");
+console.log("\nNext: run planboard lint and planboard links, review git diff --stat, then commit.");

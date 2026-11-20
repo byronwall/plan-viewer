@@ -7,9 +7,9 @@ import { customizePrompt, fillPrompt, listPrompts, resetPrompt } from "./prompts
 
 test("a config/prompts/ copy overrides the default until Reset deletes it", async () => {
   const root = await mkdtemp(join(tmpdir(), "prompts-"));
-  const values = { viewer: "Plan Viewer", workspace: "planning", user: "Ada", ask: "" };
+  const values = { viewer: "Planboard", workspace: "planning", user: "Ada", ask: "" };
   const before = fillPrompt(root, "global", values);
-  assert.match(before, /^Task from the local Plan Viewer\n\nWork in the planning repository/);
+  assert.match(before, /^Task from the local Planboard\n\nWork in the planning repository/);
   assert.match(before, /record a labeled Markdown link under ## Chats/, "{chat-links} fills from its own prompt");
   const path = await customizePrompt(root, "global");
   assert.equal(path, "config/prompts/global.md");

@@ -6,7 +6,7 @@
 //   reference/                     prose people and agents read; reference/notes/ holds notes tied to no task
 //   config/                        everything the tooling reads or writes (viewer.json, data files, prompts/)
 //
-// `plan-viewer migrate` (migrate.ts) is the only code that knows the older layout.
+// `planboard migrate` (migrate.ts) is the only code that knows the older layout.
 
 // Folders the library lists. config/ is not one of them.
 export const DOC_ROOTS = ["daily", "tasks", "reference"];
