@@ -218,3 +218,46 @@ test("completed-task lint warns when a commit piles updates, open steps or asset
   assert.deepEqual(onlyAsset.errors, []);
   assert.match(onlyAsset.warnings.join("\n"), /tasks\/TASK-0042\/TASK-0042\.md: TASK-0042 is completed, but this commit adds 1 asset \(report\.md\)/);
 });
+
+test("an old-layout workspace can still commit, so migrate --write gets the clean tree it needs", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "planning-old-layout-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const run = promisify(execFile);
+  const git = (args: string[]) => run("git", args, { cwd: root });
+  await git(["init", "--quiet"]);
+  await mkdir(join(root, "tasks", "TASK-0042-assets"), { recursive: true });
+  await writeFile(join(root, "viewer.config.json"), "{}\n");
+  await writeFile(join(root, "tasks", "TASK-0042.md"), source.replace("Reproduce [open]", "Reproduce [done]"));
+  await writeFile(join(root, "tasks", "TASK-0042-assets", "notes.md"), "# Notes\n\n[missing](nowhere.md)\n");
+  await git(["add", "-A"]);
+  const lint = await checkPlanning(["--staged"], root);
+  assert.deepEqual(lint.errors, []);
+  assert.match(lint.warnings.join("\n"), /older folder layout/);
+  assert.match((await checkPlanning([], root)).errors.join("\n"), /older folder layout/, "the full lint still says to migrate");
+  const hook = fileURLToPath(new URL("hooks/pre-commit", import.meta.url));
+  const env = { ...process.env };
+  for (const name of ["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "PLANNING_ROOT"]) delete env[name];
+  const { stderr } = await run(hook, [], { cwd: root, env });
+  assert.match(stderr, /warn\s+.*older folder layout/);
+});
+
+test("a staged rename is judged only on errors its old version didn't have", async (t) => {
+  const { setConfig } = await import("./public/config.js");
+  setConfig({ steps: { groundReferencesFrom: "2026-11-16" } });
+  t.after(() => setConfig({}));
+  const root = await mkdtemp(join(tmpdir(), "planning-rename-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const git = (args: string[]) => promisify(execFile)("git", args, { cwd: root });
+  await git(["init", "--quiet"]);
+  await mkdir(join(root, "tasks", "TASK-0001"), { recursive: true });
+  const old = 'diagram "Stacks" version=1\nnode a "MOD-2898 stack"\nlayout root flow\n';
+  await writeFile(join(root, "tasks", "TASK-0001", "stacks.draft"), old);
+  await git(["add", "-A"]);
+  await git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "before the rule"]);
+  await mkdir(join(root, "tasks", "TASK-0001", "diagrams"));
+  await git(["mv", "tasks/TASK-0001/stacks.draft", "tasks/TASK-0001/diagrams/stacks.draft"]);
+  assert.deepEqual((await checkPlanning(["--staged"], root)).errors, [], "a move carries old errors along without failing");
+  await writeFile(join(root, "tasks", "TASK-0001", "diagrams", "stacks.draft"), old.replace("layout", 'node b "RAI-55530 startup"\nlayout'));
+  await git(["add", "-A"]);
+  assert.deepEqual((await checkPlanning(["--staged"], root)).errors.map((e) => e.split(": ").slice(0, 2).join(": ")), ["tasks/TASK-0001/diagrams/stacks.draft: line 3"]);
+});

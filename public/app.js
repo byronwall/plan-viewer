@@ -1,6 +1,6 @@
 import { contextScore, fuzzyChunks, searchDocuments, searchPrs, termMatch, textScore } from "./search.js";
 import { isSettled, renderActions, renderWorkGraph, showDoneToggle, workDiagnostics, workStatusIcon, workStatusLabel } from "./actions.js";
-import { applyLinkMetadata, collectLinks, metadataKey, renderDock, selectDocumentSort, selectDockSource, taskDocumentSequence } from "./dock.js";
+import { applyLinkMetadata, collectLinks, documentFolder, metadataKey, openDocumentFolder, renderDock, selectDocumentSort, selectDockSource, taskDocumentSequence, toggleDocumentNested, updateDocumentBrowser } from "./dock.js";
 import { GLYPHS } from "./icons.js";
 import { enhanceTable } from "./table-viewer.js";
 import { savedTableFill, savedTableSize, sizeTableViewer, validTableSize } from "./table-size.js";
@@ -24,7 +24,7 @@ import { MOVE_FILTERS, KIND_FILTERS, SORTS, GROUPS, attachScorePopover, moveCoun
 import { connectWorld, fetchWorld, openPortfolio, openTaskWorld, taskCounts } from "./world.js";
 import { cachedPlans, loadPlans, openPlan, planForLink, planTitle, plansSummary, renderPlansPage, searchPlans, setPlanNotice } from "./plans.js";
 import { AGENTS, agentApp, agentName, config, issuesOn, referenceConfig, setConfig, setAgentApp } from "./config.js";
-import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek } from "./dates.js";
+import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek, formatDateTime } from "./dates.js";
 import { dailyFile, dateOfPath, isTaskAsset, isTaskFile, taskFile, taskOfPath, taskRelative } from "./layout.js";
 
 const state = { documents: [], defaultPath: "", selectedPath: "", document: null, activeChunkId: "", openComposer: null, view: "document" };
@@ -144,12 +144,7 @@ elements.toaster.addEventListener("mouseleave", () => toasts.forEach(startToast)
 
 function formatDate(date, includeYear = false) {
   if (!date) return "";
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    ...(includeYear ? { year: "numeric" } : {}),
-  }).format(new Date(`${date}T12:00:00`));
+  return formatDateTime(`${date}T12:00:00`, "en-US", { weekday: "short", month: "short", day: "numeric", ...(includeYear ? { year: "numeric" } : {}) });
 }
 
 function dailyDocumentLabel(doc) {
@@ -261,7 +256,7 @@ function checkInReason(task, path) {
   return task.checkIn && task.checkIn <= localTodayKey() ? `Check-in date ${shortDate(task.checkIn)}` : "";
 }
 const statusRank = (doc) => checkInReason(doc.task, doc.path) ? -1 : TASK_STATUS_ORDER[doc.task.status];
-const shortDate = (date) => new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const shortDate = (date) => formatDateTime(`${date}T12:00:00`, "en-US", { month: "short", day: "numeric" });
 
 function statusPill(task, path) {
   const reason = checkInReason(task, path);
@@ -361,15 +356,17 @@ function updateNavCounts() {
   }
 }
 
-async function loadWaiting() {
+async function loadWaiting(attempt = 0) {
   try {
     const response = await fetch("/api/waiting");
     if (!response.ok) return;
-    const { waiting } = await response.json();
+    const { waiting, pending } = await response.json();
     const changed = JSON.stringify(waiting) !== JSON.stringify(waitingSignals);
     waitingSignals = waiting;
     updateNavCounts();
     if (changed && state.view === "tasks") renderTasksPage();
+    // Titles the server was still fetching: ask again, backing off, so the signals settle without a reload.
+    if (pending && attempt < 3) setTimeout(() => loadWaiting(attempt + 1), 2000 * (attempt + 1));
   } catch {}
 }
 setInterval(loadWaiting, 10 * 60 * 1000);
@@ -391,7 +388,7 @@ const stepTally = (id) => { const steps = stepsData?.steps.filter((step) => step
 let contentCounts = {};
 let contentCountsAsked = false;
 const contentCount = (doc, kind) => contentCounts[doc.task.id]?.[kind] || 0;
-const CONTENT_KINDS = [["document", "file-text", "document"], ["diagram", "layout-panel-left", "diagram"], ["image", "image", "image"]];
+const CONTENT_KINDS = [["document", "file-text", "document"], ["diagram", "workflow", "diagram"], ["image", "image", "image"]];
 // One aligned slot per kind, so the column reads as three: an icon and its count, blank when there are none.
 const contentCell = (doc) => {
   const parts = CONTENT_KINDS.map(([kind, glyph, noun]) => [contentCount(doc, kind), glyph, noun]);
@@ -1637,7 +1634,7 @@ async function openStep(key) {
 async function reloadStepDialog() {
   const doc = dialogDoc, id = workItemDialog.dataset.item;
   if (!doc) return;
-  const [fresh] = await Promise.all([fetchTaskDocument(doc.path, true).catch(() => doc), loadSteps()]);
+  const [fresh] = await Promise.all([fetchTaskDocument(doc.path, true).catch(() => doc), loadSteps(true)]);
   if (state.document?.path === fresh.path) state.document = fresh;
   if (workItemDialog.open && workItemDialog.dataset.item === id) openWorkItem(id, fresh);
 }
@@ -2082,22 +2079,35 @@ function dockDiagrams(doc) {
 
 // Panels repeat chunk content, so their copies drop ids (SVG markers excepted) to keep anchors and jumps unique.
 function renderDocumentDock(doc) {
-  if (doc.format === "text") return;
+  // A plain-text file in a task folder still gets the dock, so its Documents panel and folder crumbs reach its siblings.
+  if (doc.format === "text" && !taskOfPath(doc.path)) return;
   const links = collectLinks(elements.chunks, state.documents, doc.path);
   elements.chunks.insertAdjacentHTML("afterbegin", renderDock({ doc, documents: state.documents, links, body: chunk => chunkBody(doc, chunk), steps: showsSteps(doc) ? taskStepsPanel(doc, false) : "", diagrams: dockDiagrams(doc) }));
   for (const node of elements.chunks.querySelectorAll(".doc-dock-panel-body [id]")) if (node.localName !== "marker") node.removeAttribute("id");
   syncDockStuck();
+  linkMetadataSeen = {};
   loadLinkMetadata(doc);
 }
 
 // Titles and states for GitHub, Linear and Jira links arrive after render; rows keep their fallback text until then.
-async function loadLinkMetadata(doc) {
-  const keys = [...new Set([...elements.chunks.querySelectorAll("a[href]")].map(link => link.dataset.metaKey || metadataKey(link.href)).filter(Boolean))];
+// Titles already applied to this page, for dock panels whose bodies are built later (dock-panel-filled).
+let linkMetadataSeen = {};
+elements.chunks.addEventListener("dock-panel-filled", (event) => {
+  for (const node of event.target.querySelectorAll(".doc-dock-panel-body [id]")) if (node.localName !== "marker") node.removeAttribute("id");
+  applyLinkMetadata(event.target, linkMetadataSeen);
+});
+
+// The server waits about a second on the network; titles still being fetched come back as `pending` and are asked for again.
+async function loadLinkMetadata(doc, wanted = null, attempt = 0) {
+  const keys = wanted || [...new Set([...elements.chunks.querySelectorAll("a[href]")].map(link => link.dataset.metaKey || metadataKey(link.href)).filter(Boolean))];
   if (!keys.length) return;
   try {
     const response = await fetch("/api/link-metadata", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ keys }) });
     if (!response.ok || state.document !== doc) return;
-    applyLinkMetadata(elements.chunks, (await response.json()).metadata || {});
+    const body = await response.json();
+    Object.assign(linkMetadataSeen, body.metadata || {});
+    applyLinkMetadata(elements.chunks, body.metadata || {});
+    if (body.pending?.length && attempt < 4) setTimeout(() => state.document === doc && loadLinkMetadata(doc, body.pending, attempt + 1), 1500 * (attempt + 1));
   } catch {
     // Offline or unauthenticated sources leave the plain IDs in place.
   }
@@ -2124,6 +2134,7 @@ const viewCrumb = (view, label) => `<a class="crumb" href="?view=${view}" data-c
 const docCrumb = (path, label, current = false) => current
   ? `<a class="crumb is-current" href="${escapeHtml(documentHref(path, ""))}" aria-current="page">${escapeHtml(label)}</a>`
   : `<a class="crumb" href="${escapeHtml(documentHref(path, ""))}" data-crumb-path="${escapeHtml(path)}">${escapeHtml(label)}</a>`;
+const folderCrumb = (folder, label) => `<button class="crumb crumb-folder" type="button" data-crumb-folder="${escapeHtml(folder)}" aria-haspopup="dialog" title="Browse ${escapeHtml(folder)}/ in Documents">${escapeHtml(label)}</button>`;
 const copyCrumb = (value, label = value) => `<button class="crumb crumb-copy" type="button" data-copy-value="${escapeHtml(value)}" title="Copy ${escapeHtml(value)}">${escapeHtml(label)}</button>`;
 
 function documentBreadcrumb(doc) {
@@ -2135,7 +2146,12 @@ function documentBreadcrumb(doc) {
   const parent = parentDocument(doc.path);
   if (parent) {
     const parentLabel = parent.task ? parent.task.id : parent.title;
-    return [docCrumb(parent.path, parentLabel), copyCrumb(doc.path, parent.task ? taskRelative(doc.path) : doc.path.slice(dirname(parent.path).length + 1))].join(crumbSeparator);
+    // A task document's folders are crumbs of their own that open the Documents panel on that folder.
+    if (parent.task) {
+      const folders = documentFolder(doc.path).split("/").filter(Boolean);
+      return [docCrumb(parent.path, parentLabel), ...folders.map((name, index) => folderCrumb(folders.slice(0, index + 1).join("/"), name)), copyCrumb(doc.path, doc.path.split("/").at(-1))].join(crumbSeparator);
+    }
+    return [docCrumb(parent.path, parentLabel), copyCrumb(doc.path, doc.path.slice(dirname(parent.path).length + 1))].join(crumbSeparator);
   }
   const root = doc.path.startsWith("reference/") ? viewCrumb("reference", "Reference") : "";
   return [root, copyCrumb(doc.path, doc.path.replace(/^reference\//, ""))].filter(Boolean).join(crumbSeparator);
@@ -2376,17 +2392,25 @@ const savedStepsGroup = () => { try { return localStorage.getItem("plan-viewer:s
 const stepsFilters = { move: "you", kind: "any", hidden: false, sort: "priority", group: savedStepsGroup() };
 let selectedStep = "";
 
-async function loadSteps() {
-  try {
-    const response = await fetch("/api/steps");
-    if (response.ok) stepsData = await response.json();
-  } catch {}
-  updateNavCounts();
-  return stepsData;
+// Callers that ask while a load is running share it (boot, the opening plan and the nav counts all ask at once).
+// After a write, `fresh` starts a new load, since one already running may have read the files before it.
+let stepsLoading = null;
+function loadSteps(fresh = false) {
+  if (fresh) stepsLoading = null;
+  const load = (stepsLoading ??= (async () => {
+    try {
+      const response = await fetch("/api/steps");
+      if (response.ok) stepsData = await response.json();
+    } catch {}
+    updateNavCounts();
+    return stepsData;
+  })());
+  load.finally(() => { if (stepsLoading === load) stepsLoading = null; });
+  return load;
 }
 
 async function refreshSteps() {
-  await loadSteps();
+  await loadSteps(true);
   if (state.view !== "steps") return;
   const y = window.scrollY;
   renderStepsPage();
@@ -2649,7 +2673,7 @@ async function refreshFromMarkdown(changedPaths) {
   const currentPath = state.selectedPath;
   for (const path of changedPaths) stepDocs.delete(path);
   // Steps derive from every task, so a task edit reloads them before anything that lists steps renders again.
-  if ([...changedPaths].some((path) => path.startsWith("tasks/"))) await loadSteps();
+  if ([...changedPaths].some((path) => path.startsWith("tasks/"))) await loadSteps(true);
   if (workItemDialog.open && dialogDoc && dialogDoc.path !== currentPath && changedPaths.has(dialogDoc.path)) reloadStepDialog();
   const currentChanged = changedPaths.has(currentPath);
   // Live refreshes keep the reader where they are: pin the first card still on screen to its current offset.
@@ -3021,6 +3045,11 @@ elements.meta.addEventListener("click", async (event) => {
     selectDocument(doc.dataset.crumbPath);
     return;
   }
+  const folder = event.target.closest("[data-crumb-folder]");
+  if (folder) {
+    openDocumentFolder(elements.chunks, folder.dataset.crumbFolder);
+    return;
+  }
   if (event.target.closest(".crumb.is-current") && plainClick) {
     event.preventDefault();
     window.scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
@@ -3308,6 +3337,16 @@ elements.chunks.addEventListener("click", (event) => {
     if (state.document) elements.meta.innerHTML = documentBreadcrumb(state.document) + documentStepper(state.document);
     return;
   }
+  const docFolder = event.target.closest("[data-doc-folder]");
+  if (docFolder) {
+    const panel = docFolder.closest(".doc-dock-panel");
+    updateDocumentBrowser(panel, { folder: docFolder.dataset.docFolder });
+    // The clicked row or crumb is redrawn away, so focus lands in the filter, where ↓ reaches the new rows.
+    panel.querySelector("[data-doc-filter]")?.focus({ preventScroll: true });
+    return;
+  }
+  const docNested = event.target.closest("[data-doc-nested]");
+  if (docNested) return toggleDocumentNested(docNested);
   const dockPanel = event.target.closest(".doc-dock-panel");
   if (dockPanel && event.target.closest("a[href], [data-action-key], [data-work-item], .handoff-button")) queueMicrotask(() => dockPanel.matches(":popover-open") && dockPanel.hidePopover());
   const imageTrigger = event.target.closest(".markdown-image-trigger");
@@ -3387,7 +3426,42 @@ elements.chunks.addEventListener("click", (event) => {
 elements.chunks.addEventListener("toggle", (event) => {
   if (!event.target.matches?.(".doc-dock-panel")) return;
   elements.chunks.querySelector(`[popovertarget="${event.target.id}"]`)?.setAttribute("aria-expanded", String(event.newState === "open"));
+  // A panel holds its height while open so a shorter list never pulls it up; closing lets it fit its content again.
+  if (event.newState === "closed") event.target.style.minHeight = "";
+  // The Documents panel opens with its filter focused, so typing narrows the list at once.
+  if (event.newState === "open") event.target.querySelector("[data-doc-filter]")?.focus({ preventScroll: true });
 }, true);
+// The Documents filter narrows the list as you type; ↓ moves into the rows and Enter opens the first match.
+elements.chunks.addEventListener("input", (event) => {
+  if (event.target.matches?.("[data-doc-filter]")) updateDocumentBrowser(event.target.closest(".doc-dock-panel"), { filter: event.target.value });
+});
+// Esc clears a typed filter before it closes the panel, Backspace in an empty one climbs a folder, and ↑ on the first row
+// returns to the filter.
+elements.chunks.addEventListener("keydown", (event) => {
+  if (event.isComposing) return;
+  const panel = event.target.closest?.(".doc-dock-panel-documents");
+  const filter = panel?.querySelector("[data-doc-filter]");
+  if (!filter) return;
+  const rows = [...panel.querySelectorAll(".dock-source-list:not([hidden]) .dock-link")];
+  if (event.target !== filter) {
+    if (event.key === "ArrowUp" && event.target === rows[0]) { event.preventDefault(); event.stopPropagation(); filter.focus(); }
+    return;
+  }
+  if (event.key === "Escape" && filter.value) {
+    event.preventDefault();
+    filter.value = "";
+    updateDocumentBrowser(panel, { filter: "" });
+  } else if (event.key === "Backspace" && !filter.value) {
+    const up = [...panel.querySelectorAll("[data-doc-crumbs] [data-doc-folder]")].at(-1);
+    if (up) { event.preventDefault(); updateDocumentBrowser(panel, { folder: up.dataset.docFolder }); }
+  } else if (event.key === "ArrowDown" || event.key === "Enter") {
+    const first = panel.querySelector("[data-doc-list] .dock-link");
+    if (!first) return;
+    event.preventDefault();
+    if (event.key === "Enter") first.click();
+    else first.focus();
+  }
+});
 elements.handoffPopover.addEventListener("click", (event) => {
   const toggle = event.target.closest(".context-toggle");
   if (toggle) {
@@ -3882,6 +3956,10 @@ const SEARCH_ICONS = {
   initiative: GLYPHS["flag"],
   server: GLYPHS["server"],
   slack: GLYPHS["messages-square"],
+  chats: GLYPHS["bot-message-square"],
+  settings: GLYPHS.settings,
+  activity: GLYPHS.activity,
+  diagram: GLYPHS.workflow,
 };
 
 function searchIconKey(doc) {
@@ -3967,11 +4045,11 @@ function searchIssues(query, terms) {
 const PAGES = [
   { title: "Today", detail: "Today’s plan", icon: "plan", run: goToToday },
   { title: "Tasks", detail: "All tasks", icon: "task", run: () => showTasks() },
-  { title: "Activity", detail: "Everything that changed, newest first", icon: "plan", run: () => showActivity() },
+  { title: "Activity", detail: "Everything that changed, newest first", icon: "activity", run: () => showActivity() },
   ...Object.entries(LIBRARY_VIEWS).map(([view, { title, intro }]) => ({ title, detail: intro, icon: "reference", run: () => showLibrary(view) })),
-  { title: "Diagrams", detail: "Every diagram in the workspace", icon: "plan", run: () => showDiagrams() },
+  { title: "Diagrams", detail: "Every diagram in the workspace", icon: "diagram", run: () => showDiagrams() },
   { title: "Plans", detail: "Initiatives in tracked repositories", icon: "initiative", run: () => showPlans() },
-  { title: "Chat Threads", detail: "Active and completed Codex and Claude threads", icon: "history", run: showChatThreads },
+  { title: "Chat Threads", detail: "Active and completed Codex and Claude threads", icon: "chats", run: showChatThreads },
   { title: "Setup", detail: "Integrations, settings and their setup helpers", icon: "settings", run: showSetup },
   { title: "Local servers", detail: "Dev servers the viewer started: URLs, output, restart, stop", icon: "server", run: () => openServers(showNotice) },
   ...Object.entries(CODE_TABS).map(([tab, title]) => ({ title, detail: `Code · ${title}`, icon: tab === "prs" ? "pr" : tab === "commits" ? "branch" : "code", run: () => showCode({ tab: tab === "prs" ? "" : tab }) })),
@@ -4049,15 +4127,51 @@ function renderSearchResults() {
   const count = (key, one, many) => { const n = searchMatches.filter((item) => item[key]).length; return n ? `${n} ${n === 1 ? one : many}` : ""; };
   elements.searchStatus.textContent = [count("work", "work item", "work items"), count("issue", "issue", "issues"), count("pr", "PR", "PRs"), count("plan", "initiative", "initiatives"), count("doc", "document", "documents")].filter(Boolean).join(" · ");
   let position = 0;
-  elements.searchResults.innerHTML = searchMatches.length
-    ? groups.map(([label, items]) => `<div class="search-section" role="presentation">${label}</div>${items.map((item) => renderMatch(item, position++, terms)).join("")}`).join("")
+  searchQueue = groups.flatMap(([label, items]) => [{ label }, ...items.map((item) => ({ item, index: position++ }))]);
+  searchTerms = terms;
+  cancelSearchRows();
+  elements.searchResults.innerHTML = searchMatches.length ? ""
     : '<div class="search-empty"><strong>No matches</strong><span>Try a title, path, task ID, work item, PR number or title, project, or tag.</span></div>';
+  appendSearchRows(FIRST_SEARCH_ROWS);
+  scheduleSearchRows();
   elements.searchResults.scrollTop = 0;
   syncSearchSelection();
 }
 
+// A short query matches most of the workspace, and building every row on each keystroke made typing lag. The first rows
+// paint with the keystroke; the rest follow in chunks between frames, dropped when the next keystroke starts over.
+// Moving the selection to a row not drawn yet draws the rest first.
+const FIRST_SEARCH_ROWS = 40;
+const SEARCH_ROWS_PER_CHUNK = 150;
+let searchQueue = [];
+let searchTerms = [];
+let searchRenderTimer = 0;
+function appendSearchRows(limit) {
+  let html = "", rows = 0;
+  while (searchQueue.length && rows < limit) {
+    const entry = searchQueue.shift();
+    if (entry.label) html += `<div class="search-section" role="presentation">${entry.label}</div>`;
+    else { html += renderMatch(entry.item, entry.index, searchTerms); rows++; }
+  }
+  if (html) elements.searchResults.insertAdjacentHTML("beforeend", html);
+}
+function scheduleSearchRows() {
+  if (!searchQueue.length) return;
+  const run = () => { appendSearchRows(SEARCH_ROWS_PER_CHUNK); scheduleSearchRows(); };
+  searchRenderTimer = "requestIdleCallback" in window ? -requestIdleCallback(run, { timeout: 500 }) : setTimeout(run, 16);
+}
+function cancelSearchRows() {
+  if (searchRenderTimer < 0) cancelIdleCallback(-searchRenderTimer); else clearTimeout(searchRenderTimer);
+}
+function flushSearchRows() {
+  cancelSearchRows();
+  appendSearchRows(Infinity);
+}
+
 function syncSearchSelection() {
-  for (const result of elements.searchResults.querySelectorAll("[data-search-index]")) result.setAttribute("aria-selected", Number(result.dataset.searchIndex) === searchIndex ? "true" : "false");
+  if (searchMatches.length && !document.getElementById(`search-result-${searchIndex}`)) flushSearchRows();
+  for (const result of elements.searchResults.querySelectorAll('[aria-selected="true"]')) result.setAttribute("aria-selected", "false");
+  document.getElementById(`search-result-${searchIndex}`)?.setAttribute("aria-selected", "true");
   if (searchMatches.length) {
     elements.searchInput.setAttribute("aria-activedescendant", `search-result-${searchIndex}`);
     const row = document.getElementById(`search-result-${searchIndex}`);
@@ -4108,7 +4222,8 @@ elements.searchResults.addEventListener("mousemove", event => {
   const result = event.target.closest("[data-search-index]");
   if (!result || Number(result.dataset.searchIndex) === searchIndex) return;
   searchIndex = Number(result.dataset.searchIndex);
-  for (const option of elements.searchResults.querySelectorAll("[data-search-index]")) option.setAttribute("aria-selected", option === result ? "true" : "false");
+  for (const option of elements.searchResults.querySelectorAll('[aria-selected="true"]')) option.setAttribute("aria-selected", "false");
+  result.setAttribute("aria-selected", "true");
   elements.searchInput.setAttribute("aria-activedescendant", result.id);
   const pr = searchMatches[searchIndex]?.pr;
   if (pr) prefetchPr(pr.slug, pr.number);
@@ -4660,11 +4775,11 @@ function visitResult(href) {
   if (view === "code") return page("code", "Code", CODE_TABS[params.get("tab") || "prs"] || "Pull requests");
   if (view === "plans") return page("initiative", "Plans", "Initiatives by repo and status");
   if (view === "issues") return page("issue", "Issues", ISSUE_TABS[params.get("tab") || "all"] || "All");
-  if (view === "chat-threads") return page("history", "Chat Threads", "Codex and Claude");
+  if (view === "chat-threads") return page("chats", "Chat Threads", "Codex and Claude");
   if (view === "setup") return page("settings", "Setup", "Integrations and settings");
   if (view === "slack") return page("slack", "Slack", "Linked threads");
-  if (view === "activity") return page("plan", "Activity", "Everything that changed");
-  if (view === "diagrams") return page("plan", "Diagrams", "Every diagram in the workspace");
+  if (view === "activity") return page("activity", "Activity", "Everything that changed");
+  if (view === "diagrams") return page("diagram", "Diagrams", "Every diagram in the workspace");
   if (view in LIBRARY_VIEWS) return page("reference", LIBRARY_VIEWS[view].title, LIBRARY_VIEWS[view].intro);
   const path = params.get("path") || state.defaultPath;
   // A work item dialog (`?item=`) is its own place, not the task behind it.
@@ -4835,17 +4950,23 @@ async function boot() {
     connectLiveUpdates();
     loadPlans().then(updateNavCounts, () => {});
     loadDiagrams();
-    loadSteps();
+    if (!stepsData) loadSteps();
     loadPrIndex().catch(() => {}); // so ⌘K lists PRs on its first paint instead of inserting them a moment later
     openOverlays(new URLSearchParams(location.search));
-    if (issuesOn()) loadIssues().then(() => { renderFavorites(); updateNavCounts(); }).catch(() => {}); // ⌘K finds issues by key and title
     loadPrIndex().then(() => { renderFavorites(); updateNavCounts(); }).catch(() => {}); // PR favorites get their titles
-    if (config().slack.codex?.length) fetch("/api/slack").then((response) => response.json()).then((data) => { slackThreads = data.threads || []; updateNavCounts(); }).catch(() => {});
+    // Issues (megabytes on a busy tracker) and Slack threads feed ⌘K and the nav counts, not the page in view: they wait
+    // for the browser to go idle so parsing them never lands on a first click or scroll.
+    whenIdle(() => {
+      if (issuesOn()) loadIssues().then(() => { renderFavorites(); updateNavCounts(); }).catch(() => {}); // ⌘K finds issues by key and title
+      if (config().slack.codex?.length) fetch("/api/slack").then((response) => response.json()).then((data) => { slackThreads = data.threads || []; updateNavCounts(); }).catch(() => {});
+    });
     recordVisit();
   } catch (error) {
     showNotice(error.message, true);
   }
 }
+
+const whenIdle = (work) => ("requestIdleCallback" in window ? requestIdleCallback(work, { timeout: 2000 }) : setTimeout(work, 300));
 
 // config/viewer.json drives reference links and labels, so it loads before anything renders.
 try {

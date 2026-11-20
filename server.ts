@@ -26,6 +26,7 @@ import { CONFIG_FILE, DOC_ROOTS, dailyFile, isTaskAsset, isTaskFile, taskFile, t
 import { applyRule, closeNote, followUpNote, saveLaunchNote, loadSteps, markStepDone, pickChoice, planMentions, runStatement, saveNote, setStepNext, setTaskPriority, startStep } from "./steps.ts";
 import { editStep } from "./steps.ts"; // the Steps table's inline edits
 import { approveOutbound, draftFromText, dropOutbound, listOutbound, markOutboundSent, outboundFields, sendBackOutbound, stripFrontMatter } from "./outbound.ts";
+import { enableMemo, invalidateMemo, memo } from "./memo.ts";
 
 // The planning workspace is the current directory (npm scripts run from the content repository); PLANNING_ROOT
 // overrides it, and points tests at fixtures/planning so they never read live planning files.
@@ -540,7 +541,9 @@ export async function listTaskWorld() {
   return { tasks };
 }
 
-export async function listDocuments() {
+export const listDocuments = memo(readDocuments, () => todayPath());
+
+async function readDocuments() {
   const paths = (await Promise.all(DOC_ROOTS.map((folder) => walkDocuments(folder)))).flat().filter(isViewableDocumentPath);
   const files = await Promise.all(paths.map(async (path) => {
     const { mtimeMs, birthtimeMs } = await stat(join(ROOT, path));
@@ -962,7 +965,9 @@ export async function renderDiagram(requested: string, panels = "") {
 const escapeXml = (value: string) => value.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]!);
 
 // Every open step of every unfinished task, highest priority first (the Steps page, the Today lead and `plan-viewer next`).
-export async function stepsIndex() {
+export const stepsIndex = memo(readSteps, () => todayPath());
+
+async function readSteps() {
   const ids = (await readdir(join(ROOT, "tasks")).catch(() => [])).filter((name) => /^TASK-\d{4}$/.test(name));
   const tasks = (await Promise.all(ids.map(async (id) => {
     const path = taskFile(id);
@@ -982,7 +987,15 @@ export async function stepsIndex() {
 
 const chatThreads = createChatThreads();
 
+const READ_ONLY_POSTS = new Set(["/api/link-metadata", "/api/diagram/copy", "/api/diagram/open", "/api/open-slack", "/api/issues/fetch"]);
+
 export async function handleRequest(request: IncomingMessage, response: ServerResponse) {
+  // A write may change what the cached indexes hold; drop them before and after it, ahead of the file events. A few
+  // POSTs only read (a body too long for a query string), and every page sends one, so they keep the cache.
+  if (request.method !== "GET" && request.method !== "HEAD" && !READ_ONLY_POSTS.has(new URL(request.url || "/", "http://localhost").pathname)) {
+    invalidateMemo();
+    response.once("finish", invalidateMemo);
+  }
   try {
     const url = new URL(request.url || "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/api/chat-threads") {
@@ -1187,7 +1200,9 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (request.method === "POST" && url.pathname === "/api/link-metadata") {
       const body = await readJson(request);
       const keys = Array.isArray(body.keys) ? body.keys.map(String).slice(0, 1000) : [];
-      return json(response, 200, { metadata: { ...await lookupLinkMetadata(keys), ...issueTracker.aliasMetadata(keys) } });
+      // Wait about a second for titles never fetched; the page asks again for the `pending` ones.
+      const metadata = { ...await lookupLinkMetadata(keys, { waitMs: 1000 }), ...issueTracker.aliasMetadata(keys) };
+      return json(response, 200, { metadata, pending: lookupLinkMetadata.pending(keys.filter((key) => !metadata[key])) });
     }
     if (request.method === "GET" && url.pathname === "/api/people") return json(response, 200, await people());
     if (request.method === "GET" && url.pathname === "/api/changes") return json(response, 200, { changes: recentChanges });
@@ -1285,8 +1300,9 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (request.method === "GET" && url.pathname === "/api/waiting") {
       const tasks = (await listDocuments()).filter((doc) => doc.task?.watch?.length);
       const keys = tasks.flatMap((doc) => doc.task!.watch!.map(({ key }) => key));
-      const metadata = { ...await lookupLinkMetadata(keys), ...issueTracker.aliasMetadata(keys) };
-      return json(response, 200, { waiting: Object.fromEntries(tasks.map((doc) => [doc.path, waitingSignals(doc.task!, metadata)])) });
+      // Like link titles: a second on the network at most, then the page asks again while `pending` is true.
+      const metadata = { ...await lookupLinkMetadata(keys, { waitMs: 1000 }), ...issueTracker.aliasMetadata(keys) };
+      return json(response, 200, { waiting: Object.fromEntries(tasks.map((doc) => [doc.path, waitingSignals(doc.task!, metadata)])), pending: lookupLinkMetadata.pending(keys).length > 0 });
     }
     if (request.method === "POST" && url.pathname === "/api/dispatch") {
       const requestId = `dispatch-${Date.now()}-${++dispatchSequence}`;
@@ -1321,6 +1337,9 @@ export function startServer(port = PORT) {
   };
   // An image saved under a source folder redraws its pictures in open tabs, as a saved `.draft` does.
   const closeWatchers = watchMarkdownSources(broadcastMarkdownChange, ROOT, send("diagram"), send("asset"));
+  // Cached document and step indexes last until anything under the workspace folders changes (memo.ts).
+  enableMemo();
+  const memoWatchers = [...DOC_ROOTS, "config"].flatMap((folder) => { try { return [watch(join(ROOT, folder), { recursive: true }, invalidateMemo)]; } catch { return []; } });
   codeDashboard.startBackgroundRefresh();
   issueTracker.startBackgroundRefresh();
   // Edits to config/viewer.json apply without a restart; pages pick them up on their next load. A broken edit keeps the
@@ -1329,6 +1348,7 @@ export function startServer(port = PORT) {
   watchFile(configPath, { interval: 1000 }, () => {
     try {
       setConfig(loadConfig(ROOT));
+      invalidateMemo();
       console.log(`Reloaded ${CONFIG_FILE}`);
     } catch (error) {
       console.error(`${(error as Error).message}; keeping the previous settings`);
@@ -1336,6 +1356,7 @@ export function startServer(port = PORT) {
   });
   server.once("close", () => {
     closeWatchers();
+    for (const watcher of memoWatchers) watcher.close();
     unwatchFile(configPath);
   });
   server.on("error", (error: NodeJS.ErrnoException) => {

@@ -5,6 +5,8 @@ set -e
 cli="$(dirname "$0")/../cli.ts"
 node() { command node --experimental-strip-types --no-warnings=ExperimentalWarning "$@"; }
 node "$cli" lint --staged
+# On the older layout lint only warns and nothing else can be checked; let the commit through so migrate can run.
+if [ -e viewer.config.json ] || [ -n "$(git ls-files -- viewer.config.json 'plans/*' 'daily/[0-9][0-9][0-9][0-9]/*' 'tasks/TASK-[0-9][0-9][0-9][0-9].md' 'tasks/TASK-[0-9][0-9][0-9][0-9]-assets/*' | head -1)" ]; then exit 0; fi
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 if echo "$staged" | grep -qE '^(daily|tasks|plans|reference)/.*\.md$'; then
   # Check the index, not the working tree, so another session's unstaged files can't block this commit.

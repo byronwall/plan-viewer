@@ -13,7 +13,12 @@ const claudeTranscript = new RegExp(`^(${uuid})\\.jsonl$`, "i");
 const historyLimit = 50;
 
 type Provider = "Codex" | "Claude";
-type AgentDetails = { model?: string; role?: string; tokens?: number | null; branch?: string };
+// parent: the thread that spawned this one (a Codex subagent or a Claude side session). kind says how it started.
+type Usage = { tokens: number; input: number; cached: number; output: number };
+// label is short enough for one line; detail, when present, is the full command for a tooltip.
+type Task = { kind: "command" | "agent"; label: string; detail?: string };
+type AgentDetails = { model?: string; usage?: Usage; cliId?: string; live?: boolean; tasks?: Task[]; effort?: string; role?: string; nickname?: string; parent?: string; kind?: "subagent" | "automation" | "agent";
+  tokens?: number | null; branch?: string; startedAt?: number };
 type Thread = AgentDetails & {
   id: string;
   provider: Provider;
@@ -21,7 +26,8 @@ type Thread = AgentDetails & {
   title: string;
   cwd: string;
   updatedAt: number;
-  state: "active" | "waiting" | "completed" | "interrupted";
+  // background: the turn ended but tasks it started in the background still run.
+  state: "active" | "waiting" | "background" | "completed" | "interrupted";
   url: string | null;
 };
 type Inventory = { active: Thread[]; completed: Thread[]; issues: string[] };
@@ -35,6 +41,7 @@ type CodexIndexRow = AgentDetails & {
   updatedAt: number;
   source: string;
   originator: string;
+  origin?: string;
 };
 
 type Turn = { state: Thread["state"]; updatedAt: number };
@@ -69,6 +76,7 @@ async function children(path: string, directories: boolean, name: RegExp) {
 
 export function openAgentFiles(output: string) {
   const rollouts = new Map<string, string>();
+  const writers = new Map<string, number>();
   const claudePids = new Set<number>();
   let pid = 0;
   let codex = false;
@@ -87,15 +95,37 @@ export function openAgentFiles(output: string) {
       case "a": writable = value === "w" || value === "u"; break;
       case "n": {
         const id = codex && descriptor && writable && rolloutName.exec(value)?.[1];
-        if (id) rollouts.set(id, value);
+        if (id) { rollouts.set(id, value); writers.set(id, pid); }
         break;
       }
     }
   }
-  return { rollouts, claudePids };
+  return { rollouts, writers, claudePids, started: new Map<number, number>() };
+}
+
+// When each Codex process started, from `ps` elapsed time ([[dd-]hh:]mm:ss). A background terminal recorded before its
+// process started belongs to an earlier run of Codex and is gone.
+async function startTimes(pids: number[]) {
+  const started = new Map<number, number>();
+  if (!pids.length) return started;
+  const { stdout } = await run("/bin/ps", ["-o", "pid=,etime=", "-p", pids.join(",")], { timeout: 3000 }).catch(error => ({ stdout: error.stdout || "" }));
+  for (const line of stdout.split("\n")) {
+    const [pid, elapsed] = line.trim().split(/\s+/);
+    if (!elapsed) continue;
+    const [days, clock] = elapsed.includes("-") ? elapsed.split("-") : ["0", elapsed];
+    const seconds = clock.split(":").map(Number).reduce((total, part) => total * 60 + part, 0) + Number(days) * 86400;
+    started.set(Number(pid), Date.now() - seconds * 1000);
+  }
+  return started;
 }
 
 async function liveFiles() {
+  const files = await readOpenFiles();
+  files.started = await startTimes([...new Set(files.writers.values())]);
+  return files;
+}
+
+async function readOpenFiles() {
   try {
     const { stdout } = await run("/usr/sbin/lsof", ["-a", "-u", String(process.getuid?.()), "-c", "/^(codex|claude)/i", "-Fpcfan"], { timeout: 3000, maxBuffer: 8 * 1024 * 1024 });
     return openAgentFiles(stdout);
@@ -159,7 +189,13 @@ async function codexIndex(home: string) {
   const databases = await children(home, false, /^state_\d+\.sqlite$/);
   const database = databases.sort((a, b) => Number(basename(b).match(/\d+/)?.[0]) - Number(basename(a).match(/\d+/)?.[0]))[0];
   if (!database) return [] as CodexIndexRow[];
-  const query = (sql: string) => run("/usr/bin/sqlite3", ["-readonly", "-json", "-cmd", ".timeout 1000", database, sql], { timeout: 3000, maxBuffer: 8 * 1024 * 1024 });
+  const open = (file: string, sql: string) => run("/usr/bin/sqlite3", ["-readonly", "-json", "-cmd", ".timeout 1000", file, sql], { timeout: 3000, maxBuffer: 8 * 1024 * 1024 });
+  // A read-only open fails (SQLITE_CANTOPEN) when the database is in WAL mode and has no -shm file to share, as after Codex
+  // quits. With no -wal file there are no pending writes, so reading the file as immutable is safe then.
+  const query = (sql: string) => open(database, sql).catch(async (error) => {
+    if (error.code !== 14 || await fileInfo(`${database}-wal`)) throw error;
+    return open(`file:${encodeURI(database)}?immutable=1`, sql);
+  });
   // Columns arrive independently across Codex releases. Select only fields this index supports.
   const schema = await query("PRAGMA table_info(threads)");
   const columns = new Set(JSON.parse(schema.stdout || "[]").map((column: JSONObject) => column.name));
@@ -167,31 +203,40 @@ async function codexIndex(home: string) {
   const result = await query(`
     SELECT id, rollout_path AS path, cwd, substr(coalesce(nullif(${field("name")}, ''), title), 1, 400) AS title,
       updated_at * 1000 AS updatedAt, source, ${field("originator")} AS originator, ${field("tokens_used")} AS tokens,
-      ${field("model")} AS model, ${field("agent_role")} AS role, ${field("git_branch")} AS branch
+      ${field("model")} AS model, ${field("agent_role")} AS role, ${field("git_branch")} AS branch,
+      ${field("reasoning_effort")} AS effort, ${field("agent_nickname")} AS nickname, ${field("thread_source")} AS origin,
+      ${columns.has("created_at") ? "created_at * 1000" : "NULL"} AS startedAt
     FROM threads WHERE archived = 0 AND source NOT LIKE '%"guardian"%'
     ORDER BY updated_at DESC`);
   return JSON.parse(result.stdout || "[]") as CodexIndexRow[];
 }
 
-async function codexThreads(home: string, rollouts: Map<string, string> | undefined, turns: Map<string, { key: string; turn: Turn | null }>) {
+// A subagent's source is JSON naming its parent thread and the path its orchestrator gave it.
+function spawn(source: string) {
+  if (!source.includes('"thread_spawn"')) return null;
+  try { return JSON.parse(source).subagent?.thread_spawn as JSONObject; } catch { return null; }
+}
+
+type LiveFiles = ReturnType<typeof openAgentFiles>;
+async function codexThreads(home: string, files: LiveFiles | null, turns: Map<string, { key: string; turn: Turn | null }>, taskCache: CodexTaskCache) {
+  const rollouts = files?.rollouts;
   const index = await codexIndex(home).then(rows => ({ rows, issue: "" }), () => ({ rows: [], issue: "Codex history is unavailable." }));
   const rows = new Map(index.rows.filter(row => idPattern.test(row.id)).map(row => [row.id, row]));
   const active: Thread[] = [];
   const completed: Thread[] = [];
-  for (const id of new Set([...(rollouts?.keys() || []), ...rows.keys()])) {
+  async function load(id: string) {
     const live = rollouts?.get(id);
-    if (!live && completed.length >= historyLimit) continue;
     let row = rows.get(id);
     const path = live || row?.path;
-    if (!path) continue;
+    if (!path) return null;
     const info = await fileInfo(path);
-    if (!info?.isFile()) continue;
+    if (!info?.isFile()) return null;
     if (!row) {
       const meta = await firstRecord(path).then(lines => object(lines[0]).payload).catch(() => null);
-      if (meta?.id !== id) continue;
+      if (meta?.id !== id) return null;
       row = { id, path, cwd: string(meta.cwd), title: "", branch: string(meta.git?.branch), source: JSON.stringify(meta.source) || "", originator: string(meta.originator), updatedAt: info.mtimeMs };
     }
-    if (row.source.includes('"guardian"')) continue;
+    if (row.source.includes('"guardian"')) return null;
     const key = `${info.size}:${info.mtimeMs}`;
     const cached = turns.get(path);
     const turn = cached?.key === key ? cached.turn : await lastCodexTurn(path, info.size).catch(error => {
@@ -199,13 +244,44 @@ async function codexThreads(home: string, rollouts: Map<string, string> | undefi
       throw error;
     });
     turns.set(path, { key, turn });
-    if (!turn || (turn.state === "active" && !rollouts)) continue;
-    const state = turn.state === "active" && !live ? "interrupted" : turn.state;
+    if (!turn || (turn.state === "active" && !rollouts)) return null;
+    let state: Thread["state"] = turn.state === "active" && !live ? "interrupted" : turn.state;
+    const tasks = live && state === "completed"
+      ? await codexTasks(path, info.size, taskCache, files?.started.get(files.writers.get(id) || 0) || 0).catch(() => [])
+      : [];
+    if (tasks.length) state = "background";
     const source = row.source === "exec" || ["codex_exec", "codex-tui"].includes(row.originator) || row.source === "cli" ? "CLI"
       : row.originator === "Codex Desktop" ? "Desktop" : "Local";
-    const thread: Thread = { id, provider: "Codex", source, model: row.model, role: row.role || (row.source.includes('"subagent"') ? "Subagent" : ""), tokens: row.tokens, branch: row.branch, title: displayTitle(row.title, basename(row.cwd) || "Codex thread"), cwd: row.cwd,
-      updatedAt: state === "active" ? info.mtimeMs : turn.updatedAt, state, url: `codex://threads/${id}` };
-    (state === "active" ? active : completed).push(thread);
+    const spawned = spawn(row.source);
+    const role = row.role || string(spawned?.agent_role) || string(spawned?.agent_path).split("/").filter(Boolean).at(-1) || "";
+    const kind = spawned || row.source.includes('"subagent"') ? "subagent" : row.origin === "automation" ? "automation" : row.origin === "agent_created_thread" ? "agent" : undefined;
+    const thread: Thread = { id, provider: "Codex", source, model: row.model || undefined, effort: row.effort || undefined, role, nickname: row.nickname || string(spawned?.agent_nickname) || undefined,
+      parent: string(spawned?.parent_thread_id) || undefined, kind, tokens: row.tokens, branch: row.branch, startedAt: Number(row.startedAt) || undefined,
+      title: displayTitle(row.title || role.replaceAll("_", " "), basename(row.cwd) || "Codex thread"), cwd: row.cwd,
+      updatedAt: state === "active" ? info.mtimeMs : turn.updatedAt, state, url: `codex://threads/${id}`, ...(tasks.length ? { tasks } : {}) };
+    (state === "active" || state === "background" ? active : completed).push(thread);
+    return thread;
+  }
+  // Live threads first, then the latest finished top-level threads, then the subagents of everything listed.
+  // Subagents never count toward the history limit, so an orchestrator's workers cannot push its siblings out.
+  const listed = new Set<string>();
+  for (const id of rollouts?.keys() || []) if (await load(id)) listed.add(id);
+  let roots = 0;
+  for (const [id, row] of rows) {
+    if (roots >= historyLimit) break;
+    if (listed.has(id) || spawn(row.source) || row.source.includes('"subagent"')) continue;
+    const thread = await load(id);
+    if (!thread) continue;
+    listed.add(id);
+    if (thread.state !== "active") roots++;
+  }
+  for (let depth = 0, added = true; added && depth < 4; depth++) {
+    added = false;
+    for (const [id, row] of rows) {
+      const parent = spawn(row.source)?.parent_thread_id;
+      if (listed.has(id) || !parent || !listed.has(parent)) continue;
+      if (await load(id)) { listed.add(id); added = true; }
+    }
   }
   return { threads: [...active, ...completed], issue: index.issue };
 }
@@ -255,7 +331,7 @@ async function claudeCliHistory(config: string, known: Set<string>) {
       } catch { /* The last line of the bounded read can be incomplete. */ }
     }
     if (!cwd) continue;
-    history.push({ id, provider: "Claude", source: "CLI", title: displayTitle(title, basename(cwd) || "Claude Code session"), cwd,
+    history.push({ id, cliId: id, provider: "Claude", source: "CLI", title: displayTitle(title, basename(cwd) || "Claude Code session"), cwd,
       updatedAt: time, state: "completed", url: `claude://resume?session=${id}` });
   }
   return history;
@@ -285,7 +361,9 @@ async function claudeThreads(config: string, desktopRoot: string, pids: Set<numb
     const state = row ? claudeState(row) : "completed";
     if (state === "completed" && !session.completedTurns && !session.lastTurnEdgeAt) continue;
     const cwd = string(session.cwd || row?.cwd);
-    threads.push({ id: session.sessionId, provider: "Claude", source: "Desktop", cwd, state, model: string(session.model),
+    const parent = string(session.spawnedFrom?.sessionId);
+    threads.push({ id: session.sessionId, cliId, live: !!row, provider: "Claude", source: "Desktop", cwd, state, model: string(session.model), effort: string(session.effort) || undefined,
+      parent: parent || undefined, kind: parent ? "agent" : undefined, startedAt: Number(session.createdAt) || undefined,
       title: displayTitle(string(session.title || row?.name), basename(cwd) || "Claude Code session"),
       updatedAt: Number(row?.updatedAt || session.lastActivityAt || session.createdAt) || 0,
       url: `claude://claude.ai/epitaxy/${session.sessionId}` });
@@ -295,11 +373,158 @@ async function claudeThreads(config: string, desktopRoot: string, pids: Set<numb
     const state = claudeState(row);
     const desktopId = claudeDesktopId.test(string(row.hostSessionId)) ? row.hostSessionId : "";
     const cwd = string(row.cwd);
-    threads.push({ id: desktopId || row.sessionId, provider: "Claude", source: desktopId ? "Desktop" : "CLI", cwd, state,
-      title: displayTitle(string(row.name), basename(cwd) || "Claude Code session"), updatedAt: Number(row.updatedAt || row.startedAt) || 0,
+    threads.push({ id: desktopId || row.sessionId, cliId: row.sessionId, live: true, provider: "Claude", source: desktopId ? "Desktop" : "CLI", cwd, state,
+      title: displayTitle(string(row.name), basename(cwd) || "Claude Code session"), updatedAt: Number(row.updatedAt || row.startedAt) || 0, startedAt: Number(row.startedAt) || undefined,
       url: desktopId ? `claude://claude.ai/epitaxy/${desktopId}` : null });
   }
   return [...threads, ...await claudeCliHistory(config, known)];
+}
+
+// Claude Code records each reply's usage in its transcript. Every content block of a reply repeats the same usage, so
+// count each message ID once. Transcripts only grow, so each read resumes where the last one stopped.
+// The same pass tracks background tasks: a tool call with run_in_background starts one, and the <task-notification>
+// naming its tool call ID (or an error result for it) ends it.
+// TaskStop (or KillShell) ends one by the short ID its launch result gave, and writes no notification.
+type UsageCache = Map<string, Usage & { offset: number; ids: Set<string>; tasks: Map<string, Task>; aliases: Map<string, string> }>;
+// Reads only what was appended to a log since the last call, line by line. Logs only grow; a shorter file starts over.
+async function readAppended(path: string, entry: { offset: number }, size: number, onLine: (line: string) => void) {
+  if (size === entry.offset) return;
+  const file = await open(path, "r");
+  try {
+    let partial = "";
+    for (let position = entry.offset; position < size;) {
+      const length = Math.min(1 << 20, size - position);
+      const { buffer, bytesRead } = await file.read(Buffer.alloc(length), 0, length, position);
+      if (!bytesRead) break;
+      position += bytesRead;
+      const lines = (partial + buffer.subarray(0, bytesRead).toString()).split("\n");
+      partial = lines.pop() || "";
+      for (const line of lines) onLine(line);
+    }
+    // Stop before a line still being written, so the next read starts at its beginning.
+    entry.offset = size - Buffer.byteLength(partial);
+  } finally { await file.close(); }
+}
+
+async function transcriptUsage(path: string, cache: UsageCache) {
+  const info = await fileInfo(path);
+  if (!info?.isFile()) return null;
+  let entry = cache.get(path);
+  if (!entry || info.size < entry.offset) entry = { tokens: 0, input: 0, cached: 0, output: 0, offset: 0, ids: new Set(), tasks: new Map(), aliases: new Map() };
+  cache.set(path, entry);
+  const { tasks, aliases, ids } = entry;
+  const total = entry;
+  await readAppended(path, entry, info.size, line => {
+    if (line.includes("<task-notification>")) {
+      for (const match of line.matchAll(/<tool-use-id>(toolu_\w+)<\/tool-use-id>/g)) tasks.delete(match[1]);
+      for (const match of line.matchAll(/<task-id>([\w-]+)<\/task-id>/g)) tasks.delete(aliases.get(match[1]) || "");
+      return;
+    }
+    try {
+      if (line.includes('"tool_result"') && line.includes('"type":"user"')) {
+        for (const part of object(line).message?.content || []) {
+          if (part?.type !== "tool_result" || !tasks.has(part.tool_use_id)) continue;
+          if (part.is_error) { tasks.delete(part.tool_use_id); continue; }
+          const text = typeof part.content === "string" ? part.content : JSON.stringify(part.content);
+          const alias = /running in background with ID: ([\w-]+)/.exec(text)?.[1] || /agentId: ([\w-]+)/.exec(text)?.[1];
+          if (alias) aliases.set(alias, part.tool_use_id);
+        }
+        return;
+      }
+      if (!line.includes('"usage"') || !line.includes('"type":"assistant"')) return;
+      const message = object(line).message;
+      for (const part of message?.content || []) {
+        if (part?.type !== "tool_use") continue;
+        if (["TaskStop", "KillShell"].includes(part.name)) tasks.delete(aliases.get(string(part.input?.task_id || part.input?.shell_id)) || "");
+        if (part.input?.run_in_background === true) {
+          tasks.set(part.id, { kind: part.name === "Bash" ? "command" : "agent", label: displayTitle(string(part.input.description || part.input.command || part.name), part.name) });
+        }
+      }
+      const usage = message?.usage;
+      if (!usage || !message.id || ids.has(message.id)) return;
+      ids.add(message.id);
+      const cached = (Number(usage.cache_read_input_tokens) || 0) + (Number(usage.cache_creation_input_tokens) || 0);
+      const input = (Number(usage.input_tokens) || 0) + cached;
+      const output = Number(usage.output_tokens) || 0;
+      total.input += input; total.cached += cached; total.output += output; total.tokens += input + output;
+    } catch { /* a line written mid-read is retried next time */ }
+  });
+  return entry;
+}
+
+// Codex runs commands as terminal sessions. A tool result that still lists a session's ID means it is running; a later
+// call that polls that ID and gets no ID back (it gets an exit code) means it ended. A session recorded before the Codex
+// process that holds the thread started belongs to an earlier run and is gone.
+type CodexTaskCache = Map<string, { offset: number; calls: Map<string, string>; running: Map<string, { commands: string[]; at: number }> }>;
+
+// A shell command as a one-line label: drop a leading `cd <dir> &&`, collapse whitespace, keep 60 characters.
+export function commandLabel(command: string) {
+  const text = command.replace(/^\s*cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*&&\s*/, "").replace(/\s+/g, " ").trim();
+  return text.length > 60 ? `${text.slice(0, 59).trimEnd()}…` : text;
+}
+export async function codexTasks(path: string, size: number, cache: CodexTaskCache, since: number): Promise<Task[]> {
+  let entry = cache.get(path);
+  if (!entry || size < entry.offset) entry = { offset: 0, calls: new Map(), running: new Map() };
+  cache.set(path, entry);
+  const { calls, running } = entry;
+  await readAppended(path, entry, size, line => {
+    const call = line.includes('"type":"custom_tool_call"') || line.includes('"type":"function_call"');
+    const result = line.includes('"type":"custom_tool_call_output"') || line.includes('"type":"function_call_output"');
+    if (!call && !result) return;
+    try {
+      const record = object(line);
+      const payload = record.payload || {};
+      if (call) {
+        const input = string(payload.input ?? payload.arguments);
+        if (/session_id|exec_command/.test(input)) calls.set(payload.call_id, input);
+        return;
+      }
+      const output = typeof payload.output === "string" ? payload.output
+        : Array.isArray(payload.output) ? payload.output.map((part: JSONObject) => string(part?.text)).join("\n") : JSON.stringify(payload.output ?? "");
+      const input = calls.get(payload.call_id) || "";
+      calls.delete(payload.call_id);
+      const seen = new Set([...output.matchAll(/"session_id"\s*:\s*(\d+)/g)].map(match => match[1]));
+      const commands = [...input.matchAll(/\bcmd["']?\s*:\s*"((?:[^"\\]|\\.)*)"/g)].map(match => { try { return JSON.parse(`"${match[1]}"`); } catch { return match[1]; } });
+      const at = Date.parse(string(record.timestamp)) || 0;
+      for (const id of seen) if (!running.has(id)) running.set(id, { commands, at });
+      for (const match of input.matchAll(/session_id["']?\s*:\s*(\d+)/g)) if (!seen.has(match[1])) running.delete(match[1]);
+    } catch { /* a line written mid-read is retried next time */ }
+  });
+  // One script can start several commands; its result does not say which one is still running, so name them all.
+  return [...running.values()].filter(task => task.at >= since).map(({ commands }) => ({
+    kind: "command" as const,
+    label: commands.length === 1 ? commandLabel(commands[0]) || "Background command" : commands.length ? `One of ${commands.length} commands` : "Background command",
+    ...(commands.length ? { detail: commands.map(command => command.length > 400 ? `${command.slice(0, 399)}…` : command).join("\n") } : {}),
+  }));
+}
+
+async function claudeUsage(threads: Thread[], config: string, cache: UsageCache) {
+  const projects = join(config, "projects");
+  let index: Map<string, string> | null = null;
+  for (const thread of threads) {
+    const { cliId: id, live } = thread;
+    delete thread.cliId;
+    delete thread.live;
+    if (!id) continue;
+    let path = join(projects, thread.cwd.replace(/[^a-zA-Z0-9]/g, "-"), `${id}.jsonl`);
+    if (!await fileInfo(path)) {
+      // A session that changed folder keeps its transcript under the folder it started in.
+      index ||= new Map((await Promise.all((await children(projects, true, /./)).map(dir => children(dir, false, claudeTranscript)))).flat()
+        .map(file => [basename(file, ".jsonl"), file]));
+      path = index.get(id) || "";
+      if (!path) continue;
+    }
+    const usage = await transcriptUsage(path, cache).catch(() => null);
+    // Background tasks die with their session, so only a running session can be waiting on them.
+    if (live && usage?.tasks.size && thread.state === "completed") {
+      thread.state = "background";
+      thread.tasks = [...usage.tasks.values()];
+    }
+    if (usage?.tokens) {
+      thread.tokens = usage.tokens;
+      thread.usage = { tokens: usage.tokens, input: usage.input, cached: usage.cached, output: usage.output };
+    }
+  }
 }
 
 export function createChatThreads({
@@ -308,6 +533,8 @@ export function createChatThreads({
 } = {}) {
   const desktop = join(home, "Library", "Application Support", "Claude", "claude-code-sessions");
   const turns = new Map<string, { key: string; turn: Turn | null }>();
+  const usage: UsageCache = new Map();
+  const codexTaskCache: CodexTaskCache = new Map();
   let pending: Promise<Inventory> | null = null;
   let cached: Inventory | null = null;
   let refreshed = 0;
@@ -319,7 +546,7 @@ export function createChatThreads({
       return null;
     });
     const [codex, claude] = await Promise.allSettled([
-      codexThreads(codexHome, files?.rollouts, turns), claudeThreads(claudeConfig, desktop, files?.claudePids || new Set()),
+      codexThreads(codexHome, files, turns, codexTaskCache), claudeThreads(claudeConfig, desktop, files?.claudePids || new Set()),
     ]);
     const threads: Thread[] = [];
     if (codex.status === "fulfilled") {
@@ -330,11 +557,20 @@ export function createChatThreads({
     else issues.push("Claude threads are unavailable.");
     threads.sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
     const finished = (thread: Thread) => thread.state === "completed" || thread.state === "interrupted";
-    return {
-      active: threads.filter(thread => !finished(thread)),
-      completed: (["Codex", "Claude"] as const).flatMap(provider => threads.filter(thread => thread.provider === provider && finished(thread)).slice(0, historyLimit))
-        .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)), issues,
-    };
+    // History keeps the latest top-level threads per app, plus every thread spawned from one that is listed.
+    const kept = new Set(threads.filter(thread => !finished(thread)).map(thread => thread.id));
+    for (const provider of ["Codex", "Claude"]) {
+      for (const thread of threads.filter(thread => thread.provider === provider && finished(thread) && !thread.parent).slice(0, historyLimit)) kept.add(thread.id);
+    }
+    for (let depth = 0, size = -1; size !== kept.size && depth < 4; depth++) {
+      size = kept.size;
+      for (const thread of threads) if (thread.parent && kept.has(thread.parent)) kept.add(thread.id);
+    }
+    // A spawned thread whose parent is not listed (an older orchestrator) stays only while it is live.
+    const shown = threads.filter(thread => kept.has(thread.id));
+    for (const thread of threads) if (!kept.has(thread.id)) { delete thread.cliId; delete thread.live; }
+    await claudeUsage(shown.filter(thread => thread.provider === "Claude"), claudeConfig, usage);
+    return { active: shown.filter(thread => !finished(thread)), completed: shown.filter(finished), issues };
   }
   return () => {
     if (cached && Date.now() - refreshed < 4000) return Promise.resolve(cached);

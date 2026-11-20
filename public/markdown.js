@@ -117,7 +117,7 @@ export function renderChatLinks(links = []) {
   if (!valid.length) return "";
   return `<span class="chat-links" aria-label="Related chats">${valid.map(link => {
     const provider = chatLink(link.href).provider;
-    return `<a class="chat-link" href="${escapeHtml(link.href)}" ${provider === "ChatGPT" ? 'target="_blank" rel="noreferrer"' : ""} title="${escapeHtml(link.label)}">${escapeHtml(provider)} · ${escapeHtml(link.label)}&nbsp;<span aria-hidden="true">↗</span></a>`;
+    return `<a class="chat-link" href="${escapeHtml(link.href)}" ${provider === "ChatGPT" ? 'target="_blank" rel="noreferrer"' : ""} title="${escapeHtml(link.label)}">${SERVICE_ICONS[{ Codex: "codex", "Claude Code": "claude", ChatGPT: "openai" }[provider]]}${escapeHtml(provider)} · ${escapeHtml(link.label)}&nbsp;<span aria-hidden="true">↗</span></a>`;
   }).join("")}</span>`;
 }
 
@@ -186,6 +186,9 @@ export const SERVICE_ICONS = {
   linear: brandMark("linear"),
   jira: brandMark("jira"),
   slack: brandMark("slack"),
+  codex: brandMark("codex"),
+  claude: brandMark("claude"),
+  openai: brandMark("openai"),
   task: glyph("square-check", "service-icon is-stroke"),
 };
 

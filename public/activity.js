@@ -9,27 +9,29 @@ import { handleIssueClick, issueInspector, issueLink, loadIssueDetail, loadIssue
 import { channelLabel, docsFor, fresh, lastActive, opener, permalink, threadDetail } from "./slack-page.js";
 import { openSlackThread } from "./slack.js";
 import { avatar, ciBadge, copied, diffSize, fadeIn, hideTip, icon, iconButton, loadPrIndex, openPrOverlay, prBodyHtml, prefetchPr, reviewTag, showTip, sideFacts, sideHead, sideStatus, when } from "./code.js";
+import { formatDateTime } from "./dates.js";
 
 const DAY = 86_400_000;
 const STRIP_DAYS = 14;
 export const SOURCES = { all: "All", tasks: "Tasks", daily: "Daily", topics: "Docs", diagrams: "Diagrams", jira: "Jira", linear: "Linear", github: "Issues", prs: "PRs", slack: "Slack" };
 const RANGES = { day: ["24h", DAY], week: ["7d", 7 * DAY], month: ["30d", 30 * DAY], all: ["All", Infinity] };
-const SOURCE_ICONS = { tasks: SERVICE_ICONS.task, daily: glyph("calendar", "service-icon is-stroke"), topics: glyph("file-text", "service-icon is-stroke"), diagrams: glyph("layout-panel-left", "service-icon is-stroke"), jira: SERVICE_ICONS.jira, linear: SERVICE_ICONS.linear, github: SERVICE_ICONS.github, prs: SERVICE_ICONS.github, slack: SERVICE_ICONS.slack };
+const SOURCE_ICONS = { tasks: SERVICE_ICONS.task, daily: glyph("calendar", "service-icon is-stroke"), topics: glyph("file-text", "service-icon is-stroke"), diagrams: glyph("workflow", "service-icon is-stroke"), jira: SERVICE_ICONS.jira, linear: SERVICE_ICONS.linear, github: SERVICE_ICONS.github, prs: SERVICE_ICONS.github, slack: SERVICE_ICONS.slack };
 const DOC_SOURCE = { Tasks: "tasks", "Task documents": "tasks", Today: "daily", Daily: "daily", Reference: "topics" };
 // State tones: what the colored state cell means at a glance.
 const TASK_TONES = { active: "progress", open: "quiet", waiting: "wait", blocked: "fail", completed: "pass", done: "pass", cancelled: "quiet", deferred: "quiet" };
 const ISSUE_TONES = { new: "quiet", indeterminate: "progress", done: "pass" };
 const PR_STATES = { APPROVED: ["Approved", "pass"], CHANGES_REQUESTED: ["Changes requested", "fail"], REVIEW_REQUIRED: ["Needs review", "wait"] };
 
-const ui = { host: null, documents: [], changes: [], diagrams: null, openDiagram: () => {}, issues: null, prs: null, slack: null, source: "all", range: "week", day: "", query: "", mine: false, sel: "", visible: [], docCache: new Map(), prCache: new Map(), openDocument: () => {}, timer: 0 };
+const PAGE = 150;
+const ui = { host: null, documents: [], changes: [], diagrams: null, openDiagram: () => {}, issues: null, prs: null, slack: null, source: "all", range: "week", day: "", query: "", mine: false, sel: "", visible: [], limit: 0, docCache: new Map(), prCache: new Map(), openDocument: () => {}, timer: 0 };
 
 const localDay = (time) => { const date = new Date(time); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; };
 const dayStart = (key) => new Date(`${key}T00:00:00`).getTime();
 const dayLabel = (time) => {
   const diff = Math.round((dayStart(localDay(Date.now())) - dayStart(localDay(time))) / DAY);
-  return diff === 0 ? "Today" : diff === 1 ? "Yesterday" : new Date(time).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  return diff === 0 ? "Today" : diff === 1 ? "Yesterday" : formatDateTime(time, "en-US", { weekday: "short", month: "short", day: "numeric" });
 };
-const clock = (time) => new Date(time).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).replace(/\s?([AP])M/, (_, half) => half.toLowerCase());
+const clock = (time) => formatDateTime(time, "en-US", { hour: "numeric", minute: "2-digit" }).replace(/\s?([AP])M/, (_, half) => half.toLowerCase());
 const stateHtml = (label, tone, tip = "") => label ? `<span class="activity-state is-${tone}"${tip ? ` data-tip="${escapeHtml(tip)}"` : ""}>${escapeHtml(label)}</span>` : "";
 
 function syncUrl() {
@@ -47,13 +49,17 @@ const docEvent = (change, title) => { const sections = change.sections.filter((s
 
 function rows() {
   const out = [];
+  // Lookups by path, built once: a .find per document was quadratic and froze a large workspace's Activity page.
+  const byPath = new Map(ui.documents.map((doc) => [doc.path, doc]));
+  const changeOf = new Map();
+  for (const change of ui.changes) if (change.kind !== "deleted" && !changeOf.has(change.path)) changeOf.set(change.path, change);
   for (const doc of ui.documents) {
     if (!doc.modified) continue;
-    const change = ui.changes.find((candidate) => candidate.path === doc.path && candidate.kind !== "deleted");
+    const change = changeOf.get(doc.path);
     const task = doc.task;
     // A task's asset names its task in the key column (the container) and the task's title as where it lives.
     const ownerId = isTaskAsset(doc.path) ? taskOfPath(doc.path) : "";
-    const owner = ownerId && ui.documents.find((candidate) => candidate.path === taskFile(ownerId))?.task;
+    const owner = ownerId && byPath.get(taskFile(ownerId))?.task;
     const where = task ? task.project || "" : owner ? owner.title : doc.path.replace(/\/[^/]+$/, "/");
     out.push({
       id: `doc:${doc.path}`, kind: "doc", source: DOC_SOURCE[doc.group] || "topics", at: doc.modified, doc, change,
@@ -66,7 +72,7 @@ function rows() {
   }
   // Diagrams by their source file's save time, under the task whose assets hold them.
   for (const diagram of ui.diagrams || []) {
-    const owner = diagram.task && ui.documents.find((doc) => doc.path === taskFile(diagram.task));
+    const owner = diagram.task && byPath.get(taskFile(diagram.task));
     const task = owner?.task;
     out.push({
       id: `diagram:${diagram.path}`, kind: "diagram", source: "diagrams", at: diagram.modified, diagram, owner,
@@ -167,7 +173,11 @@ function render() {
   if (!ui.host?.isConnected || !ui.host.classList.contains("activity-page")) return;
   const { kept, inTime, shown } = filtered();
   const counts = Object.fromEntries(Object.keys(SOURCES).map((source) => [source, source === "all" ? inTime.length : inTime.filter((row) => row.source === source).length]));
-  ui.visible = shown.slice(0, 500);
+  // The newest PAGE rows first, more on request: rendering every row in the range kept the page busy for a quarter
+  // second. A selected row further down (from the URL, or arrowing past the end) widens the window to reach it.
+  const at = ui.sel ? shown.findIndex((row) => row.id === ui.sel) : -1;
+  ui.limit = Math.max(ui.limit || PAGE, at >= 0 ? Math.ceil((at + 1) / PAGE) * PAGE : 0);
+  ui.visible = shown.slice(0, ui.limit);
   const days = new Map();
   for (const row of ui.visible) { const label = dayLabel(row.at); if (!days.has(label)) days.set(label, []); days.get(label).push(row); }
   const issues = config().issues;
@@ -178,7 +188,7 @@ function render() {
   const focused = document.activeElement?.matches("[data-activity-filter]");
   const toolbar = `<div class="activity-toolbar" data-region="toolbar"><div class="code-segment">${sourceTabs}</div><label class="code-filter"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPHS.search}</svg><input type="search" data-activity-filter placeholder="Filter  (F)" value="${escapeHtml(ui.query)}" spellcheck="false" autocomplete="off"></label><label class="code-check"><input type="checkbox" data-activity-mine ${ui.mine ? "checked" : ""}> Mine</label><span class="activity-when-controls"><div class="code-segment">${ranges}</div>${dayStrip(kept.filter((row) => ui.source === "all" || row.source === ui.source))}</span><span class="code-spacer"></span><span class="code-muted activity-status">${loading.length ? `Loading ${loading.join(" and ")}…` : ui.day ? `${new Date(`${ui.day}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · <button type="button" class="activity-clear-day" data-activity-day="${ui.day}">clear day</button>` : ""}</span></div>`;
   const table = ui.visible.length
-    ? `<table class="code-table activity-table"><thead><tr><th>When</th><th></th><th>Key</th><th>Item <span class="code-muted">· what changed · where</span></th><th data-tip="Checks on the PR's latest commit">CI</th><th>State</th><th>Who</th></tr></thead>${[...days].map(([label, items]) => `<tbody><tr class="code-group-row"><th colspan="7">${escapeHtml(label)} <span>${items.length}</span></th></tr>${items.map(rowHtml).join("")}</tbody>`).join("")}</table>${shown.length > ui.visible.length ? `<p class="code-muted activity-more">Showing the newest ${ui.visible.length} of ${shown.length}. Narrow with a filter, day or range.</p>` : ""}`
+    ? `<table class="code-table activity-table"><thead><tr><th>When</th><th></th><th>Key</th><th>Item <span class="code-muted">· what changed · where</span></th><th data-tip="Checks on the PR's latest commit">CI</th><th>State</th><th>Who</th></tr></thead>${[...days].map(([label, items]) => `<tbody><tr class="code-group-row"><th colspan="7">${escapeHtml(label)} <span>${items.length}</span></th></tr>${items.map(rowHtml).join("")}</tbody>`).join("")}</table>${shown.length > ui.visible.length ? `<p class="code-muted activity-more">Showing the newest ${ui.visible.length} of ${shown.length} · <button type="button" class="activity-clear-day" data-activity-more>Show ${Math.min(PAGE, shown.length - ui.visible.length)} more</button></p>` : ""}`
     : `<p class="code-muted activity-empty">${loading.length ? "Loading…" : "Nothing here. Widen the range, pick another day, or clear the filter."}</p>`;
   const scroll = ui.host.querySelector(".activity-inspector")?.scrollTop || 0;
   const hadInspector = ui.host.querySelector(".activity-inspector");
@@ -277,6 +287,8 @@ function select(id, scroll = false) {
 }
 
 function move(step) {
+  // Arrowing past the last loaded row loads the next page.
+  if (step > 0 && ui.visible.at(-1)?.id === ui.sel && ui.visible.length === ui.limit) { ui.limit += PAGE; render(); }
   const ids = ui.visible.map((row) => row.id);
   const index = ids.indexOf(ui.sel);
   select(ids[Math.max(0, Math.min(ids.length - 1, index < 0 ? 0 : index + step))], true);
@@ -333,8 +345,10 @@ document.addEventListener("click", (event) => {
     if (event.target.closest("[data-issue-open], [data-issue-copy], [data-issue-skill], [data-issue-pr], [data-issue-wt], a[data-planning-path]")) return handleIssueClick(event);
     return;
   }
+  if (event.target.closest("[data-activity-more]")) { ui.limit += PAGE; return render(); }
   const control = event.target.closest("[data-activity-source], [data-activity-range], [data-activity-day]");
   if (control) {
+    ui.limit = PAGE;
     const { activitySource, activityRange, activityDay } = control.dataset;
     if (activitySource) ui.source = activitySource;
     if (activityRange) { ui.range = activityRange; ui.day = ""; }
@@ -360,6 +374,7 @@ document.addEventListener("input", (event) => {
   if (event.target.matches("[data-activity-filter]")) ui.query = event.target.value;
   else if (event.target.matches("[data-activity-mine]")) ui.mine = event.target.checked;
   else return;
+  ui.limit = PAGE;
   syncUrl();
   render();
 });

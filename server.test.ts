@@ -1017,3 +1017,21 @@ test("the source watcher reports saved images and diagrams apart from documents"
   assert.ok(seen.includes("asset tasks/TASK-0001/shot.png"), seen.join(", "));
   assert.ok(seen.includes("diagram tasks/TASK-0001/flow.draft"), seen.join(", "));
 });
+
+test("link lookups stop waiting on the network after waitMs and name what is still on its way", async (t) => {
+  const previous = process.env.SLACK_TOKEN;
+  process.env.SLACK_TOKEN = "test-token";
+  const root = await mkdtemp(join(tmpdir(), "link-wait-"));
+  t.after(async () => { if (previous === undefined) delete process.env.SLACK_TOKEN; else process.env.SLACK_TOKEN = previous; await rm(root, { recursive: true, force: true }); });
+  let release = () => {};
+  t.mock.method(globalThis, "fetch", () => new Promise((done) => { release = () => done(Response.json({ ok: false, error: "slow" })); }));
+  const lookup = createLinkMetadataStore(root);
+  const key = "slack:C0ACME0001/1792589400.000100";
+  const started = Date.now();
+  await lookup([key], { waitMs: 50 });
+  assert.ok(Date.now() - started < 1000, "answers without the slow source");
+  assert.deepEqual(lookup.pending([key]), [key]);
+  release();
+  await new Promise((done) => setTimeout(done, 50));
+  assert.deepEqual(lookup.pending([key]), []);
+});
