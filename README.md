@@ -1,8 +1,8 @@
 # Plan Viewer
 
-**A local reading desk for planning in Markdown, and for handing the work to coding agents.**
+**Your plans are Markdown files. Plan Viewer turns them into one work queue that you and your coding agents share.**
 
-You keep daily plans, tasks, and notes as plain Markdown files in a folder or Git repository. Plan Viewer turns that folder into a fast, keyboard-driven app: today's plan as work cards, tasks as lists of steps with dependency graphs, and one-click handoffs that load any piece of work into a [Codex](https://openai.com/codex/) or [Claude](https://claude.com/download) desktop draft, and a live list of every agent thread that work starts. Beside your plans sit the pull requests, worktrees, diffs, and issues that the work touches.
+It reads a folder of daily plans and tasks and shows what is next, who it waits on, and the PRs, issues and agent threads around it. Any step goes to [Codex](https://openai.com/codex/) or [Claude](https://claude.com/download) with its context in one click. Nothing runs until you press Send.
 
 The viewer never edits your files. Your Markdown stays the source of truth, readable anywhere, and agents make the changes.
 
@@ -21,6 +21,16 @@ npx plan-viewer
 ```
 
 `init` makes the folder a workspace, and the second command serves it at `http://127.0.0.1:4173`. The page is mostly empty until you write a plan. The viewer runs on your machine and reads your folder. It has no account, no database and no build step. To update it later, run `npx plan-viewer@latest`.
+
+To look at a sample workspace first (a fictional team's week), clone the repository and run the demo on `http://127.0.0.1:4173`:
+
+```bash
+git clone https://github.com/byronwall/plan-viewer.git
+```
+
+```bash
+cd plan-viewer && npm run dev:demo
+```
 
 ## Set it up with your agent
 
