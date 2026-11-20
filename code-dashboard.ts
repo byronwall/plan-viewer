@@ -50,7 +50,7 @@ export function prDiscussion(issueComments: any[], lineComments: any[], reviews:
   ].filter((item) => item.body.trim()).sort((a, b) => String(a.at).localeCompare(String(b.at)));
 }
 
-type HistoryPr = { number: number; branch: string; state: string; title: string; author: string };
+type HistoryPr = { isCrossRepository: boolean; number: number; branch: string; state: string; title: string; author: string };
 type Cleanup = { level: "safe" | "review" | "keep" | "pending"; reason: string };
 type Worktree = { repo: string; path: string; branch: string; head: string; commitTime: number; subject?: string; created: number; ownCommits?: number; dirty: number | null; files?: string[]; ahead?: number; behind?: number; editTime: number; activity: number; main: boolean; prState?: string; prNumber?: number; cleanup?: Cleanup };
 
@@ -111,13 +111,16 @@ export function createCodeDashboard(root: string) {
   const cachePath = join(root, "tmp", "code-cache.json");
   const setHistory = (slug: string, at: number, prs: HistoryPr[]) => {
     const byBranch = new Map<string, HistoryPr>();
-    for (const pr of prs) if (!byBranch.has(pr.branch)) byBranch.set(pr.branch, pr);
+    for (const pr of prs) if (!pr.isCrossRepository && !byBranch.has(pr.branch)) byBranch.set(pr.branch, pr);
     prHistory.set(slug, { at, prs, byBranch });
   };
   try {
     const saved = JSON.parse(readFileSync(cachePath, "utf8"));
-    for (const [repo, entry] of Object.entries<any>(saved.openPrs || {})) openPrs.set(repo, entry);
-    for (const [slug, entry] of Object.entries<any>(saved.prHistory || {})) setHistory(slug, entry.at, entry.prs);
+    // Older branch lists lack fork ownership and must be read from GitHub again.
+    if (saved.version === 2) {
+      for (const [repo, entry] of Object.entries<any>(saved.openPrs || {})) openPrs.set(repo, entry);
+      for (const [slug, entry] of Object.entries<any>(saved.prHistory || {})) setHistory(slug, entry.at, entry.prs);
+    }
     for (const [slug, entry] of Object.entries<any>(saved.prExtras || {})) prExtras.set(slug, { at: entry.at, byNumber: new Map(entry.byNumber) });
   } catch {}
   let persistTimer: ReturnType<typeof setTimeout> | undefined;
@@ -125,6 +128,7 @@ export function createCodeDashboard(root: string) {
     clearTimeout(persistTimer);
     persistTimer = setTimeout(async () => {
       const data = {
+        version: 2,
         openPrs: Object.fromEntries(openPrs),
         prHistory: Object.fromEntries([...prHistory].map(([slug, entry]) => [slug, { at: entry.at, prs: entry.prs }])),
         prExtras: Object.fromEntries([...prExtras].map(([slug, entry]) => [slug, { at: entry.at, byNumber: [...entry.byNumber] }])),
@@ -157,7 +161,7 @@ export function createCodeDashboard(root: string) {
 
   // The tracked clone of a GitHub repo, or "".
   async function cloneFor(slug: string) {
-    for (const repo of await readRepos()) if (await githubSlug(repo) === slug) return repo;
+    for (const repo of await readRepos()) if ((await githubSlug(repo)).toLowerCase() === slug.toLowerCase()) return repo;
     return "";
   }
 
@@ -212,8 +216,8 @@ export function createCodeDashboard(root: string) {
 
   // Every PR ever opened, newest first, so each branch maps to its latest PR. ~10s for a large repo, hence the cache.
   async function loadPrHistory(slug: string) {
-    const { stdout } = await exec("gh", ["pr", "list", "-R", slug, "--state", "all", "--limit", "5000", "--json", "number,headRefName,state,title,author"], { maxBuffer: 64 << 20 });
-    setHistory(slug, Date.now(), JSON.parse(stdout).map((pr: any) => ({ number: pr.number, branch: pr.headRefName, state: pr.state, title: pr.title, author: pr.author?.login || "" })));
+    const { stdout } = await exec("gh", ["pr", "list", "-R", slug, "--state", "all", "--limit", "5000", "--json", "number,isCrossRepository,headRefName,state,title,author"], { maxBuffer: 64 << 20 });
+    setHistory(slug, Date.now(), JSON.parse(stdout).map((pr: any) => ({ number: pr.number, isCrossRepository: pr.isCrossRepository, branch: pr.headRefName, state: pr.state, title: pr.title, author: pr.author?.login || "" })));
     persist();
   }
 
@@ -257,7 +261,7 @@ export function createCodeDashboard(root: string) {
   }
 
   async function listPrs(repo: string, slug: string) {
-    const fields = "number,title,author,headRefName,baseRefName,isDraft,reviewDecision,updatedAt,createdAt,url,additions,deletions,changedFiles,reviewRequests";
+    const fields = "number,title,author,isCrossRepository,headRefName,baseRefName,isDraft,reviewDecision,updatedAt,createdAt,url,additions,deletions,changedFiles,reviewRequests";
     const [all, requested, closed, repoInfo] = await Promise.all([
       exec("gh", ["pr", "list", "-R", slug, "--state", "open", "--limit", "500", "--json", fields], { maxBuffer: 32 << 20 }),
       exec("gh", ["pr", "list", "-R", slug, "--state", "open", "--limit", "500", "--search", "review-requested:@me", "--json", "number"]),
@@ -269,7 +273,7 @@ export function createCodeDashboard(root: string) {
     const defaultBranch = repoInfo.stdout.trim();
     const requestedOfMe = new Set(JSON.parse(requested.stdout).map((pr: { number: number }) => pr.number));
     const shape = (pr: any) => ({
-      repo, slug, number: pr.number, title: pr.title, url: pr.url, author: pr.author?.login || "", branch: pr.headRefName, base: pr.baseRefName,
+      repo, slug, number: pr.number, title: pr.title, url: pr.url, author: pr.author?.login || "", isCrossRepository: pr.isCrossRepository, branch: pr.headRefName, base: pr.baseRefName,
       fromDefault: !!defaultBranch && pr.headRefName === defaultBranch, draft: pr.isDraft, reviewDecision: pr.reviewDecision || "", updatedAt: pr.updatedAt, createdAt: pr.createdAt,
       additions: pr.additions, deletions: pr.deletions, changedFiles: pr.changedFiles || 0, requestedOfMe: requestedOfMe.has(pr.number),
       reviewers: (pr.reviewRequests || []).map((request: any) => request.login || request.name || request.slug).filter(Boolean),
@@ -381,7 +385,7 @@ export function createCodeDashboard(root: string) {
   // else main. The main checkout has no fork point, so it compares with HEAD.
   function baseBranch(tree: Worktree | undefined) {
     if (!tree || tree.main) return "";
-    const pr = (openPrs.get(tree.repo)?.prs || []).find((candidate: any) => candidate.branch === tree.branch);
+    const pr = (openPrs.get(tree.repo)?.prs || []).find((candidate: any) => !candidate.isCrossRepository && candidate.branch === tree.branch);
     return pr?.base || "main";
   }
   async function branchBase(path: string) {
@@ -438,9 +442,19 @@ export function createCodeDashboard(root: string) {
   }
   // A PR's branch in a worktree of its tracked repo: the one that has it already, else a new one made by the repo's
   // `code.run.worktree` command when it has one (its own setup), else by `git worktree add` at `code.worktreeDir`.
-  async function checkoutPr(repo: string, branch: string) {
+  const checkouts = new Map<string, Promise<{ path: string; created: boolean }>>();
+  function checkoutPr(repo: string, branch: string) {
+    const key = JSON.stringify([repo, branch]);
+    const pending = checkouts.get(key);
+    if (pending) return pending;
+    const checkout = prepareWorktree(repo, branch).finally(() => checkouts.delete(key));
+    checkouts.set(key, checkout);
+    return checkout;
+  }
+  async function prepareWorktree(repo: string, branch: string) {
     await knownWorktree(repo);
-    if (!/^[\w./-]+$/.test(branch) || branch.startsWith("-") || branch.includes("..")) throw new Error("Not a branch name.");
+    if (!/^[\w./-]+$/.test(branch) || branch.startsWith("-") || branch === "HEAD") throw new Error("Not a branch name.");
+    await git(repo, ["check-ref-format", `refs/heads/${branch}`]).catch(() => { throw new Error("Not a branch name."); });
     const failed = (what: string) => (error: any) => { throw new Error(`${what} failed for ${branch}: ${(error.stderr || error.stdout || error.message).trim().split("\n").pop()}`); };
     const remoteRef = `refs/remotes/origin/${branch}`;
     await git(repo, ["fetch", "origin", `+refs/heads/${branch}:${remoteRef}`]).catch(failed("git fetch"));
@@ -458,11 +472,18 @@ export function createCodeDashboard(root: string) {
         const dir = resolve(repo, (config().code.worktreeDir || "../{name}-worktrees/{branch}").replaceAll("{name}", name).replaceAll("{branch}", branch.replaceAll("/", "-")));
         if (existsSync(dir)) throw new Error(`${dir} already exists; remove it or check ${branch} out there yourself.`);
         const local = await git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).then(() => true, () => false);
-        await git(repo, local ? ["worktree", "add", dir, branch] : ["worktree", "add", "--track", "-b", branch, dir, `origin/${branch}`]).catch(failed("git worktree add"));
+        await git(repo, local ? ["worktree", "add", dir, branch] : ["worktree", "add", "--track", "-b", branch, dir, remoteRef]).catch(failed("git worktree add"));
       }
     }
     const path = existing || await worktreePath();
     if (!path) throw new Error(`The checkout finished but no worktree has ${branch} checked out.`);
+    const [common, actual] = await Promise.all([
+      git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"]),
+      git(path, ["rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel", "--symbolic-full-name", "HEAD"]).catch(() => ""),
+    ]);
+    if (actual.trimEnd() !== `${common.trimEnd()}\n${path}\nrefs/heads/${branch}`) {
+      throw new Error(`Git lists ${path} for ${branch}, but that folder is missing or belongs to another checkout. Check the repository's worktree list.`);
+    }
     const upstream = (await git(repo, ["for-each-ref", "--format=%(upstream)", `refs/heads/${branch}`])).trim();
     if (upstream && upstream !== remoteRef) throw new Error(`${branch} tracks ${upstream}. Expected origin/${branch}.`);
     if (!upstream) await git(repo, ["branch", `--set-upstream-to=${remoteRef}`, branch]).catch(failed("Setting upstream"));
@@ -510,7 +531,7 @@ export function createCodeDashboard(root: string) {
     const untracked = entries.filter((entry) => entry.startsWith("?? ")).map((entry) => entry.slice(3));
     const [summaries, untrackedSummaries] = await Promise.all([ignored, untracked].map((list) => Promise.all(list.slice(0, 60).map(async (entry) => ({ path: entry, ...await summarize(join(path, entry)) })))));
     const slug = tree ? await githubSlug(tree.repo) : "";
-    const open = tree && (openPrs.get(tree.repo)?.prs || []).find((pr: any) => pr.branch === tree.branch);
+    const open = tree && (openPrs.get(tree.repo)?.prs || []).find((pr: any) => !pr.isCrossRepository && pr.branch === tree.branch);
     const past = tree && prHistory.get(slug)?.byBranch.get(tree.branch);
     const pr = open ? { ...open, ...prExtras.get(slug)?.byNumber.get(open.number), state: "OPEN" } : past ? { slug, number: past.number, state: past.state, title: past.title, url: `https://github.com/${slug}/pull/${past.number}` } : null;
     return {
@@ -579,21 +600,21 @@ export function createCodeDashboard(root: string) {
     if (refresh) for (const key of prCache.keys()) if (key.endsWith(` ${slug}#${number}`)) prCache.delete(key);
     const detail = await cachedPr("detail", slug, number, () => loadPrDetail(slug, number));
     // Checked on every call (one `git worktree list`), since a worktree can appear after the details were cached.
-    const tree = detail.repo ? (await listWorktrees(detail.repo).catch(() => [])).find((candidate) => !candidate.main && candidate.branch === detail.branch) : null;
-    return { ...detail, worktree: tree?.path || "" };
+    const repo = await cloneFor(slug);
+    const tree = repo && !detail.isCrossRepository ? (await listWorktrees(repo).catch(() => [])).find((candidate) => candidate.branch === detail.branch) : null;
+    return { ...detail, repo, worktree: tree?.path || "" };
   }
 
   async function loadPrDetail(slug: string, number: number) {
-    const fields = "body,files,commits,title,url,state,author,headRefName,baseRefName,headRefOid,baseRefOid,isDraft,reviewDecision,additions,deletions,createdAt,updatedAt,mergedAt";
+    const fields = "body,files,commits,title,url,state,author,isCrossRepository,headRefName,baseRefName,headRefOid,baseRefOid,isDraft,reviewDecision,additions,deletions,createdAt,updatedAt,mergedAt";
     const api = (path: string) => exec("gh", ["api", "--paginate", "--slurp", `repos/${slug}/${path}`], { maxBuffer: 32 << 20 }).then(({ stdout }) => JSON.parse(stdout).flat(), () => []);
     const [{ stdout }, issueComments, lineComments, reviews] = await Promise.all([
       exec("gh", ["pr", "view", String(number), "-R", slug, "--json", fields], { maxBuffer: 32 << 20 }),
       api(`issues/${number}/comments`), api(`pulls/${number}/comments`), api(`pulls/${number}/reviews`),
     ]);
     const pr = JSON.parse(stdout);
-    const repo = (await readRepos()).find((candidate) => candidate.split("/").pop()!.toLowerCase() === slug.split("/")[1].toLowerCase()) || "";
     return {
-      slug, number, repo, title: pr.title, url: pr.url, state: pr.state, author: pr.author?.login || "", branch: pr.headRefName, base: pr.baseRefName,
+      slug, number, title: pr.title, url: pr.url, state: pr.state, author: pr.author?.login || "", isCrossRepository: pr.isCrossRepository, branch: pr.headRefName, base: pr.baseRefName,
       draft: pr.isDraft, reviewDecision: pr.reviewDecision || "", additions: pr.additions, deletions: pr.deletions, createdAt: pr.createdAt, updatedAt: pr.updatedAt, mergedAt: pr.mergedAt,
       headSha: pr.headRefOid, baseSha: pr.baseRefOid,
       body: pr.body || "",

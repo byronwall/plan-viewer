@@ -80,7 +80,8 @@ test("checkoutPr adds a worktree for a branch only on origin, then reuses it", a
   await mkdir(join(root, "config"), { recursive: true });
   await writeFile(join(root, "config/code-repos.json"), JSON.stringify({ repos: [repo] }));
   const dashboard = createCodeDashboard(root);
-  const first = await dashboard.checkoutPr(repo, "acme/feature");
+  const [first, duplicate] = await Promise.all([dashboard.checkoutPr(repo, "acme/feature"), dashboard.checkoutPr(repo, "acme/feature")]);
+  assert.deepEqual(first, duplicate);
   assert.deepEqual(first, { path: join(base, "app-worktrees/acme-feature"), created: true });
   assert.equal(git(first.path, "rev-parse", "--abbrev-ref", "HEAD").trim(), "acme/feature");
   assert.equal(git(first.path, "rev-parse", "--abbrev-ref", "@{upstream}").trim(), "origin/acme/feature");
@@ -100,15 +101,56 @@ test("checkoutPr adds a worktree for a branch only on origin, then reuses it", a
   const local = await dashboard.checkoutPr(repo, "acme/local");
   assert.equal(git(local.path, "rev-parse", "--abbrev-ref", "@{u}").trim(), "origin/acme/local");
 
+  // A registered worktree can disappear or be replaced by an unrelated clone on the same branch.
+  await rm(local.path, { recursive: true });
+  await assert.rejects(dashboard.checkoutPr(repo, "acme/local"), /missing or belongs to another checkout/);
+  execFileSync("git", ["clone", "-q", "-b", "acme/local", origin, local.path], { stdio: "pipe" });
+  git(local.path, "branch", "--unset-upstream");
+  await assert.rejects(dashboard.checkoutPr(repo, "acme/local"), /missing or belongs to another checkout/);
+  assert.throws(() => git(local.path, "rev-parse", "@{u}"));
+
   const { config, setConfig } = await import("./public/config.js");
   const previous = config();
   t.after(() => setConfig(previous));
   const customDir = join(base, "custom");
   setConfig({ code: { run: { requires: [], worktree: ["git", "worktree", "add", "--no-track", "-b", "{branch}", customDir, "origin/{branch}"] } } });
+  await assert.rejects(dashboard.runPr(repo, "acme/feature"), /tracks refs\/remotes\/origin\/main/);
   git(repo, "push", "origin", "HEAD:refs/heads/acme/custom");
   assert.equal((await dashboard.checkoutPr(repo, "acme/custom")).path, customDir);
   assert.equal(git(customDir, "rev-parse", "--abbrev-ref", "@{u}").trim(), "origin/acme/custom");
   git(origin, "update-ref", "-d", "refs/heads/acme/custom");
   await assert.rejects(dashboard.checkoutPr(repo, "acme/custom"), /git fetch failed/);
   await assert.rejects(dashboard.checkoutPr(repo, "--force"), /Not a branch name/);
+});
+
+test("PR details use the origin owner and repository, and skip local branches for forks", async (t) => {
+  const { mkdtemp, mkdir, writeFile, rm, realpath } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join, delimiter } = await import("node:path");
+  const { execFileSync } = await import("node:child_process");
+  const { createCodeDashboard } = await import("./code-dashboard.ts");
+  const root = await realpath(await mkdtemp(join(tmpdir(), "pr-identity-")));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const wrong = join(root, "app"), right = join(root, "renamed-clone");
+  for (const [repo, owner] of [[wrong, "another-owner"], [right, "acme"]]) {
+    execFileSync("git", ["init", "-q", "-b", "feature", repo]);
+    execFileSync("git", ["-C", repo, "-c", "user.name=Test", "-c", "user.email=test@acme.test", "commit", "-q", "--allow-empty", "-m", "first"]);
+    execFileSync("git", ["-C", repo, "remote", "add", "origin", `git@github.com:${owner}/app.git`]);
+  }
+  await mkdir(join(root, "config"));
+  await writeFile(join(root, "config/code-repos.json"), JSON.stringify({ repos: [wrong, right] }));
+  await writeFile(join(root, "gh"), `#!/bin/sh
+if [ "$1" = "api" ]; then echo '[]'
+elif [ "$3" = "2" ]; then echo '{"headRefName":"feature","isCrossRepository":true}'
+else echo '{"headRefName":"feature","isCrossRepository":false}'; fi
+`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = root + delimiter + path;
+  t.after(() => { process.env.PATH = path; });
+  const dashboard = createCodeDashboard(root);
+  const sameRepo = await dashboard.prDetail("ACME/app", 1);
+  assert.equal(sameRepo.repo, right);
+  assert.equal(sameRepo.worktree, right);
+  assert.equal((await dashboard.prDetail("acme/app", 2)).worktree, "");
+  assert.equal((await dashboard.prDetail("untracked/app", 1)).repo, "");
 });

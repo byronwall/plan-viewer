@@ -88,11 +88,11 @@ const copyButton = (value, tip) => iconButton("copy", tip, `data-code-copy="${es
 const previewButton = (pr, key = "D") => meta().previews?.includes(pr.repo) ? iconButton("preview", `Open signed-in PR deployment${key ? ` (${key})` : ""}`, `data-code-preview="${pr.number}" data-repo="${escapeHtml(pr.repo)}"`) : `<span class="code-icon-button is-blank"></span>`;
 // Starts `code.run` for a worktree, or for a PR (checked out first when it has no worktree); stops it while it runs.
 const runFor = (path) => (path && meta().runs?.[path]) || null; // meta(): the Code page data, or the PR index an overview loads elsewhere
-function runButton(repo, tree, branch) {
-  if (!meta().runnable?.includes(repo) || (!tree && !config().code.run?.worktree)) return `<span class="code-icon-button is-blank"></span>`;
+function runButton(repo, tree, branch, pr = null) {
+  if (!meta().runnable?.includes(repo) || pr?.isCrossRepository) return `<span class="code-icon-button is-blank"></span>`;
   const run = runFor(tree?.path);
   if (run && run.state !== "exited") return iconButton("stop", run.url ? `Stop local server at ${run.url} (L)` : "Stop local server · starting (L)", `data-code-stop-run="${escapeHtml(tree.path)}" data-run-state="${run.state}"`);
-  return iconButton("play", tree ? "Run local server (L)" : "Check out a worktree and run local server (L)", `data-code-run data-path="${escapeHtml(tree?.path || "")}" data-repo="${escapeHtml(repo)}" data-branch="${escapeHtml(branch)}"`);
+  return iconButton("play", tree ? "Run local server (L)" : "Check out a worktree and run local server (L)", `data-code-run data-path="${escapeHtml(pr ? "" : tree?.path || "")}" data-repo="${escapeHtml(repo)}" data-branch="${escapeHtml(branch)}"`);
 }
 // A PR with no worktree yet: check its branch out, or check it out and open it in VS Code, in one click.
 const checkoutAttrs = (repo, branch) => `data-repo="${escapeHtml(repo)}" data-branch="${escapeHtml(branch)}"`;
@@ -149,8 +149,8 @@ function folderCell(tree, key = "") {
   const { root, name, from } = treeWhere(tree);
   return `<td class="code-col-path"><button type="button" class="code-path" data-code-copy="${escapeHtml(tree.path)}" data-tip="${escapeHtml(shortPath(tree.path))}${from ? ` · a temp copy made from ${escapeHtml(from.branch)}` : ""} · copy path${key}"><span class="code-where-root">${escapeHtml(root)}</span>${name ? `<span class="code-where-name">${from ? "↳ " : ""}${escapeHtml(name)}</span>` : ""}</button></td>`;
 }
-const worktreeFor = (pr) => ui.data.worktrees.find((tree) => tree.repo === pr.repo && tree.branch === pr.branch && !ui.removed.has(tree.path));
-const prFor = (tree) => ui.data.prs.find((pr) => pr.repo === tree.repo && pr.branch === tree.branch);
+const worktreeFor = (pr) => !pr.isCrossRepository && ui.data.worktrees.find((tree) => tree.repo === pr.repo && tree.branch === pr.branch && !ui.removed.has(tree.path));
+const prFor = (tree) => ui.data.prs.find((pr) => !pr.isCrossRepository && pr.repo === tree.repo && pr.branch === tree.branch);
 const matches = (text) => !ui.filter || ui.filter.toLowerCase().split(/\s+/).every((word) => text.toLowerCase().includes(word));
 // The overview can open without the Code page, so the slug may come from the worktree detail instead.
 const githubUrl = (tree) => { const slug = ui.data?.slugs?.[tree.repo] || ui.detail.get(`tree:${tree.path}`)?.slug; return slug && tree.branch !== "(detached)" ? `https://github.com/${slug}/tree/${tree.branch}` : ""; };
@@ -187,7 +187,7 @@ function aheadBehind(tree) {
 
 function treeActions(tree, keys = true, pr = null) { // keys: the Code page shortcuts, which mean other things inside an overview
   const url = githubUrl(tree);
-  return runButton(tree.repo, tree, tree.branch)
+  return runButton(tree.repo, tree, tree.branch, pr)
     + (pr ? prEditorButton(pr, tree, keys) : iconButton("vscode", `Open in VS Code${keys ? " (E)" : ""}`, `data-code-open="vscode" data-path="${escapeHtml(tree.path)}"`))
     + iconButton("terminal", `Open in ${config().code.terminal.label}${keys ? " (X)" : ""}`, `data-code-open="terminal" data-path="${escapeHtml(tree.path)}"`)
     + iconButton("folder", "Reveal in Finder", `data-code-open="finder" data-path="${escapeHtml(tree.path)}"`)
@@ -365,7 +365,7 @@ function visiblePrs() {
 // Stacked PRs: a PR whose base is another open PR's head branch sits on top of it, unless that head is the default
 // branch (a release PR from main would otherwise parent every PR against main).
 const stackKey = (repo, branch) => `${repo}\0${branch}`;
-const stackParent = (pr, prs = ui.data.prs) => { const up = prs.find((item) => item.repo === pr.repo && item.branch === pr.base && !item.fromDefault); return up === pr ? null : up; };
+const stackParent = (pr, prs = ui.data.prs) => { const up = prs.find((item) => item.repo === pr.repo && item.branch === pr.base && !item.isCrossRepository && !item.fromDefault); return up === pr ? null : up; };
 
 // The whole stack containing `pr`, base first, depth-first so each fork's subtree stays together.
 function stackOf(pr, prs = ui.data.prs) {
@@ -448,7 +448,7 @@ function prRow(pr, rail) {
     <td class="code-col-size">${sizeCount(pr)}</td>
     <td class="code-col-when">${when(prWhen(pr))}<span class="code-age" data-tip="Opened ${escapeHtml(new Date(pr.createdAt).toLocaleDateString())}">${ago(pr.createdAt)} old</span></td>
     <td class="code-col-skills">${skillButtons(pr, workspace, tree)}</td>
-    <td class="code-col-actions">${runButton(pr.repo, tree, pr.branch)}${previewButton(pr)}${copyButton(pr.url, "Copy PR link (Y)")}${pr.branch ? prEditorButton(pr, tree) : `<span class="code-icon-button is-blank"></span>`}</td></tr>`;
+    <td class="code-col-actions">${runButton(pr.repo, tree, pr.branch, pr)}${previewButton(pr)}${copyButton(pr.url, "Copy PR link (Y)")}${pr.branch && !pr.isCrossRepository ? prEditorButton(pr, tree) : `<span class="code-icon-button is-blank"></span>`}</td></tr>`;
 }
 
 // Two fixed slots, so the same flag lines up from row to row; the toolbar legend names them.
@@ -1000,7 +1000,7 @@ function renderBranchList() {
   };
   panel.querySelector("[data-branch-list]").innerHTML = rows.length ? rows.map((entry, index) => {
     const tree = entry.worktree && ui.data.worktrees.find((candidate) => candidate.path === entry.worktree);
-    const pr = ui.data.prs.find((candidate) => candidate.repo === entry.repo && candidate.branch === entry.branch);
+    const pr = prFor(entry);
     return `<li data-branch-row="${escapeHtml(entry.branch)}" aria-selected="${index === ui.branchActive}">
       <input type="checkbox" tabindex="-1" ${ui.branches.has(entry.branch) ? "checked" : ""} aria-label="Show ${escapeHtml(entry.branch)}">
       <span class="code-branch-name">${branchGlyph(entry.branch)}${mark(entry.branch)}</span>
@@ -1024,7 +1024,7 @@ function branchKeys(event) {
 
 // The branch's open PR (or, from PR history, its last closed or merged one) so it is one click away.
 function commitPrSection(commit) {
-  const pr = ui.data.prs.find((candidate) => candidate.repo === commit.repo && candidate.branch === commit.branch);
+  const pr = prFor(commit);
   if (pr) {
     return `<section><h4>Pull request</h4><div class="code-commit-pr"><a class="code-pr-link" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">${ciBadge(pr)}#${pr.number}</a><span class="code-commit-pr-title">${escapeHtml(pr.title)}</span></div>
       <div class="code-detail-meta">${reviewTag(pr)}${pr.draft ? '<span class="code-tag code-tag-draft">draft</span>' : ""}${pr.mergeable === "CONFLICTING" ? '<span class="code-tag code-tag-dirty">conflicts</span>' : ""}<span class="code-muted">updated ${ago(pr.updatedAt)} ago</span><span class="code-spacer"></span>
@@ -1768,7 +1768,7 @@ function prFacts(pr, tree, wtPath, overlay = false) {
     [appName(), open ? sideSkills(pr, tree?.path || pr.repo, tree) : ""],
     ["Copy", open ? sideSkills(pr, tree?.path || pr.repo, tree, true) : ""],
     ["Open", overlay && pr.url ? `<span class="code-side-tools">${meta().previews?.includes(pr.repo) ? previewButton(pr, "") : ""}${iconButton("copy", "Copy PR link (Y)", `data-code-copy="${escapeHtml(pr.url)}" data-copy-pr-link`)}<a class="code-icon-button" href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer" data-tip="Open PR on GitHub" aria-label="Open PR on GitHub">${icon("external")}</a></span>` : ""],
-    ["Local", wtPath ? `<span class="code-side-tools">${iconButton("branch", `Worktree overview${overlay ? " (W)" : ""}`, `data-diff-wt="${escapeHtml(wtPath)}"`)}${tree ? treeActions(tree, !overlay, pr) : ""}</span>` : open && pr.branch ? `<span class="code-side-tools">${checkoutButton(pr.repo, pr.branch)}${prEditorButton(pr, null, !overlay)}${runButton(pr.repo, null, pr.branch)}</span><span class="code-muted">Not checked out</span>` : ""],
+    ["Local", pr.isCrossRepository ? "Branch is in a fork" : wtPath ? `<span class="code-side-tools">${iconButton("branch", `Worktree overview${overlay ? " (W)" : ""}`, `data-diff-wt="${escapeHtml(wtPath)}"`)}${tree ? treeActions(tree, !overlay, pr) : ""}</span>` : open && pr.branch ? `<span class="code-side-tools">${checkoutButton(pr.repo, pr.branch)}${prEditorButton(pr, null, !overlay)}${runButton(pr.repo, null, pr.branch, pr)}</span><span class="code-muted">Not checked out</span>` : ""],
   ]);
 }
 
@@ -2581,7 +2581,7 @@ const commitTarget = (params, subject, sub, context = null) => ({ params: { sour
 function diffTarget() {
   const { commit } = selectedItem();
   if (!commit) return null;
-  const pr = ui.data.prs.find((candidate) => candidate.repo === commit.repo && candidate.branch === commit.branch);
+  const pr = prFor(commit);
   const context = pr ? { prs: [{ ...pr, state: pr.draft ? "Draft" : "Open" }] } : commit.branch ? { branches: [commit.branch] } : null;
   return commitTarget({ repo: commit.repo, sha: commit.sha, ...(pr ? { slug: pr.slug } : {}) }, commit.subject, `${repoName(commit.repo)} · ${commit.sha.slice(0, 8)} · ${commit.author} · ${ago(commit.time)} ago`, context);
 }
@@ -2886,7 +2886,7 @@ async function pollRuns() {
 }
 
 async function startRun({ path, repo, branch }) {
-  notify(path ? `Starting the local server in ${shortPath(path)}…` : `Checking out ${branch} into a new worktree, then starting its local server. Setup can take a few minutes.`);
+  notify(path ? `Starting the local server in ${shortPath(path)}…` : `Checking the origin branch and worktree for ${branch} before starting its local server…`);
   const run = await post("run", path ? { path } : { repo, branch });
   const data = meta();
   data.runs = { ...data.runs, [run.path]: run };
@@ -2897,8 +2897,9 @@ async function startRun({ path, repo, branch }) {
 // Checks a PR's branch out into a worktree (the repo's own worktree command, else git worktree add), then opens it.
 const checkingOut = new Set();
 async function checkoutPr({ repo, branch, open, button }) {
-  if (checkingOut.has(branch)) return;
-  checkingOut.add(branch);
+  const key = JSON.stringify([repo, branch]);
+  if (checkingOut.has(key)) return;
+  checkingOut.add(key);
   if (button) button.disabled = true;
   notify(`Checking the origin branch and worktree for ${branch}…`);
   try {
@@ -2906,7 +2907,7 @@ async function checkoutPr({ repo, branch, open, button }) {
     notify(created ? `Checked out ${branch} in ${shortPath(path)}${open ? "; opening VS Code" : ""}` : `${branch} was already in ${shortPath(path)}${open ? "; opening VS Code" : ""}`);
     await load();
   } finally {
-    checkingOut.delete(branch);
+    checkingOut.delete(key);
     if (button) button.disabled = false;
   }
 }
@@ -3209,7 +3210,7 @@ async function handleClick(event) {
     }
     if ("codeSelectNone" in dataset) { ui.selected.clear(); return render(); }
     if ("codeCheckout" in dataset) return await checkoutPr({ repo: dataset.repo, branch: dataset.branch, open: dataset.codeCheckout, button: target });
-    if ("codeRun" in dataset) return startRun({ path: dataset.path, repo: dataset.repo, branch: dataset.branch });
+    if ("codeRun" in dataset) return await startRun({ path: dataset.path, repo: dataset.repo, branch: dataset.branch });
     if (dataset.codeStopRun) return stopRun(dataset.codeStopRun);
     if (dataset.codePreview) { notify(`Opening the PR #${dataset.codePreview} deployment…`); await post("preview", { repo: dataset.repo, number: dataset.codePreview }); return; }
     if (dataset.codeOpen) { await post("open", { kind: dataset.codeOpen, path: dataset.path }); return; }
@@ -3293,7 +3294,7 @@ function handleKey(event) {
     m: () => ["prs", "commits"].includes(ui.tab) && toggleMine(),
     g: () => host.querySelector("#code-repos")?.showPopover(),
     enter: () => item.commit ? openDiff() : item.pr ? openPrOverlay(item.pr.slug, item.pr.number) : item.tree && openWorktreeOverlay(item.tree.path),
-    e: () => item.pr?.branch ? checkoutPr({ repo: item.pr.repo, branch: item.pr.branch, open: "vscode" }) : tree && post("open", { kind: "vscode", path: tree.path }),
+    e: () => item.pr?.branch && !item.pr.isCrossRepository ? checkoutPr({ repo: item.pr.repo, branch: item.pr.branch, open: "vscode" }) : tree && post("open", { kind: "vscode", path: tree.path }),
     x: () => tree && post("open", { kind: "terminal", path: tree.path }),
     s: () => tree && sessionNote(rowAnchor(), tree.path),
     y: () => copyText(item.commit ? item.commit.sha : item.pr ? item.pr.url : tree.path),
@@ -3304,7 +3305,8 @@ function handleKey(event) {
       if (!ui.data.runnable?.includes(repo)) return;
       const run = runFor(tree?.path);
       if (run && run.state !== "exited") return stopRun(tree.path);
-      if (tree || config().code.run?.worktree) return startRun({ path: tree?.path, repo, branch: tree?.branch || pr.branch });
+      if (item.pr?.isCrossRepository) return;
+      return startRun({ path: item.pr ? "" : tree?.path, repo, branch: tree?.branch || pr.branch });
     },
     1: () => skill(0), 2: () => skill(1), 3: () => skill(2), 4: () => skill(3),
   };
