@@ -2,7 +2,7 @@
 // Shared by the server (which loads the file) and the browser (which fetches /api/config before rendering).
 export const DEFAULT_CONFIG = {
   // Browser tab and startup banner.
-  title: "Plan Viewer",
+  title: "Planboard",
   // Name used in agent prompts ("<user>'s commentary").
   user: "User",
   port: 4173,

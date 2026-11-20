@@ -1,5 +1,5 @@
 {
-  "title": "Plan Viewer",
+  "title": "Planboard",
   "user": "Alex",
   "github": { "owner": "acme", "defaultRepo": "atlas", "repos": ["Orbit"] },
   "trackers": [

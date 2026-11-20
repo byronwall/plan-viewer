@@ -1,0 +1,44 @@
+name: Release
+
+# A changeset on main opens or updates the "Version Packages" PR. Merging that
+# PR removes the changesets, and this run publishes the new version to npm and
+# creates the tag and GitHub release. Ordinary commits do not start a release.
+# npm trusts this workflow (trusted publishing, OIDC): there is no npm token.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".changeset/**"
+  workflow_dispatch:
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Open the Version Packages PR or publish to npm
+        uses: changesets/action@v1
+        with:
+          version: npm run changeset:version
+          publish: npm run release
+          title: Version Packages
+          commit: Version Packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_AUTHOR_NAME: Byron Wall
+          GIT_AUTHOR_EMAIL: byron@byroni.us
+          GIT_COMMITTER_NAME: Byron Wall
+          GIT_COMMITTER_EMAIL: byron@byroni.us
+          NPM_CONFIG_PROVENANCE: true

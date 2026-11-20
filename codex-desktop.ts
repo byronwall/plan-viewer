@@ -13,7 +13,7 @@ export function taskTitle(chunkTitle: string) {
     .replace(/^Milestone\s+\d+\s*[:—–-]?\s*/i, "")
     .replace(/^\d+\.\s*/, "")
     .trim();
-  return (title || "Plan viewer handoff").slice(0, 80);
+  return (title || "Planboard handoff").slice(0, 80);
 }
 
 // The app treats `path` as the new thread's workspace root when it is an existing directory.

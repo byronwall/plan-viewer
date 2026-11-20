@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
-test("plan-viewer init sets up a workspace once and then changes nothing", async t => {
+test("planboard init sets up a workspace once and then changes nothing", async t => {
   const root = await mkdtemp(join(tmpdir(), "planning-init-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   // A commit hook sets GIT_DIR; without this, init would see the viewer's own repository.
@@ -33,5 +33,5 @@ test("plan-viewer init sets up a workspace once and then changes nothing", async
   assert.ok(!stdout.includes("✓"));
 
   // Run from the viewer checkout by mistake, init must refuse instead of writing into the viewer.
-  await assert.rejects(promisify(execFile)(process.execPath, ["--experimental-strip-types", "--no-warnings", "cli.ts", "init"], { env: { ...env, PLANNING_ROOT: "." } }), error => error.stderr.includes("plan-viewer checkout"));
+  await assert.rejects(promisify(execFile)(process.execPath, ["--experimental-strip-types", "--no-warnings", "cli.ts", "init"], { env: { ...env, PLANNING_ROOT: "." } }), error => error.stderr.includes("planboard checkout"));
 });

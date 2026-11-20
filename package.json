@@ -1,16 +1,46 @@
 {
-  "name": "plan-viewer",
+  "name": "planboard",
   "version": "0.1.0",
   "description": "A local reading desk for Markdown daily plans, tasks, and the code they touch.",
-  "private": true,
-  "repository": "github:byronwall/plan-viewer",
+  "keywords": [
+    "markdown",
+    "planning",
+    "agents",
+    "codex",
+    "claude-code"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/byronwall/planboard.git"
+  },
   "type": "module",
-  "bin": { "plan-viewer": "cli.ts" },
-  "engines": { "node": ">=22.6" },
+  "bin": {
+    "planboard": "bin.js"
+  },
+  "files": [
+    "bin.js",
+    "*.ts",
+    "!*.test.ts",
+    "public/",
+    "prompts/",
+    "hooks/",
+    "examples/workspace/",
+    "!examples/workspace/tmp/",
+    "docs/configuration.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22.15"
+  },
   "scripts": {
     "test": "PLANNING_ROOT=fixtures/planning node --experimental-strip-types --test --test-timeout=30000 --test-force-exit --test-reporter=dot '*.test.*'",
     "dev:demo": "PLANNING_ROOT=examples/workspace node --experimental-strip-types cli.ts serve",
     "hooks:install": "git config core.hooksPath .githooks",
-    "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true"
+    "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
+    "changeset:add": "node scripts/add-changeset.mjs",
+    "changeset:check": "node scripts/check-changeset.mjs",
+    "changeset:status": "npx --yes @changesets/cli@2.31.1 status",
+    "changeset:version": "npx --yes @changesets/cli@2.31.1 version",
+    "release": "npm pack --dry-run && npx --yes @changesets/cli@2.31.1 publish"
   }
 }
