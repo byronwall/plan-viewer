@@ -1,6 +1,6 @@
 # Plan Viewer
 
-**A local reading desk for planning in Markdown and handing the work to coding agents.**
+**A local reading desk for planning in Markdown, and for handing the work to coding agents.**
 
 You keep daily plans, tasks, and notes as plain Markdown files in a folder or Git repository. Plan Viewer turns that folder into a fast, keyboard-driven app: today's plan as work cards, tasks as lists of steps with dependency graphs, and one-click handoffs that load any piece of work into a [Codex](https://openai.com/codex/) or [Claude](https://claude.com/download) desktop draft, and a live list of every agent thread that work starts. Beside your plans sit the pull requests, worktrees, diffs, and issues that the work touches.
 
@@ -8,22 +8,36 @@ The viewer never edits your files. Your Markdown stays the source of truth, read
 
 ![Today's plan, with its scheduled tasks and the day's milestones as cards](docs/images/today.png)
 
+## Try it
+
+You need [Node.js](https://nodejs.org) 22.15 or later. In an empty folder, run:
+
+```bash
+npx plan-viewer init
+```
+
+```bash
+npx plan-viewer
+```
+
+`init` makes the folder a workspace, and the second command serves it at `http://127.0.0.1:4173`. The page is mostly empty until you write a plan. The viewer runs on your machine and reads your folder. It has no account, no database and no build step. To update it later, run `npx plan-viewer@latest`.
+
 ## Set it up with your agent
 
-You need [Node.js](https://nodejs.org) 22.6 or later and an agent such as [Claude Code](https://claude.com/claude-code) or [Codex](https://openai.com/codex/). There is nothing to install.
+An agent such as [Claude Code](https://claude.com/claude-code) or [Codex](https://openai.com/codex/) can do the setup and write your first plan. Start it in an empty folder and tell it:
+
+```text
+Read https://github.com/byronwall/plan-viewer/blob/main/docs/setup.md and set me up with npx plan-viewer.
+```
+
+To work from a clone instead (Node.js 22.6 or later), clone the repository, start your agent in `plan-viewer`, and tell it `Read docs/setup.md and set me up.`
 
 ```bash
 git clone https://github.com/byronwall/plan-viewer.git
 cd plan-viewer
 ```
 
-Then start your agent in `plan-viewer` and tell it:
-
-```text
-Read docs/setup.md and set me up.
-```
-
-The agent creates your workspace in `../planning`, starts the viewer, asks you four questions, and writes today's plan and your first task. To do it yourself instead, see [Set it up by hand](#set-it-up-by-hand).
+The agent creates your workspace (`../planning` beside a clone), starts the viewer, asks you four questions, and writes today's plan and your first task. To do it yourself instead, see [Set it up by hand](#set-it-up-by-hand).
 
 ## What you get
 
@@ -59,7 +73,7 @@ The agent creates your workspace in `../planning`, starts the viewer, asks you f
 
 ## Set it up by hand
 
-A workspace is a folder of Markdown plans beside your `plan-viewer` checkout. To start one:
+A workspace is a folder of Markdown plans. Run `npx plan-viewer init` in it, as in [Try it](#try-it). From a clone, keep the workspace beside the checkout and run its `cli.ts` instead:
 
 ```bash
 git clone https://github.com/byronwall/plan-viewer.git
@@ -69,14 +83,14 @@ mkdir planning && cd planning
 
 `init` sets up what the viewer and your agents need:
 
-- a git repository, with its hooks path set to the checkout's `hooks/`, so each commit lints staged plans and checks links;
+- a git repository with a pre-commit hook that lints staged plans and checks links. From a clone, the hooks path is the checkout's `hooks/`. From npm, `init` copies the hook into the workspace's `.githooks/`, and the hook runs the viewer through `npx`;
 - a `.gitignore` for `tmp/` (the viewer's caches) and `config.toml` (Linear and Slack tokens);
 - the `config/`, `daily/`, `tasks/` and `reference/` folders;
-- `AGENTS.md` and `CLAUDE.md` from the example workspace, with the real path to `cli.ts` in their commands.
+- `AGENTS.md` and `CLAUDE.md` from the example workspace, with the command that runs the viewer (`npx plan-viewer`, or the path to the clone's `cli.ts`).
 
-Nothing is installed: the workspace runs the checkout's `cli.ts` directly. `init` never replaces an existing file or setting, so you can run it again in a partly set up workspace. It prints what it did and what it skipped.
+`init` never replaces an existing file or setting, so you can run it again in a partly set up workspace. It prints what it did and what it skipped.
 
-Then run `../plan-viewer/cli.ts` in the workspace to start the viewer.
+Then run `npx plan-viewer` (or `../plan-viewer/cli.ts` from a clone) in the workspace to start the viewer.
 
 Write today's plan at `daily/YYYY-MM-DD.md` and it opens on launch. The copied `AGENTS.md` (which `CLAUDE.md` imports) tells your agents how plans and tasks are written. [`examples/workspace/`](examples/workspace) is a full sample workspace: a small fictional team's week.
 
@@ -126,12 +140,12 @@ Send the invite email from POST /invites through the mailer and add a test.
 
 ### Commands
 
-Run each from the workspace (or set `PLANNING_ROOT`). `plan-viewer help` lists them. A mistake, such as a missing file or a busy port, prints one line and exits 1.
+Run each from the workspace (or set `PLANNING_ROOT`), as `npx plan-viewer <command>` or, from a clone, `../plan-viewer/cli.ts <command>`. `plan-viewer help` lists them. A mistake, such as a missing file or a busy port, prints one line and exits 1.
 
 | Command | Does |
 | --- | --- |
-| `plan-viewer serve` | Starts the viewer at `http://127.0.0.1:4173`, restarting itself when the viewer's code changes. |
-| `plan-viewer init` | Sets up the folder as a workspace: git and its hooks path, `.gitignore`, folders, and the agent guide. Nothing to install. Never replaces a file. |
+| `plan-viewer serve` | Starts the viewer at `http://127.0.0.1:4173`, restarting itself when the viewer's code changes. It is the default command. |
+| `plan-viewer init` | Sets up the folder as a workspace: git and its pre-commit hook, `.gitignore`, folders, and the agent guide. Never replaces a file. |
 | `plan-viewer lint [paths…\|--staged]` | Checks task front matter, work breakdowns, and action references. |
 | `plan-viewer links [--fix\|--warm\|--refresh-slack]` | Reports broken links, unknown tasks, unlinked task assets, and unnamed Slack channels. |
 | `plan-viewer move <from> <to\|TASK-NNNN>` | Moves one file and repairs every link to it. `TASK-NNNN` moves it into that task's folder; the task must exist. |
@@ -151,7 +165,7 @@ Each one is off until you set it up, and credentials stay with their own tools:
 | Linear titles and issues | `LINEAR_API_KEY`, or `[linear] API_KEY` in `config.toml`. |
 | Slack link titles | `SLACK_TOKEN`, or `[slack] TOKEN` in `config.toml`. |
 
-The editor, terminal, and Finder buttons also assume macOS. Reading plans works anywhere Node runs.
+The editor, terminal, and Finder buttons also assume macOS. Reading plans works anywhere Node runs. The Setup page checks each integration.
 
 ## Documentation
 

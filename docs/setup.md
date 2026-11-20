@@ -1,16 +1,18 @@
 # Set up a planning workspace (for agents)
 
-A person cloned this repository and asked you to set them up. Follow these steps in order. When you finish, the person has their own planning workspace open in the viewer, with today's plan and one real task in it.
+A person asked you to set them up with Plan Viewer. They either cloned this repository and started you in it, or started you in an empty folder and asked for `npx plan-viewer`. Follow these steps in order. When you finish, the person has their own planning workspace open in the viewer, with today's plan and one real task in it.
 
 Talk to the person as you go. Ask only the questions listed here, and say what each step did.
 
 ## 1. Check Node
 
-Run `node --version`. The viewer needs Node.js 22.6 or later. If it is older or missing, stop and tell the person to install a current Node.js from <https://nodejs.org>. Nothing else needs to be installed.
+Run `node --version`. The viewer needs Node.js 22.6 or later from a clone, and 22.15 or later from npm. If it is older or missing, stop and tell the person to install a current Node.js from <https://nodejs.org>. Nothing else needs to be installed.
+
+In the steps below, `../plan-viewer/cli.ts` is the clone's command. With no clone, use `npx plan-viewer` in its place, run from the workspace.
 
 ## 2. Make the workspace folder
 
-The workspace is a separate folder beside this checkout, so plans never mix with the viewer's code. Use `../planning` (a sibling of this checkout). If that folder exists and is not empty, ask the person for another name.
+The workspace is a separate folder, so plans never mix with the viewer's code. From a clone, use `../planning` (a sibling of the checkout). With no clone, use the empty folder you started in and skip the `mkdir`. If the folder exists and is not empty, ask the person for another name.
 
 ```bash
 mkdir -p ../planning
@@ -24,7 +26,7 @@ Run init from inside the workspace folder:
 cd ../planning && ../plan-viewer/cli.ts init
 ```
 
-If this checkout's folder is not named `plan-viewer`, use its real path. The last line `init` prints names the command that starts the viewer, with the right path. `init` starts a git repository, sets its hooks path so each commit checks the plans, and copies `AGENTS.md` and `CLAUDE.md`. Read the workspace's new `AGENTS.md` now. It says where every file goes and how plans and tasks are written. Follow it for the rest of this setup.
+With no clone, run `npx --yes plan-viewer init` in the workspace instead. If the checkout's folder is not named `plan-viewer`, use its real path. The last line `init` prints names the command that starts the viewer, with the right path. `init` starts a git repository, sets up a pre-commit hook so each commit checks the plans, and copies `AGENTS.md` and `CLAUDE.md`, with that same command in their checks. Read the workspace's new `AGENTS.md` now. It says where every file goes and how plans and tasks are written. Follow it for the rest of this setup.
 
 ## 4. Start the viewer
 
@@ -65,4 +67,4 @@ Ask the person to reload the viewer. It opens today's plan, with the task as a c
 
 - To add work, they ask you (or any agent in the workspace) to write tasks and plans. The viewer never edits files.
 - The optional integrations (GitHub pull requests, Jira, Linear, Slack, and agent handoffs from the viewer) are in the README's "Optional integrations" table. Each one is off until it is set up.
-- `../plan-viewer/cli.ts` starts the viewer again later. Pulling this checkout updates it.
+- The command `init` printed (`../plan-viewer/cli.ts` or `npx plan-viewer`) starts the viewer again later. Pulling the checkout updates a clone; `npx plan-viewer@latest` updates an npm install.

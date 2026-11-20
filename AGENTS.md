@@ -26,6 +26,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 | --- | --- |
 | Per-workspace preferences (`config/viewer.json`) and their defaults, shared by server and browser | `public/config.js` |
 | `plan-viewer` subcommands | `cli.ts`; `init` is `init-workspace.ts`; `migrate` (older layout → current, dry run unless `--write`) is `migrate.ts` |
+| npm package: `bin.js` is the `npx plan-viewer` entry (Node won't strip types under `node_modules`, so it registers a load hook that does); `files` in `package.json` lists what ships; an install under `node_modules` gets `npx plan-viewer` in `init`'s guide and Setup prompts, a hook copied to `.githooks/`, and no version button; `.github/workflows/publish.yml` publishes on a `v*` tag | `bin.js`, `package.json` |
 | Workspace folder layout: task folder and file for an ID, the task of a path, daily file for a date, config paths (shared by server, checks and browser) | `public/layout.js` |
 | HTTP routes, document loading, task front matter, Codex handoff prompts | `server.ts` |
 | Next actions, work breakdown parser and graph, stalled-task reason (shared by server, lint and browser) | `public/actions.js` |
@@ -68,6 +69,8 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 - `.githooks/pre-commit` (enabled by `npm install`) runs `npm test` on the staged files, bounded so a hang can never hold `.git/index.lock` for long: 30 s per test, `--test-force-exit` past leaked timers, stdin closed, and a watchdog that kills the run after `PLAN_VIEWER_HOOK_TIMEOUT` seconds (default 180) and prints the last 40 lines. A test that leaves a child or timer running must stop it in `t.after`. `hooks/pre-commit` is the hook planning workspaces install; it is not this repository's.
 
 ## Gotchas
+
+- A new file the server reads at run time (beside `public/`, `prompts/`, `hooks/`, `examples/workspace/` and `docs/configuration.md`) must be added to `files` in `package.json`, or the npm package lacks it. Check with `npm pack --dry-run`.
 
 - `plan-viewer serve` and `npm run dev:demo` restart themselves when a `*.ts` file changes (`node --watch`); client changes in `public/` need only a reload.
 - `serve` caches the document index and the Steps index (`memo.ts`) until a file under `daily/`, `tasks/`, `reference/` or `config/` changes or a write request (any POST not in `READ_ONLY_POSTS` in `server.ts`) runs. A new endpoint that writes workspace files through a GET, or a read-only POST every page sends, must account for that. Format dates with `formatDateTime` from `public/dates.js`, not `toLocaleDateString`, in anything that renders a list.
