@@ -29,7 +29,9 @@ const script = fileURLToPath(new URL(COMMANDS[command], import.meta.url));
 // PLAN_VIEWER_WATCH=0 runs it directly.
 if (command === "serve" && process.env.PLAN_VIEWER_WATCH !== "0" && !process.env.PLAN_VIEWER_WATCHED) {
   const { spawn } = await import("node:child_process");
-  const child = spawn(process.execPath, ["--experimental-strip-types", "--no-warnings=ExperimentalWarning", "--watch", "--watch-preserve-output", script, ...args], { stdio: "inherit", env: { ...process.env, PLAN_VIEWER_WATCHED: "1" } });
+  // Installed from npm, the viewer sits under node_modules, where Node won't strip types: bin.js adds a hook that does.
+  const hook = import.meta.url.includes("/node_modules/") ? ["--import", new URL("bin.js", import.meta.url).href] : [];
+  const child = spawn(process.execPath, ["--experimental-strip-types", "--no-warnings=ExperimentalWarning", ...hook, "--watch", "--watch-preserve-output", script, ...args], { stdio: "inherit", env: { ...process.env, PLAN_VIEWER_WATCHED: "1" } });
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => child.kill(signal));
   child.on("exit", (code, signal) => process.exit(signal ? 1 : code ?? 0));
 } else {

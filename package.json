@@ -2,11 +2,31 @@
   "name": "plan-viewer",
   "version": "0.1.0",
   "description": "A local reading desk for Markdown daily plans, tasks, and the code they touch.",
-  "private": true,
+  "keywords": [
+    "markdown",
+    "planning",
+    "agents",
+    "codex",
+    "claude-code"
+  ],
   "repository": "github:byronwall/plan-viewer",
   "type": "module",
-  "bin": { "plan-viewer": "cli.ts" },
-  "engines": { "node": ">=22.6" },
+  "bin": {
+    "plan-viewer": "bin.js"
+  },
+  "files": [
+    "bin.js",
+    "*.ts",
+    "!*.test.ts",
+    "public/",
+    "prompts/",
+    "hooks/",
+    "examples/workspace/",
+    "docs/configuration.md"
+  ],
+  "engines": {
+    "node": ">=22.15"
+  },
   "scripts": {
     "test": "PLANNING_ROOT=fixtures/planning node --experimental-strip-types --test --test-timeout=30000 --test-force-exit --test-reporter=dot '*.test.*'",
     "dev:demo": "PLANNING_ROOT=examples/workspace node --experimental-strip-types cli.ts serve",
