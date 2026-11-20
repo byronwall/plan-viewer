@@ -440,25 +440,34 @@ export function createCodeDashboard(root: string) {
   // `code.run.worktree` command when it has one (its own setup), else by `git worktree add` at `code.worktreeDir`.
   async function checkoutPr(repo: string, branch: string) {
     await knownWorktree(repo);
-    const existing = lastWorktrees.find((tree) => tree.repo === repo && tree.branch === branch);
-    if (existing) return { path: existing.path, created: false };
     if (!/^[\w./-]+$/.test(branch) || branch.startsWith("-") || branch.includes("..")) throw new Error("Not a branch name.");
-    await git(repo, ["fetch", "origin", branch]).catch(() => {});
-    const { worktree } = config().code.run || {};
     const failed = (what: string) => (error: any) => { throw new Error(`${what} failed for ${branch}: ${(error.stderr || error.stdout || error.message).trim().split("\n").pop()}`); };
-    if (hasRun(repo) && worktree) await runCommand(worktree, { branch, cwd: repo }).catch(failed(worktree.join(" ")));
-    else {
-      const name = repo.replace(/\/+$/, "").split("/").pop() || "repo";
-      const dir = resolve(repo, (config().code.worktreeDir || "../{name}-worktrees/{branch}").replaceAll("{name}", name).replaceAll("{branch}", branch.replaceAll("/", "-")));
-      if (existsSync(dir)) throw new Error(`${dir} already exists; remove it or check ${branch} out there yourself.`);
-      const local = await git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).then(() => true, () => false);
-      await git(repo, local ? ["worktree", "add", dir, branch] : ["worktree", "add", "--track", "-b", branch, dir, `origin/${branch}`]).catch(failed("git worktree add"));
+    const remoteRef = `refs/remotes/origin/${branch}`;
+    await git(repo, ["fetch", "origin", `+refs/heads/${branch}:${remoteRef}`]).catch(failed("git fetch"));
+    const worktreePath = async () => {
+      const entries = (await git(repo, ["worktree", "list", "--porcelain", "-z"])).split("\0\0");
+      const fields = entries.map(entry => entry.split("\0")).find(fields => fields.includes(`branch refs/heads/${branch}`));
+      return fields?.[0].slice("worktree ".length);
+    };
+    const existing = await worktreePath();
+    const { worktree } = config().code.run || {};
+    if (!existing) {
+      if (hasRun(repo) && worktree) await runCommand(worktree, { branch, cwd: repo }).catch(failed(worktree.join(" ")));
+      else {
+        const name = repo.replace(/\/+$/, "").split("/").pop() || "repo";
+        const dir = resolve(repo, (config().code.worktreeDir || "../{name}-worktrees/{branch}").replaceAll("{name}", name).replaceAll("{branch}", branch.replaceAll("/", "-")));
+        if (existsSync(dir)) throw new Error(`${dir} already exists; remove it or check ${branch} out there yourself.`);
+        const local = await git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).then(() => true, () => false);
+        await git(repo, local ? ["worktree", "add", dir, branch] : ["worktree", "add", "--track", "-b", branch, dir, `origin/${branch}`]).catch(failed("git worktree add"));
+      }
     }
-    const blocks = (await git(repo, ["worktree", "list", "--porcelain"])).trim().split("\n\n");
-    const path = blocks.find((block) => block.includes(`branch refs/heads/${branch}\n`) || block.endsWith(`branch refs/heads/${branch}`))?.match(/^worktree (.+)$/m)?.[1];
+    const path = existing || await worktreePath();
     if (!path) throw new Error(`The checkout finished but no worktree has ${branch} checked out.`);
-    await load(true);
-    return { path, created: true };
+    const upstream = (await git(repo, ["for-each-ref", "--format=%(upstream)", `refs/heads/${branch}`])).trim();
+    if (upstream && upstream !== remoteRef) throw new Error(`${branch} tracks ${upstream}. Expected origin/${branch}.`);
+    if (!upstream) await git(repo, ["branch", `--set-upstream-to=${remoteRef}`, branch]).catch(failed("Setting upstream"));
+    if (!known.has(path) || !existing) await load(true);
+    return { path, created: !existing };
   }
   async function runPr(repo: string, branch: string) {
     if (!hasRun(repo)) throw new Error(`${repo} has no local server command.`);

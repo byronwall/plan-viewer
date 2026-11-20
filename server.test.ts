@@ -1030,6 +1030,9 @@ test("link lookups stop waiting on the network after waitMs and name what is sti
   process.env.SLACK_TOKEN = "test-token";
   const root = await mkdtemp(join(tmpdir(), "link-wait-"));
   t.after(async () => { if (previous === undefined) delete process.env.SLACK_TOKEN; else process.env.SLACK_TOKEN = previous; await rm(root, { recursive: true, force: true }); });
+  // A real in-flight request holds the event loop open while the unref'd lookup deadline runs.
+  const requestTimer = setTimeout(() => {}, 2000);
+  t.after(() => clearTimeout(requestTimer));
   let release = () => {};
   t.mock.method(globalThis, "fetch", () => new Promise((done) => { release = () => done(Response.json({ ok: false, error: "slow" })); }));
   const lookup = createLinkMetadataStore(root);
