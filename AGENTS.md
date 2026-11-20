@@ -14,6 +14,7 @@ Node.js 22.6+ and nothing else. `npm install` (no packages; it enables the pre-c
 | `docs/setup.md` | First-run setup, written for the user's agent; the README's setup prompt points at it. Names no workspace paths: it defers to the workspace `AGENTS.md`. | `init` or the first-run flow changes. |
 | `docs/guide.md` | Every page, shortcut, and behavior. | Any user-visible behavior changes. |
 | `docs/configuration.md` | Every `config/viewer.json` key and environment variable. | A key or variable is added or changed. |
+| `docs/releasing.md` | How a change reaches npm: changesets, the Version Packages PR, trusted publishing. | The release flow changes. |
 | `docs/code-view.md`, `docs/issues-plan.md`, `docs/plans-plan.md` | Design intent and plans for those surfaces. | Before adding a list/inspector/overview surface, read `code-view.md`. |
 | `docs/images/` | README screenshots, made by `scripts/screenshots.mjs` from `examples/workspace/`; the Chat Threads shot answers `/api/chat-threads` with the fictional threads in `scripts/chat-threads-sample.mjs`, never real sessions. | A pictured screen changes visibly. |
 | `examples/workspace/` | The demo and the template for new workspaces, including the workspace-side `AGENTS.md`. | The content format changes (it must pass `planboard lint` and `links`). |
@@ -26,7 +27,7 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 | --- | --- |
 | Per-workspace preferences (`config/viewer.json`) and their defaults, shared by server and browser | `public/config.js` |
 | `planboard` subcommands | `cli.ts`; `init` is `init-workspace.ts`; `migrate` (older layout → current, dry run unless `--write`) is `migrate.ts` |
-| npm package: `bin.js` is the `npx planboard` entry (Node won't strip types under `node_modules`, so it registers a load hook that does); `files` in `package.json` lists what ships; an install under `node_modules` gets `npx planboard` in `init`'s guide and Setup prompts, a hook copied to `.githooks/`, and no version button; `.github/workflows/publish.yml` publishes on a `v*` tag | `bin.js`, `package.json` |
+| npm package: `bin.js` is the `npx planboard` entry (Node won't strip types under `node_modules`, so it registers a load hook that does); `files` in `package.json` lists what ships; an install under `node_modules` gets `npx planboard` in `init`'s guide and Setup prompts, a hook copied to `.githooks/`, and no version button; releases go through changesets and the Version Packages PR (`docs/releasing.md`) | `bin.js`, `package.json`, `.changeset/`, `.github/workflows/release.yml` and `check.yml`, `scripts/add-changeset.mjs` and `check-changeset.mjs` |
 | Workspace folder layout: task folder and file for an ID, the task of a path, daily file for a date, config paths (shared by server, checks and browser) | `public/layout.js` |
 | HTTP routes, document loading, task front matter, Codex handoff prompts | `server.ts` |
 | Next actions, work breakdown parser and graph, stalled-task reason (shared by server, lint and browser) | `public/actions.js` |
@@ -83,6 +84,8 @@ The server is TypeScript run by `node --experimental-strip-types`. There is no `
 - A `:hover` that changes an element's look (background, color, underline, border) is only for something a click acts on. Tooltip-only marks (`data-tip`, `title`) and plain rows keep their look; a row may still reveal its own buttons on hover.
 
 ## Rules
+
+- Every PR that changes what the `planboard` package ships (the paths in `files` in `package.json`) adds a changeset. Write it yourself with `npm run changeset:add <patch|minor|major> "Release note"`, in words for Planboard users; do not run the interactive `changeset` command. The Check workflow fails a PR without one. Never run `changeset version` or `npm run release`, and never edit `version` or `CHANGELOG.md` by hand: the Version Packages PR does that (`docs/releasing.md`).
 
 - Keep the viewer generic. Anything that names a person, organization, repository, tracker, tool path, or skill belongs in `config/viewer.json` with a neutral default in `public/config.js`, documented in `docs/configuration.md`. Fixtures, examples, and tests use the fictional `acme` organization.
 - Document behavior changes in `docs/guide.md` in the same commit, not in the README.

@@ -192,4 +192,4 @@ npm test          # runs every test against fixtures/planning
 npm run dev:demo  # serves examples/workspace, a fictional sample workspace, on port 4173
 ```
 
-`npm install` enables a pre-commit hook that runs the tests. [`AGENTS.md`](AGENTS.md) maps features to files and lists the rules for changes; it is written for coding agents but is the fastest orientation for anyone. To refresh the screenshots above, see [`scripts/screenshots.mjs`](scripts/screenshots.mjs).
+`npm install` enables a pre-commit hook that runs the tests. A change to what the npm package ships needs a changeset (`npm run changeset:add`); [`docs/releasing.md`](docs/releasing.md) covers releases. [`AGENTS.md`](AGENTS.md) maps features to files and lists the rules for changes; it is written for coding agents but is the fastest orientation for anyone. To refresh the screenshots above, see [`scripts/screenshots.mjs`](scripts/screenshots.mjs).

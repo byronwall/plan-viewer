@@ -23,7 +23,8 @@
     "hooks/",
     "examples/workspace/",
     "!examples/workspace/tmp/",
-    "docs/configuration.md"
+    "docs/configuration.md",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=22.15"
@@ -32,6 +33,11 @@
     "test": "PLANNING_ROOT=fixtures/planning node --experimental-strip-types --test --test-timeout=30000 --test-force-exit --test-reporter=dot '*.test.*'",
     "dev:demo": "PLANNING_ROOT=examples/workspace node --experimental-strip-types cli.ts serve",
     "hooks:install": "git config core.hooksPath .githooks",
-    "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true"
+    "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
+    "changeset:add": "node scripts/add-changeset.mjs",
+    "changeset:check": "node scripts/check-changeset.mjs",
+    "changeset:status": "npx --yes @changesets/cli@2.31.1 status",
+    "changeset:version": "npx --yes @changesets/cli@2.31.1 version",
+    "release": "npm pack --dry-run && npx --yes @changesets/cli@2.31.1 publish"
   }
 }

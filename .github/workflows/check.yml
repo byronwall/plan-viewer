@@ -1,0 +1,25 @@
+name: Check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  changeset:
+    if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The changeset check compares the branch with its base.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Require a changeset for shipped changes
+        run: npm run changeset:check -- origin/${{ github.base_ref }}
+      - name: Check the package contents
+        run: npm pack --dry-run
