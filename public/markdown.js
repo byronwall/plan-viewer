@@ -846,6 +846,13 @@ export function renderMarkdown(markdown, currentPath = "") {
     }
     if (inCode) { code.push(line); continue; }
 
+    // An HTML comment on its own lines (outbound `<!-- send:start -->` markers, PR template hints) shows nothing, as on GitHub.
+    if (/^\s*<!--/.test(line)) {
+      flushParagraph();
+      while (!lines[index].includes("-->") && index + 1 < lines.length) index += 1;
+      continue;
+    }
+
     // `<details><summary>…</summary> … </details>`, the collapsible GitHub bodies use; the inside is Markdown.
     if (/^\s*<details>/i.test(line)) {
       flushParagraph();
