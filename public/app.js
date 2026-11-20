@@ -28,6 +28,8 @@ import { addDays, dateKey, localTodayKey, parseDateKey, startOfWeek, formatDateT
 import { dailyFile, dateOfPath, isTaskAsset, isTaskFile, taskFile, taskOfPath, taskRelative } from "./layout.js";
 
 const state = { documents: [], defaultPath: "", selectedPath: "", document: null, activeChunkId: "", openComposer: null, view: "document" };
+// The document a URL without `path` shows: today's plan, or the first document while today has none.
+const homePath = () => state.documents.find((doc) => doc.path === state.defaultPath)?.path || state.documents[0]?.path || "";
 
 const elements = {
   library: document.querySelector(".library"),
@@ -4493,9 +4495,7 @@ window.addEventListener("popstate", () => {
   const page = VIEWS[params.get("view")];
   if (page) { page.back(params); return restoreSavedScroll(); }
   const requested = params.get("path");
-  const path = state.documents.find((doc) => doc.path === requested)?.path
-    || state.documents.find((doc) => doc.path === state.defaultPath)?.path
-    || state.documents[0]?.path;
+  const path = state.documents.find((doc) => doc.path === requested)?.path || homePath();
   if (path) selectDocument(path, { historyMode: "none", anchor: locationAnchor(), scrollY: savedScrollPosition() });
 });
 elements.handoffPopover.addEventListener("submit", (event) => { event.preventDefault(); dispatch(event.target); });
@@ -4640,7 +4640,7 @@ const OVERLAYS = [
 // `page` keys a visit by its page too, since `table=2` means a different table on every document.
 OVERLAYS.push({ param: "table", extra: ["table-size", "table-fill"], page: true,
   open: (params) => { const wrapper = pageTables()[Number(params.get("table")) - 1]; if (wrapper && !elements.tableViewer.open) showTableViewer(wrapper, params.get("table-size") || "", params.has("table-size") ? params.get("table-fill") !== "0" : null); },
-  result: (params) => { const doc = state.documents.find((candidate) => candidate.path === (params.get("path") || state.defaultPath)); return { ...(doc ? docResult(doc, []) : { icon: "file", title: escapeHtml(params.get("path") || "") }), detail: `Table ${Number(params.get("table"))}`, side: "Table" }; },
+  result: (params) => { const doc = state.documents.find((candidate) => candidate.path === (params.get("path") || homePath())); return { ...(doc ? docResult(doc, []) : { icon: "file", title: escapeHtml(params.get("path") || "") }), detail: `Table ${Number(params.get("table"))}`, side: "Table" }; },
   closed: (params) => ["table", `Table ${Number(params.get("table"))}`] });
 OVERLAYS.push({ param: "world", extra: ["world-day"],
   open: (params) => params.get("world") === "all" ? openPortfolio(portfolioTasks()) : /^TASK-\d{4}$/.test(params.get("world")) && openTaskWorld(params.get("world"), params.get("world-day") || ""),
@@ -4781,7 +4781,7 @@ function visitResult(href) {
   if (view === "activity") return page("activity", "Activity", "Everything that changed");
   if (view === "diagrams") return page("diagram", "Diagrams", "Every diagram in the workspace");
   if (view in LIBRARY_VIEWS) return page("reference", LIBRARY_VIEWS[view].title, LIBRARY_VIEWS[view].intro);
-  const path = params.get("path") || state.defaultPath;
+  const path = params.get("path") || homePath();
   // A work item dialog (`?item=`) is its own place, not the task behind it.
   const work = doc(path)?.task?.work?.find((candidate) => candidate.id === params.get("item"));
   if (work) return workResult({ work, doc: doc(path) }, []);
@@ -4937,9 +4937,7 @@ async function boot() {
     // The Plans tab moved out of Code into its own page; old links land there.
     if (/[?&]view=code\b/.test(location.search) && new URLSearchParams(location.search).get("tab") === "plans") history.replaceState(null, "", "?view=plans");
     const requestedView = new URLSearchParams(location.search).get("view");
-    const initial = state.documents.find((doc) => doc.path === requested)?.path
-      || state.documents.find((doc) => doc.path === body.defaultPath)?.path
-      || state.documents[0]?.path;
+    const initial = state.documents.find((doc) => doc.path === requested)?.path || homePath();
     renderLibrary();
     // A new workspace (no daily plan or no task yet) opens on Setup, whose Getting started section says what to do.
     const started = state.documents.some((doc) => dateOfPath(doc.path)) && state.documents.some((doc) => isTaskFile(doc.path));
