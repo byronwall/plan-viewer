@@ -9,7 +9,10 @@
     "codex",
     "claude-code"
   ],
-  "repository": "github:byronwall/planboard",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/byronwall/planboard.git"
+  },
   "type": "module",
   "bin": {
     "planboard": "bin.js"
