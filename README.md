@@ -2,7 +2,7 @@
 
 **A local reading desk for planning in Markdown and handing the work to coding agents.**
 
-You keep daily plans, tasks, and notes as plain Markdown files in a folder or Git repository. Plan Viewer turns that folder into a fast, keyboard-driven app: today's plan as work cards, tasks as lists of steps with dependency graphs, and one-click handoffs that load any piece of work into a [Codex](https://openai.com/codex/) or [Claude](https://claude.com/download) desktop draft. Beside your plans sit the pull requests, worktrees, diffs, and issues that the work touches.
+You keep daily plans, tasks, and notes as plain Markdown files in a folder or Git repository. Plan Viewer turns that folder into a fast, keyboard-driven app: today's plan as work cards, tasks as lists of steps with dependency graphs, and one-click handoffs that load any piece of work into a [Codex](https://openai.com/codex/) or [Claude](https://claude.com/download) desktop draft, and a live list of every agent thread that work starts. Beside your plans sit the pull requests, worktrees, diffs, and issues that the work touches.
 
 The viewer never edits your files. Your Markdown stays the source of truth, readable anywhere, and agents make the changes.
 
@@ -48,6 +48,10 @@ The agent creates your workspace in `../planning`, starts the viewer, asks you f
 **Issues beside the plan.** The Issues page syncs Jira (through `acli`) and Linear into a dense list with triage, epics, and an activity feed, joined to the PRs that mention each issue.
 
 ![The Issues page](docs/images/issues.png)
+
+**Every agent thread in one place.** Chat Threads lists your local Codex and Claude Code threads: what waits for you, what runs, and what waits on a background command. Subagents and side sessions sit under the thread that started them, each with its model, reasoning effort and token use. Click a title to open the conversation in its desktop app.
+
+![Chat Threads: waiting, running and background threads, with subagents under their parents](docs/images/chats.png)
 
 **Everything from the keyboard.** `⌘K` searches documents, tasks, PRs, and issues. Single letters move between pages (`T` today, `A` tasks, `G` code, `I` issues), and `?` lists every shortcut.
 

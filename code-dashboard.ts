@@ -145,9 +145,14 @@ export function createCodeDashboard(root: string) {
     await writeFile(configPath, `${JSON.stringify({ repos }, null, 2)}\n`);
   }
 
-  async function githubSlug(repo: string) {
-    const remote = (await git(repo, ["remote", "get-url", "origin"]).catch(() => "")).trim();
-    return remote.match(/github\.com[:/](.+?)(?:\.git)?$/)?.[1] || "";
+  // A repo's origin rarely changes, and ⌘K, issues and the PR index ask for it on every request: keep each for 5 minutes.
+  const slugs = new Map<string, { at: number; slug: Promise<string> }>();
+  function githubSlug(repo: string) {
+    const known = slugs.get(repo);
+    if (known && Date.now() - known.at < 5 * 60_000) return known.slug;
+    const slug = git(repo, ["remote", "get-url", "origin"]).catch(() => "").then((remote) => remote.trim().match(/github\.com[:/](.+?)(?:\.git)?$/)?.[1] || "");
+    slugs.set(repo, { at: Date.now(), slug });
+    return slug;
   }
 
   // The tracked clone of a GitHub repo, or "".
@@ -313,9 +318,16 @@ export function createCodeDashboard(root: string) {
   }
 
   // Every worktree's branch, for joining issue keys to local work; `git worktree list` per repo, no status scan.
-  async function worktreeIndex() {
-    const lists = await Promise.all((await readRepos()).map((repo) => listWorktrees(repo).catch(() => [])));
-    return lists.flat().filter((tree) => !tree.main).map(({ repo, path, branch }) => ({ repo, path, branch }));
+  // Shared for 15 seconds: the Issues list asks on every load, and each repo costs three git calls.
+  let worktrees: { at: number; value: Promise<{ repo: string; path: string; branch: string }[]> } | null = null;
+  function worktreeIndex() {
+    if (worktrees && Date.now() - worktrees.at < 15_000) return worktrees.value;
+    const value = (async () => {
+      const lists = await Promise.all((await readRepos()).map((repo) => listWorktrees(repo).catch(() => [])));
+      return lists.flat().filter((tree) => !tree.main).map(({ repo, path, branch }) => ({ repo, path, branch }));
+    })();
+    worktrees = { at: Date.now(), value };
+    return value;
   }
 
   // Keeps the PR caches warm for ⌘K: open PRs, history, and CI every BACKGROUND_MS, starting now if the disk copy is old.

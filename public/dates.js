@@ -22,3 +22,13 @@ export function startOfWeek(date) {
 export function localTodayKey(now = new Date()) {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
+
+// `new Date(t).toLocaleDateString(locale, options)` builds a formatter on every call, which dominates long lists (the
+// Activity page formats thousands of times). This keeps one Intl.DateTimeFormat per locale and option set.
+const formatters = new Map();
+export function formatDateTime(value, locale, options) {
+  const key = `${locale || ""}|${JSON.stringify(options)}`;
+  let formatter = formatters.get(key);
+  if (!formatter) formatters.set(key, (formatter = new Intl.DateTimeFormat(locale, options)));
+  return formatter.format(typeof value === "number" || value instanceof Date ? value : new Date(value));
+}

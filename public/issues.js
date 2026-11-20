@@ -363,7 +363,7 @@ function issueFacts(issue, overlay = false) {
   const parent = byKey().get(issue.parent);
   const aliases = aliasesFor(issue.key);
   const keys = ui.selected.size && ui.selected.has(issue.key) && !overlay ? [...ui.selected] : [issue.key];
-  const status = sideStatus(issue.category === "done" ? "pass" : issue.category === "indeterminate" ? "progress" : "quiet", issue.category === "done" ? "pass" : issue.category === "indeterminate" ? "pending" : "draft", escapeHtml(issue.status));
+  const status = sideStatus(issue.category === "done" ? "pass" : issue.category === "indeterminate" ? "progress" : "quiet", issue.category === "done" ? "pass" : issue.category === "indeterminate" ? "progress" : "todo", escapeHtml(issue.status));
   return sideFacts([
     ["Status", `${status}${issue.resolution && issue.resolution !== "Done" ? `<span class="code-muted">${escapeHtml(issue.resolution)}</span>` : ""}${issue.confidence ? `<span>${escapeHtml(issue.confidence)}</span>` : ""}`],
     ["Type", `${typeIcon(issue)}<span>${escapeHtml(issue.type)}</span>${priorityIcon(issue)}<span class="code-muted">${escapeHtml(issue.priority)}</span>`],

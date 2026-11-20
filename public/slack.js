@@ -253,13 +253,19 @@ async function renderLinks() {
   const keys = [...new Set([...dialog.querySelectorAll(".slack-thread a[href], #slack-links a[href]")].map((link) => link.dataset.metaKey || metadataKey(link.href)).concat([...dialog.querySelectorAll("[data-forward-channel]")].map((span) => span.dataset.forwardChannel)).filter(Boolean))];
   if (!keys.length) return;
   const opened = current;
-  try {
-    const response = await fetch("/api/link-metadata", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ keys }) });
-    if (!response.ok || current !== opened) return;
-    const metadata = (await response.json()).metadata || {};
-    applyLinkMetadata(dialog, metadata);
-    for (const span of dialog.querySelectorAll("[data-forward-channel]")) if (/^[#@]/.test(metadata[span.dataset.forwardChannel]?.state || "")) span.textContent = `in ${metadata[span.dataset.forwardChannel].state} · `;
-  } catch {}
+  // Titles the server is still fetching come back as `pending`; ask again for those while the thread stays open.
+  const ask = async (wanted, attempt) => {
+    try {
+      const response = await fetch("/api/link-metadata", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ keys: wanted }) });
+      if (!response.ok || current !== opened) return;
+      const body = await response.json();
+      const metadata = body.metadata || {};
+      applyLinkMetadata(dialog, metadata);
+      for (const span of dialog.querySelectorAll("[data-forward-channel]")) if (/^[#@]/.test(metadata[span.dataset.forwardChannel]?.state || "")) span.textContent = `in ${metadata[span.dataset.forwardChannel].state} · `;
+      if (body.pending?.length && attempt < 4) setTimeout(() => current === opened && ask(body.pending, attempt + 1), 1500 * (attempt + 1));
+    } catch {}
+  };
+  await ask(keys, 0);
 }
 
 function renderComposer() {

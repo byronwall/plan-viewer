@@ -1,6 +1,7 @@
 import { diagramHref, escapeHtml, isSlackLink, parseUpdates, relativeDate, SERVICE_ICONS } from "./markdown.js";
 import { glyph } from "./icons.js";
-import { isTaskAsset, isTaskFile, taskDir, taskFile, taskOfPath } from "./layout.js";
+import { isTaskAsset, isTaskFile, taskDir, taskFile, taskOfPath, taskRelative } from "./layout.js";
+import { formatDateTime } from "./dates.js";
 
 // The sticky document dock: a thin bar of icon buttons that open the task's working sections, the document's
 // outgoing links grouped by source, and its backlinks — without scrolling away from what you're reading.
@@ -12,7 +13,8 @@ const ICONS = {
   links: glyph("link", "dock-glyph"),
   backlinks: glyph("corner-up-left", "dock-glyph"),
   doc: glyph("file-text", "dock-glyph"),
-  diagram: glyph("layout-panel-left", "dock-glyph"),
+  folder: glyph("folder", "dock-glyph"),
+  diagram: glyph("workflow", "dock-glyph"),
   chat: glyph("message-square", "dock-glyph"),
   web: glyph("globe", "dock-glyph"),
   world: glyph("chart-gantt", "dock-glyph"),
@@ -180,13 +182,19 @@ export function selectDockSource(tab) {
   browser.querySelector(".dock-source-lists").scrollTop = 0;
 }
 
-// A task's supporting documents, newest first under day headings, so the latest write-up is the first row and the order
-// they were written in reads down the list. Each row carries its `##` sections and size, so the right one is findable
-// without opening each. One list per sort; the header's switch shows one and remembers the choice (app.js).
+// A task's supporting documents. A task folder can hold hundreds of small files in subfolders (an agent's break-it runs,
+// say), so the panel browses one folder at a time: a breadcrumb back up, the folder's subfolders as rows with their file
+// count and newest edit, then its own files newest first under day headings, each row with its `##` sections and size.
+// "Subfolders" lists every file below the folder instead, each with its folder path, and the filter searches the names
+// and paths of everything below the folder. The sort and the Subfolders switch are remembered for every task; the
+// folder and filter for the task until another of its documents opens.
 const DOC_SORTS = [["edited", "Edited"], ["created", "Created"], ["name", "Name"]];
 const SORT_KEY = "plan-viewer:document-sort";
+const NESTED_KEY = "plan-viewer:document-nested";
 export const documentSort = () => { try { return DOC_SORTS.some(([key]) => key === localStorage.getItem(SORT_KEY)) ? localStorage.getItem(SORT_KEY) : "edited"; } catch { return "edited"; } };
 export const saveDocumentSort = (key) => { try { localStorage.setItem(SORT_KEY, key); } catch {} };
+const documentNested = () => { try { return localStorage.getItem(NESTED_KEY) === "1"; } catch { return false; } };
+const saveDocumentNested = (on) => { try { localStorage.setItem(NESTED_KEY, on ? "1" : "0"); } catch {} };
 
 const startOfDay = (time) => new Date(time).setHours(0, 0, 0, 0);
 function dayLabel(time, now = Date.now()) {
@@ -194,36 +202,96 @@ function dayLabel(time, now = Date.now()) {
   if (days === 0) return "Today";
   if (days === 1) return "Yesterday";
   const date = new Date(time);
-  if (days > 1 && days < 7) return date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: date.getFullYear() === new Date(now).getFullYear() ? undefined : "numeric" });
+  if (days > 1 && days < 7) return formatDateTime(date, undefined, { weekday: "long", month: "short", day: "numeric" });
+  return formatDateTime(date, undefined, { month: "short", day: "numeric", year: date.getFullYear() === new Date(now).getFullYear() ? undefined : "numeric" });
 }
 // Today's rows say how long ago; older rows sit under their day's heading, so they give the time of day.
 function timeLabel(time, now = Date.now()) {
-  if (startOfDay(time) !== startOfDay(now)) return new Date(time).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (startOfDay(time) !== startOfDay(now)) return formatDateTime(time, undefined, { hour: "numeric", minute: "2-digit" });
   const minutes = Math.round((now - time) / 60_000);
   return minutes < 1 ? "just now" : minutes < 60 ? `${minutes}m ago` : `${Math.round(minutes / 60)}h ago`;
 }
-const stamp = (time) => new Date(time).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+// Folder rows have no day heading over them, so an older one names its day.
+const whenLabel = (time) => startOfDay(time) === startOfDay(Date.now()) ? timeLabel(time) : dayLabel(time);
+const stamp = (time) => formatDateTime(time, undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const words = (count) => count < 1000 ? `${count} words` : `${(count / 1000).toFixed(count < 10_000 ? 1 : 0).replace(/\.0$/, "")}k words`;
+const plural = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-function documentRow(sub, currentPath, sort) {
+// A document's folder inside its task folder: "" for one beside TASK-NNNN.md, "break-it/2358" for one below.
+export const documentFolder = (path) => taskRelative(path).split("/").slice(0, -1).join("/");
+
+// Escaped text with each filter term wrapped in <mark>.
+function marked(text, terms) {
+  if (!terms.length) return escapeHtml(text);
+  const pattern = new RegExp(terms.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi");
+  let html = "", at = 0;
+  for (const match of text.matchAll(pattern)) {
+    html += `${escapeHtml(text.slice(at, match.index))}<mark>${escapeHtml(match[0])}</mark>`;
+    at = match.index + match[0].length;
+  }
+  return html + escapeHtml(text.slice(at));
+}
+
+function documentRow(sub, currentPath, sort, { folder = "", showPath = false, terms = [] } = {}) {
   const { words: count = 0, images = 0, headings = [] } = sub.outline || {};
   const time = sort === "created" ? sub.created : sub.modified;
   const sections = headings.length > 4 ? [...headings.slice(0, 4), `+${headings.length - 4} more`] : headings;
   const when = sub.created && Math.abs(sub.modified - sub.created) > 60_000 ? `Edited ${stamp(sub.modified)} · created ${stamp(sub.created)}` : `Created ${stamp(sub.created || sub.modified)}`;
-  return `<a class="markdown-document-link dock-link dock-doc"${sub.path === currentPath ? ' aria-current="page"' : ""} href="?${new URLSearchParams({ path: sub.path })}" data-document-path="${escapeHtml(sub.path)}" data-document-anchor="" title="${escapeHtml(`${sub.path.split("/").at(-1)}\n${when}`)}">`
+  // Below the folder being browsed, the row leads with where it sits, so two summary.txt files read apart.
+  const where = showPath ? documentFolder(sub.path).slice(folder ? folder.length + 1 : 0) : "";
+  // Name has no day headings, so an older row names its day; a row with no sections keeps its facts on one line.
+  const label = time && (sort === "name" ? whenLabel(time) : timeLabel(time));
+  const size = `${words(count)}${images ? ` · ${images} ${images === 1 ? "image" : "images"}` : ""}`;
+  return `<a class="markdown-document-link dock-link dock-doc"${sub.path === currentPath ? ' aria-current="page"' : ""} href="?${new URLSearchParams({ path: sub.path })}" data-document-path="${escapeHtml(sub.path)}" data-document-anchor="" title="${escapeHtml(`${taskRelative(sub.path)}\n${when}`)}">`
     + `<span class="dock-link-icon">${ICONS.doc}</span>`
-    + `<span class="dock-link-detail">${escapeHtml(sub.title).replace(/`([^`]+)`/g, "<code>$1</code>")}${sections.length ? `<span class="dock-doc-sections">${sections.map(escapeHtml).join('<span aria-hidden="true"> · </span>')}</span>` : ""}</span>`
-    + `<span class="dock-doc-facts">${time ? `<time datetime="${new Date(time).toISOString()}">${timeLabel(time)}</time>` : ""}<span>${words(count)}${images ? ` · ${images} ${images === 1 ? "image" : "images"}` : ""}</span></span>`
+    + `<span class="dock-link-detail">${where ? `<span class="dock-doc-path">${marked(`${where}/`, terms)}</span>` : ""}${marked(sub.title, terms).replace(/`([^`]+)`/g, "<code>$1</code>")}${sections.length ? `<span class="dock-doc-sections">${sections.map(escapeHtml).join('<span aria-hidden="true"> · </span>')}</span>` : ""}</span>`
+    + `<span class="dock-doc-facts${sections.length ? "" : " is-inline"}"><span>${size}</span>${time ? `<time datetime="${new Date(time).toISOString()}">${label}</time>` : ""}</span>`
     + `<span class="dock-link-out" aria-hidden="true">→</span></a>`;
+}
+
+function folderRow(entry) {
+  return `<button type="button" class="dock-link dock-doc dock-folder" data-doc-folder="${escapeHtml(entry.path)}">`
+    + `<span class="dock-link-icon">${ICONS.folder}</span>`
+    + `<span class="dock-link-detail"><span class="dock-folder-name">${escapeHtml(entry.name)}/</span><span class="dock-folder-count">${plural(entry.count, "file")}${entry.folders ? ` · ${plural(entry.folders, "folder")}` : ""}</span></span>`
+    + `<span class="dock-doc-facts">${entry.latest ? `<time datetime="${new Date(entry.latest).toISOString()}">${whenLabel(entry.latest)}</time>` : ""}</span>`
+    + `<span class="dock-link-out" aria-hidden="true">›</span></button>`;
 }
 
 const ORDER = {
   edited: (a, b) => (b.modified || 0) - (a.modified || 0),
   created: (a, b) => (b.created || b.modified || 0) - (a.created || a.modified || 0),
-  name: (a, b) => a.title.localeCompare(b.title),
+  name: (a, b) => a.title.localeCompare(b.title, undefined, { numeric: true }),
 };
 const sortDocuments = (subDocuments, sort) => [...subDocuments].sort((a, b) => ORDER[sort](a, b) || a.path.localeCompare(b.path));
+
+// What the panel shows for one folder of a task: the subfolders directly in it, each counting every file below it, and
+// the files to list, which are the folder's own, or everything below it when `nested` or a filter is on. A filter keeps
+// the files whose path inside the task or title holds every word.
+export function browseDocuments(subDocuments, { folder = "", nested = false, filter = "", sort = "edited" } = {}) {
+  const prefix = folder ? `${folder}/` : "";
+  const below = subDocuments.filter((sub) => `${documentFolder(sub.path)}/`.startsWith(prefix) || documentFolder(sub.path) === folder);
+  const terms = filter.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (sub) => terms.every((term) => `${taskRelative(sub.path)} ${sub.title}`.toLowerCase().includes(term));
+  const listed = terms.length ? below.filter(matches) : nested ? below : below.filter((sub) => documentFolder(sub.path) === folder);
+  const time = (sub) => (sort === "created" ? sub.created : 0) || sub.modified || 0;
+  const folders = new Map();
+  if (!nested && !terms.length) for (const sub of below) {
+    const [name, inner] = documentFolder(sub.path).slice(prefix.length).split("/");
+    if (!name || documentFolder(sub.path) === folder) continue;
+    const entry = folders.get(name) || { name, path: prefix + name, count: 0, inner: new Set(), latest: 0 };
+    entry.count += 1;
+    if (inner) entry.inner.add(inner);
+    entry.latest = Math.max(entry.latest, time(sub));
+    folders.set(name, entry);
+  }
+  const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true });
+  return {
+    folders: [...folders.values()].map(({ inner, ...entry }) => ({ ...entry, folders: inner.size })).sort(sort === "name" ? byName : (a, b) => b.latest - a.latest || byName(a, b)),
+    files: sortDocuments(listed, sort),
+    total: below.length,
+    terms,
+  };
+}
 
 // The task, then its documents in the Documents panel's order: what N and P step through from the task or any of them.
 export function taskDocumentSequence(path, documents) {
@@ -234,33 +302,110 @@ export function taskDocumentSequence(path, documents) {
   return subs.length ? [...(task ? [task] : []), ...subs] : [];
 }
 
-function documentLists(subDocuments, currentPath, parentTask) {
-  const active = documentSort();
-  const lists = DOC_SORTS.map(([sort]) => {
-    const sorted = sortDocuments(subDocuments, sort);
-    let body = sorted.map((sub) => documentRow(sub, currentPath, sort)).join("");
-    if (sort !== "name") {
-      const days = new Map();
-      for (const sub of sorted) {
-        const label = dayLabel((sort === "created" ? sub.created : 0) || sub.modified || 0);
-        days.set(label, [...(days.get(label) || []), sub]);
-      }
-      body = [...days].map(([label, subs]) => `<section class="dock-channel"><h4 class="dock-channel-heading"><span class="dock-channel-name">${escapeHtml(label)}</span><small>${subs.length}</small></h4>${subs.map((sub) => documentRow(sub, currentPath, sort)).join("")}</section>`).join("");
+// Each task's documents and where its panel is browsing, so a sort, folder or filter change redraws the list in place and
+// a live refresh of the same document keeps the folder and filter.
+const browsers = new Map();
+
+function documentListHtml(state) {
+  const sort = documentSort();
+  const nested = documentNested();
+  const { folders, files, terms } = browseDocuments(state.subDocuments, { folder: state.folder, nested, filter: state.filter, sort });
+  const options = { folder: state.folder, showPath: nested || terms.length > 0, terms };
+  const row = (sub) => documentRow(sub, state.currentPath, sort, options);
+  const section = (label, count, rows) => `<section class="dock-channel"><h4 class="dock-channel-heading"><span class="dock-channel-name">${escapeHtml(label)}</span><small>${count}</small></h4>${rows}</section>`;
+  let body = files.map(row).join("");
+  if (sort !== "name" && files.length) {
+    const days = new Map();
+    for (const sub of files) {
+      const label = dayLabel((sort === "created" ? sub.created : 0) || sub.modified || 0);
+      days.set(label, [...(days.get(label) || []), sub]);
     }
-    return `<div class="dock-source-list dock-doc-list" data-doc-sort-list="${sort}"${sort === active ? "" : " hidden"}>${body}</div>`;
-  }).join("");
-  // An asset page leads with its task, so the way back is the first row whatever the sort.
-  return `${parentTask ? linkList(linkRow(docItem(parentTask, parentTask.path), SERVICE_ICONS.task), true, 'data-doc-parent=""') : ""}${lists}`;
+    body = [...days].map(([label, subs]) => section(label, subs.length, subs.map(row).join(""))).join("");
+  } else if (files.length && folders.length) body = section("Files", files.length, body);
+  const where = state.folder ? `${state.folder}/` : "this task";
+  const empty = files.length || folders.length ? "" : `<p class="dock-empty">${terms.length ? `Nothing in ${escapeHtml(where)} matches “${escapeHtml(state.filter.trim())}”.` : `No files in ${escapeHtml(where)}.`}</p>`;
+  return `${folders.length ? section("Folders", folders.length, folders.map(folderRow).join("")) : ""}${body}${empty}`;
 }
 
-const sortSwitch = () => `<div class="dock-sort" role="group" aria-label="Sort documents">${DOC_SORTS.map(([key, label]) => `<button type="button" data-doc-sort="${key}" aria-pressed="${key === documentSort()}">${label}</button>`).join("")}</div>`;
+function crumbsHtml(state) {
+  const parts = state.folder ? state.folder.split("/") : [];
+  const crumb = (label, path, current) => current
+    ? `<span class="dock-doc-crumb" aria-current="location">${escapeHtml(label)}</span>`
+    : `<button type="button" class="dock-doc-crumb" data-doc-folder="${escapeHtml(path)}">${escapeHtml(label)}</button>`;
+  return [crumb(state.taskId, "", !parts.length), ...parts.map((part, index) => crumb(part, parts.slice(0, index + 1).join("/"), index === parts.length - 1))].join('<span class="dock-doc-slash" aria-hidden="true">/</span>');
+}
 
-// A sort switch click: show that order's list and remember it for every task.
+const filterPlaceholder = (state) => {
+  const { total } = browseDocuments(state.subDocuments, { folder: state.folder });
+  return `Filter ${plural(total, "file")}`;
+};
+
+function documentLists(subDocuments, currentPath, parentTask, taskId) {
+  const previous = browsers.get(taskId);
+  const hasFolders = subDocuments.some((sub) => documentFolder(sub.path));
+  // A document in a subfolder opens the panel on its own folder, so its siblings are the list.
+  const own = taskOfPath(currentPath) === taskId && isTaskAsset(currentPath) ? documentFolder(currentPath) : "";
+  const keep = previous?.currentPath === currentPath;
+  const state = { taskId, subDocuments, currentPath, hasFolders, folder: keep ? previous.folder : own, filter: keep ? previous.filter : "" };
+  if (state.folder && !subDocuments.some((sub) => `${documentFolder(sub.path)}/`.startsWith(`${state.folder}/`))) state.folder = "";
+  browsers.set(taskId, state);
+  // An asset page leads with its task, so the way back is the first row whatever the sort.
+  return `${parentTask ? linkList(linkRow(docItem(parentTask, parentTask.path), SERVICE_ICONS.task), true, 'data-doc-parent=""') : ""}<div class="dock-source-list dock-doc-list" data-doc-list="${escapeHtml(taskId)}">${documentListHtml(state)}</div>`;
+}
+
+// The header's controls: the sort switch, and for a task with subfolders or many files, the folder breadcrumb, a filter
+// and the Subfolders switch on a second row.
+function documentTools(taskId) {
+  const state = browsers.get(taskId);
+  const sort = `<div class="dock-sort" role="group" aria-label="Sort documents">${DOC_SORTS.map(([key, label]) => `<button type="button" data-doc-sort="${key}" aria-pressed="${key === documentSort()}">${label}</button>`).join("")}</div>`;
+  if (!state.hasFolders && state.subDocuments.length <= 12) return sort;
+  return `${sort}<div class="dock-doc-bar" data-doc-browser="${escapeHtml(taskId)}">`
+    + (state.hasFolders ? `<nav class="dock-doc-crumbs" aria-label="Folder" data-doc-crumbs>${crumbsHtml(state)}</nav>` : '<span class="dock-doc-crumbs"></span>')
+    + `<label class="dock-doc-filter">${glyph("search", "dock-glyph")}<input type="search" data-doc-filter placeholder="${escapeHtml(filterPlaceholder(state))}" value="${escapeHtml(state.filter)}" aria-label="Filter documents" autocomplete="off" spellcheck="false"></label>`
+    + (state.hasFolders ? `<button type="button" class="dock-doc-nested" data-doc-nested aria-pressed="${documentNested()}" title="List the files in every folder below this one, each with its folder path">Subfolders</button>` : "")
+    + `</div>`;
+}
+
+// Redraw a Documents panel's list after its sort, folder, filter or Subfolders switch changes, holding the panel's
+// height so a shorter list doesn't pull it up under the pointer.
+export function updateDocumentBrowser(panel, change = {}) {
+  const list = panel.querySelector("[data-doc-list]");
+  const state = list && browsers.get(list.dataset.docList);
+  if (!state) return;
+  const moved = "folder" in change && change.folder !== state.folder;
+  Object.assign(state, change);
+  panel.style.minHeight = `${panel.offsetHeight}px`;
+  list.innerHTML = documentListHtml(state);
+  const crumbs = panel.querySelector("[data-doc-crumbs]");
+  if (crumbs) crumbs.innerHTML = crumbsHtml(state);
+  const filter = panel.querySelector("[data-doc-filter]");
+  if (filter) filter.placeholder = filterPlaceholder(state);
+  panel.querySelector("[data-doc-nested]")?.setAttribute("aria-pressed", String(documentNested()));
+  if (moved || "filter" in change) panel.scrollTop = 0;
+}
+
+// A folder crumb above the title: open the Documents panel browsing that folder, with the filter cleared.
+export function openDocumentFolder(root, folder) {
+  const panel = root.querySelector("#dock-documents");
+  if (!panel) return;
+  updateDocumentBrowser(panel, { folder, filter: "" });
+  const filter = panel.querySelector("[data-doc-filter]");
+  if (filter) filter.value = "";
+  if (!panel.matches(":popover-open")) panel.showPopover();
+}
+
+// A sort switch click: redraw the list in that order and remember it for every task.
 export function selectDocumentSort(button) {
   const panel = button.closest(".doc-dock-panel");
   for (const other of panel.querySelectorAll("[data-doc-sort]")) other.setAttribute("aria-pressed", String(other === button));
-  for (const list of panel.querySelectorAll("[data-doc-sort-list]")) list.hidden = list.dataset.docSortList !== button.dataset.docSort;
   saveDocumentSort(button.dataset.docSort);
+  updateDocumentBrowser(panel);
+}
+
+// The Subfolders switch: list everything below the folder, or only its own files and its folders.
+export function toggleDocumentNested(button) {
+  saveDocumentNested(button.getAttribute("aria-pressed") !== "true");
+  updateDocumentBrowser(button.closest(".doc-dock-panel"));
 }
 
 function countUpdates(markdown) {
@@ -277,6 +422,7 @@ function progressRing(done, total) {
 // `diagrams` ({ path, title }) are the ones the page embeds, then the rest of the task's; the Diagrams panel shows them as
 // thumbnails that open the viewer.
 export function renderDock({ doc, documents, links, body, steps = "", diagrams = [] }) {
+  lazyPanels.clear();
   const chunk = (pattern) => doc.chunks.find((candidate) => pattern.test(candidate.title));
   const actions = chunk(/^(next actions|next steps)$/i);
   const work = chunk(/^work breakdown$/i);
@@ -318,8 +464,8 @@ export function renderDock({ doc, documents, links, body, steps = "", diagrams =
   if (subDocuments.length) {
     const latest = Math.max(...subDocuments.map((sub) => sub.modified || 0));
     add("documents", "Documents", ICONS.doc, `${subDocuments.length}`, "Task documents", `${subDocuments.length} in ${taskDir(taskId)}/${latest
- ? ` · last edited ${dayLabel(latest).toLowerCase()}` : ""}`, documentLists(subDocuments, doc.path, parentTask));
-    items.at(-1).tools = sortSwitch();
+ ? ` · last edited ${dayLabel(latest).toLowerCase()}` : ""}`, documentLists(subDocuments, doc.path, parentTask, taskId));
+    items.at(-1).tools = documentTools(taskId);
   }
   if (diagrams.length) add("diagrams", "Diagrams", ICONS.diagram, `${diagrams.length}`, "Diagrams", `${diagrams.length} ${diagrams.length === 1 ? "diagram" : "diagrams"}${taskId ? ` for ${taskId}` : " on this page"} · opens beside its source`, `<div class="dock-diagrams">${diagrams.map((diagram) => `<a class="dock-diagram" href="?${escapeHtml(new URLSearchParams({ path: doc.path, diagram: diagram.path }).toString())}" data-diagram-link="${escapeHtml(diagram.path)}" title="${escapeHtml(diagram.path)}"><span class="dock-diagram-frame"><img src="${escapeHtml(diagramHref(diagram.path, diagram.modified))}" alt="" loading="lazy" decoding="async"></span><span class="dock-diagram-title">${escapeHtml(diagram.title)}</span>${diagram.embedded ? "" : '<span class="dock-diagram-note">Not embedded</span>'}</a>`).join("")}</div>`);
   // Links out and the documents that link here share one panel; "Linked from" is its last tab.
@@ -332,7 +478,25 @@ export function renderDock({ doc, documents, links, body, steps = "", diagrams =
     <span class="doc-dock-title" aria-hidden="true">${escapeHtml(doc.task ? `${doc.task.id} · ${doc.title}` : doc.title)}</span>
     <div class="doc-dock-buttons" role="toolbar" aria-label="Document overview"><button type="button" class="doc-dock-button doc-dock-draft" data-dock-draft aria-haspopup="dialog" aria-controls="handoff-popover" aria-expanded="false" title="Open an agent draft for ${escapeHtml(doc.path)}"><span class="doc-dock-icon">${ICONS.draft}</span><span class="doc-dock-label">Draft</span></button>${taskId ? `<button type="button" class="doc-dock-button" data-world-task-open="${escapeHtml(taskId)}" aria-haspopup="dialog" title="Everything filed for ${escapeHtml(taskId)} on one timeline (W)"><span class="doc-dock-icon">${ICONS.world}</span><span class="doc-dock-label">World</span></button>` : ""}<span class="doc-dock-divider" aria-hidden="true"></span>${items.map((item) => `<button type="button" class="doc-dock-button" ${item.workItem ? `data-work-item="${escapeHtml(item.workItem)}" aria-haspopup="dialog" aria-controls="work-item-dialog"` : `popovertarget="dock-${item.key}" aria-expanded="false" style="anchor-name: --dock-${item.key}"`} title="${escapeHtml(item.meta)}"><span class="doc-dock-icon">${item.icon}</span><span class="doc-dock-label">${escapeHtml(item.label)}</span>${item.badge && item.badge !== "0" ? `<span class="doc-dock-badge">${escapeHtml(item.badge)}</span>` : ""}</button>`).join("")}</div>
   </div>${items.filter((item) => !item.workItem).map((item) => `<div class="doc-dock-panel doc-dock-panel-${item.key}" id="dock-${item.key}" popover style="position-anchor: --dock-${item.key}" role="dialog" aria-label="${escapeHtml(item.title)}">
-    ${item.bare ? "" : `<header class="doc-dock-panel-header"><span class="doc-dock-icon">${item.icon}</span><div><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.meta)}</p></div>${item.tools || ""}${item.jump ? `<button type="button" class="doc-dock-jump" data-dock-jump="${escapeHtml(item.jump)}">Go to section <span aria-hidden="true">↓</span></button>` : ""}</header>`}
-    <div class="doc-dock-panel-body">${item.content}</div>
+    ${item.bare ? "" : `<header class="doc-dock-panel-header"><span class="doc-dock-icon">${item.icon}</span><div class="doc-dock-panel-title"><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.meta)}</p></div>${item.tools || ""}${item.jump ? `<button type="button" class="doc-dock-jump" data-dock-jump="${escapeHtml(item.jump)}">Go to section <span aria-hidden="true">↓</span></button>` : ""}</header>`}
+    ${LAZY_PANELS.has(item.key) ? `<div class="doc-dock-panel-body" data-lazy>${lazyPanels.set(`dock-${item.key}`, item.content) && ""}</div>` : `<div class="doc-dock-panel-body">${item.content}</div>`}
   </div>`).join("")}</div>`;
+}
+
+// Links and Updates repeat the page's own content, thousands of nodes on a long task, and most visits never open them:
+// their bodies are built when the panel first opens. The page hears `dock-panel-filled` to finish a body it fills.
+const LAZY_PANELS = new Set(["links", "updates"]);
+const lazyPanels = new Map();
+// The server imports this module too, where there is no document.
+globalThis.document?.addEventListener("beforetoggle", (event) => {
+  const panel = event.target;
+  if (event.newState !== "open" || !panel.matches?.(".doc-dock-panel")) return;
+  fillDockPanel(panel);
+}, true);
+export function fillDockPanel(panel) {
+  const body = panel?.querySelector(".doc-dock-panel-body[data-lazy]");
+  if (!body) return;
+  body.innerHTML = lazyPanels.get(panel.id) || "";
+  body.removeAttribute("data-lazy");
+  panel.dispatchEvent(new CustomEvent("dock-panel-filled", { bubbles: true }));
 }

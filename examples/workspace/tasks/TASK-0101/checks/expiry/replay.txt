@@ -1,0 +1,4 @@
+accept invite 7f3a (day 7)    -> 200 joined
+accept invite 7f3a (again)    -> 410 no longer valid
+accept invite 91c2 (day 8)    -> 410 no longer valid
+revoke invite 44de, accept    -> 410 no longer valid

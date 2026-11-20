@@ -56,14 +56,19 @@ export function createLinkMetadataStore(root: string) {
     return work;
   }
 
-  return async function lookup(keys: string[]) {
+  // `waitMs` caps how long a lookup waits on the network for keys it has never seen; past it, the caller gets what is
+  // known and asks `pending(keys)` which are still on their way.
+  async function lookup(keys: string[], { waitMs = Infinity } = {}) {
     const wanted = [...new Set(keys.filter((key) => /^(github:[\w.-]+\/[\w.-]+(#\d+|@[0-9a-f]{7})|linear:[A-Z]+-\d+|jira:[A-Z]+-\d+|slack:[A-Z0-9]+\/\d+\.\d+(\/\d+\.\d+)?)$/.test(key)))];
     const store = await load();
     const isStale = (meta: LinkMetadata) => meta.v !== VERSION || Date.now() - meta.fetchedAt > (meta.tone === "done" || meta.tone === "closed" ? SETTLED_MS : FRESH_MS);
     const missing = wanted.filter((key) => !store[key]);
     const stale = wanted.filter((key) => store[key] && isStale(store[key]));
     if (stale.length) refresh(stale).catch(() => {});
-    if (missing.length) await refresh(missing).catch(() => {});
+    if (missing.length) {
+      const fetching = refresh(missing).catch(() => {});
+      await (Number.isFinite(waitMs) ? Promise.race([fetching, new Promise((done) => setTimeout(done, waitMs).unref?.())]) : fetching);
+    }
     const channels = wanted.some((key) => key.startsWith("slack:") && !store[key]) ? await slackChannelNames(root) : new Map<string, string>();
     return Object.fromEntries(wanted.flatMap((key) => {
       if (store[key]) return [[key, store[key]]];
@@ -72,7 +77,8 @@ export function createLinkMetadataStore(root: string) {
       const name = channels.get(channel) || (channel.startsWith("D") ? "Direct message" : "");
       return name ? [[key, { title: "", state: name, tone: "open" as Tone, fetchedAt: Date.now() }]] : [];
     }));
-  };
+  }
+  return Object.assign(lookup, { pending: (keys: string[]) => keys.filter((key) => inFlight.has(key)) });
 }
 
 const chunks = <T>(items: T[]) => Array.from({ length: Math.ceil(items.length / BATCH) }, (_, i) => items.slice(i * BATCH, (i + 1) * BATCH));

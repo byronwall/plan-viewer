@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
+import { sampleChatThreads } from "./chat-threads-sample.mjs";
 
 const repo = fileURLToPath(new URL("..", import.meta.url));
 const out = join(repo, "docs/images");
@@ -60,6 +61,13 @@ const shots = {
   issues: async () => {
     await page.goto(`${base}/?view=issues`);
     await page.waitForSelector('[data-issues-state="ready"]', { timeout: 60000 }); await settle();
+  },
+  // Chat Threads reads this Mac's own sessions, so the shot answers with the fictional acme week instead.
+  chats: async () => {
+    await page.route("**/api/chat-threads", (route) => route.fulfill({ json: sampleChatThreads() }));
+    await page.goto(`${base}/?view=chat-threads`);
+    await page.waitForSelector('[data-chat-threads-state="ready"]'); await settle();
+    await page.unroute("**/api/chat-threads");
   },
   // The diff overlay for the newest commit that touches several files.
   diff: async () => {
