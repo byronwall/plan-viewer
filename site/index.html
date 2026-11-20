@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plan Viewer</title>
+<meta name="description" content="A local reading desk for Markdown daily plans and tasks, with the PRs, issues and agent threads they touch. Every page, section by section.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<div class="layout">
+<aside class="toc">
+  <a class="brand" href="#top"><img src="icon.svg" alt="">Plan Viewer</a>
+  <nav aria-label="Pages">
+    <h4>Start</h4>
+    <ol>
+      <li><a href="#top">What it is</a></li>
+      <li><a href="#install">Install</a></li>
+    </ol>
+    <h4>Plans and tasks</h4>
+    <ol>
+      <li><a href="#shell">The shell</a></li>
+      <li><a href="#today">Daily plan</a></li>
+      <li><a href="#task">Task documents</a></li>
+      <li><a href="#step">Step dialog and graph</a></li>
+      <li><a href="#world">World views</a></li>
+      <li><a href="#tasks">Tasks</a></li>
+      <li><a href="#steps">Steps</a></li>
+      <li><a href="#outbox">Outbox</a></li>
+      <li><a href="#activity">Activity</a></li>
+      <li><a href="#reference">Reference</a></li>
+      <li><a href="#diagrams">Diagrams</a></li>
+    </ol>
+    <h4>Code and trackers</h4>
+    <ol>
+      <li><a href="#plans">Plans</a></li>
+      <li><a href="#code">Code</a></li>
+      <li><a href="#issues">Issues</a></li>
+      <li><a href="#slack">Slack</a></li>
+      <li><a href="#chats">Chat Threads</a></li>
+    </ol>
+    <h4>Everywhere</h4>
+    <ol>
+      <li><a href="#agents">Agent handoffs</a></li>
+      <li><a href="#find">Search and history</a></li>
+      <li><a href="#tables">Tables and links</a></li>
+      <li><a href="#setup">Setup</a></li>
+      <li><a href="#cli">Command line</a></li>
+      <li><a href="#api">Server API</a></li>
+    </ol>
+  </nav>
+</aside>
+
+<main id="top">
+<header class="hero">
+  <h1>Plan Viewer</h1>
+  <p class="lede">A local reading desk for planning in Markdown, and for handing the work to coding agents.</p>
+  <p>I keep my daily plans, tasks and notes as plain Markdown files in a git repository. Plan Viewer turns that folder into a fast, keyboard-driven app. Today's plan reads as work cards. Each task lists its steps by who moves next, with a dependency graph one click away. Beside the plans sit the pull requests, worktrees, diffs, issues and agent threads the work touches.</p>
+  <p>The viewer never edits your plans on its own. The Markdown stays the source of truth, readable anywhere, and agents make the changes. Almost every button saves a prompt for an agent or opens one as a draft in Codex or Claude, and nothing runs until you send it.</p>
+  <p>It is for one person who plans in text and works with agents all day. It runs on your machine, reads your folder, and has no account, no database and no build step.</p>
+  <div class="links">
+    <a class="button" href="https://github.com/byronwall/plan-viewer">byronwall/plan-viewer on GitHub</a>
+    <a href="#install">Install</a>
+    <a href="https://github.com/byronwall/plan-viewer/blob/main/docs/guide.md">Full user guide</a>
+    <a href="https://github.com/byronwall/plan-viewer/blob/main/docs/configuration.md">Configuration</a>
+  </div>
+  <figure class="hero-shot"><a href="images/hero.webp"><img src="images/hero.webp" width="2160" height="1350" alt="Plan Viewer showing a daily plan with its scheduled tasks and milestones"></a>
+  <figcaption>Every screenshot on this page comes from <code>examples/workspace</code>, a fictional team's week. The numbered marks match the lists under each one.</figcaption></figure>
+</header>
+
+<section class="page" id="install">
+  <h2>Install</h2>
+  <div class="prose">
+    <p>You need <a href="https://nodejs.org">Node.js</a> 22.6 or later. There are no packages to install. Clone the repository beside the folder where your plans will live:</p>
+    <pre><code>git clone https://github.com/byronwall/plan-viewer.git
+cd plan-viewer</code></pre>
+    <p>The fastest setup: start an agent such as Claude Code or Codex in <code>plan-viewer</code> and tell it <code>Read docs/setup.md and set me up.</code> The agent makes a workspace in <code>../planning</code>, starts the viewer, asks you four questions, and writes today's plan and your first task.</p>
+    <p>To do it by hand:</p>
+    <pre><code>mkdir ../planning &amp;&amp; cd ../planning
+../plan-viewer/cli.ts init     # git, hooks, folders, AGENTS.md
+../plan-viewer/cli.ts          # serves http://127.0.0.1:4173</code></pre>
+    <p>To look around first, run <code>npm run dev:demo</code> in the checkout. It serves the same sample workspace these screenshots use.</p>
+    <p>A workspace has four folders, and the layout is the content format:</p>
+    <pre><code>daily/YYYY-MM-DD.md            one plan per day; "## Scheduled tasks" links tasks
+tasks/TASK-0101/TASK-0101.md   one task: front matter, work breakdown, next actions, updates
+tasks/TASK-0101/               the task's documents, diagrams, images and notes/
+reference/                     prose people and agents read; notes/ holds loose notes
+config/                        viewer.json, code-repos.json, slack-channels.md, prompts/
+config.toml                    optional, git-ignored tokens for Linear and Slack</code></pre>
+    <p>Reading plans works anywhere Node runs. Agent handoffs and the editor, terminal and Finder buttons assume macOS. Each integration (GitHub through <code>gh</code>, Jira through <code>acli</code>, Linear, Slack, draftably diagrams) is off until you set it up, and the <a href="#setup">Setup page</a> checks each one.</p>
+  </div>
+</section>
+
+<section class="page" id="shell">
+  <h2>The shell</h2>
+  <p class="intro">Every page shares one left rail and one set of keys. The rail tells you where work waits before you open anything.</p>
+  <figure><a href="images/today.webp"><img src="images/today.webp" loading="lazy" width="2160" height="1350" alt="The rail and a daily plan, with numbered marks"></a></figure>
+  <dl class="parts">
+    <dt><span class="n">1</span>Agent picker</dt><dd><strong>Codex</strong> or <strong>Claude</strong>. Every draft and launch button opens in the app you pick here.</dd>
+    <dt><span class="n">2</span>Search</dt><dd>Opens the <a href="#find">⌘K palette</a>. <kbd>/</kbd> also opens it.</dd>
+    <dt><span class="n">3</span>Draft</dt><dd>A free-form agent draft (<kbd>C</kbd>). It names the open document, or the selected text and the section it starts under.</dd>
+    <dt><span class="n">4</span>Page links</dt><dd>Activity, Tasks, Steps, Outbox, Diagrams, Plans, Code, Issues, Slack, Chat Threads, Reference and Setup. Each link shows the one number worth knowing, amber when it needs you: documents changed today, due check-ins, steps for you, PRs waiting on your review, issues in progress. Hover a link for a card of what sits behind it; <kbd>→</kbd> moves into the card and <kbd>Enter</kbd> opens a row in an overlay.</dd>
+    <dt><span class="n">5</span>Day list</dt><dd>One row per daily plan, newest first, led by the plan's note for its first task and a count of the rest. Hover for every scheduled task with its status. <kbd>[</kbd> and <kbd>]</kbd> step between days.</dd>
+    <dt><span class="n">6</span>Breadcrumb and title</dt><dd>The date or task, the copyable file path, and a favorite star (<kbd>⌘D</kbd>). Every overlay has the same star.</dd>
+    <dt><span class="n">7</span>Work cards</dt><dd>Each section of a document is a card with <strong>Copy</strong>, <strong>Copy prompt</strong> and <strong>Open in Codex</strong>. Hover a card and press <kbd>C</kbd> to draft it. <kbd>J</kbd> and <kbd>K</kbd> move between cards.</dd>
+    <dt><span class="n">8</span>Document dock</dt><dd>A sticky bar of panels for the open document: Work, Updates, Diagrams, Documents and Links, with a draft button. See <a href="#task">Task documents</a>.</dd>
+    <dt>Recently viewed</dt><dd>The clock in the bottom-right corner (<kbd>H</kbd>) lists every page and overlay you opened, and the documents agents changed. See <a href="#find">Search and history</a>.</dd>
+    <dt>Live updates</dt><dd>The server watches <code>daily/</code>, <code>tasks/</code> and <code>reference/</code>. When an agent or your editor changes a file, the open page redraws in place without moving you, and a toast names the document, the sections that changed and the line counts (<code>+3 −1</code>). New lines keep a green tint until you leave the document. All tabs share one connection.</dd>
+    <dt>Version button</dt><dd>When the checkout is out of date, a button appears: <strong>Update viewer · N new</strong> pulls and restarts, <strong>Restart viewer</strong> or <strong>Reload viewer</strong> catch the page up.</dd>
+    <dt>Keys</dt><dd><kbd>T</kbd> today, <kbd>A</kbd> tasks, <kbd>V</kbd> activity, <kbd>G</kbd> code, <kbd>M</kbd> plans, <kbd>I</kbd> issues, <kbd>W</kbd> world view, <kbd>?</kbd> every shortcut. Letter keys pause in text fields. Reload, Back and Forward return to where you scrolled.</dd>
+  </dl>
+</section>
+
+<section class="page" id="today">
+  <h2>Daily plan <span class="route">daily/YYYY-MM-DD.md · T</span></h2>
+  <p class="intro">The viewer opens on today's plan. A plan is ordinary Markdown: a <code>## Scheduled tasks</code> list that links tasks, then milestones or notes as sections.</p>
+  <dl class="parts">
+    <dt>Scheduled tasks</dt><dd>One panel with a row per linked task: its short number, title, the plan's note for it (with PR, issue and Slack references as links), and on the right its open steps by who moves next (<code>2 agent</code>, <code>1 you</code>). A waiting task says when it checks in. Click a row to open the <a href="#step">step dialog</a> at the first step that waits on you.</dd>
+    <dt>Steps panel</dt><dd>The plan for today's date opens with a thin <strong>Up next · You · Agent · Others · All</strong> toggle and the first eight steps by <a href="#steps">priority</a>, each with its score, a state pill and its task. The panel keeps one height, so switching never moves the page.</dd>
+    <dt>Milestone cards</dt><dd>Every other section is a work card. A card can go to an agent whole, with a note you add.</dd>
+    <dt>Next steps</dt><dd>A plan can hold its own <code>## Next steps</code> prompts for work that belongs to that day only.</dd>
+    <dt>Chats</dt><dd>Links under <code>## Chats</code> (ChatGPT, <code>codex://threads/…</code>, Claude Desktop sessions) show above the document and open in their app.</dd>
+  </dl>
+</section>
+
+<section class="page" id="task">
+  <h2>Task documents <span class="route">tasks/TASK-NNNN/TASK-NNNN.md</span></h2>
+  <p class="intro">A task is one Markdown file with front matter (id, title, summary, status, project, tags, dates), an outcome, a <code>## Work breakdown</code> of steps with prerequisites, <code>## Next actions</code> with fenced <code>prompt</code> blocks, dated updates and chats. Its other files sit beside it in the same folder.</p>
+  <figure><a href="images/task.webp"><img src="images/task.webp" loading="lazy" width="2160" height="1350" alt="A task document with its breadcrumb, dock and steps panel"></a></figure>
+  <dl class="parts">
+    <dt><span class="n">1</span>Breadcrumb and title</dt><dd>Task list, status, each folder of the path (click one to browse it), the copyable path and the star. A stepper (<code>‹ 3 of 14 ›</code>, keys <kbd>P</kbd> and <kbd>N</kbd>) walks the task's documents.</dd>
+    <dt><span class="n">2</span>Dock</dt><dd><strong>Work</strong> (a ring of completed items; the task's steps in a panel), <strong>Updates</strong> (the dated timeline, newest first), <strong>Diagrams</strong> (embedded ones, then the task's other <code>.draft</code> files), <strong>Documents</strong> (every file in the task folder by day, with sections, word counts and a filter; sort by Edited, Created or Name; browse subfolders) and <strong>Links</strong> (every outgoing link grouped by source, with titles and states, and a <strong>Linked from</strong> tab for backlinks).</dd>
+    <dt><span class="n">3</span>Steps panel</dt><dd>The work breakdown in place of its Markdown: a group header per workstream with a progress bar, then each step with its ID, a ready check or a waiting lock, the full title, and <code>ready</code>, <code>after W1.2</code>, <code>active</code> or <code>waiting</code>. Completed steps hide behind <strong>Show N completed or deferred</strong>. <strong>Graph</strong> opens the dependency graph in a popover; <strong>World</strong> opens the <a href="#world">task's world</a>. A row opens the step dialog; <kbd>C</kbd> over a row drafts it.</dd>
+    <dt>Updates</dt><dd>Entries written as <code>- **2026-10-21 — Mailer limits (W2.2):** …</code>. An update that names a step is filed under it and counted on its row.</dd>
+    <dt>Images and diagrams</dt><dd><code>.draft</code> diagrams embed like images and draw live from their source. Image links become thumbnails. Both open the <a href="#diagrams">image viewer</a>.</dd>
+    <dt>Lint</dt><dd><code>plan-viewer lint</code> checks front matter, step IDs, prerequisites and cycles, and the pre-commit hook runs it on staged plans. A task file that fails to parse still opens, as plain Markdown, listed under Reference as <strong>Invalid task</strong>.</dd>
+  </dl>
+</section>
+
+<section class="page" id="step">
+  <h2>Step dialog and graph <span class="route">?step=TASK-0101:W2.2</span></h2>
+  <p class="intro">One step of any task, over whatever page you are on. A step row anywhere opens it, and nothing behind it changes.</p>
+  <div class="pair">
+    <figure><a href="images/step.webp"><img src="images/step.webp" loading="lazy" width="2160" height="1350" alt="The step dialog for W2.2"></a><figcaption>Item view</figcaption></figure>
+    <figure><a href="images/graph.webp"><img src="images/graph.webp" loading="lazy" width="2160" height="1350" alt="The task's dependency graph in the same dialog"></a><figcaption>Graph view (<kbd>G</kbd>)</figcaption></figure>
+  </div>
+  <dl class="parts">
+    <dt>Top bar</dt><dd>The task name and progress, <strong>Item | Graph</strong>, <strong>World</strong>, and close. Click the task name to make it the page.</dd>
+    <dt>Rail</dt><dd>The task's steps under a <strong>You | Agent | All</strong> toggle. <kbd>J</kbd> and <kbd>K</kbd> walk it; <kbd>←</kbd> and <kbd>→</kbd> jump between steps with updates.</dd>
+    <dt>Actions</dt><dd>The step's own action first (<strong>Start</strong>, <strong>Mark decided</strong>, <strong>Approve and run</strong>, <strong>Apply</strong>), then <strong>Note…</strong>, <strong>Up next</strong>, <strong>Send to agent</strong> and <strong>Update</strong> (a draft that revises the step in the task file).</dd>
+    <dt>Facts</dt><dd><strong>Next move</strong> and why it is yours, then <strong>Waits on</strong>, <strong>Unblocks</strong> and <strong>Contains</strong>, one row per step with its full title.</dd>
+    <dt>Sections</dt><dd>A choice's options with <strong>Pick</strong>, an outgoing draft with its approval panel, a statement to run, the updates filed under the step, its prompt on a tinted surface, and where else the task mentions it. Empty sections stay out.</dd>
+    <dt>Graph</dt><dd>Arrows from prerequisite to dependent, the open step outlined. Drag to pan, scroll to zoom around the cursor, <kbd>F</kbd> fits, <kbd>0</kbd> resets, <kbd>C</kbd> centers the open step. Click a node to read it.</dd>
+  </dl>
+</section>
+
+<section class="page" id="world">
+  <h2>World views <span class="route">?world=TASK-0101 · ?world=all · W</span></h2>
+  <p class="intro">Work laid out by day, oldest at the left, so you can see what a task holds without clicking through it.</p>
+  <div class="pair">
+    <figure><a href="images/world.webp"><img src="images/world.webp" loading="lazy" width="2160" height="1350" alt="A task's world view"></a><figcaption>One task</figcaption></figure>
+    <figure><a href="images/world-all.webp"><img src="images/world-all.webp" loading="lazy" width="2160" height="1350" alt="Every task as a row"></a><figcaption>Every task</figcaption></figure>
+  </div>
+  <dl class="parts">
+    <dt>Task world</dt><dd>One column per day with activity (quiet stretches fold to a dashed line) and one lane each for work, diagrams, images, documents, updates, the daily plans that mention the task, and other files. Completed steps land on the day an update names them. A wider <strong>Today</strong> column lists the open steps with the same toggle as today's plan.</dd>
+    <dt>All tasks</dt><dd>One row per task in the Tasks page's order. Each day shows its newest picture and a dot per kind with a count. Click a mark to open that task's world at that day.</dd>
+    <dt>Moving around</dt><dd>Drag to pan, pinch or <kbd>⌘</kbd>-scroll to zoom. <strong>Recent</strong> and <strong>All</strong> reset the frame. <strong>Open task</strong> (<kbd>Enter</kbd>) makes the task the page; Backspace returns to all tasks. Pictures open the image viewer; documents open in a peek.</dd>
+  </dl>
+</section>
+
+<section class="page" id="tasks">
+  <h2>Tasks <span class="route">?view=tasks · A</span></h2>
+  <p class="intro">Every unfinished task in one table, with an inspector for the selected one.</p>
+  <figure><a href="images/tasks.webp"><img src="images/tasks.webp" loading="lazy" width="2160" height="1350" alt="The Tasks page with a task selected"></a></figure>
+  <dl class="parts">
+    <dt>Toolbar</dt><dd><strong>Filter</strong> (<kbd>F</kbd>) by ID, title, summary, project, tags or status. <strong>Group</strong> by Status (Check in, Active, Open, Waiting), Project, Next move, Updated or None. <strong>World view</strong>. <strong>Show N completed or deferred</strong>.</dd>
+    <dt>Table</dt><dd>ID, title, a status menu (click it, or right-click a row), project, <strong>Steps</strong> counted by who moves next, and <strong>Contents</strong> (documents, diagrams and images in the folder). Every column sorts.</dd>
+    <dt>Waiting and check-ins</dt><dd>Pick <strong>Waiting</strong> with a check-in of 3d, 1w, 2w or 4w. The task drops below open work and comes back as <strong>Check in</strong> when the date arrives or when a PR or issue named in its next actions moves.</dd>
+    <dt>Inspector</dt><dd>The task's summary and tags, <strong>Waiting on</strong> with each watched item and its state, <strong>Steps</strong> with progress and the steps of the first mover with anything waiting, and <strong>Referenced in</strong> (the daily plans that link it). <strong>Open</strong> or a double-click opens the task file.</dd>
+  </dl>
+</section>
+
+<section class="page" id="steps">
+  <h2>Steps <span class="route">?view=steps</span></h2>
+  <p class="intro">Every open step of every unfinished task, highest priority first. A step is a line in a work breakdown, and it may end in a <code>{kind, size}</code> suffix: <code>- W2.1: Comment on OPS-100 [open] (after: W1) {jira-comment, S}</code>.</p>
+  <figure><a href="images/steps.webp"><img src="images/steps.webp" loading="lazy" width="2160" height="1350" alt="The Steps page with the inspector open"></a></figure>
+  <dl class="parts">
+    <dt><span class="n">1</span>Next move</dt><dd><strong>Up next</strong>, <strong>You</strong> (decisions, approvals, choices, and friction only you can clear), <strong>Agent</strong>, <strong>Others</strong>, <strong>Agent flags</strong> and <strong>All</strong>, each with a count.</dd>
+    <dt><span class="n">2</span>Kind, group and sort</dt><dd>Kinds are <code>agent</code>, <code>check-in</code>, <code>decision</code>, <code>byron</code> (only you), an outbound kind, or a choice (<code>pick-one</code>, <code>pick-any</code>, <code>do-all</code>). Group by Task, Next move, Kind or Status. Sort by priority, Unblocks most, Smallest first or Oldest first.</dd>
+    <dt><span class="n">3</span>Blocked</dt><dd>Steps whose prerequisites are not done, and steps without a kind, hide behind this toggle.</dd>
+    <dt><span class="n">4</span>Agent slots</dt><dd><strong>Start</strong> runs a step as a local agent session and holds one of <code>steps.slots</code> until it ends. With <code>steps.refill</code>, a finished run starts the next ready step.</dd>
+    <dt><span class="n">5</span>Priority score</dt><dd>0 to 99: the task's <code>priority:</code> (P1 +30, P3 −20), +25 when today's plan names the step, up to +35 for what it unblocks, +10 when the move is yours, +10 for a small step, a point a day of age. Hover the score for a waterfall of each part. Up next steps sort above every score.</dd>
+    <dt>Editing in place</dt><dd>The checkbox marks a step done with a dated update. The dot toggles Up next. Kind, Size and Status are menus. Double-click a title (or <kbd>F2</kbd>) to rename it. Each edit rewrites only that line of the task file.</dd>
+    <dt>Inspector</dt><dd>The step's task and priority (<strong>P1 · P2 · P3</strong> sets the task's), its action, <strong>Note…</strong>, <strong>Up next</strong>, and its prompt or what it waits on. A choice shows its options with <strong>Pick</strong>; a <code>byron</code> step with a statement shows <strong>Approve and run</strong> or <strong>Copy statement</strong>.</dd>
+    <dt>Up next</dt><dd>A queue for an orchestrating agent thread. Flagged steps carry <code>next</code> in their suffix; saved notes join them. <code>plan-viewer next</code> prints the queue for an agent to work through.</dd>
+  </dl>
+</section>
+
+<section class="page" id="outbox">
+  <h2>Outbox and outbound drafts <span class="route">?view=steps&amp;kind=outbound</span></h2>
+  <p class="intro">A task file whose front matter starts with <code>outbound:</code> is a message waiting to go out: a Jira issue or comment, a Slack message, a PR comment, a review request or an email. The Outbox lists the steps those drafts complete.</p>
+  <div class="pair">
+    <figure><a href="images/outbox.webp"><img src="images/outbox.webp" loading="lazy" width="2160" height="1350" alt="The Outbox"></a><figcaption>The Outbox</figcaption></figure>
+    <figure><a href="images/outbound.webp"><img src="images/outbound.webp" loading="lazy" width="2160" height="1350" alt="An outbound draft with its approval panel"></a><figcaption>A draft's approval panel</figcaption></figure>
+  </div>
+  <dl class="parts">
+    <dt>Approval panel</dt><dd>The kind, target, step, a hash of the outgoing text and a status, then the exact text under <strong>Will go out</strong>. The rest of the file is notes.</dd>
+    <dt>Approve and send</dt><dd>Records your click and the hash, then runs the workspace's <code>outbound.send</code> command. If the text changed since the page showed it, nothing goes out.</dd>
+    <dt>Send back and Drop</dt><dd><strong>Send back</strong> takes your feedback and starts an agent that revises the draft for another approval. <strong>Drop</strong> retires it.</dd>
+    <dt>Manual sends</dt><dd>A <code>send: manual</code> draft offers <strong>Copy text</strong> (as rich text) and <strong>Mark sent</strong>.</dd>
+    <dt>Follow-through</dt><dd>With <code>steps.followUp</code>, a send saves an Up next note that asks an agent to update the task, the steps that waited on it and today's plan.</dd>
+  </dl>
+</section>
+
+<section class="page" id="activity">
+  <h2>Activity <span class="route">?view=activity · V</span></h2>
+  <p class="intro">Documents, diagrams, issues, open PRs and Slack threads in one list, newest first, grouped by day.</p>
+  <figure><a href="images/activity.webp"><img src="images/activity.webp" loading="lazy" width="2160" height="1350" alt="The Activity page"></a></figure>
+  <dl class="parts">
+    <dt>Toolbar</dt><dd>Source filters with counts (Tasks, Daily, Docs, Diagrams, Jira, PRs, Slack), a word filter (<kbd>F</kbd>), <strong>Mine</strong>, and a range: 24h, 7d, 30d or All. A two-week strip of stacked bars picks one day (<kbd>←</kbd> and <kbd>→</kbd> step).</dd>
+    <dt>Rows</dt><dd>Time, a source icon, a key column that lines up every title, the item with what changed and where it sits (the sections and line counts an agent changed, a PR's branch, an issue's parent), its state colored by meaning, CI for PRs, and the owner's avatar.</dd>
+    <dt>Inspector</dt><dd>A document's status, last edit and text; an issue's sidebar; a PR's review, CI, reviewers, files and commits; a diagram's drawing. <kbd>J</kbd> and <kbd>K</kbd> move, <kbd>Enter</kbd> opens in full, <kbd>O</kbd> opens a new tab, <kbd>Y</kbd> copies the link.</dd>
+    <dt>People</dt><dd>One avatar per person across the viewer: GitHub, Linear, Slack and config identities joined by email and name.</dd>
+  </dl>
+</section>
+
+<section class="page" id="reference">
+  <h2>Reference <span class="route">?view=reference</span></h2>
+  <p class="intro">Everything under <code>reference/</code>: conventions, standing notes and facts that outlive a day. A folder groups its files under its README. Files in <code>config/</code> stay out of the library; the <a href="#setup">Setup page</a> lists them.</p>
+  <figure><a href="images/reference.webp"><img src="images/reference.webp" loading="lazy" width="2160" height="1350" alt="The Reference page"></a></figure>
+</section>
+
+<section class="page" id="diagrams">
+  <h2>Diagrams and the image viewer <span class="route">?view=diagrams · ?diagram=path</span></h2>
+  <p class="intro">Diagrams are <a href="https://draftably.dev">draftably</a> <code>.draft</code> files kept beside the document and embedded like images. The server draws each one from its source, so no PNG goes stale.</p>
+  <div class="pair">
+    <figure><a href="images/diagrams.webp"><img src="images/diagrams.webp" loading="lazy" width="2160" height="1350" alt="The Diagrams page"></a><figcaption>The Diagrams page</figcaption></figure>
+    <figure><a href="images/diagram.webp"><img src="images/diagram.webp" loading="lazy" width="2160" height="1350" alt="The diagram viewer with its source"></a><figcaption>The viewer, with the source pane (<kbd>S</kbd>)</figcaption></figure>
+  </div>
+  <dl class="parts">
+    <dt>Diagrams page</dt><dd>Every <code>.draft</code> in the workspace as cards. <strong>Group</strong> by Day, Task or Project; <strong>View</strong> as Cards, Large or List; a Project menu; <strong>Collapse all</strong>; a filter (<kbd>/</kbd>). The page redraws when a file is saved.</dd>
+    <dt>Viewer</dt><dd>The drawing on the left (wheel zoom that stays sharp, drag to pan) and its numbered source on the right. Hover a box to mark its line and connections; click it to scroll the source there. A rail lists the document's other images and diagrams.</dd>
+    <dt>Viewer actions</dt><dd><strong>Copy</strong> the source, <strong>Copy PNG</strong> (<kbd>C</kbd>, a 2× image that carries its source), <strong>Edit</strong> (<kbd>E</kbd>, opens the draftably editor), and Inline, Side by side or Stacked for a before/after diagram. The box under the source (<kbd>D</kbd>) asks an agent about the diagram.</dd>
+    <dt>Live redraw</dt><dd>Saving a <code>.draft</code> or an image redraws every picture of it in every open tab, keeping zoom, pan and anything typed.</dd>
+  </dl>
+</section>
+
+<section class="page" id="plans">
+  <h2>Plans <span class="route">?view=plans · M</span></h2>
+  <p class="intro">Initiatives from each tracked repository's <code>origin/main</code>: every <code>initiative-map.json</code> with the briefs beside it, read straight from git, plus the ones open PRs propose and the repo root's unpushed edits.</p>
+  <div class="pair">
+    <figure><a href="images/plans.webp"><img src="images/plans.webp" loading="lazy" width="2160" height="1350" alt="The Plans page"></a><figcaption>The table</figcaption></figure>
+    <figure><a href="images/plan-reader.webp"><img src="images/plan-reader.webp" loading="lazy" width="2160" height="1350" alt="The plan reader"></a><figcaption>The reader</figcaption></figure>
+  </div>
+  <dl class="parts">
+    <dt>Toolbar</dt><dd>Filter, a status scope (Open, Active, Paused, Planned, Finished, All), Group (none, repository, status), Sort (Changed, Stage, Title) and rescan (<kbd>R</kbd>).</dd>
+    <dt>Table</dt><dd>Status, title with its next action, repository, a five-part <strong>Stage</strong> track (Intent › Shape › Plan › Build › Done), milestones done, last change, and the open PRs that touch it. Tags name each copy's source: <strong>proposed</strong>, <strong>uncommitted</strong> or <strong>unpushed</strong>.</dd>
+    <dt>Inspector</dt><dd>On wide screens: summary, stage, next action, folder, documents, milestones, PRs, dependencies and history, with <strong>Update</strong> and <strong>Retire</strong>.</dd>
+    <dt>Reader</dt><dd>Tabs for the briefs and the <strong>Map</strong>, a folder tree of other files, and the facts on the left. <kbd>J</kbd>/<kbd>K</kbd> walk initiatives, <kbd>[</kbd>/<kbd>]</kbd> walk documents, <kbd>U</kbd> drafts an Update prompt, <kbd>Shift</kbd>+<kbd>U</kbd> a Retire prompt. GitHub links into an initiative folder open here.</dd>
+  </dl>
+</section>
+
+<section class="page" id="code">
+  <h2>Code <span class="route">?view=code · G</span></h2>
+  <p class="intro">A control center for the repositories in <code>config/code-repos.json</code>: worktrees, pull requests, commits and cleanup, with full diff overlays. Rows select into a detail pane; <kbd>Enter</kbd> opens the overview.</p>
+  <div class="pair">
+    <figure><a href="images/worktrees.webp"><img src="images/worktrees.webp" loading="lazy" width="2160" height="1350" alt="The Worktrees tab"></a><figcaption>Worktrees</figcaption></figure>
+    <figure><a href="images/commits.webp"><img src="images/commits.webp" loading="lazy" width="2160" height="1350" alt="The Commits tab"></a><figcaption>Commits</figcaption></figure>
+    <figure><a href="images/worktree-overview.webp"><img src="images/worktree-overview.webp" loading="lazy" width="2160" height="1350" alt="The worktree overview"></a><figcaption>Worktree overview</figcaption></figure>
+    <figure><a href="images/diff.webp"><img src="images/diff.webp" loading="lazy" width="2160" height="1350" alt="A commit's diff"></a><figcaption>Commit diff</figcaption></figure>
+  </div>
+  <dl class="parts">
+    <dt>Pull requests</dt><dd>Every open PR with CI, review decision, comments, labels, conflicts, size and author; <strong>Merged &amp; closed</strong> for recent history. Filter by review requested, author, drafts or failing CI. Stacked PRs draw on their base. <strong>Stacks</strong> turns them into a board with one column per person who moves next, in sections: Your review, Their review, Merge, Fix first, Pick a reviewer, Drafts and Idle. Each section has one agent move (Review all, Check &amp; merge, Fix all, Nudge).</dd>
+    <dt>Worktrees</dt><dd>Every worktree newest first, with ahead/behind against main, PR and CI state, uncommitted changes, and icons for the editor (<kbd>E</kbd>), terminal (<kbd>X</kbd>), Finder, a new agent session (<kbd>S</kbd>) and the local server (<kbd>L</kbd>). Group by Changed, Repo or Folder.</dd>
+    <dt>Commits</dt><dd>Commits not on main, or everything, across branches. Filter by author (<kbd>A</kbd>), <strong>Mine</strong> (<kbd>M</kbd>) or branch (<kbd>B</kbd>).</dd>
+    <dt>Cleanup</dt><dd>Worktrees sorted into safe to remove, review first, too new and keep. Remove runs <code>git worktree remove</code> in batches and keeps branches. <strong>Agent review</strong> asks an agent to check them first.</dd>
+    <dt>PR overview</dt><dd>A full-screen overlay (<code>?pr=owner/repo#n</code>): status, reviewers, review skills (<kbd>1</kbd>–<kbd>9</kbd>), worktree actions, <strong>Linked</strong> planning documents, notes, commits and the stack, then the diff. <strong>Description</strong>, <strong>Changes</strong> or <strong>Stack</strong> (one diff for the whole stack). One file or All files, Split or Unified, Viewed checkboxes (<kbd>X</kbd>), and a <strong>Map</strong> (<kbd>T</kbd>): a treemap of the change with renames drawn as moves, exportable as a PNG. Comments sit under the description; local review notes (<kbd>C</kbd> on a selection) follow their code across new commits.</dd>
+    <dt>Worktree overview</dt><dd>The same overlay for a branch (<code>?wt=path</code>): <strong>Local</strong> files no commit carries, <strong>Changes</strong> since the fork point, <strong>Uncommitted</strong>, and each commit.</dd>
+    <dt>Local servers</dt><dd><code>code.run</code> starts a worktree's dev server. ⌘K › <strong>Local servers</strong> lists each with its URL, output, Restart and Stop.</dd>
+    <dt>Toolbar</dt><dd>Summary tiles, a filter (<kbd>F</kbd>), <strong>Repos</strong> with a two-letter mark per repository, refresh (<kbd>R</kbd>) and a gear to add or drop a tracked repository. PR data is cached, so the page answers at once after a restart.</dd>
+  </dl>
+</section>
+
+<section class="page" id="issues">
+  <h2>Issues <span class="route">?view=issues · I</span></h2>
+  <p class="intro">Jira issues (through <code>acli</code>), Linear issues and projects, and GitHub issues of the tracked repositories, in one dense list. It is read-only; every change goes through an agent draft.</p>
+  <div class="pair">
+    <figure><a href="images/issues.webp"><img src="images/issues.webp" loading="lazy" width="2160" height="1350" alt="The Issues page"></a><figcaption>All issues</figcaption></figure>
+    <figure><a href="images/issue-overview.webp"><img src="images/issue-overview.webp" loading="lazy" width="2160" height="1350" alt="An epic's overview"></a><figcaption>Issue overview</figcaption></figure>
+  </div>
+  <dl class="parts">
+    <dt>Tabs</dt><dd><strong>All</strong> (by repo or by update), <strong>Triage</strong> (walk the queue, <kbd>X</kbd> marks seen), <strong>Epics</strong> (progress over every child, confidence, dates), <strong>Migration</strong> (the same work across Jira and Linear) and <strong>Activity</strong> (creations, comments and the status, assignee and priority changes the viewer has seen).</dd>
+    <dt>Scopes</dt><dd>Mine, Unassigned, In progress, Due in 7 days, With PRs, an assignee picker (<kbd>A</kbd>), Done and Bots. A scope shows only when it would narrow the list.</dd>
+    <dt>Rows</dt><dd>Priority, type, key, title with its parent epic and old key, status, reporter → assignee, the PRs that mention it, and age. Select rows (<kbd>Space</kbd>, Shift-click) for one bulk agent draft; the sparkle menu runs a configured skill on one.</dd>
+    <dt>Overview</dt><dd><code>?issue=KEY</code>: status, type, owner, parent, dates, skills, the status update, description, children by state, comments, <strong>In planning</strong> (every task and document that names the key) and <strong>Code</strong> (its PRs). <kbd>[</kbd>/<kbd>]</kbd> step siblings, <kbd>P</kbd> opens the parent.</dd>
+    <dt>Sync</dt><dd>Cached in <code>tmp/issues-cache.json</code>. Only changed issues are re-read every few minutes, and the difference is the activity feed.</dd>
+  </dl>
+</section>
+
+<section class="page" id="slack">
+  <h2>Slack <span class="route">?view=slack · ?slack=permalink</span></h2>
+  <p class="intro">With <code>slack.codex</code> set, Slack threads read inside the viewer through Codex's Slack connector, with no model call, and are cached in <code>tmp/slack-threads.json</code>. The sample workspace has no Slack connection, so there is no screenshot.</p>
+  <dl class="parts">
+    <dt>Slack page</dt><dd>Every thread the planning documents link. Favorites first, then by last activity or by channel (<kbd>G</kbd>). Each row shows who started it, its first line, <strong>New replies</strong>, reply and people counts, and the documents that cite it. <kbd>R</kbd> reads every unread thread in the background.</dd>
+    <dt>Thread overlay</dt><dd>Reads like Slack: day dividers, grouped messages, emoji and reactions, mentions, a <strong>New since you last read</strong> divider (<kbd>N</kbd>), forwarded messages as cards, <strong>Linked from</strong>, a link browser (<kbd>L</kbd>) and Find (<kbd>F</kbd>). The box at the bottom (<kbd>D</kbd>) drafts an agent prompt with the thread saved as a file.</dd>
+    <dt>Without the connector</dt><dd>Slack links open in the desktop app, and a Slack token in <code>config.toml</code> still gives them titles.</dd>
+  </dl>
+</section>
+
+<section class="page" id="chats">
+  <h2>Chat Threads <span class="route">?view=chat-threads</span></h2>
+  <p class="intro">Every local Codex and Claude Code thread on this Mac, read from session metadata, <code>lsof</code> and the Codex state database. It refreshes every few seconds.</p>
+  <figure><a href="images/chats.webp"><img src="images/chats.webp" loading="lazy" width="2160" height="1350" alt="Chat Threads with waiting, running and background threads"></a><figcaption>The threads here are fictional; the page reads only your own machine's sessions.</figcaption></figure>
+  <dl class="parts">
+    <dt>Sections</dt><dd><strong>Waiting for you</strong>, <strong>Running</strong>, <strong>Background tasks</strong>, then finished threads by day. Live sections keep their start order, so nothing jumps on a refresh.</dd>
+    <dt>Status rail</dt><dd>A spinner while a turn runs, an amber dot when the thread waits for you, a check when finished, an alert when a turn stopped, an hourglass while a background command still runs.</dd>
+    <dt>Families</dt><dd>Subagents and side sessions sit under the thread that started them, with a tree line and a live count. They do not push other threads off the history limit.</dd>
+    <dt>Columns</dt><dd>App and how the thread started, the model as people say it with its effort as five bars, the working folder and branch, and total tokens (hover for input, cache share and output).</dd>
+    <dt>Toolbar</dt><dd>App filter, group by status or workspace, sort by recent or most tokens, and search. <kbd>Enter</kbd> on a title opens the conversation in its desktop app.</dd>
+  </dl>
+</section>
+
+<section class="page" id="agents">
+  <h2>Agent handoffs and notes</h2>
+  <p class="intro">Plan Viewer prepares work for agents and leaves the sending to you. Every button that would start an agent chat first saves its prompt as a note, so an orchestrating thread can work the queue.</p>
+  <figure><a href="images/composer.webp"><img src="images/composer.webp" loading="lazy" width="2160" height="1350" alt="The draft composer over a task"></a><figcaption>The composer, opened with <kbd>C</kbd> or the Draft button</figcaption></figure>
+  <dl class="parts">
+    <dt>Composer</dt><dd>The prompt the agent would get (file, task, selection or section) with room for your words and pasted images. <kbd>Enter</kbd> saves it as an Up next note; <kbd>⌘Enter</kbd> opens a draft in Codex or Claude Desktop now; the clipboard icon copies it.</dd>
+    <dt>Note popover</dt><dd>PR review skills, issue skills, <strong>New session</strong>, <strong>Agent review</strong>, initiative Update and Retire, and a step's <strong>Start</strong> all open a small popover under the button. Your comment goes on top of the prompt for save, copy and launch alike.</dd>
+    <dt>Notes</dt><dd>A saved note lands in the task's <code>notes/</code> folder (or <code>reference/notes/</code>) with <code>note: open</code>, and leads the Up next queue until an agent marks it done.</dd>
+    <dt>Drafts, not runs</dt><dd>The handoff uses the app's deep link (<code>codex://threads/new?prompt=…</code>) and never submits. Review it and click Send there. <code>PLAN_VIEWER_DRY_RUN=1</code> logs the prompt instead.</dd>
+    <dt>Prompt templates</dt><dd>Every prompt the server builds is a file in <code>prompts/</code> with <code>{slots}</code>. A copy in the workspace's <code>config/prompts/</code> wins.</dd>
+  </dl>
+</section>
+
+<section class="page" id="find">
+  <h2>Search, shortcuts and history</h2>
+  <div class="pair">
+    <figure><a href="images/palette.webp"><img src="images/palette.webp" loading="lazy" width="2160" height="1350" alt="The ⌘K palette searching for invite"></a><figcaption>⌘K palette</figcaption></figure>
+    <figure><a href="images/recent.webp"><img src="images/recent.webp" loading="lazy" width="2160" height="1350" alt="Recently viewed"></a><figcaption>Recently viewed (<kbd>H</kbd>)</figcaption></figure>
+  </div>
+  <figure><a href="images/shortcuts.webp"><img src="images/shortcuts.webp" loading="lazy" width="2160" height="1350" alt="The keyboard shortcut guide"></a><figcaption>Keyboard shortcuts (<kbd>?</kbd>)</figcaption></figure>
+  <dl class="parts">
+    <dt>⌘K palette</dt><dd>One ranked list of tasks, work items, issues, pull requests, initiatives, pages and documents. An exact ID wins (<code>0138</code> is TASK-0138, <code>#2270</code> a PR), live work rises, finished work sinks, and matching forgives a typo. With no query it leads with PRs that need your review.</dd>
+    <dt>Recently viewed</dt><dd>Every page and overlay this browser showed, plus <strong>Recently changed</strong> (documents edited outside the viewer). <kbd>Tab</kbd> flips between them, <kbd>1</kbd>–<kbd>9</kbd> reopen. Closing any overlay also offers <strong>Reopen</strong> in a toast.</dd>
+    <dt>Favorites</dt><dd>The star (<kbd>⌘D</kbd>) on any document, task, step, page, PR, worktree, issue, initiative or Slack thread. They list at the top of the rail.</dd>
+    <dt>Overlays in the URL</dt><dd>Every overlay keeps itself in the URL (<code>?pr=</code>, <code>?issue=</code>, <code>?step=</code>, <code>?peek=</code>, <code>?diagram=</code>…), so a refresh or a shared link reopens it.</dd>
+    <dt>Tab briefs</dt><dd>An agent that opens a viewer tab can say why with <code>&amp;brief=&lt;Markdown&gt;</code>. The brief floats at the top of the page and hides to a chip.</dd>
+  </dl>
+</section>
+
+<section class="page" id="tables">
+  <h2>Tables, links and references</h2>
+  <figure><a href="images/table.webp"><img src="images/table.webp" loading="lazy" width="2160" height="1350" alt="An expanded Markdown table"></a><figcaption>An expanded Markdown table</figcaption></figure>
+  <dl class="parts">
+    <dt>Document tables</dt><dd>Columns fit their content. A tall table scrolls in its own frame under a sticky header. Hover for <strong>Copy</strong> (Markdown, HTML, CSV, TSV), <strong>Download CSV</strong> and <strong>Expand</strong>.</dd>
+    <dt>Expanded table</dt><dd>An overlay you resize from any edge (½, ⅔, Fit, Full, keys <kbd>1</kbd>–<kbd>4</kbd>), with sort (Shift-click for a tiebreak), a filter per column (<code>=x</code>, <code>!x</code>, <code>&gt; &lt;</code>), a filter across all columns, and resizable columns.</dd>
+    <dt>Reference links</dt><dd><code>TASK-0101</code>, <code>#1857</code>, <code>Orbit#27</code>, tracker keys, commit SHAs and Slack permalinks become icon links with live titles and state colors. A click opens the PR, commit, issue or thread overlay in place; <kbd>⌘</kbd>-click goes to the site. Hover for a card with state, review, checks and size.</dd>
+    <dt>Code blocks</dt><dd>Syntax colors that match the diff viewer, <code>diff</code> fences with word marks, and Copy and Download on hover. A box-drawing tree renders as an outline.</dd>
+    <dt>Document peek</dt><dd>A click on a cited document from an overlay or inspector reads it in a peek over the page; <kbd>Enter</kbd> opens it in full.</dd>
+  </dl>
+</section>
+
+<section class="page" id="setup">
+  <h2>Setup <span class="route">?view=setup</span></h2>
+  <p class="intro">What the viewer can use and how it is set up. While a workspace has no daily plan or no task, the viewer opens here and leads with <strong>Getting started</strong>: a first task, today's plan and your name, each with a prompt an agent can carry out.</p>
+  <figure><a href="images/setup.webp"><img src="images/setup.webp" loading="lazy" width="2160" height="1350" alt="The Setup page"></a></figure>
+  <dl class="parts">
+    <dt>Integrations</dt><dd>GitHub CLI, Jira (<code>acli</code>), Linear, Slack token, the Codex app server, draftably and the agent apps, each checked live: green works, red is broken, gray is not set up. <strong>Set up…</strong> drafts the steps for an agent and leaves sign-ins and tokens to you.</dd>
+    <dt>Config files</dt><dd>The files in <code>config/</code> and what reads each one. <strong>View</strong> shows a file read-only; <strong>Edit…</strong> drafts the change. <code>config.toml</code> holds tokens, so the page shows only whether it exists.</dd>
+    <dt>Prompts</dt><dd>Three routines (<strong>Daily plan</strong>, <strong>Daily review</strong>, <strong>Up next sweep</strong>) with <strong>Start…</strong>, then every prompt the viewer sends, with View, Edit… (a copy in <code>config/prompts/</code>) and Reset.</dd>
+    <dt>Settings</dt><dd>Every <code>config/viewer.json</code> key with its value and meaning. Text, number and on/off keys save in place; lists and commands draft the change for an agent.</dd>
+  </dl>
+</section>
+
+<section class="page" id="cli">
+  <h2>Command line</h2>
+  <p class="intro">Run each from the workspace, through the checkout's <code>cli.ts</code>.</p>
+  <table>
+    <thead><tr><th>Command</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>serve</code></td><td>Starts the viewer at <code>http://127.0.0.1:4173</code> and restarts it when the viewer's own code changes.</td></tr>
+      <tr><td><code>init</code></td><td>Makes the folder a workspace: git and its hooks path, <code>.gitignore</code>, folders, and the agent guide. Never replaces a file.</td></tr>
+      <tr><td><code>lint [paths…|--staged]</code></td><td>Checks task front matter, work breakdowns, step kinds, outbound drafts and action references.</td></tr>
+      <tr><td><code>links [--fix|--warm|--refresh-slack]</code></td><td>Reports broken links, unknown tasks, unlinked task files and unnamed Slack channels.</td></tr>
+      <tr><td><code>move &lt;from&gt; &lt;to|TASK-NNNN&gt;</code></td><td>Moves one file and repairs every link to it.</td></tr>
+      <tr><td><code>migrate [--write]</code></td><td>Moves a workspace from the older layout. A dry run unless <code>--write</code>.</td></tr>
+      <tr><td><code>task TASK-NNNN</code></td><td>Prints a task's context in compact form for an agent.</td></tr>
+      <tr><td><code>next [--json]</code></td><td>Prints the Up next queue for an agent thread to work through.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="page" id="api">
+  <h2>Server API</h2>
+  <p class="intro">The browser talks to <code>server.ts</code> over plain JSON routes on localhost. Agents and scripts can read the same routes.</p>
+  <table>
+    <thead><tr><th>Area</th><th>Routes</th></tr></thead>
+    <tbody>
+      <tr><td>Documents</td><td><code>/api/documents</code>, <code>/api/document</code>, <code>/api/asset</code>, <code>/api/changes</code>, <code>/api/events</code> (live updates), <code>/api/task-status</code>, <code>/api/task-world</code>, <code>/api/waiting</code></td></tr>
+      <tr><td>Steps and notes</td><td><code>/api/steps</code> and <code>/api/steps/{pick,start,run,apply,done,edit,next,priority}</code>, <code>/api/notes</code>, <code>/api/dispatch</code> (agent drafts)</td></tr>
+      <tr><td>Outbound</td><td><code>/api/outbound</code> and <code>/api/outbound/*</code> (approve, send back, drop, mark sent)</td></tr>
+      <tr><td>Code and plans</td><td><code>/api/code</code>, <code>/api/code/{pr,diff,commit,commits,worktree,file,notes,sides,run,runs,pr-index,plans,plan-doc,plan-map}</code></td></tr>
+      <tr><td>Issues and people</td><td><code>/api/issues</code>, <code>/api/issues/{issue,fetch,agent}</code>, <code>/api/people</code>, <code>/api/link-metadata</code></td></tr>
+      <tr><td>Slack and chats</td><td><code>/api/slack</code>, <code>/api/slack/{thread,sync,agent}</code>, <code>/api/chat-threads</code></td></tr>
+      <tr><td>Diagrams</td><td><code>/api/diagram</code>, <code>/api/diagram/{open,copy}</code>, <code>/api/diagrams</code></td></tr>
+      <tr><td>Setup</td><td><code>/api/config</code>, <code>/api/setup</code>, <code>/api/setup/{config,file,agent,prompt}</code>, <code>/api/version</code>, <code>/api/version/update</code></td></tr>
+    </tbody>
+  </table>
+  <footer>
+    Plan Viewer is plain ES modules in <code>public/</code> and TypeScript that Node runs directly. No build step and no runtime dependencies.
+    <a href="https://github.com/byronwall/plan-viewer">Source on GitHub</a> ·
+    <a href="https://github.com/byronwall/plan-viewer/blob/main/docs/guide.md">User guide</a> ·
+    <a href="https://github.com/byronwall/plan-viewer/blob/main/AGENTS.md">AGENTS.md</a>
+  </footer>
+</section>
+</main>
+</div>
+<script>
+  // Mark the contents link for the section in view.
+  const links = new Map([...document.querySelectorAll(".toc nav a")].map((a) => [a.getAttribute("href").slice(1), a]));
+  const seen = new IntersectionObserver((entries) => {
+    for (const entry of entries) if (entry.isIntersecting) {
+      links.forEach((a) => a.classList.remove("active"));
+      links.get(entry.target.id)?.classList.add("active");
+    }
+  }, { rootMargin: "0px 0px -75% 0px" });
+  document.querySelectorAll("main > section, main").forEach((el) => links.has(el.id) && seen.observe(el));
+</script>
+</body>
+</html>

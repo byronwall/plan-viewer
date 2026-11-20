@@ -16,6 +16,7 @@ Node.js 22.6+ and nothing else. `npm install` (no packages; it enables the pre-c
 | `docs/configuration.md` | Every `config/viewer.json` key and environment variable. | A key or variable is added or changed. |
 | `docs/code-view.md`, `docs/issues-plan.md`, `docs/plans-plan.md` | Design intent and plans for those surfaces. | Before adding a list/inspector/overview surface, read `code-view.md`. |
 | `docs/images/` | README screenshots, made by `scripts/screenshots.mjs` from `examples/workspace/`; the Chat Threads shot answers `/api/chat-threads` with the fictional threads in `scripts/chat-threads-sample.mjs`, never real sessions. | A pictured screen changes visibly. |
+| `site/` | The GitHub Pages site (byronwall.github.io/plan-viewer): a short intro, then every page section by section. Plain HTML and CSS, deployed as is by `.github/workflows/pages.yml`. Its screenshots in `site/images/` come from `scripts/site-screenshots.mjs` (fictional data only; numbered marks match the lists). | A page or section is added, or a pictured screen changes visibly. |
 | `examples/workspace/` | The demo and the template for new workspaces, including the workspace-side `AGENTS.md`. | The content format changes (it must pass `plan-viewer lint` and `links`). |
 
 ## Layout
