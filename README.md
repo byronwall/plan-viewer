@@ -155,6 +155,7 @@ The editor, terminal, and Finder buttons also assume macOS. Reading plans works 
 
 ## Documentation
 
+- [Site](https://byronwall.github.io/planboard/): every page and section with screenshots ([`site/`](site)).
 - [User guide](docs/guide.md): every page, shortcut, and behavior in detail.
 - [Configuration](docs/configuration.md): `config/viewer.json` and environment variables.
 - [Code view design](docs/code-view.md), [Issues plan](docs/issues-plan.md), and [Plans plan](docs/plans-plan.md): why those surfaces work the way they do.
