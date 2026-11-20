@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Plan Viewer</title>
-<meta name="description" content="A local reading desk for Markdown daily plans and tasks, with the PRs, issues and agent threads they touch. Every page, section by section.">
+<title>Planboard</title>
+<meta name="description" content="Your plans are Markdown files. Planboard turns them into one work queue that you and your coding agents share. What it is, why, how to try it, and every page.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="site.css">
 </head>
 <body>
 <div class="layout">
 <aside class="toc">
-  <a class="brand" href="#top"><img src="icon.svg" alt="">Plan Viewer</a>
+  <a class="brand" href="#top"><img src="icon.svg" alt="">Planboard</a>
   <nav aria-label="Pages">
     <h4>Start</h4>
     <ol>
@@ -58,23 +58,23 @@
 <main id="top">
 <header class="hero">
   <div class="hero-text">
-    <h1>Plan Viewer</h1>
-    <p class="lede">Your plans are Markdown files. Plan Viewer turns them into one work queue that you and your coding agents share.</p>
+    <h1>Planboard</h1>
+    <p class="lede">Your plans are Markdown files. Planboard turns them into one work queue that you and your coding agents share.</p>
     <p>It reads a folder of daily plans and tasks and shows what is next, who it waits on, and the PRs, issues and agent threads around it. Any step goes to Codex or Claude with its context in one click. Nothing runs until you press Send.</p>
     <div class="try-now">
       <div class="try-head"><strong>Try the demo</strong><span>Node 22.6+ · no install · about 2 minutes</span></div>
-      <pre><code>git clone https://github.com/byronwall/plan-viewer.git
-cd plan-viewer &amp;&amp; npm run dev:demo</code></pre>
+      <pre><code>git clone https://github.com/byronwall/planboard.git
+cd planboard &amp;&amp; npm run dev:demo</code></pre>
       <p>Then open <code>http://127.0.0.1:4173</code>. It serves a fictional team's week, the same one in every screenshot here.</p>
     </div>
     <div class="links">
-      <a class="button" href="https://github.com/byronwall/plan-viewer">Source on GitHub</a>
+      <a class="button" href="https://github.com/byronwall/planboard">Source on GitHub</a>
       <a href="#day">How a day goes</a>
       <a href="#fit">Is it worth it?</a>
       <a href="#shell">Every page</a>
     </div>
   </div>
-  <figure class="hero-shot"><a href="images/hero.webp"><img src="images/hero.webp" width="2160" height="1350" alt="Plan Viewer showing a daily plan with its scheduled tasks and milestones"></a>
+  <figure class="hero-shot"><a href="images/hero.webp"><img src="images/hero.webp" width="2160" height="1350" alt="Planboard showing a daily plan with its scheduled tasks and milestones"></a>
   <figcaption>Today's plan. Each scheduled task says how many of its steps wait on you, on an agent or on someone else.</figcaption></figure>
 </header>
 
@@ -84,7 +84,7 @@ cd plan-viewer &amp;&amp; npm run dev:demo</code></pre>
     <div class="prose">
       <p>Plain Markdown in git is a good place to plan with agents. Both of you can read it, diff it and edit it, and it outlives any tool. But a folder of files does not answer the questions you have at nine in the morning: what is next, what waits on me, which PR belongs to which task, and what did the agents change overnight.</p>
       <p>Handing a step to an agent is the other friction. You copy the task, the step, the prompt and the links into a chat, every time. Then you go back to GitHub, Jira and a terminal to see what happened.</p>
-      <p>Plan Viewer reads the same files and answers those questions. It never becomes the source of truth. Delete it and your plans are still plain Markdown.</p>
+      <p>Planboard reads the same files and answers those questions. It never becomes the source of truth. Delete it and your plans are still plain Markdown.</p>
     </div>
     <dl class="contrast">
       <dt>Without it</dt>
@@ -148,7 +148,7 @@ cd plan-viewer &amp;&amp; npm run dev:demo</code></pre>
   <div class="costs">
     <h3>What it asks of you</h3>
     <dl class="parts">
-      <dt>A file format</dt><dd>Tasks follow one shape: front matter, a <code>## Work breakdown</code> of steps with <code>(after: W1)</code> prerequisites, and <code>prompt</code> blocks for next actions. Agents learn it from the <code>AGENTS.md</code> that <code>init</code> copies in, and <code>plan-viewer lint</code> (also a pre-commit hook) catches mistakes.</dd>
+      <dt>A file format</dt><dd>Tasks follow one shape: front matter, a <code>## Work breakdown</code> of steps with <code>(after: W1)</code> prerequisites, and <code>prompt</code> blocks for next actions. Agents learn it from the <code>AGENTS.md</code> that <code>init</code> copies in, and <code>planboard lint</code> (also a pre-commit hook) catches mistakes.</dd>
       <dt>Node 22.6 or later</dt><dd>Nothing else. There are no packages, no database and no build.</dd>
       <dt>Your own sign-ins</dt><dd>GitHub, Jira, Linear and Slack are optional, each through your own CLI or token. Tokens stay in a git-ignored <code>config.toml</code>; the viewer never shows them.</dd>
     </dl>
@@ -191,10 +191,10 @@ status: active
     </li>
     <li>
       <h3><span>10 min</span>Your own workspace, set up by an agent</h3>
-      <p>Start Claude Code or Codex in the <code>plan-viewer</code> checkout and say <code>Read docs/setup.md and set me up.</code> It makes <code>../planning</code>, starts the viewer, asks you four questions, and writes today's plan and your first real task. Or by hand:</p>
+      <p>Start Claude Code or Codex in the <code>planboard</code> checkout and say <code>Read docs/setup.md and set me up.</code> It makes <code>../planning</code>, starts the viewer, asks you four questions, and writes today's plan and your first real task. Or by hand:</p>
       <pre><code>mkdir ../planning &amp;&amp; cd ../planning
-../plan-viewer/cli.ts init     # git, hooks, folders, AGENTS.md
-../plan-viewer/cli.ts          # serves http://127.0.0.1:4173</code></pre>
+../planboard/cli.ts init     # git, hooks, folders, AGENTS.md
+../planboard/cli.ts          # serves http://127.0.0.1:4173</code></pre>
       <p>Until the workspace has a plan and a task, the viewer opens on <a href="#setup">Setup</a> with a Getting started list.</p>
     </li>
     <li>
@@ -258,7 +258,7 @@ status: active
     <dt><span class="n">3</span>Steps panel</dt><dd>The work breakdown in place of its Markdown: a group header per workstream with a progress bar, then each step with its ID, a ready check or a waiting lock, the full title, and <code>ready</code>, <code>after W1.2</code>, <code>active</code> or <code>waiting</code>. Completed steps hide behind <strong>Show N completed or deferred</strong>. <strong>Graph</strong> opens the dependency graph in a popover; <strong>World</strong> opens the <a href="#world">task's world</a>. A row opens the step dialog; <kbd>C</kbd> over a row drafts it.</dd>
     <dt>Updates</dt><dd>Entries written as <code>- **2026-10-21 — Mailer limits (W2.2):** …</code>. An update that names a step is filed under it and counted on its row.</dd>
     <dt>Images and diagrams</dt><dd><code>.draft</code> diagrams embed like images and draw live from their source. Image links become thumbnails. Both open the <a href="#diagrams">image viewer</a>.</dd>
-    <dt>Lint</dt><dd><code>plan-viewer lint</code> checks front matter, step IDs, prerequisites and cycles, and the pre-commit hook runs it on staged plans. A task file that fails to parse still opens, as plain Markdown, listed under Reference as <strong>Invalid task</strong>.</dd>
+    <dt>Lint</dt><dd><code>planboard lint</code> checks front matter, step IDs, prerequisites and cycles, and the pre-commit hook runs it on staged plans. A task file that fails to parse still opens, as plain Markdown, listed under Reference as <strong>Invalid task</strong>.</dd>
   </dl>
 </section>
 
@@ -317,7 +317,7 @@ status: active
     <dt><span class="n">5</span>Priority score</dt><dd>0 to 99: the task's <code>priority:</code> (P1 +30, P3 −20), +25 when today's plan names the step, up to +35 for what it unblocks, +10 when the move is yours, +10 for a small step, a point a day of age. Hover the score for a waterfall of each part. Up next steps sort above every score.</dd>
     <dt>Editing in place</dt><dd>The checkbox marks a step done with a dated update. The dot toggles Up next. Kind, Size and Status are menus. Double-click a title (or <kbd>F2</kbd>) to rename it. Each edit rewrites only that line of the task file.</dd>
     <dt>Inspector</dt><dd>The step's task and priority (<strong>P1 · P2 · P3</strong> sets the task's), its action, <strong>Note…</strong>, <strong>Up next</strong>, and its prompt or what it waits on. A choice shows its options with <strong>Pick</strong>; a <code>byron</code> step with a statement shows <strong>Approve and run</strong> or <strong>Copy statement</strong>.</dd>
-    <dt>Up next</dt><dd>A queue for an orchestrating agent thread. Flagged steps carry <code>next</code> in their suffix; saved notes join them. <code>plan-viewer next</code> prints the queue for an agent to work through.</dd>
+    <dt>Up next</dt><dd>A queue for an orchestrating agent thread. Flagged steps carry <code>next</code> in their suffix; saved notes join them. <code>planboard next</code> prints the queue for an agent to work through.</dd>
   </dl>
 </section>
 
@@ -447,7 +447,7 @@ status: active
 
 <section class="page" id="agents">
   <h2>Agent handoffs and notes</h2>
-  <p class="intro">Plan Viewer prepares work for agents and leaves the sending to you. Every button that would start an agent chat first saves its prompt as a note, so an orchestrating thread can work the queue.</p>
+  <p class="intro">Planboard prepares work for agents and leaves the sending to you. Every button that would start an agent chat first saves its prompt as a note, so an orchestrating thread can work the queue.</p>
   <figure><a href="images/composer.webp"><img src="images/composer.webp" loading="lazy" width="2160" height="1350" alt="The draft composer over a task"></a><figcaption>The composer, opened with <kbd>C</kbd> or the Draft button</figcaption></figure>
   <dl class="parts">
     <dt>Composer</dt><dd>The prompt the agent would get (file, task, selection or section) with room for your words and pasted images. <kbd>Enter</kbd> saves it as an Up next note; <kbd>⌘Enter</kbd> opens a draft in Codex or Claude Desktop now; the clipboard icon copies it.</dd>
@@ -533,10 +533,10 @@ status: active
     </tbody>
   </table>
   <footer>
-    Plan Viewer is plain ES modules in <code>public/</code> and TypeScript that Node runs directly. No build step and no runtime dependencies.
-    <a href="https://github.com/byronwall/plan-viewer">Source on GitHub</a> ·
-    <a href="https://github.com/byronwall/plan-viewer/blob/main/docs/guide.md">User guide</a> ·
-    <a href="https://github.com/byronwall/plan-viewer/blob/main/AGENTS.md">AGENTS.md</a>
+    Planboard is plain ES modules in <code>public/</code> and TypeScript that Node runs directly. No build step and no runtime dependencies.
+    <a href="https://github.com/byronwall/planboard">Source on GitHub</a> ·
+    <a href="https://github.com/byronwall/planboard/blob/main/docs/guide.md">User guide</a> ·
+    <a href="https://github.com/byronwall/planboard/blob/main/AGENTS.md">AGENTS.md</a>
   </footer>
 </section>
 </main>
