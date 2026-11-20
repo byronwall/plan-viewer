@@ -16,9 +16,12 @@
     <h4>Start</h4>
     <ol>
       <li><a href="#top">What it is</a></li>
-      <li><a href="#install">Install</a></li>
+      <li><a href="#why">Why it exists</a></li>
+      <li><a href="#day">How a day goes</a></li>
+      <li><a href="#fit">Is it worth it?</a></li>
+      <li><a href="#try">How hard is it to start?</a></li>
     </ol>
-    <h4>Plans and tasks</h4>
+    <h4>Reference: plans and tasks</h4>
     <ol>
       <li><a href="#shell">The shell</a></li>
       <li><a href="#today">Daily plan</a></li>
@@ -54,42 +57,163 @@
 
 <main id="top">
 <header class="hero">
-  <h1>Plan Viewer</h1>
-  <p class="lede">A local reading desk for planning in Markdown, and for handing the work to coding agents.</p>
-  <p>I keep my daily plans, tasks and notes as plain Markdown files in a git repository. Plan Viewer turns that folder into a fast, keyboard-driven app. Today's plan reads as work cards. Each task lists its steps by who moves next, with a dependency graph one click away. Beside the plans sit the pull requests, worktrees, diffs, issues and agent threads the work touches.</p>
-  <p>The viewer never edits your plans on its own. The Markdown stays the source of truth, readable anywhere, and agents make the changes. Almost every button saves a prompt for an agent or opens one as a draft in Codex or Claude, and nothing runs until you send it.</p>
-  <p>It is for one person who plans in text and works with agents all day. It runs on your machine, reads your folder, and has no account, no database and no build step.</p>
-  <div class="links">
-    <a class="button" href="https://github.com/byronwall/plan-viewer">byronwall/plan-viewer on GitHub</a>
-    <a href="#install">Install</a>
-    <a href="https://github.com/byronwall/plan-viewer/blob/main/docs/guide.md">Full user guide</a>
-    <a href="https://github.com/byronwall/plan-viewer/blob/main/docs/configuration.md">Configuration</a>
+  <div class="hero-text">
+    <h1>Plan Viewer</h1>
+    <p class="lede">Your plans are Markdown files. Plan Viewer turns them into one work queue that you and your coding agents share.</p>
+    <p>It reads a folder of daily plans and tasks and shows what is next, who it waits on, and the PRs, issues and agent threads around it. Any step goes to Codex or Claude with its context in one click. Nothing runs until you press Send.</p>
+    <div class="try-now">
+      <div class="try-head"><strong>Try the demo</strong><span>Node 22.6+ · no install · about 2 minutes</span></div>
+      <pre><code>git clone https://github.com/byronwall/plan-viewer.git
+cd plan-viewer &amp;&amp; npm run dev:demo</code></pre>
+      <p>Then open <code>http://127.0.0.1:4173</code>. It serves a fictional team's week, the same one in every screenshot here.</p>
+    </div>
+    <div class="links">
+      <a class="button" href="https://github.com/byronwall/plan-viewer">Source on GitHub</a>
+      <a href="#day">How a day goes</a>
+      <a href="#fit">Is it worth it?</a>
+      <a href="#shell">Every page</a>
+    </div>
   </div>
   <figure class="hero-shot"><a href="images/hero.webp"><img src="images/hero.webp" width="2160" height="1350" alt="Plan Viewer showing a daily plan with its scheduled tasks and milestones"></a>
-  <figcaption>Every screenshot on this page comes from <code>examples/workspace</code>, a fictional team's week. The numbered marks match the lists under each one.</figcaption></figure>
+  <figcaption>Today's plan. Each scheduled task says how many of its steps wait on you, on an agent or on someone else.</figcaption></figure>
 </header>
 
-<section class="page" id="install">
-  <h2>Install</h2>
-  <div class="prose">
-    <p>You need <a href="https://nodejs.org">Node.js</a> 22.6 or later. There are no packages to install. Clone the repository beside the folder where your plans will live:</p>
-    <pre><code>git clone https://github.com/byronwall/plan-viewer.git
-cd plan-viewer</code></pre>
-    <p>The fastest setup: start an agent such as Claude Code or Codex in <code>plan-viewer</code> and tell it <code>Read docs/setup.md and set me up.</code> The agent makes a workspace in <code>../planning</code>, starts the viewer, asks you four questions, and writes today's plan and your first task.</p>
-    <p>To do it by hand:</p>
-    <pre><code>mkdir ../planning &amp;&amp; cd ../planning
+<section class="page" id="why">
+  <h2>Why it exists</h2>
+  <div class="why">
+    <div class="prose">
+      <p>Plain Markdown in git is a good place to plan with agents. Both of you can read it, diff it and edit it, and it outlives any tool. But a folder of files does not answer the questions you have at nine in the morning: what is next, what waits on me, which PR belongs to which task, and what did the agents change overnight.</p>
+      <p>Handing a step to an agent is the other friction. You copy the task, the step, the prompt and the links into a chat, every time. Then you go back to GitHub, Jira and a terminal to see what happened.</p>
+      <p>Plan Viewer reads the same files and answers those questions. It never becomes the source of truth. Delete it and your plans are still plain Markdown.</p>
+    </div>
+    <dl class="contrast">
+      <dt>Without it</dt>
+      <dd>Grep the folder for open steps. Guess which ones are blocked. Paste context into a chat by hand. Switch tabs to find the PR and the issue.</dd>
+      <dt>With it</dt>
+      <dd>Steps ranked by priority and by who moves next. Prerequisites checked. One click saves the full prompt for an agent. PRs, diffs, issues and threads open in place, over the plan.</dd>
+    </dl>
+  </div>
+</section>
+
+<section class="page" id="day">
+  <h2>How a day goes</h2>
+  <p class="intro">The loop the viewer is built around, with the sample workspace.</p>
+  <ol class="loop">
+    <li>
+      <a class="shot" href="images/loop-plan.webp"><img src="images/loop-plan.webp" loading="lazy" alt="Scheduled tasks on today's plan"></a>
+      <div><h3><span>1</span>Open today's plan</h3><p>Your daily file lists the tasks you scheduled. Each row counts the open steps by who moves next, so <code>1 you</code> stands out from <code>2 agent</code>. A click opens the step that waits on you.</p></div>
+    </li>
+    <li>
+      <a class="shot" href="images/loop-step.webp"><img src="images/loop-step.webp" loading="lazy" alt="The step dialog with Start, Note, Up next and Send to agent"></a>
+      <div><h3><span>2</span>Hand a step to an agent</h3><p>The step dialog shows what it waits on, what it unblocks, the updates filed under it and its stored prompt. <strong>Send to agent</strong> opens that prompt with room for a note. <kbd>Enter</kbd> saves it to the Up next queue for an agent thread to work; <kbd>⌘Enter</kbd> opens it as a draft in Codex or Claude now.</p></div>
+    </li>
+    <li>
+      <a class="shot" href="images/loop-live.webp"><img src="images/loop-live.webp" loading="lazy" alt="A toast says the task changed, and the finished step is gone from the list"></a>
+      <div><h3><span>3</span>Watch the files change</h3><p>The agent edits the task file: it marks <code>W2.2</code> completed and adds a dated update. The open page redraws in place, and a toast names the sections and the line counts (<code>+2 −1</code>). You never reload.</p></div>
+    </li>
+    <li>
+      <a class="shot" href="images/worktree-overview.webp"><img src="images/worktree-overview.webp" loading="lazy" alt="A worktree overview with its diff"></a>
+      <div><h3><span>4</span>Review the code it touched</h3><p>The Code page lists worktrees, PRs with CI and review state, and commits across branches. Every diff opens over the page, with viewed marks, local review notes and a treemap of the change.</p></div>
+    </li>
+    <li>
+      <a class="shot" href="images/chats.webp"><img src="images/chats.webp" loading="lazy" alt="Chat Threads listing waiting and running agent threads"></a>
+      <div><h3><span>5</span>See which agents need you</h3><p>Chat Threads lists every local Codex and Claude Code thread: which wait for your input, which still run, and the subagents under each.</p></div>
+    </li>
+  </ol>
+</section>
+
+<section class="page" id="fit">
+  <h2>Is it worth it?</h2>
+  <p class="intro">It is a personal tool, built for one way of working. Here is the honest fit.</p>
+  <div class="fit">
+    <div>
+      <h3>Worth it if</h3>
+      <ul>
+        <li>You already plan in text, or want to, and keep it in git.</li>
+        <li>You hand work to Codex or Claude Code every day and lose time on the copy and paste around it.</li>
+        <li>Your work spans several repositories, PRs and tickets, and you want them beside the plan.</li>
+        <li>You like a keyboard: <kbd>⌘K</kbd> finds anything, and single letters move between pages.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Skip it if</h3>
+      <ul>
+        <li>You need a team tracker. It is for one person, on one machine, with no accounts or sharing.</li>
+        <li>You want to edit plans in the app. It only reads; you or your agents write the Markdown.</li>
+        <li>You are not on macOS and want agent handoffs. Reading plans works anywhere Node runs; the desktop deep links do not.</li>
+        <li>You want a phone app. It is a desktop page on localhost.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="costs">
+    <h3>What it asks of you</h3>
+    <dl class="parts">
+      <dt>A file format</dt><dd>Tasks follow one shape: front matter, a <code>## Work breakdown</code> of steps with <code>(after: W1)</code> prerequisites, and <code>prompt</code> blocks for next actions. Agents learn it from the <code>AGENTS.md</code> that <code>init</code> copies in, and <code>plan-viewer lint</code> (also a pre-commit hook) catches mistakes.</dd>
+      <dt>Node 22.6 or later</dt><dd>Nothing else. There are no packages, no database and no build.</dd>
+      <dt>Your own sign-ins</dt><dd>GitHub, Jira, Linear and Slack are optional, each through your own CLI or token. Tokens stay in a git-ignored <code>config.toml</code>; the viewer never shows them.</dd>
+    </dl>
+    <h3>What it never does</h3>
+    <ul class="never">
+      <li>Edit your plans on its own. Every change made in the app (a status, a check-in, a step marked done) is a click you make, written straight into the Markdown.</li>
+      <li>Send a message, comment or ticket without your approval of the exact text.</li>
+      <li>Start an agent run you did not ask for. Drafts open with Send left to you.</li>
+      <li>Leave your machine. It serves <code>127.0.0.1</code> and calls only the services you connect, plus a <code>git fetch</code> to check for viewer updates.</li>
+    </ul>
+  </div>
+  <figure class="source-render">
+    <pre><code>---
+id: TASK-0101
+title: Ship workspace invites
+status: active
+---
+## Work breakdown
+
+- W1: Invite model and API [completed]
+- W2: Invite email [active]
+  - W2.1: Draft the template [completed]
+  - W2.2: Send through the mailer [active] (after: W2.1)
+- W3: Pending invites UI [open]
+  - W3.1: List pending invites [open]
+  - W3.2: Revoke and resend [open] (after: W3.1)
+- W4: Roll out behind a flag [open] (after: W2.2, W3.2)</code></pre>
+    <a href="images/task.webp"><img src="images/task.webp" loading="lazy" alt="The same task rendered with its steps panel"></a>
+    <figcaption>The task file on the left (trimmed) is all the viewer needs to draw the steps panel on the right.</figcaption>
+  </figure>
+</section>
+
+<section class="page" id="try">
+  <h2>How hard is it to start?</h2>
+  <p class="intro">Three levels. Stop at any one.</p>
+  <ol class="levels">
+    <li>
+      <h3><span>2 min</span>Look at the demo</h3>
+      <p>Clone and run <code>npm run dev:demo</code> as above. You get every page with fictional data, including Issues and Code. Nothing is written outside the checkout.</p>
+    </li>
+    <li>
+      <h3><span>10 min</span>Your own workspace, set up by an agent</h3>
+      <p>Start Claude Code or Codex in the <code>plan-viewer</code> checkout and say <code>Read docs/setup.md and set me up.</code> It makes <code>../planning</code>, starts the viewer, asks you four questions, and writes today's plan and your first real task. Or by hand:</p>
+      <pre><code>mkdir ../planning &amp;&amp; cd ../planning
 ../plan-viewer/cli.ts init     # git, hooks, folders, AGENTS.md
 ../plan-viewer/cli.ts          # serves http://127.0.0.1:4173</code></pre>
-    <p>To look around first, run <code>npm run dev:demo</code> in the checkout. It serves the same sample workspace these screenshots use.</p>
-    <p>A workspace has four folders, and the layout is the content format:</p>
-    <pre><code>daily/YYYY-MM-DD.md            one plan per day; "## Scheduled tasks" links tasks
-tasks/TASK-0101/TASK-0101.md   one task: front matter, work breakdown, next actions, updates
-tasks/TASK-0101/               the task's documents, diagrams, images and notes/
-reference/                     prose people and agents read; notes/ holds loose notes
-config/                        viewer.json, code-repos.json, slack-channels.md, prompts/
-config.toml                    optional, git-ignored tokens for Linear and Slack</code></pre>
-    <p>Reading plans works anywhere Node runs. Agent handoffs and the editor, terminal and Finder buttons assume macOS. Each integration (GitHub through <code>gh</code>, Jira through <code>acli</code>, Linear, Slack, draftably diagrams) is off until you set it up, and the <a href="#setup">Setup page</a> checks each one.</p>
-  </div>
+      <p>Until the workspace has a plan and a task, the viewer opens on <a href="#setup">Setup</a> with a Getting started list.</p>
+    </li>
+    <li>
+      <h3><span>As needed</span>Connect what you use</h3>
+      <p>Each integration is off until you set it up, and the Setup page checks each one live and drafts the steps for an agent.</p>
+      <table>
+        <thead><tr><th>To get</th><th>You need</th></tr></thead>
+        <tbody>
+          <tr><td>Agent handoffs</td><td>macOS with Codex Desktop or Claude Desktop</td></tr>
+          <tr><td>PR and commit titles, the Code and Plans pages</td><td><code>gh</code> signed in, and the repositories you track</td></tr>
+          <tr><td>Jira issues</td><td><code>acli</code> signed in, and a JQL scope</td></tr>
+          <tr><td>Linear issues</td><td>A Linear API key</td></tr>
+          <tr><td>Slack titles and threads</td><td>A Slack token, or Codex's Slack connector</td></tr>
+          <tr><td>Live diagrams</td><td>The <a href="https://draftably.dev">draftably</a> CLI</td></tr>
+        </tbody>
+      </table>
+    </li>
+  </ol>
+  <p class="files-note">A workspace is four folders: <code>daily/</code> (one plan per day), <code>tasks/TASK-NNNN/</code> (a task and its files), <code>reference/</code> (standing notes) and <code>config/</code>. The rest of this page is the reference: every page, section by section.</p>
 </section>
 
 <section class="page" id="shell">
@@ -417,7 +541,32 @@ config.toml                    optional, git-ignored tokens for Linear and Slack
 </section>
 </main>
 </div>
+<dialog class="lightbox" aria-label="Screenshot"><img alt=""><p></p></dialog>
 <script>
+  // Screenshots open over the page; arrows step through them, Esc or a click closes.
+  const box = document.querySelector("dialog.lightbox");
+  const shots = [...document.querySelectorAll("main a[href^='images/']")];
+  let at = 0;
+  const show = (index) => {
+    at = (index + shots.length) % shots.length;
+    const img = shots[at].querySelector("img");
+    box.querySelector("img").src = shots[at].getAttribute("href");
+    box.querySelector("img").alt = img?.alt || "";
+    box.querySelector("p").textContent = img?.alt || "";
+    if (!box.open) box.showModal();
+  };
+  shots.forEach((a, index) => a.addEventListener("click", (event) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || innerWidth < 700) return;
+    event.preventDefault();
+    show(index);
+  }));
+  box.addEventListener("click", () => box.close());
+  document.addEventListener("keydown", (event) => {
+    if (!box.open) return;
+    if (event.key === "ArrowRight") show(at + 1);
+    if (event.key === "ArrowLeft") show(at - 1);
+  });
+
   // Mark the contents link for the section in view.
   const links = new Map([...document.querySelectorAll(".toc nav a")].map((a) => [a.getAttribute("href").slice(1), a]));
   const seen = new IntersectionObserver((entries) => {

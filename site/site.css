@@ -55,15 +55,61 @@ pre code { background: none; padding: 0; font-size: inherit; }
 @media (hover: hover) { .toc li a:hover { background: var(--code-field); color: var(--ink); } }
 
 main { min-width: 0; padding: 32px 0 80px; }
-.hero { padding: 8px 0 28px; }
-.hero > :not(figure) { max-width: 760px; }
+.hero { display: grid; grid-template-columns: minmax(0, 470px) minmax(0, 1fr); gap: 32px; align-items: start; padding: 8px 0 32px; }
+.hero .hero-shot { margin: 6px 0 0; }
 .hero h1 { font-size: 44px; letter-spacing: -.02em; }
 .hero .lede { font-size: 20px; color: var(--ink); margin: 10px 0 14px; }
 .hero p { margin: 0 0 12px; }
 .links { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 16px 0 0; font-size: 15px; }
 .button { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 6px; background: var(--action); color: #fff; font-weight: 600; font-size: 14px; }
 @media (hover: hover) { .button:hover { color: #fff; filter: brightness(1.08); } }
-.hero-shot { margin: 24px 0 8px; }
+
+/* The try-it box sits in the first viewport: the cost of a first look, in one place. */
+.try-now { margin: 18px 0 4px; padding: 12px 14px; border-radius: 8px; background: var(--paper); border: 1px solid var(--line); }
+.try-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-bottom: 8px; }
+.try-head strong { color: var(--ink); }
+.try-head span { font-size: 13px; color: var(--muted); }
+.try-now p { font-size: 14px; margin: 8px 0 0; }
+
+.why { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 380px); gap: 32px; margin-top: 10px; }
+.contrast { margin: 0; display: grid; gap: 4px 0; align-content: start; }
+.contrast dt { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.contrast dd { margin: 0 0 12px; padding: 10px 12px; border-radius: 6px; background: var(--code-field); color: var(--ink); }
+.contrast dd:last-child { background: var(--tint); }
+
+/* How a day goes: one row per step, picture left, words right. */
+ol.loop { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 22px; }
+ol.loop li { display: grid; grid-template-columns: minmax(0, 520px) minmax(0, 1fr); gap: 24px; align-items: start; }
+ol.loop .shot { display: block; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--paper); box-shadow: var(--shadow); max-height: 340px; }
+ol.loop .shot img { display: block; width: 100%; height: auto; }
+ol.loop h3, ol.levels h3 { font-size: 19px; display: flex; align-items: baseline; gap: 10px; margin: 4px 0 6px; }
+ol.loop h3 span { flex: none; width: 24px; height: 24px; border-radius: 12px; background: var(--action); color: #fff; font: 600 13px/24px system-ui; text-align: center; transform: translateY(-2px); }
+ol.loop p { margin: 0; max-width: 560px; }
+
+.fit { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; max-width: 980px; }
+.fit h3, .costs h3 { font-size: 17px; margin: 0 0 6px; }
+.fit ul, .never { margin: 0; padding-left: 20px; }
+.fit li, .never li { margin: 0 0 6px; }
+.costs { margin-top: 24px; max-width: 980px; }
+.costs h3 + dl { margin-bottom: 20px; }
+.source-render { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 28px; }
+.source-render pre { font-size: 12.5px; }
+.source-render > a { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.source-render figcaption { grid-column: 1 / -1; margin: 0; }
+
+ol.levels { list-style: none; margin: 8px 0 0; padding: 0; max-width: 980px; display: grid; gap: 18px; }
+ol.levels h3 span { flex: none; min-width: 72px; font: 600 12px var(--mono); color: var(--action-ink); background: var(--tint); border-radius: 4px; padding: 2px 6px; text-align: center; }
+ol.levels p { margin: 0 0 8px; }
+ol.levels pre { margin: 0 0 8px; }
+.files-note { max-width: 760px; margin: 22px 0 0; color: var(--muted); }
+
+/* Lightbox: a click on any screenshot shows it at full size; arrows walk the page's screenshots. */
+dialog.lightbox:focus { outline: none; }
+dialog.lightbox { border: 0; padding: 0; background: transparent; max-width: 96vw; max-height: 96vh; }
+dialog.lightbox::backdrop { background: rgb(12 16 22 / 82%); }
+dialog.lightbox img { display: block; max-width: 96vw; max-height: 90vh; border-radius: 6px; }
+dialog.lightbox p { color: #e6e9ef; font-size: 14px; margin: 8px 0 0; text-align: center; }
+
 
 section.page { padding: 36px 0 8px; border-top: 1px solid var(--line); }
 section.page > h2 { font-size: 28px; letter-spacing: -.01em; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
@@ -95,12 +141,18 @@ td:first-child { white-space: nowrap; }
 
 footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
 
+@media (max-width: 1180px) {
+  .hero { grid-template-columns: 1fr; }
+  .hero-text { max-width: 760px; }
+}
 @media (max-width: 900px) {
   .layout { display: block; padding: 0 16px; }
   .toc { display: none; }
   .hero h1 { font-size: 34px; }
   .hero .lede { font-size: 18px; }
   .pair { grid-template-columns: 1fr; }
+  .why, .fit, .source-render, ol.loop li { grid-template-columns: 1fr; }
+  ol.loop li { gap: 10px; }
   dl.parts { grid-template-columns: 1fr; }
   dl.parts dd { border-top: 0; padding-top: 0; }
   table { display: block; overflow-x: auto; }

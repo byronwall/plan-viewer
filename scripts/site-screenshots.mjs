@@ -105,9 +105,11 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, dev
 // The Setup page reports the signed-in GitHub login and other local names; the shots show a fictional one.
 const me = (await import("node:os")).userInfo().username;
 await page.route(/\/api\/(?!events)/, async (route) => {
-  const response = await route.fetch();
-  const body = (await response.text()).replaceAll(me, "alex");
-  await route.fulfill({ response, body });
+  try {
+    const response = await route.fetch();
+    const body = (await response.text()).replaceAll(me, "alex");
+    await route.fulfill({ response, body });
+  } catch {} // The page moved on before the answer came.
 });
 const settle = (ms = 900) => page.waitForTimeout(ms);
 const go = async (path, wait) => { await page.goto(`${base}${path}`); if (wait) await page.waitForSelector(wait, { timeout: 90000 }); await settle(); };
@@ -137,6 +139,13 @@ async function mark(list) {
   }, list);
   if (missing.length) console.warn(`  no element for: ${missing.join(", ")}`);
 }
+
+// The box around several elements, padded, for a cropped shot.
+const around = (selectors, pad = 12) => page.evaluate(([list, pad]) => {
+  const boxes = list.map((selector) => document.querySelector(selector)?.getBoundingClientRect()).filter(Boolean);
+  const x = Math.max(0, Math.min(...boxes.map((b) => b.left)) - pad), y = Math.max(0, Math.min(...boxes.map((b) => b.top)) - pad);
+  return { x, y, width: Math.min(innerWidth, Math.max(...boxes.map((b) => b.right)) + pad) - x, height: Math.min(innerHeight, Math.max(...boxes.map((b) => b.bottom)) + pad) - y };
+}, [selectors, pad]);
 
 const task = "/?path=tasks%2FTASK-0101%2FTASK-0101.md";
 const shots = {
@@ -199,14 +208,39 @@ const shots = {
   },
   table: async () => { await go("/?path=reference%2Fteam.md&table=1"); await settle(1500); },
   composer: async () => { await go(task); await click("#global-handoff"); },
+  // Crops for the landing page's "how a day goes" rows.
+  "loop-plan": async () => { await go("/"); return around([".chunk-card"]); },
+  // An agent finishes W2.2: the task file changes on disk and the open page shows it.
+  "loop-step": async () => { await go(`${task}&step=TASK-0101:W2.2`); return around(["dialog[open]"], 0); },
+  "loop-live": async () => {
+    // A short window, so the toast lands right under the steps list.
+    await page.setViewportSize({ width: 1440, height: 600 });
+    await go(task);
+    await page.evaluate(() => {
+      const heading = [...document.querySelectorAll(".chunk-card h2")].find((el) => el.textContent === "Steps");
+      window.scrollTo({ top: (heading?.getBoundingClientRect().top ?? 0) + scrollY - 24, behavior: "instant" });
+    });
+    await settle();
+    const file = join(workspace, "tasks/TASK-0101/TASK-0101.md");
+    const text = await readFile(file, "utf8");
+    await writeFile(file, text
+      .replace("- W2.2: Send through the transactional mailer [active]", "- W2.2: Send through the transactional mailer [completed]")
+      .replace("## Updates\n\n", "## Updates\n\n- **2026-10-23 — Mailer wired (W2.2):** POST /invites sends through the transactional mailer, one message per invite, with a test. PR atlas#1861.\n"));
+    await settle(2500);
+    const clip = await around([".chunk-card:has(.task-steps)", ".toast"], 16);
+    await writeFile(file, text);
+    await page.screenshot({ path: join(pngs, "loop-live.png"), clip });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    return "taken";
+  },
 };
 
 try {
   for (const [name, run] of Object.entries(shots)) {
     if (only && !only.includes(name)) continue;
-    await run();
+    const clip = await run();
     const png = join(pngs, `${name}.png`);
-    await page.screenshot({ path: png });
+    if (clip !== "taken") await page.screenshot({ path: png, clip: clip || undefined });
     execFileSync("cwebp", ["-quiet", "-q", "82", png, "-o", join(out, `${name}.webp`)]);
     console.log(`site/images/${name}.webp`);
   }
