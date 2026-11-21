@@ -1,6 +1,6 @@
 {
   "name": "planboard",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A local reading desk for Markdown daily plans, tasks, and the code they touch.",
   "keywords": [
     "markdown",
