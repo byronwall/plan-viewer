@@ -491,10 +491,11 @@ status: active
   <p class="intro">What the viewer can use and how it is set up. While a workspace has no daily plan or no task, the viewer opens here and leads with <strong>Getting started</strong>: a first task, today's plan and your name, each with a prompt an agent can carry out.</p>
   <figure><a href="images/setup.webp"><img src="images/setup.webp" loading="lazy" width="2160" height="1350" alt="The Setup page"></a></figure>
   <dl class="parts">
-    <dt>Integrations</dt><dd>GitHub CLI, Jira (<code>acli</code>), Linear, Slack token, the Codex app server, draftably and the agent apps, each checked live: green works, red is broken, gray is not set up. <strong>Set up…</strong> drafts the steps for an agent and leaves sign-ins and tokens to you.</dd>
-    <dt>Config files</dt><dd>The files in <code>config/</code> and what reads each one. <strong>View</strong> shows a file read-only; <strong>Edit…</strong> drafts the change. <code>config.toml</code> holds tokens, so the page shows only whether it exists.</dd>
-    <dt>Prompts</dt><dd>Three routines (<strong>Daily plan</strong>, <strong>Daily review</strong>, <strong>Up next sweep</strong>) with <strong>Start…</strong>, then every prompt the viewer sends, with View, Edit… (a copy in <code>config/prompts/</code>) and Reset.</dd>
-    <dt>Settings</dt><dd>Every <code>config/viewer.json</code> key with its value and meaning. Text, number and on/off keys save in place; lists and commands draft the change for an agent.</dd>
+    <dt>Layout</dt><dd>Four tabs, each one list in the same row (status, name over one line of detail, value, one action) beside an inspector for the selected row. The tab and row stay in the URL; <kbd>J</kbd>/<kbd>K</kbd> move, and the filter searches every tab at once with matches highlighted.</dd>
+    <dt>Integrations</dt><dd>GitHub CLI, Jira (<code>acli</code>), Linear, Slack token, the Codex app server, draftably and the agent apps, each checked live and listed worst first: red is broken, gray is not set up, green works. <strong>Set up…</strong> drafts the steps for an agent and leaves sign-ins and tokens to you.</dd>
+    <dt>Settings</dt><dd>Every <code>config/viewer.json</code> key with its value and meaning. Text, number and on/off keys save in place; lists and commands show their JSON in the inspector and draft the change for an agent.</dd>
+    <dt>Prompts</dt><dd>Three routines (<strong>Daily plan</strong>, <strong>Daily review</strong>, <strong>Up next sweep</strong>) with <strong>Start…</strong>, then every prompt the viewer sends. The inspector shows the text with its slots marked, and Edit… makes a copy in <code>config/prompts/</code>.</dd>
+    <dt>Files</dt><dd>The files in <code>config/</code> and what reads each one, with its contents in the inspector. <code>config.toml</code> holds tokens, so the page shows only whether it exists.</dd>
   </dl>
 </section>
 

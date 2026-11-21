@@ -194,7 +194,7 @@ ${docLine} Ask the user what they want this setting to do before you change it. 
 export type ConfigFile = { path: string; purpose: string; key: string; exists: boolean; modified: string; size: number; secret: boolean };
 
 const KNOWN: Record<string, { purpose: string; key?: string }> = {
-  [CONFIG_FILE]: { purpose: "Settings: everything in the Settings section above." },
+  [CONFIG_FILE]: { purpose: "Every setting on the Settings tab." },
   [configPath("slack-channels.md")]: { purpose: "Names for Slack channel and DM IDs in links. `planboard links` reports IDs missing here." },
   [configPath("retired-tasks.md")]: { purpose: "Task IDs removed on purpose, so `planboard links` stops reporting them as unknown." },
   "config.toml": { purpose: "Linear and Slack tokens (`[linear] API_KEY`, `[slack] TOKEN`). Ignored by git; the viewer never shows it." },
